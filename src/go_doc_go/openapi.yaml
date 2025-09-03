@@ -1,0 +1,1608 @@
+openapi: 3.0.3
+info:
+  title: Document Search API
+  description: |
+    A REST API for semantic document search that provides basic, advanced, and structured search capabilities.
+    The API supports embedding-based similarity search with optional content resolution, relationship information,
+    topic-based filtering, and complex structured queries with logical operators for enhanced search precision.
+
+    **New Structured Search Features:**
+    - Complex multi-criteria queries with logical operators (AND, OR, NOT)
+    - Semantic text search with embedding similarity
+    - Topic-based filtering with pattern matching
+    - Date-based filtering with relative and absolute ranges
+    - Metadata and element structure filtering
+    - Nested criteria groups for sophisticated search logic
+    - Content materialization with document hierarchy preservation
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check endpoint
+      description: Check if the API server is healthy and running
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/info:
+    get:
+      tags:
+        - Info
+      summary: Get API information
+      description: Returns API version, available endpoints, and configuration
+      operationId: getApiInfo
+      responses:
+        '200':
+          description: API information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiInfoResponse'
+
+  /api/search:
+    post:
+      tags:
+        - Search
+      summary: Basic search
+      description: Search for elements and return basic results with similarity scores. Supports topic-based filtering for enhanced precision.
+      operationId: search
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/advanced:
+    post:
+      tags:
+        - Search
+      summary: Advanced search
+      description: Advanced search with full results including relationships and resolved content. Supports topic-based filtering for enhanced precision.
+      operationId: advancedSearch
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvancedSearchRequest'
+      responses:
+        '200':
+          description: Advanced search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdvancedSearchResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/structured:
+    post:
+      tags:
+        - Structured Search
+      summary: Structured search with complex criteria
+      description: |
+        Execute complex structured searches with multiple criteria types and logical operators.
+        Supports semantic text search, topic filtering, date ranges, metadata filtering, and element structure filtering
+        combined with AND/OR/NOT logic. Includes optional content materialization with document hierarchy preservation.
+      operationId: structuredSearch
+      security:
+        - ApiKeyAuth: [ ]
+      parameters:
+        - name: text
+          in: query
+          description: Whether to resolve text content in search tree
+          schema:
+            type: boolean
+            default: false
+        - name: content
+          in: query
+          description: Whether to resolve raw content in search tree
+          schema:
+            type: boolean
+            default: false
+        - name: flat
+          in: query
+          description: Whether to return flat results instead of hierarchical
+          schema:
+            type: boolean
+            default: false
+        - name: include_parents
+          in: query
+          description: Whether to include parent elements in flat results
+          schema:
+            type: boolean
+            default: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StructuredSearchRequest'
+            examples:
+              complex_query:
+                summary: Complex multi-criteria query
+                value:
+                  criteria_group:
+                    operator: "AND"
+                    semantic_search:
+                      query_text: "machine learning algorithms"
+                      similarity_threshold: 0.8
+                    topic_search:
+                      include_topics: [ "ai%", "ml%" ]
+                      exclude_topics: [ "deprecated%" ]
+                      min_confidence: 0.8
+                    date_search:
+                      operator: "relative_days"
+                      relative_value: 30
+                  limit: 20
+                  include_similarity_scores: true
+                  include_topics: true
+              nested_query:
+                summary: Nested criteria groups with OR logic
+                value:
+                  criteria_group:
+                    operator: "AND"
+                    sub_groups:
+                      - operator: "OR"
+                        semantic_search:
+                          query_text: "artificial intelligence"
+                          similarity_threshold: 0.7
+                        topic_search:
+                          include_topics: [ "ai%", "deep-learning%" ]
+                      - operator: "NOT"
+                        topic_search:
+                          include_topics: [ "deprecated%", "obsolete%" ]
+                  limit: 50
+                  include_element_dates: true
+      responses:
+        '200':
+          description: Structured search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Bad request - invalid structured query format
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/structured/simple:
+    post:
+      tags:
+        - Structured Search
+      summary: Simple structured search
+      description: |
+        Simplified interface for common structured search patterns.
+        Automatically builds structured queries from simple parameters like topic filtering,
+        date ranges, and element types without requiring complex criteria group definitions.
+      operationId: simpleStructuredSearch
+      security:
+        - ApiKeyAuth: [ ]
+      parameters:
+        - name: text
+          in: query
+          description: Whether to resolve text content in search tree
+          schema:
+            type: boolean
+            default: false
+        - name: content
+          in: query
+          description: Whether to resolve raw content in search tree
+          schema:
+            type: boolean
+            default: false
+        - name: flat
+          in: query
+          description: Whether to return flat results instead of hierarchical
+          schema:
+            type: boolean
+            default: false
+        - name: include_parents
+          in: query
+          description: Whether to include parent elements in flat results
+          schema:
+            type: boolean
+            default: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimpleStructuredSearchRequest'
+            examples:
+              basic_query:
+                summary: Basic query with topic filtering
+                value:
+                  query_text: "data science methodologies"
+                  limit: 15
+                  similarity_threshold: 0.75
+                  include_topics: [ "data-science%", "analytics%" ]
+                  exclude_topics: [ "draft%" ]
+                  days_back: 60
+                  element_types: [ "paragraph", "header" ]
+              topic_only:
+                summary: Topic-only search with date filtering
+                value:
+                  query_text: "security policies"
+                  include_topics: [ "security%", "policy%" ]
+                  exclude_topics: [ "deprecated%", "draft%" ]
+                  days_back: 90
+                  similarity_threshold: 0.8
+      responses:
+        '200':
+          description: Simple structured search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Bad request - invalid input parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/sources:
+    post:
+      tags:
+        - Search
+      summary: Get document sources
+      description: Get unique document sources from search results. Supports topic-based filtering.
+      operationId: getDocumentSources
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SourcesRequest'
+      responses:
+        '200':
+          description: Document sources retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourcesResponse'
+        '400':
+          description: Bad request - invalid input
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+  schemas:
+    # Structured Search Enums
+    LogicalOperator:
+      type: string
+      enum: [ "AND", "OR", "NOT" ]
+      description: |
+        Logical operators for combining search criteria:
+        - AND: All criteria must match (intersection)
+        - OR: Any criteria can match (union)
+        - NOT: Exclude matching criteria (negation)
+
+    DateRangeOperator:
+      type: string
+      enum:
+        - "within"
+        - "before"
+        - "after"
+        - "exactly"
+        - "relative_days"
+        - "relative_months"
+        - "fiscal_year"
+        - "calendar_year"
+        - "quarter"
+      description: |
+        Date filtering operators:
+        - within: Between two specific dates
+        - before: Earlier than specified date
+        - after: Later than specified date
+        - exactly: Exact date match
+        - relative_days: Within last N days from now
+        - relative_months: Within last N months from now
+        - fiscal_year: Within organization's fiscal year
+        - calendar_year: Within standard calendar year
+        - quarter: Within specific quarter (Q1-Q4)
+
+    SimilarityOperator:
+      type: string
+      enum: [ ">", ">=", "<", "<=", "=" ]
+      description: |
+        Comparison operators for similarity thresholds:
+        - ">=": Similarity must meet or exceed threshold (default)
+        - ">": Similarity must exceed threshold
+        - "<=": Similarity must be at or below threshold
+        - "<": Similarity must be below threshold
+        - "=": Similarity must exactly match threshold
+
+    ScoreCombination:
+      type: string
+      enum: [ "multiply", "add", "max", "weighted_avg" ]
+      description: |
+        Methods for combining multiple relevance scores:
+        - weighted_avg: Weighted average (balanced, default)
+        - multiply: Multiplicative combination (penalizes low scores)
+        - add: Additive combination (simple sum)
+        - max: Take the highest individual score
+
+    # Structured Search Criteria Schemas
+    SemanticSearchCriteria:
+      type: object
+      required:
+        - query_text
+      properties:
+        query_text:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: Natural language query text for semantic search
+          example: "machine learning algorithms"
+        similarity_threshold:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.7
+          description: Minimum cosine similarity score (0.0-1.0)
+        similarity_operator:
+          $ref: '#/components/schemas/SimilarityOperator'
+        boost_factor:
+          type: number
+          format: float
+          minimum: 0.1
+          maximum: 10.0
+          default: 1.0
+          description: Multiplier for text search scores in final ranking
+        search_fields:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: Specific document fields to search within
+
+    VectorSearchCriteria:
+      type: object
+      required:
+        - embedding_vector
+      properties:
+        embedding_vector:
+          type: array
+          items:
+            type: number
+            format: float
+          minItems: 1
+          description: Pre-computed embedding vector for direct similarity search
+        similarity_threshold:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.7
+        similarity_operator:
+          $ref: '#/components/schemas/SimilarityOperator'
+        distance_metric:
+          type: string
+          enum: [ "cosine", "euclidean", "dot_product" ]
+          default: "cosine"
+          description: Vector distance metric algorithm
+        boost_factor:
+          type: number
+          format: float
+          minimum: 0.1
+          maximum: 10.0
+          default: 1.0
+
+    DateSearchCriteria:
+      type: object
+      required:
+        - operator
+      properties:
+        operator:
+          $ref: '#/components/schemas/DateRangeOperator'
+        start_date:
+          type: string
+          format: date-time
+          description: Beginning of date range for 'within' operator
+        end_date:
+          type: string
+          format: date-time
+          description: End of date range for 'within' operator
+        exact_date:
+          type: string
+          format: date-time
+          description: Precise date for 'exactly', 'before', or 'after' operators
+        relative_value:
+          type: integer
+          minimum: 1
+          maximum: 3650
+          description: Number of days or months for relative operators
+        year:
+          type: integer
+          minimum: 1900
+          maximum: 2100
+          description: Year for fiscal_year, calendar_year, or quarter operators
+        quarter:
+          type: integer
+          minimum: 1
+          maximum: 4
+          description: Quarter number (1-4) for 'quarter' operator
+        include_partial_dates:
+          type: boolean
+          default: true
+          description: Whether to include documents with partial or vague dates
+        specificity_levels:
+          type: array
+          items:
+            type: string
+            enum: [ "full", "date_only", "month_only", "quarter_only", "year_only" ]
+          default: [ "full", "date_only", "month_only", "quarter_only", "year_only" ]
+          description: Types of date specificity to include
+
+    TopicSearchCriteria:
+      type: object
+      properties:
+        include_topics:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: Topic LIKE patterns to include (supports % wildcards)
+          example: [ "machine-learning%", "artificial-intelligence%" ]
+        exclude_topics:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: Topic LIKE patterns to exclude (supports % wildcards)
+          example: [ "deprecated%", "draft%" ]
+        require_all_included:
+          type: boolean
+          default: false
+          description: Whether document needs ALL included topics (AND) or ANY (OR)
+        min_confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.7
+          description: Minimum confidence threshold for topic classifications
+        boost_factor:
+          type: number
+          format: float
+          minimum: 0.1
+          maximum: 10.0
+          default: 1.0
+
+    MetadataSearchCriteria:
+      type: object
+      properties:
+        exact_matches:
+          type: object
+          additionalProperties: true
+          default: { }
+          description: Dictionary of metadata fields that must match exactly
+          example: { "department": "engineering", "status": "approved" }
+        like_patterns:
+          type: object
+          additionalProperties:
+            type: string
+          default: { }
+          description: Dictionary of metadata fields to match using LIKE patterns
+          example: { "title": "%quarterly%", "filename": "%.pdf" }
+        range_filters:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              gte:
+                description: Greater than or equal to
+              lte:
+                description: Less than or equal to
+              gt:
+                description: Greater than
+              lt:
+                description: Less than
+          default: { }
+          description: Dictionary of range queries for numeric/date fields
+          example: { "word_count": { "gte": 100, "lte": 5000 } }
+        exists_filters:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: List of metadata field names that must exist
+          example: [ "author", "created_date", "department" ]
+
+    ElementSearchCriteria:
+      type: object
+      properties:
+        element_types:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: List of element types to include
+          example: [ "paragraph", "header", "table" ]
+        doc_ids:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: Specific document IDs to include
+        exclude_doc_ids:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: Document IDs to exclude
+        doc_sources:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: Document source patterns to filter by
+          example: [ "reports%", "policies%" ]
+        parent_element_ids:
+          type: array
+          items:
+            type: string
+          default: [ ]
+          description: Filter by parent element relationships
+        content_length_min:
+          type: integer
+          minimum: 0
+          description: Minimum character length for element content
+        content_length_max:
+          type: integer
+          minimum: 0
+          description: Maximum character length for element content
+
+    SearchCriteriaGroup:
+      type: object
+      required:
+        - operator
+      properties:
+        operator:
+          $ref: '#/components/schemas/LogicalOperator'
+        semantic_search:
+          $ref: '#/components/schemas/SemanticSearchCriteria'
+        vector_search:
+          $ref: '#/components/schemas/VectorSearchCriteria'
+        date_search:
+          $ref: '#/components/schemas/DateSearchCriteria'
+        topic_search:
+          $ref: '#/components/schemas/TopicSearchCriteria'
+        metadata_search:
+          $ref: '#/components/schemas/MetadataSearchCriteria'
+        element_search:
+          $ref: '#/components/schemas/ElementSearchCriteria'
+        sub_groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchCriteriaGroup'
+          default: [ ]
+          description: Nested criteria groups for complex logical expressions
+
+    StructuredSearchRequest:
+      type: object
+      required:
+        - criteria_group
+      properties:
+        criteria_group:
+          $ref: '#/components/schemas/SearchCriteriaGroup'
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 10
+          description: Maximum number of search results to return
+        offset:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of results to skip (for pagination)
+        include_element_dates:
+          type: boolean
+          default: false
+          description: Whether to include detailed date extraction information
+        include_metadata:
+          type: boolean
+          default: true
+          description: Whether to include document metadata in results
+        include_topics:
+          type: boolean
+          default: false
+          description: Whether to include topic classifications
+        include_similarity_scores:
+          type: boolean
+          default: true
+          description: Whether to include detailed similarity scores
+        include_highlighting:
+          type: boolean
+          default: false
+          description: Whether to include highlighted excerpts
+        score_combination:
+          $ref: '#/components/schemas/ScoreCombination'
+        custom_weights:
+          type: object
+          additionalProperties:
+            type: number
+            format: float
+          default:
+            text_similarity: 1.0
+            embedding_similarity: 1.0
+            topic_confidence: 0.5
+            date_relevance: 0.3
+          description: Relative importance weights for different relevance factors
+        query_id:
+          type: string
+          format: uuid
+          description: Unique identifier for this search query (auto-generated if not provided)
+
+    SimpleStructuredSearchRequest:
+      type: object
+      required:
+        - query_text
+      properties:
+        query_text:
+          type: string
+          minLength: 1
+          description: Natural language search query
+          example: "machine learning algorithms"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+          description: Maximum number of results to return
+        similarity_threshold:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.7
+          description: Minimum similarity score threshold
+        include_topics:
+          type: array
+          items:
+            type: string
+          description: Topic patterns to include (supports % wildcards)
+          example: [ "ai%", "machine-learning%" ]
+        exclude_topics:
+          type: array
+          items:
+            type: string
+          description: Topic patterns to exclude (supports % wildcards)
+          example: [ "deprecated%", "draft%" ]
+        days_back:
+          type: integer
+          minimum: 1
+          description: Filter to documents from last N days
+          example: 30
+        element_types:
+          type: array
+          items:
+            type: string
+          description: Filter by element types
+          example: [ "paragraph", "header", "list_item" ]
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+          example: "1.0.0"
+      required:
+        - status
+        - timestamp
+        - version
+
+    ApiInfoResponse:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Document Search API
+        version:
+          type: string
+          example: "1.0.0"
+        endpoints:
+          type: object
+          additionalProperties:
+            type: string
+        configuration:
+          type: object
+          properties:
+            max_results:
+              type: integer
+            default_results:
+              type: integer
+            min_score_threshold:
+              type: number
+              format: float
+            timeout:
+              type: integer
+
+    SearchRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: The search query text
+          example: "machine learning algorithms"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+          description: Maximum number of results to return
+        min_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.0
+          description: Minimum similarity score threshold
+        filter_criteria:
+          type: object
+          additionalProperties: true
+          description: Optional filtering criteria
+        include_topics:
+          type: array
+          items:
+            type: string
+          description: Topic LIKE patterns to include (e.g., ['security%', '%.policy%'])
+          example: ["security%", "%.policy%"]
+        exclude_topics:
+          type: array
+          items:
+            type: string
+          description: Topic LIKE patterns to exclude (e.g., ['deprecated%'])
+          example: ["deprecated%", "draft%"]
+        min_confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Minimum confidence threshold for topic results
+          example: 0.7
+        text:
+          type: boolean
+          default: false
+          description: Whether to include resolved text content
+        content:
+          type: boolean
+          default: false
+          description: Whether to include resolved original content
+        flat:
+          type: boolean
+          default: false
+          description: Whether to return flat results instead of hierarchical
+        include_parents:
+          type: boolean
+          default: true
+          description: Whether to include parent elements in flat results
+
+    AdvancedSearchRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: The search query text
+          example: "deep learning frameworks"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+          description: Maximum number of results to return
+        min_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.0
+          description: Minimum similarity score threshold
+        filter_criteria:
+          type: object
+          additionalProperties: true
+          description: Optional filtering criteria
+        include_topics:
+          type: array
+          items:
+            type: string
+          description: Topic LIKE patterns to include (e.g., ['security%', '%.policy%'])
+          example: ["security%", "%.policy%"]
+        exclude_topics:
+          type: array
+          items:
+            type: string
+          description: Topic LIKE patterns to exclude (e.g., ['deprecated%'])
+          example: ["deprecated%", "draft%"]
+        min_confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Minimum confidence threshold for topic results
+          example: 0.7
+        resolve_content:
+          type: boolean
+          default: true
+          description: Whether to resolve the original content
+        include_relationships:
+          type: boolean
+          default: true
+          description: Whether to include outgoing relationships
+
+    SourcesRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: The search query text
+          example: "artificial intelligence research"
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+          description: Maximum number of results to consider
+        min_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.0
+          description: Minimum similarity score threshold
+        filter_criteria:
+          type: object
+          additionalProperties: true
+          description: Optional filtering criteria
+        include_topics:
+          type: array
+          items:
+            type: string
+          description: Topic LIKE patterns to include (e.g., ['security%', '%.policy%'])
+          example: ["security%", "%.policy%"]
+        exclude_topics:
+          type: array
+          items:
+            type: string
+          description: Topic LIKE patterns to exclude (e.g., ['deprecated%'])
+          example: ["deprecated%", "draft%"]
+        min_confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Minimum confidence threshold for topic results
+          example: 0.7
+
+    # Updated ElementBase schema to reflect new structure
+    ElementBase:
+      type: object
+      properties:
+        element_pk:
+          type: integer
+          description: Auto-increment primary key for the element
+        element_id:
+          type: string
+          description: Element natural identifier
+        doc_id:
+          type: string
+          description: Document identifier
+        element_type:
+          type: string
+          description: Type of element
+        parent_id:
+          type: string
+          nullable: true
+          description: ID of parent element if any
+        content_preview:
+          type: string
+          description: Short preview of the element's content
+        content_hash:
+          type: string
+          description: Hash of the element's content
+        text:
+          type: string
+          nullable: true
+          description: Text content of the element
+        content:
+          type: string
+          nullable: true
+          description: Full content of the element
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Additional metadata for the element
+        score:
+          type: number
+          format: float
+          nullable: true
+          description: Similarity score from search
+        # Topic-related fields
+        confidence:
+          type: number
+          format: float
+          nullable: true
+          description: Topic confidence score
+        topics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Topics assigned to this element
+        # Computed fields
+        source:
+          type: string
+          nullable: true
+          description: Source information parsed from content_location
+        content_location:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Parsed location information for retrieving content
+
+    ElementHierarchical:
+      allOf:
+        - $ref: '#/components/schemas/ElementBase'
+        - type: object
+          properties:
+            child_elements:
+              type: array
+              items:
+                $ref: '#/components/schemas/ElementHierarchical'
+              description: Child elements in the hierarchy
+
+    ElementFlat:
+      allOf:
+        - $ref: '#/components/schemas/ElementBase'
+        - type: object
+          properties:
+            path:
+              type: string
+              description: Path of element IDs from document ID to current element
+
+    SearchResult:
+      type: object
+      properties:
+        element_pk:
+          type: integer
+          description: Element primary key
+        similarity:
+          type: number
+          format: float
+          description: Similarity score
+        # Topic-related fields
+        confidence:
+          type: number
+          format: float
+          nullable: true
+          description: Topic confidence score
+        topics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Topics assigned to this element
+        doc_id:
+          type: string
+          nullable: true
+          description: Document natural key
+        element_id:
+          type: string
+          nullable: true
+          description: Element natural key
+        element_type:
+          type: string
+          nullable: true
+          description: Element type
+        parent_id:
+          type: string
+          nullable: true
+          description: Parent element ID
+        content_preview:
+          type: string
+          nullable: true
+          description: Short preview of the element content
+        content_hash:
+          type: string
+          description: Hash of the element's content
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Element metadata
+        # Computed fields
+        source:
+          type: string
+          nullable: true
+          description: Source information parsed from content_location
+        content_location:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Parsed location information for retrieving content
+        content:
+          type: string
+          nullable: true
+          description: Resolved original content (if requested)
+        text:
+          type: string
+          nullable: true
+          description: Resolved text content (if requested)
+
+    SearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+          description: List of search results
+        total_results:
+          type: integer
+          description: Total number of results found
+        query:
+          type: string
+          nullable: true
+          description: The search query used
+        filter_criteria:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Filter criteria used
+        # Topic filtering criteria
+        include_topics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Topic patterns that were included
+        exclude_topics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Topic patterns that were excluded
+        min_confidence:
+          type: number
+          format: float
+          nullable: true
+          description: Minimum confidence threshold used
+        search_type:
+          type: string
+          default: "embedding"
+          description: Type of search performed
+          enum: [ "embedding", "text", "content", "topic", "structured" ]
+        min_score:
+          type: number
+          format: float
+          default: 0.0
+          description: Minimum score threshold used
+        documents:
+          type: array
+          items:
+            type: string
+          description: Unique document sources
+        search_tree:
+          oneOf:
+            - type: array
+              items:
+                $ref: '#/components/schemas/ElementHierarchical'
+            - type: array
+              items:
+                $ref: '#/components/schemas/ElementFlat'
+          nullable: true
+          description: Tree structure or flat list of results
+        content_resolved:
+          type: boolean
+          default: false
+          description: Whether content was resolved during search
+        text_resolved:
+          type: boolean
+          default: false
+          description: Whether text was resolved during search
+        # Topic-related metadata
+        supports_topics:
+          type: boolean
+          default: false
+          description: Whether the backend supports topics
+        topic_statistics:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Topic distribution statistics
+        # Structured search metadata
+        query_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Unique query identifier for structured searches
+        execution_time_ms:
+          type: number
+          format: float
+          nullable: true
+          description: Query execution time in milliseconds
+
+    ElementRelationship:
+      type: object
+      properties:
+        relationship_type:
+          type: string
+          description: Type of relationship
+          example: "contains"
+        target_element_pk:
+          type: integer
+          description: Target element primary key
+        target_element_type:
+          type: string
+          description: Target element type
+        target_reference:
+          type: string
+          description: Target element reference
+
+    AdvancedSearchResult:
+      type: object
+      properties:
+        similarity:
+          type: number
+          format: float
+          description: Similarity score
+        # Topic-related fields
+        confidence:
+          type: number
+          format: float
+          nullable: true
+          description: Topic confidence score
+        topics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Topics assigned to this element
+        element_pk:
+          type: integer
+          description: Element primary key
+        element_id:
+          type: string
+          description: Element natural key
+        element_type:
+          type: string
+          description: Element type
+        content_preview:
+          type: string
+          description: Short preview of the element content
+        content_location:
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+          description: Location information for retrieving content
+        content_hash:
+          type: string
+          description: Hash of the element's content
+        doc_id:
+          type: string
+          description: Document natural key
+        doc_type:
+          type: string
+          description: Document type
+        source:
+          type: string
+          description: Source information, possibly parsed from content_location
+        resolved_content:
+          type: string
+          nullable: true
+          description: Resolved original content
+        resolved_text:
+          type: string
+          nullable: true
+          description: Resolved text content
+        resolution_error:
+          type: string
+          nullable: true
+          description: Error message if content resolution failed
+        relationship_count:
+          type: integer
+          description: Number of outgoing relationships
+        relationships:
+          type: object
+          properties:
+            by_type:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ElementRelationship'
+            contained_elements:
+              type: array
+              items:
+                $ref: '#/components/schemas/ElementRelationship'
+            linked_elements:
+              type: array
+              items:
+                $ref: '#/components/schemas/ElementRelationship'
+            semantic_relationships:
+              type: array
+              items:
+                $ref: '#/components/schemas/ElementRelationship'
+
+    AdvancedSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+          description: The search query used
+        total_results:
+          type: integer
+          description: Total number of results found
+        min_score:
+          type: number
+          format: float
+          description: Minimum score threshold used
+        # Topic filtering criteria
+        include_topics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Topic patterns that were included
+        exclude_topics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          description: Topic patterns that were excluded
+        min_confidence:
+          type: number
+          format: float
+          nullable: true
+          description: Minimum confidence threshold used
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdvancedSearchResult'
+
+    SourcesResponse:
+      type: object
+      properties:
+        query:
+          type: string
+          description: The search query used
+        total_results:
+          type: integer
+          description: Total number of results considered
+        document_sources:
+          type: array
+          items:
+            type: string
+          description: Unique document sources
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error type or code
+        message:
+          type: string
+          description: Human-readable error message
+      required:
+        - error
+        - message
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Info
+    description: API information endpoints
+  - name: Search
+    description: Basic and advanced document search endpoints with topic filtering support
+  - name: Structured Search
+    description: Complex structured search with multiple criteria types and logical operators
+
+# Examples of API usage
+x-code-samples:
+  - lang: Python
+    source: |
+      import requests
+
+      # Basic search with topic filtering
+      response = requests.post(
+          'http://localhost:5000/api/search',
+          json={
+              'query': 'machine learning',
+              'limit': 5,
+              'min_score': 0.7,
+              'include_topics': ['security%', '%.policy%'],
+              'exclude_topics': ['deprecated%'],
+              'min_confidence': 0.8,
+              'flat': True,
+              'include_parents': False,
+              'text': True
+          },
+          headers={'X-API-Key': 'your-api-key'}
+      )
+      results = response.json()
+
+      # Structured search with complex criteria
+      response = requests.post(
+          'http://localhost:5000/api/search/structured?text=true&flat=false',
+          json={
+              'criteria_group': {
+                  'operator': 'AND',
+                  'semantic_search': {
+                      'query_text': 'artificial intelligence',
+                      'similarity_threshold': 0.8
+                  },
+                  'topic_search': {
+                      'include_topics': ['ai%', 'technology%'],
+                      'exclude_topics': ['deprecated%'],
+                      'min_confidence': 0.8
+                  },
+                  'date_search': {
+                      'operator': 'relative_days',
+                      'relative_value': 30
+                  }
+              },
+              'limit': 20,
+              'include_similarity_scores': True,
+              'include_topics': True
+          },
+          headers={'X-API-Key': 'your-api-key'}
+      )
+      structured_results = response.json()
+
+      # Simple structured search
+      response = requests.post(
+          'http://localhost:5000/api/search/structured/simple?text=true',
+          json={
+              'query_text': 'data science methods',
+              'include_topics': ['data-science%'],
+              'days_back': 60,
+              'similarity_threshold': 0.75,
+              'element_types': ['paragraph', 'header']
+          },
+          headers={'X-API-Key': 'your-api-key'}
+      )
+      simple_results = response.json()
+
+  - lang: cURL
+    source: |
+      # Structured search with nested criteria
+      curl -X POST "http://localhost:5000/api/search/structured?text=true&content=false&flat=false" \
+        -H "X-API-Key: your-api-key" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "criteria_group": {
+            "operator": "AND",
+            "sub_groups": [
+              {
+                "operator": "OR",
+                "semantic_search": {
+                  "query_text": "machine learning",
+                  "similarity_threshold": 0.7
+                },
+                "topic_search": {
+                  "include_topics": ["ai%", "ml%", "deep-learning%"]
+                }
+              },
+              {
+                "operator": "NOT",
+                "topic_search": {
+                  "include_topics": ["deprecated%", "obsolete%"]
+                }
+              }
+            ],
+            "date_search": {
+              "operator": "quarter",
+              "year": 2024,
+              "quarter": 3
+            }
+          },
+          "limit": 50,
+          "include_similarity_scores": true,
+          "include_topics": true
+        }'
+
+      # Simple structured search
+      curl -X POST "http://localhost:5000/api/search/structured/simple?text=true" \
+        -H "X-API-Key: your-api-key" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "query_text": "security policies",
+          "include_topics": ["security%", "policy%"],
+          "exclude_topics": ["deprecated%", "draft%"],
+          "days_back": 90,
+          "similarity_threshold": 0.8,
+          "limit": 15
+        }'
+
+  - lang: JavaScript
+    source: |
+      // Complex structured search
+      async function structuredSearch(criteriaGroup, options = {}) {
+        const response = await fetch('http://localhost:5000/api/search/structured?text=true&flat=false', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': 'your-api-key'
+          },
+          body: JSON.stringify({
+            criteria_group: criteriaGroup,
+            limit: 20,
+            include_similarity_scores: true,
+            include_topics: true,
+            ...options
+          })
+        });
+        return await response.json();
+      }
+
+      // Example: Complex nested query
+      const complexQuery = {
+        operator: 'AND',
+        semantic_search: {
+          query_text: 'artificial intelligence trends',
+          similarity_threshold: 0.8,
+          boost_factor: 2.0
+        },
+        topic_search: {
+          include_topics: ['ai%', 'technology%'],
+          exclude_topics: ['deprecated%'],
+          min_confidence: 0.8
+        },
+        date_search: {
+          operator: 'relative_days',
+          relative_value: 30
+        }
+      };
+
+      const results = await structuredSearch(complexQuery);
+
+      // Simple structured search
+      async function simpleStructuredSearch(queryText, options = {}) {
+        const response = await fetch('http://localhost:5000/api/search/structured/simple?text=true', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': 'your-api-key'
+          },
+          body: JSON.stringify({
+            query_text: queryText,
+            similarity_threshold: 0.7,
+            limit: 10,
+            ...options
+          })
+        });
+        return await response.json();
+      }
+
+      const simpleResults = await simpleStructuredSearch('machine learning algorithms', {
+        include_topics: ['ai%', 'ml%'],
+        exclude_topics: ['deprecated%'],
+        days_back: 60,
+        element_types: ['paragraph', 'header']
+      });
