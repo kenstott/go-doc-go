@@ -102,7 +102,9 @@ class ElementBase(BaseModel):
             "table_header", "table_header_row", "presentation_body",
             "slide", "comments_container", "comments", "json_array",
             "json_object", "slide_masters", "slide_templates",
-            "headers", "footers", "page_header", "page_footer", "body"
+            "headers", "footers", "page_header", "page_footer", "body",
+            # Excel containers
+            "workbook", "sheet", "merged_cells", "data_tables"
         ]
         return self.element_type.lower() in container_types
 
@@ -215,6 +217,13 @@ class ElementType(Enum):
     SLIDE_TEMPLATES = "slide_templates"
     SLIDE_LAYOUT = "slide_layout"
     SLIDE_MASTER = "slide_master"
+    # Excel-specific element types
+    WORKBOOK = "workbook"
+    SHEET = "sheet"
+    MERGED_CELL = "merged_cell"
+    MERGED_CELLS = "merged_cells"
+    DATA_TABLE = "data_table"  # A detected logical table within a sheet
+    DATA_TABLES = "data_tables"  # Container for multiple data tables
     UNKNOWN = "unknown"
 
 
