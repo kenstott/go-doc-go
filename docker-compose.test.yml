@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: doculyzer-test-minio
+    ports:
+      - "9000:9000"  # S3 API port
+      - "9001:9001"  # Console port
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: test-bucket
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - test-network
+
+  # Optional: Minio Client (mc) for bucket initialization
+  minio-init:
+    image: minio/mc:latest
+    container_name: doculyzer-test-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add minio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb --ignore-existing minio/test-bucket;
+      /usr/bin/mc mb --ignore-existing minio/test-private-bucket;
+      /usr/bin/mc mb --ignore-existing minio/test-public-bucket;
+      /usr/bin/mc anonymous set download minio/test-public-bucket;
+      /usr/bin/mc cp --recursive /sample-data/ minio/test-bucket/ 2>/dev/null || true;
+      exit 0;
+      "
+    volumes:
+      - ./tests/test_data/s3:/sample-data:ro
+    networks:
+      - test-network
+
+  # MongoDB service for testing
+  mongodb:
+    image: mongo:latest
+    container_name: doculyzer-test-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: test_db
+    volumes:
+      - mongodb-data:/data/db
+      - ./tests/test_data/mongodb/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - test-network
+
+  # MongoDB initialization helper
+  mongodb-init:
+    image: mongo:latest
+    container_name: doculyzer-test-mongodb-init
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USERNAME: admin
+      MONGO_PASSWORD: admin123
+    entrypoint: >
+      /bin/bash -c "
+      mongosh --host mongodb:27017 -u admin -p admin123 --authenticationDatabase admin --eval '
+        use test_db;
+        db.createCollection(\"test_collection\");
+        db.createCollection(\"documents\");
+        db.createCollection(\"users\");
+        db.createCollection(\"products\");
+        db.test_collection.insertMany([
+          {_id: ObjectId(), name: \"Test Document 1\", content: \"Sample content 1\", created_at: new Date()},
+          {_id: ObjectId(), name: \"Test Document 2\", content: \"Sample content 2\", created_at: new Date()},
+          {_id: ObjectId(), name: \"Test Document 3\", content: \"Sample content 3\", created_at: new Date()}
+        ]);
+        print(\"MongoDB initialized with test data\");
+      ' || true;
+      exit 0;
+      "
+    networks:
+      - test-network
+
+volumes:
+  minio-data:
+    driver: local
+  mongodb-data:
+    driver: local
+
+networks:
+  test-network:
+    driver: bridge
