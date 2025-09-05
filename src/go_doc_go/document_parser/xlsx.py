@@ -463,7 +463,7 @@ class XlsxParser(DocumentParser):
 
             # Only extract dates from text-containing elements
             if element_type in ["sheet", "table_cell", "table_header", "comment",
-                              "data_table", "table_header_row", "table_row_headers"]:
+                              "data_table", "table_header_row"]:
 
                 try:
                     # Get the text content of this element
@@ -1978,17 +1978,17 @@ class XlsxParser(DocumentParser):
                         col_header_id = self._generate_id(f"table_row_headers_{idx + 1}_")
                         col_header_text = "\n".join(first_col_headers)
 
-                        # Create row headers element
+                        # Create row headers element (using TABLE_HEADER with metadata)
                         col_header_element = {
                             "element_id": col_header_id,
                             "doc_id": doc_id,
-                            "element_type": "table_row_headers",
+                            "element_type": "table_header",  # Using existing type with metadata
                             "parent_id": table_id,
                             "content_preview": col_header_text[:self.max_content_preview] + (
                                 "..." if len(col_header_text) > self.max_content_preview else ""),
                             "content_location": json.dumps({
                                 "source": source_id,
-                                "type": "table_row_headers",
+                                "type": "table_header",
                                 "sheet_name": sheet.title,
                                 "range": f"{min_col_letter}{region['min_row'] + 1}:{min_col_letter}{region['max_row']}"
                             }),
@@ -1996,7 +1996,8 @@ class XlsxParser(DocumentParser):
                             "metadata": {
                                 "column": region["min_col"],
                                 "values": first_col_headers,
-                                "sheet": sheet.title
+                                "sheet": sheet.title,
+                                "header_type": "row_headers"  # Indicates these are row headers, not column headers
                             }
                         }
 
