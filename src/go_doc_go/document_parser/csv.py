@@ -265,9 +265,19 @@ class CsvParser(DocumentParser):
 
         # Parse the CSV content
         csv_data, dialect = self._parse_csv_content(content)
+        
+        # Track if truncation occurred
+        total_rows = len(csv_data)
+        was_truncated = total_rows > self.max_rows
 
         # Update metadata with dialect information
         csv_metadata = self._extract_document_metadata(csv_data, dialect, metadata)
+        
+        # Add truncation info to metadata
+        if was_truncated:
+            csv_metadata["truncated"] = True
+            csv_metadata["total_rows"] = total_rows
+            csv_metadata["processed_rows"] = min(total_rows, self.max_rows)
 
         # Create document record
         document = {
@@ -412,6 +422,7 @@ class CsvParser(DocumentParser):
                 "element_type": ElementType.TABLE_ROW.value,
                 "parent_id": table_id,
                 "content_preview": row_preview,
+                "element_order": abs_row_idx,  # Add element_order for document reconstruction
                 "content_location": json.dumps({
                     "source": source_id,
                     "type": ElementType.TABLE_ROW.value,
@@ -654,7 +665,9 @@ class CsvParser(DocumentParser):
         # Extract text from all cells
         for row_idx, row in enumerate(csv_data):
             for col_idx, cell_value in enumerate(row):
-                cell_str = str(cell_value).strip()
+                cell_str = str(cell_value)
+                if self.strip_whitespace:
+                    cell_str = cell_str.strip()
                 if cell_str:
                     # Include context information for better date extraction
                     if header_row and row_idx > 0 and col_idx < len(header_row):
@@ -687,7 +700,9 @@ class CsvParser(DocumentParser):
             col = metadata.get("col")
 
             if row is not None and col is not None and row < len(csv_data) and col < len(csv_data[row]):
-                cell_value = str(csv_data[row][col]).strip()
+                cell_value = str(csv_data[row][col])
+                if self.strip_whitespace:
+                    cell_value = cell_value.strip()
 
                 if cell_value:
                     # Include column context if available
@@ -724,7 +739,9 @@ class CsvParser(DocumentParser):
                 text_parts = []
 
                 for col_idx, cell_value in enumerate(row_data):
-                    cell_str = str(cell_value).strip()
+                    cell_str = str(cell_value)
+                    if self.strip_whitespace:
+                        cell_str = cell_str.strip()
                     if cell_str:
                         # Include column context if available
                         if header_row and row > 0 and col_idx < len(header_row):
@@ -765,14 +782,20 @@ class CsvParser(DocumentParser):
                 else:
                     raise ValueError("Could not decode CSV content with any known encoding")
 
-        # Detect dialect if requested
-        if self.detect_dialect:
+        # Determine if we should detect dialect or use explicit config
+        # If delimiter is explicitly configured (not default), use it regardless of detect_dialect
+        explicit_delimiter = self.config.get("delimiter") is not None
+        explicit_extract_header = self.config.get("extract_header") is not None
+        
+        if self.detect_dialect and not explicit_delimiter:
             try:
                 # Create a sample for dialect detection
                 sample = content[:min(len(content), 8192)]  # Use first 8kb max for detection
                 dialect = csv.Sniffer().sniff(sample)
-                has_header = csv.Sniffer().has_header(sample)
-                self.extract_header = has_header
+                # Only override extract_header if not explicitly configured
+                if not explicit_extract_header:
+                    has_header = csv.Sniffer().has_header(sample)
+                    self.extract_header = has_header
             except Exception as e:
                 logger.warning(f"Error detecting CSV dialect: {str(e)}. Using default.")
                 dialect = csv.excel  # Use excel dialect as fallback
@@ -783,7 +806,7 @@ class CsvParser(DocumentParser):
                 quotechar = self.quotechar
                 escapechar = None
                 doublequote = True
-                skipinitialspace = True
+                skipinitialspace = self.strip_whitespace  # Respect strip_whitespace config
                 lineterminator = '\r\n'
                 quoting = csv.QUOTE_MINIMAL
 
@@ -823,7 +846,7 @@ class CsvParser(DocumentParser):
 
         # Add CSV specific metadata
         metadata.update({
-            "row_count": len(csv_data),
+            "row_count": min(len(csv_data), self.max_rows),  # Show processed row count
             "column_count": len(csv_data[0]) if csv_data else 0,
             "has_header": self.extract_header,
             "dialect": {
