@@ -1,0 +1,149 @@
+[
+  {
+    "_id": {"$oid": "507f1f77bcf86cd799439011"},
+    "type": "article",
+    "title": "Introduction to MongoDB",
+    "content": "MongoDB is a NoSQL database that stores data in flexible, JSON-like documents.",
+    "author": {
+      "name": "John Doe",
+      "email": "john@example.com",
+      "id": {"$oid": "507f1f77bcf86cd799439012"}
+    },
+    "tags": ["database", "nosql", "mongodb", "tutorial"],
+    "created_at": {"$date": "2024-01-15T10:30:00Z"},
+    "updated_at": {"$date": "2024-01-15T10:30:00Z"},
+    "views": 1250,
+    "rating": 4.5
+  },
+  {
+    "_id": {"$oid": "507f1f77bcf86cd799439013"},
+    "type": "product",
+    "name": "Laptop Pro X1",
+    "description": "High-performance laptop for professionals",
+    "specs": {
+      "cpu": "Intel i9-12900K",
+      "ram": "32GB DDR5",
+      "storage": "1TB NVMe SSD",
+      "display": {
+        "size": "15.6 inches",
+        "resolution": "3840x2160",
+        "type": "OLED"
+      }
+    },
+    "price": 2499.99,
+    "inventory": {
+      "available": 45,
+      "warehouse": ["WH001", "WH003", "WH007"],
+      "reorder_level": 10
+    },
+    "categories": ["electronics", "computers", "laptops"],
+    "created_at": {"$date": "2024-01-10T08:00:00Z"},
+    "updated_at": {"$date": "2024-01-20T14:15:00Z"}
+  },
+  {
+    "_id": {"$oid": "507f1f77bcf86cd799439014"},
+    "type": "user",
+    "username": "jsmith",
+    "profile": {
+      "firstName": "Jane",
+      "lastName": "Smith",
+      "age": 28,
+      "address": {
+        "street": "123 Main St",
+        "city": "San Francisco",
+        "state": "CA",
+        "zip": "94102",
+        "country": "USA"
+      },
+      "interests": ["technology", "hiking", "photography"]
+    },
+    "account": {
+      "created": {"$date": "2023-06-01T00:00:00Z"},
+      "lastLogin": {"$date": "2024-01-25T09:30:00Z"},
+      "status": "active",
+      "subscription": {
+        "plan": "premium",
+        "expires": {"$date": "2024-06-01T00:00:00Z"}
+      }
+    },
+    "settings": {
+      "notifications": {
+        "email": true,
+        "push": false,
+        "sms": false
+      },
+      "privacy": {
+        "profileVisibility": "friends",
+        "showEmail": false
+      }
+    },
+    "related_documents": ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439015"]
+  },
+  {
+    "_id": {"$oid": "507f1f77bcf86cd799439015"},
+    "type": "order",
+    "orderNumber": "ORD-2024-001234",
+    "customer": {
+      "id": {"$oid": "507f1f77bcf86cd799439014"},
+      "name": "Jane Smith",
+      "email": "jane.smith@example.com"
+    },
+    "items": [
+      {
+        "productId": {"$oid": "507f1f77bcf86cd799439013"},
+        "name": "Laptop Pro X1",
+        "quantity": 1,
+        "price": 2499.99,
+        "subtotal": 2499.99
+      },
+      {
+        "productId": {"$oid": "507f1f77bcf86cd799439020"},
+        "name": "Wireless Mouse",
+        "quantity": 2,
+        "price": 49.99,
+        "subtotal": 99.98
+      }
+    ],
+    "totals": {
+      "subtotal": 2599.97,
+      "tax": 233.99,
+      "shipping": 0,
+      "total": 2833.96
+    },
+    "shipping": {
+      "method": "express",
+      "address": {
+        "street": "123 Main St",
+        "city": "San Francisco",
+        "state": "CA",
+        "zip": "94102"
+      },
+      "tracking": "1Z999AA10123456784"
+    },
+    "status": "shipped",
+    "timestamps": {
+      "placed": {"$date": "2024-01-20T15:30:00Z"},
+      "processed": {"$date": "2024-01-20T16:00:00Z"},
+      "shipped": {"$date": "2024-01-21T10:00:00Z"},
+      "estimated_delivery": {"$date": "2024-01-23T17:00:00Z"}
+    }
+  },
+  {
+    "_id": {"$oid": "507f1f77bcf86cd799439016"},
+    "type": "log",
+    "level": "INFO",
+    "service": "api-gateway",
+    "message": "Request processed successfully",
+    "metadata": {
+      "requestId": "req-123456",
+      "userId": "507f1f77bcf86cd799439014",
+      "endpoint": "/api/v1/orders",
+      "method": "GET",
+      "statusCode": 200,
+      "responseTime": 145,
+      "ip": "192.168.1.100"
+    },
+    "timestamp": {"$date": "2024-01-25T10:15:30Z"},
+    "tags": ["api", "success", "performance"]
+  }
+]
