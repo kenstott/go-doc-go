@@ -1,0 +1,24 @@
+{
+  "application": {
+    "name": "Document Manager",
+    "version": "1.0.0",
+    "description": "Universal document management system"
+  },
+  "configuration": {
+    "storage": {
+      "type": "s3",
+      "bucket": "test-bucket",
+      "region": "us-east-1"
+    },
+    "processing": {
+      "max_file_size": 10485760,
+      "supported_formats": ["pdf", "docx", "txt", "md", "json", "csv"],
+      "concurrent_workers": 4
+    }
+  },
+  "metadata": {
+    "created": "2024-01-01T00:00:00Z",
+    "updated": "2024-01-15T12:30:00Z",
+    "author": "Test System"
+  }
+}

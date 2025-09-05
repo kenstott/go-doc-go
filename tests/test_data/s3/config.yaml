@@ -1,0 +1,44 @@
+application:
+  name: S3 Test Application
+  version: 1.0.0
+  environment: testing
+
+storage:
+  s3:
+    bucket: test-bucket
+    region: us-east-1
+    prefix: documents/
+    endpoint_url: http://localhost:9000  # Minio endpoint
+    
+  options:
+    max_file_size: 10MB
+    allowed_extensions:
+      - .pdf
+      - .docx
+      - .txt
+      - .md
+      - .json
+      - .csv
+      - .yaml
+    
+processing:
+  parsers:
+    - markdown
+    - json
+    - csv
+    - text
+    - pdf
+    
+  options:
+    max_depth: 5
+    follow_links: true
+    extract_metadata: true
+    
+monitoring:
+  logging:
+    level: INFO
+    format: json
+  
+  metrics:
+    enabled: true
+    export_interval: 60

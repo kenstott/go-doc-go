@@ -1,0 +1,11 @@
+EmployeeID,Name,Department,Position,Salary,StartDate
+001,Alice Johnson,Engineering,Senior Developer,95000,2020-03-15
+002,Bob Smith,Marketing,Marketing Manager,85000,2019-07-22
+003,Carol Williams,Engineering,DevOps Engineer,90000,2021-01-10
+004,David Brown,Sales,Sales Representative,70000,2022-06-01
+005,Emma Davis,HR,HR Specialist,65000,2020-11-30
+006,Frank Miller,Engineering,Junior Developer,65000,2023-02-14
+007,Grace Wilson,Finance,Financial Analyst,75000,2021-08-05
+008,Henry Moore,IT,System Administrator,80000,2019-12-10
+009,Isabel Taylor,Marketing,Content Writer,60000,2022-09-20
+010,Jack Anderson,Engineering,Tech Lead,105000,2018-05-08
