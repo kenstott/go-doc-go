@@ -13,6 +13,7 @@ import uuid
 from typing import Dict, Any, List, Optional, Tuple, Union
 
 from ..relationships import RelationshipType
+from ..storage import ElementType
 
 try:
     # noinspection PyPackageRequirements
@@ -570,12 +571,12 @@ class PdfParser(DocumentParser):
         elements = []
         relationships = []
 
-        # Create and add a content element to hold all pages
-        content_id = self._generate_id("content_")
+        # Create and add a body element to hold all pages
+        content_id = self._generate_id("body_")
         content_element = {
             "element_id": content_id,
             "doc_id": doc_id,
-            "element_type": "content",
+            "element_type": ElementType.BODY.value,
             "parent_id": parent_id,
             "content_preview": f"PDF content with {min(len(doc), self.max_pages)} pages",
             "content_location": json.dumps({
@@ -666,7 +667,7 @@ class PdfParser(DocumentParser):
         page_element = {
             "element_id": page_id,
             "doc_id": doc_id,
-            "element_type": "page",
+            "element_type": ElementType.PAGE.value,
             "parent_id": parent_id,
             "content_preview": preview,
             "content_location": json.dumps({
@@ -755,9 +756,7 @@ class PdfParser(DocumentParser):
         # Extract text blocks using PyMuPDF's built-in text extraction
         blocks = page.get_text("blocks")
 
-        # Track headers for section structuring
-        section_stack = [{"id": page_id, "level": 0}]
-        current_section = None
+        # All text blocks will be direct children of the page
 
         # Sort blocks by their vertical position (top to bottom)
         blocks.sort(key=lambda b: b[1])  # Sort by y0 coordinate
@@ -816,10 +815,10 @@ class PdfParser(DocumentParser):
                                 re.search(r'\b(SECTION|Section|Chapter|CHAPTER|PART|Part)\s+\d+', text_stripped)):
                             is_header = True
 
-            # Generate element ID based on type
+            # Generate element ID and type
             if is_header:
                 element_id = self._generate_id(f"header_{i}_")
-                element_type = "header"
+                element_type = ElementType.HEADER.value
 
                 # Determine header level based on font size or other heuristics
                 header_level = 1  # Default
@@ -851,73 +850,13 @@ class PdfParser(DocumentParser):
                                     header_level = 5
                 except Exception as e:
                     logger.debug(f"Error determining header level: {str(e)}")
-
-                # Update section stack based on header level
-                while section_stack[-1]["level"] >= header_level:
-                    section_stack.pop()
-
-                # Create section element
-                section_id = self._generate_id(f"section_{i}_")
-                section_element = {
-                    "element_id": section_id,
-                    "doc_id": doc_id,
-                    "element_type": "section",
-                    "parent_id": section_stack[-1]["id"],
-                    "content_preview": f"Section: {text[:50]}{'...' if len(text) > 50 else ''}",
-                    "content_location": json.dumps({
-                        "source": source_id,
-                        "type": "section",
-                        "page": page.number + 1,
-                        "bbox": [x0, y0, x1, y1]
-                    }),
-                    "content_hash": self._generate_hash(text),
-                    "metadata": {
-                        "page_number": page.number + 1,
-                        "bbox": [x0, y0, x1, y1],
-                        "level": header_level
-                    }
-                }
-
-                elements.append(section_element)
-
-                # Create relationship from parent to section
-                section_parent_id = section_stack[-1]["id"]
-                contains_section_relationship = {
-                    "relationship_id": self._generate_id("rel_"),
-                    "source_id": section_parent_id,
-                    "target_id": section_id,
-                    "relationship_type": RelationshipType.CONTAINS.value,
-                    "metadata": {
-                        "confidence": 1.0,
-                        "index": i
-                    }
-                }
-                relationships.append(contains_section_relationship)
-
-                # Create inverse relationship
-                section_contained_relationship = {
-                    "relationship_id": self._generate_id("rel_"),
-                    "source_id": section_id,
-                    "target_id": section_parent_id,
-                    "relationship_type": RelationshipType.CONTAINED_BY.value,
-                    "metadata": {
-                        "confidence": 1.0
-                    }
-                }
-                relationships.append(section_contained_relationship)
-
-                # Add to section stack
-                section_stack.append({"id": section_id, "level": header_level})
-                current_section = section_id
-
-                # Set this header's parent to the section
-                parent_id_for_block = section_id
             else:
-                element_id = self._generate_id(f"textblock_{i}_")
-                element_type = "paragraph"
+                element_id = self._generate_id(f"paragraph_{i}_")
+                element_type = ElementType.PARAGRAPH.value
+                header_level = None
 
-                # Set parent to current section if we have one, otherwise to the page
-                parent_id_for_block = section_stack[-1]["id"]
+            # All text blocks are children of the page
+            parent_id_for_block = page_id
 
             # Create text block element
             content_preview = text.replace('\n', ' ')
@@ -1028,7 +967,7 @@ class PdfParser(DocumentParser):
                 table_element = {
                     "element_id": table_id,
                     "doc_id": doc_id,
-                    "element_type": "table",
+                    "element_type": ElementType.TABLE.value,
                     "parent_id": page_id,
                     "content_preview": content_preview,
                     "content_location": json.dumps({
@@ -1089,7 +1028,7 @@ class PdfParser(DocumentParser):
                     header_row_element = {
                         "element_id": header_row_id,
                         "doc_id": doc_id,
-                        "element_type": "table_header_row",
+                        "element_type": ElementType.TABLE_HEADER_ROW.value,
                         "parent_id": table_id,
                         "content_preview": header_text[:self.max_content_preview] + (
                             "..." if len(header_text) > self.max_content_preview else ""),
@@ -1143,7 +1082,7 @@ class PdfParser(DocumentParser):
                         header_cell_element = {
                             "element_id": cell_id,
                             "doc_id": doc_id,
-                            "element_type": "table_header",
+                            "element_type": ElementType.TABLE_HEADER.value,
                             "parent_id": header_row_id,
                             "content_preview": cell_text[:self.max_content_preview] + (
                                 "..." if len(cell_text) > self.max_content_preview else ""),
@@ -1206,7 +1145,7 @@ class PdfParser(DocumentParser):
                     row_element = {
                         "element_id": row_id,
                         "doc_id": doc_id,
-                        "element_type": "table_row",
+                        "element_type": ElementType.TABLE_ROW.value,
                         "parent_id": table_id,
                         "content_preview": f"Row {row_idx + 1}",
                         "content_location": json.dumps({
@@ -1259,7 +1198,7 @@ class PdfParser(DocumentParser):
                         cell_element = {
                             "element_id": cell_id,
                             "doc_id": doc_id,
-                            "element_type": "table_cell",
+                            "element_type": ElementType.TABLE_CELL.value,
                             "parent_id": row_id,
                             "content_preview": cell_text[:self.max_content_preview] + (
                                 "..." if len(cell_text) > self.max_content_preview else ""),
@@ -1527,7 +1466,7 @@ class PdfParser(DocumentParser):
             annotations_element = {
                 "element_id": annotations_id,
                 "doc_id": doc_id,
-                "element_type": "annotations",
+                "element_type": ElementType.COMMENTS_CONTAINER.value,
                 "parent_id": page_id,
                 "content_preview": "Page annotations",
                 "content_location": json.dumps({
