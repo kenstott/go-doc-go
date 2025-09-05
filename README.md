@@ -94,29 +94,77 @@ storage:
 
 ## Document Materialization System
 
-Go-Doc-Go includes a powerful document materialization system that can reconstruct complete documents from their structured elements in multiple formats with intelligent format-specific optimizations.
+**⚠️ Important:** This is NOT file format conversion (e.g., DOCX → XLSX). Go-Doc-Go parses documents into structured elements, then materializes them as display formats for search results and document previews.
+
+Go-Doc-Go includes a powerful document materialization system designed for **search engines and document preview systems**. After parsing documents into structured elements, it can reconstruct and display them in multiple user-friendly formats with intelligent format-specific optimizations.
+
+### Use Cases
+
+This system is ideal for:
+- **🔍 Search Engines**: Display clean previews of document matches without downloading original files
+- **📱 Document Portals**: Show readable summaries of complex documents (PDFs, PowerPoints, Excel sheets)
+- **🤖 AI/ML Pipelines**: Extract structured content for further processing
+- **📊 Content Analysis**: Convert documents to structured data for analysis
 
 ### Document Materialization Features
 
-- **📄 Multi-Format Export**: Convert documents to text, markdown, HTML, JSON, YAML, and XML with format-specific optimizations
+- **📄 Multi-Format Display**: Present parsed documents as text, markdown, HTML, JSON, YAML, and XML with format-specific optimizations
 - **🎯 Format-Aware Reconstruction**: Intelligent handling of document-specific elements (slides, headers, footnotes, etc.)
 - **⚡ Batch Processing**: Efficient bulk document materialization for performance
 - **📊 Rich Metadata**: Include document outlines, statistics, and structural analysis
 - **🔄 Content Integration**: Seamlessly combine search results with materialized document content
 - **💾 Memory Optimization**: Configurable content length limits and selective materialization options
 
-### Document Format Support
+### Supported Document Types (Input)
 
-| Format | Description | Best For | Element Conversion |
-|--------|-------------|----------|-------------------|
-| `text` | Plain text with preserved structure | Reading, analysis | Simple text conversion with separators |
-| `markdown` | Structured markdown with tables/headers | Documentation, wikis | Rich markdown with proper formatting |
-| `html` | Styled HTML with CSS classes | Web display, rich rendering | Full HTML with semantic markup |
-| `docx_html` | Word-optimized HTML styling | Word document preservation | Times New Roman, page margins, footnotes |
-| `pptx_html` | Presentation-optimized HTML layout | Slide presentation display | Slide layouts, speaker notes, visual styling |
-| `json` | Structured JSON representation | API integration, data processing | Complete element hierarchy and metadata |
-| `yaml` | Human-readable YAML format | Configuration, readable data export | Structured data with comments |
+Go-Doc-Go can parse these document formats into structured elements:
+- **PDF documents** → Text blocks, images, tables, headers/footers
+- **Microsoft Word (DOCX)** → Paragraphs, headers, tables, images, footnotes  
+- **Microsoft PowerPoint (PPTX)** → Slides, speaker notes, text boxes, images
+- **Microsoft Excel (XLSX)** → Worksheets, cells, tables, charts
+- **HTML pages** → Elements, links, images, text content
+- **Markdown files** → Headers, paragraphs, lists, code blocks, links
+- **Plain text files** → Paragraphs, sections
+- **CSV files** → Rows, columns, headers
+- **JSON files** → Objects, arrays, key-value pairs
+- **XML files** → Elements, attributes, hierarchical structure
+
+### Display Format Options (Output)
+
+After parsing, documents can be materialized in these display formats:
+
+| Format | Description | Best For | What You Get |
+|--------|-------------|----------|--------------|
+| `text` | Plain text with preserved structure | Reading, analysis | Clean text with section separators |
+| `markdown` | Structured markdown with tables/headers | Documentation, wikis | Formatted markdown with headers, tables, lists |
+| `html` | Styled HTML with CSS classes | Web display, rich rendering | Full HTML with semantic markup and styling |
+| `docx_html` | Word-optimized HTML styling | Preserving Word document appearance | HTML with Times New Roman, margins, footnote styling |
+| `pptx_html` | Presentation-optimized HTML layout | Slide presentation display | HTML with slide layouts, speaker notes, visual styling |
+| `json` | Structured JSON representation | API integration, data processing | Complete element hierarchy and metadata as JSON |
+| `yaml` | Human-readable YAML format | Configuration, readable data export | Structured data with comments in YAML format |
 | `xml` | Structured XML representation | Legacy systems, data exchange | Semantic XML with proper namespaces |
+
+### How It Works: Parse → Structure → Materialize
+
+**Example: PowerPoint Presentation Processing**
+
+```
+Input: presentation.pptx (5 slides with speaker notes)
+    ↓ PARSE
+Structured Elements:
+- slide_1 (element_type: "slide", content: "Introduction to AI")  
+- slide_notes_1 (element_type: "slide_notes", content: "Welcome everyone...")
+- slide_2 (element_type: "slide", content: "Machine Learning Basics")
+- slide_notes_2 (element_type: "slide_notes", content: "ML is a subset...")
+- image_1 (element_type: "image", content: "diagram.png")
+    ↓ MATERIALIZE
+Display Formats:
+- HTML: <div class="slide">Introduction to AI</div><div class="slide-notes">Welcome everyone...</div>
+- Markdown: # Slide 1: Introduction to AI\n> **Notes:** Welcome everyone...
+- Text: --- SLIDE 1 ---\nIntroduction to AI\nSpeaker Notes: Welcome everyone...
+```
+
+This is **NOT** converting PowerPoint → Excel. It's extracting content for search and display.
 
 ### Document Materialization Examples
 
@@ -196,11 +244,11 @@ options = DocumentMaterializationOptions(
 )
 ```
 
-## Advanced Document Reconstruction
+## Advanced Document Display
 
-The system includes sophisticated document reconstruction that handles format-specific element types with intelligent conversions:
+The system includes sophisticated document display capabilities that handle format-specific element types with intelligent display conversions:
 
-### Format-Specific Element Conversion
+### Format-Specific Element Display
 
 | Source Element | Text Output | Markdown Output | HTML Output |
 |---------------|-------------|-----------------|-------------|
@@ -213,25 +261,25 @@ The system includes sophisticated document reconstruction that handles format-sp
 | `image` | `[IMAGE: alt_text]` | `![alt_text](src)` | `<img src="..." alt="...">` |
 | `table` | Formatted table | Markdown table | HTML `<table>` |
 
-### Document Format Detection and Recommendations
+### Document Format Detection and Display Recommendations
 
 ```python
-# Analyze document format and get reconstruction advice
+# Analyze document format and get display advice
 format_info = db.get_document_format_info("complex_doc_123")
 
 print(f"Source: {format_info['source_format']}")           # 'pptx'
 print(f"Detected: {format_info['detected_format']}")       # 'pptx' 
 print(f"Elements: {format_info['format_specific_elements']}")  # ['slide', 'slide_notes', 'shape']
 
-for recommendation in format_info['reconstruction_recommendations']:
+for recommendation in format_info['display_recommendations']:
     print(f"• {recommendation}")
 # • PowerPoint presentation with 15 slides detected
 # • Speaker notes found on 8 slides  
 # • Recommend 'pptx_html' format for best presentation layout
 # • Use 'markdown' format for readable slide content export
 
-# Check reconstruction quality for different formats
-validation = db.validate_reconstruction_capability("doc_123")
+# Check display quality for different formats
+validation = db.validate_display_capability("doc_123")
 for format_type, assessment in validation['format_assessments'].items():
     print(f"{format_type}: {assessment['quality']} quality")
     print(f"  Supported elements: {assessment['supported_elements']}")
@@ -379,12 +427,12 @@ for doc_id, doc in quarterly_reports.items():
             f.write(doc.formatted_content)
 ```
 
-### Document Format Conversion
+### Document Display in Multiple Formats
 
 ```python
 from go-doc-go import get_document_in_format
 
-# Convert a single document to multiple formats
+# Display a parsed document in multiple formats
 doc_id = "technical_specification_v2"
 
 # Get as markdown for documentation
