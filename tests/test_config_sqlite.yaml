@@ -1,0 +1,18 @@
+storage:
+  backend: "sqlite"
+  path: ":memory:"  # Use in-memory SQLite for tests
+  
+embedding:
+  enabled: false
+  
+content_sources:
+  - name: "test-files"
+    type: "file"
+    base_path: "./test_data"
+    file_pattern: "**/*"
+    
+relationship_detection:
+  enabled: false
+  
+logging:
+  level: "WARNING"

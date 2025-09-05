@@ -1,0 +1,11 @@
+storage:
+  backend: file
+  path: ./test_storage
+  store_full_text: true
+  
+embeddings:
+  provider: none
+  
+adapters:
+  - type: file
+    base_path: ./test_data
