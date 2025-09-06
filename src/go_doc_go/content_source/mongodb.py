@@ -552,11 +552,16 @@ class MongoDBContentSource(ContentSource):
         if isinstance(obj, ObjectId):
             return str(obj)
 
+        # Handle standard datetime objects
+        import datetime as dt
+        if isinstance(obj, (dt.datetime, dt.date)):
+            return obj.isoformat()
+
         # Handle other MongoDB-specific types
         try:
             # noinspection PyUnresolvedReferences
-            from bson import Timestamp, datetime
-            if isinstance(obj, (Timestamp, datetime)):
+            from bson import Timestamp
+            if isinstance(obj, Timestamp):
                 return str(obj)
         except ImportError:
             pass

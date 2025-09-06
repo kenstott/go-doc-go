@@ -9,7 +9,7 @@ from typing import Dict, Any
 from bson import ObjectId
 
 from go_doc_go.adapter.mongodb import MongoDBAdapter
-from .conftest import requires_pymongo, requires_docker
+from conftest import requires_pymongo, requires_docker
 
 
 class TestMongoDBAdapterUnit:
@@ -205,12 +205,13 @@ class TestMongoDBAdapterIntegration:
         doc_ids = insert_test_documents(doc)
         doc_id = doc_ids[0]
         
-        # Create adapter
-        adapter = MongoDBAdapter({
+        # Create adapter with correct connection string
+        config = {
             "connection_string": "mongodb://admin:admin123@localhost:27017/",
             "database": "test_db",
             "collection": "test_collection"
-        })
+        }
+        adapter = MongoDBAdapter(config)
         
         # Get content
         source = f"mongodb://localhost/test_db/test_collection/{str(doc_id)}"

@@ -394,8 +394,32 @@ class MongoDBAdapter(ContentSourceAdapter):
         Raises:
             ValueError: If connection cannot be established
         """
+        # Determine which connection string to use
+        final_connection_string = connection_string
+        
+        # If we have a default connection string with authentication, use it
+        # This handles the case where the source URI doesn't include auth info
+        if self.default_connection_string and "@" in self.default_connection_string and "@" not in connection_string:
+            # Extract host/port from the parsed connection string
+            # and combine with auth info from default connection string
+            try:
+                # Parse default connection string to get auth info
+                default_parts = self.default_connection_string.split("//")
+                if len(default_parts) == 2:
+                    auth_and_host = default_parts[1]
+                    if "@" in auth_and_host:
+                        auth_part = auth_and_host.split("@")[0]
+                        # Extract host from parsed connection string
+                        parsed_parts = connection_string.split("//")
+                        if len(parsed_parts) == 2:
+                            host_part = parsed_parts[1]
+                            final_connection_string = f"{parsed_parts[0]}//{auth_part}@{host_part}"
+            except Exception:
+                # Fall back to default connection string if parsing fails
+                final_connection_string = self.default_connection_string
+
         # Use a masked version as the cache key
-        cache_key = self._mask_connection_string(connection_string)
+        cache_key = self._mask_connection_string(final_connection_string)
 
         # Check if client exists in cache
         if cache_key in self.clients:
@@ -408,7 +432,7 @@ class MongoDBAdapter(ContentSourceAdapter):
         }
 
         # Add authentication if needed and not in connection string
-        if self.username and self.password and "@" not in connection_string:
+        if self.username and self.password and "@" not in final_connection_string:
             client_options["username"] = self.username
             client_options["password"] = self.password
             client_options["authSource"] = self.auth_source
@@ -416,7 +440,7 @@ class MongoDBAdapter(ContentSourceAdapter):
 
         try:
             # Create MongoDB client
-            client = MongoClient(connection_string, **client_options)
+            client = MongoClient(final_connection_string, **client_options)
 
             # Test connection with a ping
             client.admin.command("ping")
@@ -475,7 +499,8 @@ class MongoDBAdapter(ContentSourceAdapter):
             return document, None
 
         # Handle array indexing and nested fields
-        parts = field_path.replace('[', '.').replace(']', '').split('.')
+        # Convert URL-style path (sections/0/title) to dot notation for MongoDB access
+        parts = field_path.replace('/', '.').replace('[', '.').replace(']', '').split('.')
 
         current = document
         for part in parts:
