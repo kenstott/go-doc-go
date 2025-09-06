@@ -9,8 +9,13 @@ import pytest
 import tempfile
 import subprocess
 import logging
+import threading
+import http.server
+import socketserver
 from typing import Dict, Any, Generator, Optional, List
 from unittest.mock import MagicMock
+import socket
+import base64
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
@@ -586,3 +591,171 @@ requires_docker = pytest.mark.skipif(
     ).returncode != 0,
     reason="Docker is not available"
 )
+
+
+# Web server fixtures for testing web content source and adapter
+
+def find_free_port() -> int:
+    """Find a free port to use for the test web server."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+    return port
+
+
+class AuthHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
+    """HTTP request handler with basic authentication support."""
+    
+    def do_GET(self):
+        """Handle GET requests with optional authentication."""
+        # Check if authentication is required for protected paths
+        if self.path.startswith('/protected/'):
+            auth = self.headers.get('Authorization')
+            if not auth or not self.check_auth(auth):
+                self.send_error(401, 'Unauthorized')
+                self.send_header('WWW-Authenticate', 'Basic realm="Test Realm"')
+                self.end_headers()
+                return
+        
+        # Serve files normally
+        super().do_GET()
+    
+    def do_HEAD(self):
+        """Handle HEAD requests with optional authentication."""
+        # Check if authentication is required for protected paths
+        if self.path.startswith('/protected/'):
+            auth = self.headers.get('Authorization')
+            if not auth or not self.check_auth(auth):
+                self.send_error(401, 'Unauthorized')
+                self.send_header('WWW-Authenticate', 'Basic realm="Test Realm"')
+                self.end_headers()
+                return
+        
+        # Handle HEAD request normally
+        super().do_HEAD()
+    
+    def check_auth(self, auth_header: str) -> bool:
+        """Check basic authentication credentials."""
+        if not auth_header.startswith('Basic '):
+            return False
+        
+        try:
+            credentials = base64.b64decode(auth_header[6:]).decode('utf-8')
+            username, password = credentials.split(':')
+            # Test credentials
+            return username == 'testuser' and password == 'testpass'
+        except Exception:
+            return False
+    
+    def log_message(self, format, *args):
+        """Override to suppress server logs during tests."""
+        pass
+
+
+@pytest.fixture
+def web_server(request):
+    """
+    Start a test web server serving files from tests/assets/web.
+    
+    Returns a dictionary with server configuration.
+    """
+    # Get the web assets directory
+    assets_dir = os.path.join(
+        os.path.dirname(__file__), '..', 'assets', 'web'
+    )
+    
+    if not os.path.exists(assets_dir):
+        pytest.skip(f"Web assets directory not found: {assets_dir}")
+    
+    # Find a free port
+    port = find_free_port()
+    
+    # Create server
+    os.chdir(assets_dir)  # Change to assets directory
+    handler = AuthHTTPRequestHandler
+    httpd = socketserver.TCPServer(("", port), handler)
+    httpd.allow_reuse_address = True
+    
+    # Start server in a thread
+    server_thread = threading.Thread(target=httpd.serve_forever)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    # Wait for server to be ready
+    time.sleep(0.5)
+    
+    # Return server configuration
+    config = {
+        "base_url": f"http://localhost:{port}",
+        "port": port,
+        "assets_dir": assets_dir,
+        "auth": {
+            "username": "testuser",
+            "password": "testpass"
+        }
+    }
+    
+    yield config
+    
+    # Shutdown server
+    httpd.shutdown()
+    httpd.server_close()
+
+
+@pytest.fixture
+def web_server_config(web_server) -> Dict[str, Any]:
+    """
+    Provide web server configuration for tests.
+    """
+    return {
+        "base_url": web_server["base_url"],
+        "port": web_server["port"],
+        "test_urls": [
+            f"{web_server['base_url']}/index.html",
+            f"{web_server['base_url']}/page1.html",
+            f"{web_server['base_url']}/page2.html",
+            f"{web_server['base_url']}/nested/page3.html",
+            f"{web_server['base_url']}/data.json",
+            f"{web_server['base_url']}/api/data.csv",
+            f"{web_server['base_url']}/markdown.html"
+        ],
+        "auth": web_server["auth"]
+    }
+
+
+@pytest.fixture
+def sample_html_content() -> str:
+    """
+    Provide sample HTML content for testing.
+    """
+    return """<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Page</title>
+    <meta name="description" content="A test page">
+</head>
+<body>
+    <h1>Test Page</h1>
+    <p>This is a test page with <a href="page2.html">a link</a>.</p>
+    <p>And <a href="http://external.com">an external link</a>.</p>
+</body>
+</html>"""
+
+
+@pytest.fixture
+def sample_xml_content() -> str:
+    """
+    Provide sample XML content for testing.
+    """
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<root>
+    <item id="1">
+        <name>Item 1</name>
+        <value>100</value>
+    </item>
+    <item id="2">
+        <name>Item 2</name>
+        <value>200</value>
+    </item>
+</root>"""
