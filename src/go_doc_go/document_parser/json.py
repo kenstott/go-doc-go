@@ -804,7 +804,7 @@ class JSONParser(DocumentParser):
         # Get content from binary_path or direct content
         content = None
 
-        if "binary_path" in doc_content and os.path.exists(doc_content["binary_path"]):
+        if "binary_path" in doc_content and doc_content["binary_path"] and os.path.exists(doc_content["binary_path"]):
             try:
                 with open(doc_content["binary_path"], 'r', encoding='utf-8') as f:
                     content = f.read()

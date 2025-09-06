@@ -648,8 +648,7 @@ class CsvParser(DocumentParser):
 
         return result
 
-    @staticmethod
-    def _extract_full_text_from_csv(csv_data: List[List[str]], header_row: Optional[List[str]]) -> str:
+    def _extract_full_text_from_csv(self, csv_data: List[List[str]], header_row: Optional[List[str]]) -> str:
         """
         Extract all text content from the CSV for date extraction.
 
@@ -680,8 +679,7 @@ class CsvParser(DocumentParser):
 
         return "\n".join(text_parts)
 
-    @staticmethod
-    def _get_cell_text_for_dates(element: Dict[str, Any], csv_data: List[List[str]],
+    def _get_cell_text_for_dates(self, element: Dict[str, Any], csv_data: List[List[str]],
                                  header_row: Optional[List[str]]) -> str:
         """
         Get the text content of a specific cell for date extraction.
@@ -716,8 +714,7 @@ class CsvParser(DocumentParser):
 
         return ""
 
-    @staticmethod
-    def _get_row_text_for_dates(element: Dict[str, Any], csv_data: List[List[str]],
+    def _get_row_text_for_dates(self, element: Dict[str, Any], csv_data: List[List[str]],
                                 header_row: Optional[List[str]]) -> str:
         """
         Get the text content of a specific row for date extraction.
