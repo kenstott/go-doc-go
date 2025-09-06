@@ -62,11 +62,14 @@ class DatabaseAdapter(ContentSourceAdapter):
         )
 
         # Return content with metadata
+        # Mask password in connection string for metadata
+        masked_connection = self._mask_password(db_info["connection_id"])
+        
         return {
             "content": content,
             "content_type": content_type,
             "metadata": {
-                "database": db_info["connection_id"],
+                "database": masked_connection,
                 "table": db_info["table"],
                 "record_id": db_info["pk_value"],
                 "content_column": db_info["content_column"]
@@ -116,29 +119,72 @@ class DatabaseAdapter(ContentSourceAdapter):
         pk_value = db_info["pk_value"]
         content_column = db_info["content_column"]
 
-        query = f"SELECT {content_column} FROM {table} WHERE {pk_column} = ?"
-
-        cursor = conn.execute(query, (pk_value,))
+        # Use appropriate query syntax and execution method based on connection type
+        if isinstance(conn, sqlite3.Connection):
+            query = f"SELECT {content_column} FROM {table} WHERE {pk_column} = ?"
+            cursor = conn.execute(query, (pk_value,))
+        else:
+            # For PostgreSQL and other databases
+            query = f"SELECT {content_column} FROM {table} WHERE {pk_column} = %s"
+            cursor = conn.cursor()
+            cursor.execute(query, (pk_value,))
+        
         row = cursor.fetchone()
+        
+        if not isinstance(conn, sqlite3.Connection):
+            cursor.close()
 
         if row is None:
             raise ValueError(f"Record not found: {pk_value}")
 
         content = row[0]
 
-        # If content is already bytes, return directly
+        # Handle different data types
         if isinstance(content, bytes):
             return content
+        elif isinstance(content, memoryview):
+            # PostgreSQL may return binary data as memoryview
+            return bytes(content)
+        elif hasattr(content, 'tobytes'):
+            # Handle buffer-like objects
+            return content.tobytes()
+        else:
+            # Otherwise convert string to bytes
+            return content.encode('utf-8')
 
-        # Otherwise convert string to bytes
-        return content.encode('utf-8')
-
+    @staticmethod
+    def _mask_password(connection_string: str) -> str:
+        """
+        Mask password in connection string for display.
+        
+        Args:
+            connection_string: Database connection string
+            
+        Returns:
+            Connection string with password masked
+        """
+        import re
+        
+        # Pattern for user:password@host
+        pattern = r'://([^:]+):([^@]+)@'
+        match = re.search(pattern, connection_string)
+        
+        if match:
+            user = match.group(1)
+            # Replace password with asterisks
+            masked = re.sub(pattern, f'://{user}:****@', connection_string)
+            return masked
+        
+        return connection_string
+    
     @staticmethod
     def _parse_db_source(source: str) -> Optional[Dict[str, str]]:
         """
         Parse database source URI.
 
         Format: db://<connection_id>/<table>/<pk_column>/<pk_value>/<content_column>[/<content_type>]
+        
+        For SQLite files with absolute paths, we need to be smarter about parsing.
 
         Returns:
             Dictionary with connection info or None if invalid
@@ -155,17 +201,63 @@ class DatabaseAdapter(ContentSourceAdapter):
         if len(parts) < 5:
             return None
 
+        # Handle different types of connection IDs:
+        # 1. Database URIs like postgresql://user:pass@host:port/db
+        # 2. SQLite file paths (absolute or relative)  
+        # 3. Simple identifiers
+        
+        connection_id = parts[0]
+        remaining_parts = parts[1:]
+        
+        # Check if this is a database URI (postgresql://, mysql://, etc.)
+        # Pattern: ['postgresql:', '', 'user:pass@host:port', 'database', 'table', 'pk', 'value', 'content']
+        if connection_id.endswith(':') and len(parts) >= 8 and parts[1] == '':
+            # This is a database URI like postgresql://user:pass@host:port/db
+            # Reconstruct: postgresql://user:pass@host:port/database
+            db_type = connection_id[:-1]  # Remove the ':'
+            connection_id = f"{db_type}://{parts[2]}/{parts[3]}"
+            remaining_parts = parts[4:]  # Start from table name
+        
+        # Handle SQLite file paths (absolute paths with slashes)
+        elif (not connection_id and len(parts) > 5) or connection_id in ['var', 'tmp', 'Users'] or parts[0] == '':
+            # This is likely an absolute path like /var/folders/.../file.db
+            # Reconstruct the path until we find a .db file or have enough remaining parts
+            path_parts = []
+            table_index = None
+            
+            for i, part in enumerate(parts):
+                if part.endswith('.db') or part.endswith('.sqlite'):
+                    # Found the database file, everything after this should be table/pk/etc
+                    path_parts.append(part)
+                    if len(parts) - i - 1 >= 4:  # Need at least table/pk_col/pk_val/content_col
+                        table_index = i + 1
+                        break
+                else:
+                    path_parts.append(part)
+            
+            if table_index is not None:
+                connection_id = '/'.join(path_parts)
+                remaining_parts = parts[table_index:]
+            else:
+                # Fallback to original logic
+                connection_id = parts[0]
+                remaining_parts = parts[1:]
+        
+        # Now we should have: connection_id and remaining_parts with table/pk_column/pk_value/content_column[/content_type]
+        if len(remaining_parts) < 4:
+            return None
+
         # Extract content_type if provided
         content_type = None
-        if len(parts) >= 6:
-            content_type = parts[5]
+        if len(remaining_parts) >= 5:
+            content_type = remaining_parts[4]
 
         return {
-            "connection_id": parts[0],
-            "table": parts[1],
-            "pk_column": parts[2],
-            "pk_value": parts[3],
-            "content_column": parts[4],
+            "connection_id": connection_id,
+            "table": remaining_parts[0],
+            "pk_column": remaining_parts[1],
+            "pk_value": remaining_parts[2],
+            "content_column": remaining_parts[3],
             "content_type": content_type
         }
 
@@ -288,6 +380,12 @@ class DatabaseAdapter(ContentSourceAdapter):
                 cursor = conn.cursor()
                 cursor.execute(query, params)
                 row = cursor.fetchone()
+                
+                # Store column descriptions before closing cursor
+                columns = None
+                if cursor.description and not (isinstance(row, dict) or hasattr(row, 'keys')):
+                    columns = [desc[0] for desc in cursor.description]
+                
                 cursor.close()
 
             if row is None:
@@ -301,13 +399,13 @@ class DatabaseAdapter(ContentSourceAdapter):
                 if isinstance(row, dict) or hasattr(row, 'keys'):
                     content = row[content_column]
                 else:
-                    # For tuple-like cursors, get column index
-                    cursor = conn.cursor()
-                    columns = [desc[0] for desc in cursor.description]
-                    cursor.close()
-
-                    col_idx = columns.index(content_column)
-                    content = row[col_idx]
+                    # For tuple-like cursors, use stored column info
+                    if columns:
+                        col_idx = columns.index(content_column)
+                        content = row[col_idx]
+                    else:
+                        # Fallback: assume first column is the content
+                        content = row[0]
 
             # Handle binary data
             if isinstance(content, bytes):

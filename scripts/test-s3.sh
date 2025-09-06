@@ -1,140 +1,128 @@
 #!/bin/bash
-# Script to run S3 adapter and content source tests with Minio
+# Simple S3 test setup script
+# Starts Minio for testing, then you can use pytest directly
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-echo -e "${GREEN}=== S3 Testing Script ===${NC}"
-echo ""
+echo "=== S3 Test Setup ==="
 
-# Check if Docker is available
-if ! command -v docker &> /dev/null; then
-    echo -e "${RED}Error: Docker is not installed or not in PATH${NC}"
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Check Docker
+if ! command_exists docker; then
+    echo "Error: Docker is required but not installed"
     exit 1
 fi
 
-# Check if docker-compose is available
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${YELLOW}Warning: docker-compose not found, trying 'docker compose'${NC}"
+# Check docker-compose vs docker compose
+if command_exists docker-compose; then
+    DOCKER_COMPOSE="docker-compose"
+elif docker compose version &> /dev/null; then
     DOCKER_COMPOSE="docker compose"
 else
-    DOCKER_COMPOSE="docker-compose"
+    echo "Error: Neither docker-compose nor 'docker compose' is available"
+    exit 1
 fi
 
-# Parse command line arguments
-SKIP_DOCKER=false
-COVERAGE=false
-VERBOSE=false
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --skip-docker)
-            SKIP_DOCKER=true
-            shift
-            ;;
-        --coverage)
-            COVERAGE=true
-            shift
-            ;;
-        --verbose|-v)
-            VERBOSE=true
-            shift
-            ;;
-        --help|-h)
-            echo "Usage: $0 [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --skip-docker    Skip Docker setup (use existing Minio)"
-            echo "  --coverage       Run tests with coverage reporting"
-            echo "  --verbose, -v    Run tests in verbose mode"
-            echo "  --help, -h       Show this help message"
-            exit 0
-            ;;
-        *)
-            echo -e "${RED}Unknown option: $1${NC}"
-            exit 1
-            ;;
-    esac
-done
-
-# Change to project root
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_ROOT"
 
-# Start Minio if not skipping Docker
-if [ "$SKIP_DOCKER" = false ]; then
-    echo -e "${YELLOW}Starting Minio container...${NC}"
-    $DOCKER_COMPOSE -f docker-compose.test.yml up -d
+case "${1:-start}" in
+    start|up)
+        echo "Starting Minio container..."
+        $DOCKER_COMPOSE -f docker-compose.test.yml up -d
+        
+        echo "Waiting for Minio to be ready..."
+        for i in {1..30}; do
+            if docker exec doculyzer-test-minio mc alias set minio http://localhost:9000 minioadmin minioadmin &> /dev/null; then
+                echo "Minio is ready!"
+                break
+            else
+                if [[ $i -eq 30 ]]; then
+                    echo "Error: Minio failed to start after 60s"
+                    $DOCKER_COMPOSE -f docker-compose.test.yml logs minio
+                    exit 1
+                else
+                    echo "Waiting... ($i/30)"
+                    sleep 2
+                fi
+            fi
+        done
+        
+        echo ""
+        echo "Minio is running! Now you can run tests with pytest:"
+        echo ""
+        echo "  # Run all S3 tests"
+        echo "  pytest tests/test_adapters/test_s3_adapter.py tests/test_content_sources/test_s3_content_source.py tests/test_integration/test_s3_integration.py -v"
+        echo ""
+        echo "  # Run only unit tests"
+        echo "  pytest tests/test_adapters/test_s3_adapter.py::TestS3AdapterUnit tests/test_content_sources/test_s3_content_source.py::TestS3ContentSourceUnit -v"
+        echo ""
+        echo "  # Run only integration tests"
+        echo "  pytest tests/test_adapters/test_s3_adapter.py::TestS3AdapterIntegration tests/test_content_sources/test_s3_content_source.py::TestS3ContentSourceIntegration tests/test_integration/test_s3_integration.py -v"
+        echo ""
+        echo "  # Run with coverage"
+        echo "  pytest tests/test_*/*s3* -v --cov=src/go_doc_go/adapter/s3 --cov=src/go_doc_go/content_source/s3 --cov-report=html"
+        echo ""
+        echo "When done, stop Minio with:"
+        echo "  $0 stop"
+        ;;
     
-    # Wait for Minio to be ready
-    echo -e "${YELLOW}Waiting for Minio to be ready...${NC}"
-    MAX_ATTEMPTS=30
-    ATTEMPT=0
+    stop|down)
+        echo "Stopping Minio container..."
+        $DOCKER_COMPOSE -f docker-compose.test.yml down -v
+        echo "Minio stopped."
+        ;;
     
-    while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+    restart)
+        echo "Restarting Minio container..."
+        $DOCKER_COMPOSE -f docker-compose.test.yml down -v
+        $DOCKER_COMPOSE -f docker-compose.test.yml up -d
+        
+        echo "Waiting for Minio to be ready..."
+        sleep 5
         if docker exec doculyzer-test-minio mc alias set minio http://localhost:9000 minioadmin minioadmin &> /dev/null; then
-            echo -e "${GREEN}Minio is ready!${NC}"
-            break
+            echo "Minio is ready!"
+        else
+            echo "Warning: Minio might not be fully ready"
         fi
-        ATTEMPT=$((ATTEMPT + 1))
-        echo -n "."
-        sleep 2
-    done
+        ;;
     
-    if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-        echo -e "${RED}Error: Minio failed to start${NC}"
+    status)
+        echo "Minio container status:"
+        $DOCKER_COMPOSE -f docker-compose.test.yml ps
+        ;;
+    
+    logs)
+        echo "Minio logs:"
         $DOCKER_COMPOSE -f docker-compose.test.yml logs minio
-        $DOCKER_COMPOSE -f docker-compose.test.yml down
+        ;;
+        
+    help|--help|-h)
+        echo "S3 Test Setup Script"
+        echo ""
+        echo "Usage: $0 [COMMAND]"
+        echo ""
+        echo "Commands:"
+        echo "  start, up      Start Minio container (default)"
+        echo "  stop, down     Stop Minio container"
+        echo "  restart        Restart Minio container"
+        echo "  status         Show container status"
+        echo "  logs           Show Minio logs"
+        echo "  help           Show this help"
+        echo ""
+        echo "After starting Minio, use pytest directly for more control:"
+        echo "  pytest tests/test_*/*s3* -v"
+        ;;
+    
+    *)
+        echo "Unknown command: $1"
+        echo "Use '$0 help' for available commands"
         exit 1
-    fi
-fi
-
-# Install test dependencies
-echo -e "${YELLOW}Installing test dependencies...${NC}"
-pip install -e ".[development,cloud-aws]" -q
-
-# Build pytest command
-PYTEST_CMD="python -m pytest"
-PYTEST_ARGS=""
-
-if [ "$COVERAGE" = true ]; then
-    PYTEST_ARGS="$PYTEST_ARGS --cov=src/go_doc_go/adapter/s3 --cov=src/go_doc_go/content_source/s3"
-    PYTEST_ARGS="$PYTEST_ARGS --cov-report=term-missing --cov-report=html"
-fi
-
-if [ "$VERBOSE" = true ]; then
-    PYTEST_ARGS="$PYTEST_ARGS -v"
-fi
-
-# Run tests
-echo ""
-echo -e "${GREEN}Running S3 adapter tests...${NC}"
-$PYTEST_CMD tests/test_adapters/test_s3_adapter.py $PYTEST_ARGS
-
-echo ""
-echo -e "${GREEN}Running S3 content source tests...${NC}"
-$PYTEST_CMD tests/test_content_sources/test_s3_content_source.py $PYTEST_ARGS
-
-echo ""
-echo -e "${GREEN}Running S3 integration tests...${NC}"
-$PYTEST_CMD tests/test_integration/test_s3_integration.py $PYTEST_ARGS
-
-# Cleanup
-if [ "$SKIP_DOCKER" = false ]; then
-    echo ""
-    echo -e "${YELLOW}Stopping Minio container...${NC}"
-    $DOCKER_COMPOSE -f docker-compose.test.yml down -v
-fi
-
-echo ""
-echo -e "${GREEN}=== S3 Tests Complete ===${NC}"
-
-if [ "$COVERAGE" = true ]; then
-    echo -e "${YELLOW}Coverage report saved to htmlcov/index.html${NC}"
-fi
+        ;;
+esac

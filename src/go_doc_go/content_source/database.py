@@ -175,7 +175,8 @@ class DatabaseContentSource(ContentSource):
                     raise ValueError(f"Document not found: {source_id}")
 
                 # Extract content and metadata
-                content = row[self.content_column]
+                # Use _mapping for SQLAlchemy 2.0 compatibility
+                content = row._mapping[self.content_column]
 
                 # If content is bytes, decode to string
                 if isinstance(content, bytes):
@@ -190,10 +191,10 @@ class DatabaseContentSource(ContentSource):
                 metadata = {}
                 for col in self.metadata_columns:
                     if col in row._mapping:
-                        metadata[col] = row[col]
+                        metadata[col] = row._mapping[col]
 
                 if self.timestamp_column and self.timestamp_column in row._mapping:
-                    metadata["last_modified"] = row[self.timestamp_column]
+                    metadata["last_modified"] = row._mapping[self.timestamp_column]
 
                 # Create a fully qualified source identifier for database content
                 conn_str_safe = self.connection_string.split('://')[1] if '://' in self.connection_string else 'unknown'
@@ -285,7 +286,7 @@ class DatabaseContentSource(ContentSource):
                 json_data = {}
                 for col in columns_to_fetch:
                     if col in row._mapping:
-                        value = row[col]
+                        value = row._mapping[col]
                         # Handle special types that need conversion
                         if isinstance(value, bytes):
                             try:
@@ -312,14 +313,14 @@ class DatabaseContentSource(ContentSource):
                 if not self.json_include_metadata:
                     for col in self.metadata_columns:
                         if col in row._mapping:
-                            metadata[col] = row[col]
+                            metadata[col] = row._mapping[col]
 
                     if self.timestamp_column and self.timestamp_column in row._mapping:
-                        metadata["last_modified"] = row[self.timestamp_column]
+                        metadata["last_modified"] = row._mapping[self.timestamp_column]
                 else:
                     # If metadata is included in JSON, still add timestamp to metadata dict
                     if self.timestamp_column and self.timestamp_column in row._mapping:
-                        metadata["last_modified"] = row[self.timestamp_column]
+                        metadata["last_modified"] = row._mapping[self.timestamp_column]
 
                 # Create a fully qualified source identifier for database content
                 conn_str_safe = self.connection_string.split('://')[1] if '://' in self.connection_string else 'unknown'
@@ -371,10 +372,10 @@ class DatabaseContentSource(ContentSource):
                     metadata = {}
                     for col in self.metadata_columns:
                         if col in row._mapping:
-                            metadata[col] = row[col]
+                            metadata[col] = row._mapping[col]
 
                     if self.timestamp_column and self.timestamp_column in row._mapping:
-                        metadata["last_modified"] = row[self.timestamp_column]
+                        metadata["last_modified"] = row._mapping[self.timestamp_column]
 
                     # Create a fully qualified source identifier
                     conn_str_safe = self.connection_string.split('://')[
@@ -383,9 +384,9 @@ class DatabaseContentSource(ContentSource):
                     if self.json_mode:
                         columns_part = "_".join(self.json_columns[:3]) + (
                             f"_plus_{len(self.json_columns) - 3}_more" if len(self.json_columns) > 3 else "")
-                        db_source = f"db://{conn_str_safe}/{self.query}/{self.id_column}/{row[self.id_column]}/{columns_part}/json"
+                        db_source = f"db://{conn_str_safe}/{self.query}/{self.id_column}/{row._mapping[self.id_column]}/{columns_part}/json"
                     else:
-                        db_source = f"db://{conn_str_safe}/{self.query}/{self.id_column}/{row[self.id_column]}/{self.content_column}"
+                        db_source = f"db://{conn_str_safe}/{self.query}/{self.id_column}/{row._mapping[self.id_column]}/{self.content_column}"
 
                     results.append({
                         "id": db_source,  # Use fully qualified path
@@ -434,11 +435,23 @@ class DatabaseContentSource(ContentSource):
                 if not row:
                     return False
 
-                current_timestamp = row[self.timestamp_column]
+                current_timestamp = row._mapping[self.timestamp_column]
 
                 if last_modified is None:
                     return True
 
+                # Convert database timestamp to Unix timestamp if it's a string
+                if isinstance(current_timestamp, str):
+                    try:
+                        from datetime import datetime
+                        # Parse SQLite timestamp format: "YYYY-MM-DD HH:MM:SS"
+                        dt = datetime.strptime(current_timestamp, "%Y-%m-%d %H:%M:%S")
+                        current_timestamp = dt.timestamp()
+                    except ValueError:
+                        # If parsing fails, assume it has changed
+                        logger.warning(f"Could not parse timestamp '{current_timestamp}', assuming changed")
+                        return True
+                
                 # Compare timestamps
                 return current_timestamp > last_modified
         except Exception as e:
