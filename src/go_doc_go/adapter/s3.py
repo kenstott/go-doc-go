@@ -40,8 +40,9 @@ class S3Adapter(ContentSourceAdapter):
         super().__init__(config)
 
         # Configuration options
-        self.default_region = self.config.get("region")
+        self.default_region = self.config.get("region") or self.config.get("region_name")
         self.use_credentials = self.config.get("use_credentials", True)
+        self.endpoint_url = self.config.get("endpoint_url")  # Support MinIO/LocalStack
         self.temp_dir = self.config.get("temp_dir", tempfile.gettempdir())
         self.encoding_fallbacks = self.config.get(
             "encoding_fallbacks", ['utf-8', 'latin-1', 'cp1252']
@@ -384,6 +385,10 @@ class S3Adapter(ContentSourceAdapter):
 
         if region:
             client_kwargs["region_name"] = region
+        
+        # Add endpoint URL if specified (for MinIO/LocalStack)
+        if self.endpoint_url:
+            client_kwargs["endpoint_url"] = self.endpoint_url
 
         # Create a new client
         try:
