@@ -47,6 +47,9 @@ class WebContentSource(ContentSource):
 
         # Add custom headers
         self.session.headers.update(self.headers)
+        
+        # Initialize content cache
+        self.content_cache = {}
 
     def fetch_document(self, source_id: str) -> Dict[str, Any]:
         """Fetch document content from web URL."""
@@ -57,6 +60,11 @@ class WebContentSource(ContentSource):
         if self.base_url and not url.startswith(('http://', 'https://')):
             url = urljoin(self.base_url, url)
 
+        # Check cache first
+        if url in self.content_cache:
+            logger.debug(f"Returning cached content for URL: {url}")
+            return self.content_cache[url]
+
         try:
             logger.debug(f"Fetching URL: {url}")
             response = self.session.get(url)
@@ -66,7 +74,7 @@ class WebContentSource(ContentSource):
             content_type = response.headers.get('Content-Type', '')
             logger.debug(f"Successfully fetched URL: {url} (size: {len(content)} bytes)")
 
-            return {
+            result = {
                 "id": url,  # URL is already a fully qualified path
                 "content": content,
                 "metadata": {
@@ -78,6 +86,11 @@ class WebContentSource(ContentSource):
                 },
                 "content_hash": self.get_content_hash(content)
             }
+            
+            # Cache the result
+            self.content_cache[url] = result
+            
+            return result
         except Exception as e:
             logger.error(f"Error fetching URL {url}: {str(e)}")
             raise
