@@ -208,11 +208,46 @@ class S3ContentSource(ContentSource):
                     else:
                         doc_type = "binary"
                 else:
-                    # For text content, detect type from content
-                    doc_type = detect_content_type(content, {"content_type": content_type})
+                    # For text content, detect type from extension first, then content
+                    if key.lower().endswith('.json'):
+                        doc_type = "json"
+                    elif key.lower().endswith('.csv'):
+                        doc_type = "csv"
+                    elif key.lower().endswith('.xml'):
+                        doc_type = "xml"
+                    elif key.lower().endswith(('.md', '.markdown')):
+                        doc_type = "markdown"
+                    elif key.lower().endswith(('.html', '.htm')):
+                        doc_type = "html"
+                    elif key.lower().endswith(('.txt', '.text')):
+                        doc_type = "text"
+                    else:
+                        # Try to detect from content
+                        doc_type = detect_content_type(content, {"content_type": content_type})
+                        # Additional checks for JSON and CSV
+                        if doc_type == "text":
+                            # Check if it's JSON
+                            try:
+                                import json
+                                json.loads(content)
+                                doc_type = "json"
+                            except (json.JSONDecodeError, ValueError):
+                                # Check if it's CSV
+                                lines = content.strip().split('\n')
+                                if len(lines) > 1:
+                                    # Simple CSV detection - check for consistent delimiters
+                                    first_line_commas = lines[0].count(',')
+                                    if first_line_commas > 0 and all(line.count(',') == first_line_commas for line in lines[:min(5, len(lines))]):
+                                        doc_type = "csv"
             else:
                 # Use content_type from metadata
-                if 'markdown' in content_type.lower() or 'md' in content_type.lower():
+                if 'json' in content_type.lower():
+                    doc_type = "json"
+                elif 'csv' in content_type.lower():
+                    doc_type = "csv"
+                elif 'xml' in content_type.lower():
+                    doc_type = "xml"
+                elif 'markdown' in content_type.lower() or 'md' in content_type.lower():
                     doc_type = "markdown"
                 elif 'html' in content_type.lower():
                     doc_type = "html"
@@ -482,10 +517,48 @@ class S3ContentSource(ContentSource):
                 "metadata": {"content_type": content_type}
             }
 
-            parser = get_parser_for_content(doc_content)
-
-            # Extract links based on document type
-            links = parser._extract_links(content, "root")
+            # Try to get parser and extract links
+            links = []
+            try:
+                parser = get_parser_for_content(doc_content)
+                
+                # Check if parser has _extract_links method
+                if hasattr(parser, '_extract_links'):
+                    links = parser._extract_links(content, "root")
+                else:
+                    # Fallback to simple URL extraction for parsers without link extraction
+                    import re
+                    url_pattern = r'(https?://[^\s<>"\'\(\)]+)'
+                    urls = re.findall(url_pattern, content)
+                    for url in urls:
+                        links.append({
+                            "link_target": url,
+                            "link_type": "url"
+                        })
+                    
+                    # Extract relative links (markdown/html style)
+                    # Markdown links: [text](target)
+                    md_link_pattern = r'\[([^\]]+)\]\(([^\)]+)\)'
+                    md_links = re.findall(md_link_pattern, content)
+                    for link_text, link_target in md_links:
+                        if not link_target.startswith(('http://', 'https://', '#')):
+                            links.append({
+                                "link_target": link_target,
+                                "link_type": "relative"
+                            })
+                    
+                    # HTML links: <a href="target">
+                    html_link_pattern = r'<a[^>]+href=["\']([^"\']+)["\']'
+                    html_links = re.findall(html_link_pattern, content)
+                    for link_target in html_links:
+                        if not link_target.startswith(('http://', 'https://', '#')):
+                            links.append({
+                                "link_target": link_target,
+                                "link_type": "relative"
+                            })
+            except Exception as e:
+                logger.warning(f"Error extracting links from {source_id}: {e}")
+                links = []
 
             # Process each link
             for link in links:
@@ -686,7 +759,7 @@ class S3ContentSource(ContentSource):
     def __del__(self):
         """Cleanup temporary files on deletion."""
         # Clean up any temp files
-        if self.content_cache and self.delete_after_processing:
+        if hasattr(self, 'content_cache') and self.content_cache and hasattr(self, 'delete_after_processing') and self.delete_after_processing:
             for cache_key, cache_entry in self.content_cache.items():
                 temp_file_path = cache_entry.get("binary_path")
                 if temp_file_path and os.path.exists(temp_file_path):
