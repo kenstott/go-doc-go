@@ -9,7 +9,7 @@ import pytest
 import tempfile
 import subprocess
 import logging
-from typing import Dict, Any, Generator, Optional
+from typing import Dict, Any, Generator, Optional, List
 from unittest.mock import MagicMock
 
 # Add src to path

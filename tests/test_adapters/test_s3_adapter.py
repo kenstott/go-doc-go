@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 from typing import Dict, Any
 
 from go_doc_go.adapter.s3 import S3Adapter
-from .conftest import requires_boto3, requires_docker
+from conftest import requires_boto3, requires_docker
 
 
 class TestS3AdapterUnit:

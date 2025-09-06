@@ -8,9 +8,7 @@ import time
 from unittest.mock import patch, MagicMock, Mock
 from typing import Dict, Any, List
 
-# Import from parent directory's conftest
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'test_adapters'))
+# Import markers from conftest
 from conftest import requires_boto3, requires_docker
 
 from go_doc_go.content_source.s3 import S3ContentSource
