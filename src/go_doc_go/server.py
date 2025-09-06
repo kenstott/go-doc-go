@@ -19,10 +19,20 @@ log_level = os.environ.get('LOG_LEVEL', 'INFO')
 log_format = os.environ.get('LOG_FORMAT', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logging.basicConfig(level=getattr(logging, log_level), format=log_format)
 logger = logging.getLogger(__name__)
-_config = Config(os.environ.get('GO_DOC_GO_CONFIG_PATH', 'config.yaml'))
-db = _config.get_document_database()
-db.initialize()
-resolver = create_content_resolver(_config)
+
+# Lazy initialization to prevent import-time database connections
+_config = None
+db = None
+resolver = None
+
+def _ensure_initialized():
+    """Ensure server components are initialized."""
+    global _config, db, resolver
+    if _config is None:
+        _config = Config(os.environ.get('GO_DOC_GO_CONFIG_PATH', 'config.yaml'))
+        db = _config.get_document_database()
+        db.initialize()
+        resolver = create_content_resolver(_config)
 
 # Initialize Flask app
 app = Flask(__name__)
