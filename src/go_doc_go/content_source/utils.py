@@ -21,31 +21,73 @@ def detect_content_type(content: str, metadata: Dict[str, Any] = None) -> str:
         metadata: Optional metadata that might contain content type information
 
     Returns:
-        Content type: 'markdown', 'html', or 'text'
+        Content type: 'json', 'csv', 'xml', 'markdown', 'html', or 'text'
     """
     metadata = metadata or {}
 
     # Check metadata first
-    content_type = metadata.get("content_type", "")
+    content_type = metadata.get("content_type", "").lower()
     if content_type:
-        if "markdown" in content_type.lower() or "md" in content_type.lower():
+        if "json" in content_type:
+            return "json"
+        elif "csv" in content_type:
+            return "csv"
+        elif "xml" in content_type:
+            return "xml"
+        elif "markdown" in content_type or "md" in content_type:
             return "markdown"
-        elif "html" in content_type.lower() or "xhtml" in content_type.lower():
+        elif "html" in content_type or "xhtml" in content_type:
             return "html"
 
-    # Check content patterns
-    if content.strip().startswith(('<!DOCTYPE html>', '<html', '<?xml')):
+    # Try to detect JSON
+    content_stripped = content.strip()
+    if content_stripped and content_stripped[0] in '{[' and content_stripped[-1] in '}]':
+        try:
+            import json
+            json.loads(content)
+            return "json"
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Try to detect XML
+    if content_stripped.startswith('<?xml') or (content_stripped.startswith('<') and 
+                                                 content_stripped.endswith('>') and 
+                                                 '</' in content_stripped):
+        # Simple XML detection - check for XML declaration or matching tags
+        if re.search(r'<(\w+)[^>]*>.*?</\1>', content_stripped, re.DOTALL):
+            return "xml"
+
+    # Check for HTML specifically
+    if content_stripped.startswith(('<!DOCTYPE html>', '<html')):
         return "html"
+
+    # Try to detect CSV
+    lines = content_stripped.split('\n')
+    if len(lines) > 1:
+        # Check for consistent delimiters (comma, tab, semicolon, pipe)
+        for delimiter in [',', '\t', ';', '|']:
+            first_line_count = lines[0].count(delimiter)
+            if first_line_count > 0:
+                # Check if first few lines have consistent delimiter count
+                consistent = True
+                for line in lines[1:min(5, len(lines))]:
+                    if line.strip() and abs(line.count(delimiter) - first_line_count) > 1:
+                        consistent = False
+                        break
+                if consistent:
+                    return "csv"
 
     # Count markdown-specific patterns
     md_patterns = 0
     if re.search(r'^#{1,6}\s+', content, re.MULTILINE):  # Headers
         md_patterns += 1
-    if re.search(r'^-\s+', content, re.MULTILINE):  # List items
+    if re.search(r'^[-*]\s+', content, re.MULTILINE):  # List items
         md_patterns += 1
     if re.search(r'\[.+?\]\(.+?\)', content):  # Links
         md_patterns += 1
     if re.search(r'^```', content, re.MULTILINE):  # Code blocks
+        md_patterns += 1
+    if re.search(r'^\|.+\|', content, re.MULTILINE):  # Tables
         md_patterns += 1
 
     if md_patterns >= 2:

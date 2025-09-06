@@ -12,6 +12,7 @@ from .base import DocumentParser
 from .csv import CsvParser  # Import the new CSV parser
 from .docx import DocxParser
 from .html import HtmlParser
+from .json import JSONParser  # Import the JSON parser
 from .markdown import MarkdownParser
 from .pdf import PdfParser
 from .pptx import PptxParser
@@ -54,6 +55,8 @@ def create_parser(doc_type: str, config: Optional[Dict[str, Any]] = None) -> Doc
         return PptxParser(config)
     elif doc_type == "csv":
         return CsvParser(config)  # Added CSV parser support
+    elif doc_type == "json":
+        return JSONParser(config)  # Added JSON parser support
     elif doc_type == "text":
         return TextParser(config)
     else:
@@ -97,6 +100,8 @@ def get_parser_for_content(content: Dict[str, Any], config: Optional[Dict[str, A
             doc_type = "xml"
         elif filename.lower().endswith(('.csv', '.tsv')):
             doc_type = "csv"  # Added CSV file extensions detection
+        elif filename.lower().endswith(('.json', '.jsonl', '.ndjson')):
+            doc_type = "json"  # Added JSON file extensions detection
         elif filename.lower().endswith(('.md', '.markdown', '.mdown')):
             doc_type = "markdown"
         elif filename.lower().endswith(('.txt', '.text')):
@@ -116,6 +121,8 @@ def get_parser_for_content(content: Dict[str, Any], config: Optional[Dict[str, A
             doc_type = "xml"
         elif "csv" in content_type.lower() or "text/csv" in content_type.lower() or "text/tab-separated-values" in content_type.lower():
             doc_type = "csv"  # Added CSV content type detection
+        elif "json" in content_type.lower() or "application/json" in content_type.lower():
+            doc_type = "json"  # Added JSON content type detection
         elif "msword" in content_type.lower() or "officedocument.wordprocessingml" in content_type.lower():
             doc_type = "docx"
         elif "officedocument.presentationml" in content_type.lower() or "powerpoint" in content_type.lower():
