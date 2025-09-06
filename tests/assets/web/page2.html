@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Complex test page with tables, forms, and multimedia">
+    <meta property="og:title" content="Page 2 - Complex Content">
+    <meta property="og:description" content="A complex HTML page for testing">
+    <meta property="og:type" content="website">
+    <title>Page 2 - Complex Content</title>
+    <style>
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Page 2: Complex Content</h1>
+        <nav aria-label="Main navigation">
+            <a href="index.html">Home</a> | 
+            <a href="page1.html">Page 1</a> | 
+            <a href="nested/page3.html">Page 3</a>
+        </nav>
+    </header>
+    
+    <main>
+        <article>
+            <h2>Complex HTML Elements</h2>
+            
+            <section>
+                <h3>Data Table</h3>
+                <table>
+                    <caption>Sample Data Table</caption>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Value</th>
+                            <th>Link</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>001</td>
+                            <td>Item Alpha</td>
+                            <td>Category A</td>
+                            <td>100</td>
+                            <td><a href="page1.html">Details</a></td>
+                        </tr>
+                        <tr>
+                            <td>002</td>
+                            <td>Item Beta</td>
+                            <td>Category B</td>
+                            <td>200</td>
+                            <td><a href="nested/page3.html">Details</a></td>
+                        </tr>
+                        <tr>
+                            <td>003</td>
+                            <td>Item Gamma</td>
+                            <td>Category A</td>
+                            <td>150</td>
+                            <td><a href="data.json">JSON</a></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+            
+            <section>
+                <h3>Form Elements</h3>
+                <form action="/submit" method="post">
+                    <fieldset>
+                        <legend>Sample Form</legend>
+                        
+                        <label for="name">Name:</label>
+                        <input type="text" id="name" name="name" required>
+                        
+                        <label for="email">Email:</label>
+                        <input type="email" id="email" name="email" required>
+                        
+                        <label for="category">Category:</label>
+                        <select id="category" name="category">
+                            <option value="a">Category A</option>
+                            <option value="b">Category B</option>
+                            <option value="c">Category C</option>
+                        </select>
+                        
+                        <label for="message">Message:</label>
+                        <textarea id="message" name="message" rows="4" cols="50"></textarea>
+                        
+                        <button type="submit">Submit</button>
+                    </fieldset>
+                </form>
+            </section>
+            
+            <section>
+                <h3>Media Elements</h3>
+                <figure>
+                    <img src="test-image.png" alt="Test Image" width="300" height="200">
+                    <figcaption>Figure 1: A test image placeholder</figcaption>
+                </figure>
+                
+                <video width="320" height="240" controls>
+                    <source src="test-video.mp4" type="video/mp4">
+                    <source src="test-video.webm" type="video/webm">
+                    Your browser does not support the video tag.
+                </video>
+                
+                <audio controls>
+                    <source src="test-audio.mp3" type="audio/mpeg">
+                    <source src="test-audio.ogg" type="audio/ogg">
+                    Your browser does not support the audio element.
+                </audio>
+            </section>
+            
+            <section>
+                <h3>Code Examples</h3>
+                <pre><code>
+function testFunction() {
+    console.log("This is a code block");
+    return true;
+}
+                </code></pre>
+                
+                <blockquote cite="http://example.com/quote">
+                    <p>This is a blockquote element used for quotations.</p>
+                    <footer>— Source Author</footer>
+                </blockquote>
+            </section>
+            
+            <section>
+                <h3>Definition List</h3>
+                <dl>
+                    <dt>Term 1</dt>
+                    <dd>Definition of term 1</dd>
+                    
+                    <dt>Term 2</dt>
+                    <dd>Definition of term 2</dd>
+                    
+                    <dt>Term 3</dt>
+                    <dd>Definition of term 3 with a <a href="index.html">link</a></dd>
+                </dl>
+            </section>
+        </article>
+        
+        <aside>
+            <h3>Sidebar Content</h3>
+            <nav aria-label="Secondary navigation">
+                <h4>Quick Links</h4>
+                <ul>
+                    <li><a href="#top">Top of Page</a></li>
+                    <li><a href="markdown.html">Markdown Page</a></li>
+                    <li><a href="api/data.csv">CSV Data</a></li>
+                    <li><a href="http://external-site.com">External Site</a></li>
+                </ul>
+            </nav>
+        </aside>
+    </main>
+    
+    <footer>
+        <address>
+            Contact: <a href="mailto:test@example.com">test@example.com</a>
+        </address>
+        <p><small>&copy; 2024 Test Site. Page 2.</small></p>
+    </footer>
+</body>
+</html>

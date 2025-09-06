@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Content Page</title>
+</head>
+<body>
+    <article>
+        <h1>Markdown Content as HTML</h1>
+        <p>This page simulates markdown content served as HTML.</p>
+        
+        <h2>Introduction</h2>
+        <p>This document demonstrates how markdown content would appear when converted to HTML. It includes various markdown elements.</p>
+        
+        <h2>Text Formatting</h2>
+        <p>This paragraph contains <strong>bold text</strong>, <em>italic text</em>, and <code>inline code</code>.</p>
+        <p>Here's a paragraph with a <a href="index.html">link to the homepage</a>.</p>
+        
+        <h2>Lists</h2>
+        <h3>Unordered List</h3>
+        <ul>
+            <li>First item</li>
+            <li>Second item
+                <ul>
+                    <li>Nested item 1</li>
+                    <li>Nested item 2</li>
+                </ul>
+            </li>
+            <li>Third item</li>
+        </ul>
+        
+        <h3>Ordered List</h3>
+        <ol>
+            <li>First step</li>
+            <li>Second step</li>
+            <li>Third step</li>
+        </ol>
+        
+        <h2>Code Block</h2>
+        <pre><code class="language-python">def hello_world():
+    """A simple Python function"""
+    print("Hello, World!")
+    return True
+
+if __name__ == "__main__":
+    hello_world()
+</code></pre>
+        
+        <h2>Blockquote</h2>
+        <blockquote>
+            <p>This is a blockquote. It can contain multiple paragraphs.</p>
+            <p>This is the second paragraph in the blockquote.</p>
+        </blockquote>
+        
+        <h2>Table</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Header 1</th>
+                    <th>Header 2</th>
+                    <th>Header 3</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Row 1, Cell 1</td>
+                    <td>Row 1, Cell 2</td>
+                    <td>Row 1, Cell 3</td>
+                </tr>
+                <tr>
+                    <td>Row 2, Cell 1</td>
+                    <td>Row 2, Cell 2</td>
+                    <td>Row 2, Cell 3</td>
+                </tr>
+            </tbody>
+        </table>
+        
+        <h2>Links Section</h2>
+        <p>Various types of links:</p>
+        <ul>
+            <li><a href="page1.html">Internal link to Page 1</a></li>
+            <li><a href="nested/page3.html">Link to nested page</a></li>
+            <li><a href="data.json">Link to JSON data</a></li>
+            <li><a href="https://example.com">External link</a></li>
+        </ul>
+        
+        <hr>
+        
+        <p><small>Generated from Markdown source</small></p>
+    </article>
+</body>
+</html>

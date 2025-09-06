@@ -1,0 +1,57 @@
+{
+    "title": "Test JSON Data",
+    "description": "Sample JSON data for testing web content source",
+    "version": "1.0.0",
+    "timestamp": "2024-01-15T10:00:00Z",
+    "data": {
+        "users": [
+            {
+                "id": 1,
+                "name": "Alice Johnson",
+                "email": "alice@example.com",
+                "role": "admin",
+                "active": true
+            },
+            {
+                "id": 2,
+                "name": "Bob Smith",
+                "email": "bob@example.com",
+                "role": "user",
+                "active": true
+            },
+            {
+                "id": 3,
+                "name": "Charlie Brown",
+                "email": "charlie@example.com",
+                "role": "user",
+                "active": false
+            }
+        ],
+        "settings": {
+            "theme": "light",
+            "language": "en",
+            "notifications": {
+                "email": true,
+                "push": false,
+                "sms": false
+            }
+        },
+        "statistics": {
+            "total_users": 3,
+            "active_users": 2,
+            "total_posts": 150,
+            "total_comments": 450
+        }
+    },
+    "links": {
+        "self": "/data.json",
+        "users": "/api/users",
+        "posts": "/api/posts",
+        "home": "/index.html"
+    },
+    "metadata": {
+        "generated_by": "test_system",
+        "format": "json",
+        "encoding": "utf-8"
+    }
+}

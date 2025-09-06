@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page 3 - Nested Page</title>
+    <meta name="description" content="A nested page to test directory traversal">
+</head>
+<body>
+    <header>
+        <h1>Page 3: Nested Directory Page</h1>
+        <nav>
+            <a href="../index.html">Home</a> | 
+            <a href="../page1.html">Page 1</a> | 
+            <a href="../page2.html">Page 2</a> |
+            <a href="subpage.html">Subpage</a>
+        </nav>
+    </header>
+    
+    <main>
+        <article>
+            <h2>Nested Content</h2>
+            <p>This page is located in a nested directory to test path resolution and link following across directory boundaries.</p>
+            
+            <section>
+                <h3>Relative Links</h3>
+                <p>Testing various types of relative links:</p>
+                <ul>
+                    <li><a href="../index.html">Parent directory link (../index.html)</a></li>
+                    <li><a href="./subpage.html">Same directory link (./subpage.html)</a></li>
+                    <li><a href="subpage.html">Simple relative link (subpage.html)</a></li>
+                    <li><a href="../api/data.csv">Sibling directory link (../api/data.csv)</a></li>
+                    <li><a href="../../index.html">Invalid parent link (../../index.html)</a></li>
+                </ul>
+            </section>
+            
+            <section>
+                <h3>Absolute Path Links</h3>
+                <ul>
+                    <li><a href="/index.html">Root absolute link (/index.html)</a></li>
+                    <li><a href="/page1.html">Root page 1 (/page1.html)</a></li>
+                    <li><a href="/nested/page3.html">Self absolute link</a></li>
+                </ul>
+            </section>
+            
+            <section>
+                <h3>Special Links</h3>
+                <ul>
+                    <li><a href="#">Hash only link</a></li>
+                    <li><a href="#section">Hash with section</a></li>
+                    <li><a href="javascript:void(0)">JavaScript link</a></li>
+                    <li><a href="mailto:test@example.com">Mailto link</a></li>
+                    <li><a href="tel:+1234567890">Tel link</a></li>
+                    <li><a href="ftp://ftp.example.com">FTP link</a></li>
+                </ul>
+            </section>
+            
+            <section id="section">
+                <h3>Target Section</h3>
+                <p>This section is targeted by an anchor link above.</p>
+                <p>It also contains a link back to the <a href="../data.json">JSON data file</a>.</p>
+            </section>
+        </article>
+        
+        <aside>
+            <h3>Nested Navigation</h3>
+            <p>Additional navigation for nested pages:</p>
+            <nav>
+                <ul>
+                    <li><a href="subpage.html">Nested Subpage</a></li>
+                    <li><a href="../markdown.html">Back to Markdown</a></li>
+                    <li><a href="../">Parent Directory</a></li>
+                </ul>
+            </nav>
+        </aside>
+    </main>
+    
+    <footer>
+        <p>Nested Page Footer - Path: /nested/page3.html</p>
+        <p><a href="#top">Back to top</a> | <a href="../index.html">Home</a></p>
+    </footer>
+</body>
+</html>
