@@ -6,6 +6,7 @@ Handles token limits intelligently when building context.
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 import tiktoken  # OpenAI's tokenizer, can be replaced with model-specific
+from .semantic_tagger import SemanticTagger, ContextRole
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,8 @@ class TokenAwareContextualEmbedding:
                  base_generator,
                  max_tokens: int = 8192,  # Common limit for embedding models
                  target_ratio: Dict[str, float] = None,
-                 tokenizer_model: str = "cl100k_base"):  # GPT-3.5/4 tokenizer
+                 tokenizer_model: str = "cl100k_base",  # GPT-3.5/4 tokenizer
+                 use_semantic_tags: bool = True):
         """
         Initialize token-aware contextual embedding.
         
@@ -49,6 +51,10 @@ class TokenAwareContextualEmbedding:
         except:
             logger.warning(f"Could not load tokenizer {tokenizer_model}, using approximate counting")
             self.tokenizer = None
+        
+        # Semantic tagging
+        self.use_semantic_tags = use_semantic_tags
+        self.semantic_tagger = SemanticTagger(include_metadata=True) if use_semantic_tags else None
     
     def count_tokens(self, text: str) -> int:
         """
@@ -98,7 +104,11 @@ class TokenAwareContextualEmbedding:
                                   element_text: str,
                                   parent_texts: List[str],
                                   sibling_texts: List[str],
-                                  child_texts: List[str]) -> str:
+                                  child_texts: List[str],
+                                  element_metadata: Optional[Dict[str, Any]] = None,
+                                  parent_metadata: Optional[List[Dict[str, Any]]] = None,
+                                  sibling_metadata: Optional[List[Dict[str, Any]]] = None,
+                                  child_metadata: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Build context respecting token budget.
         
@@ -132,26 +142,49 @@ class TokenAwareContextualEmbedding:
             child_budget += unused - (unused // 3) * 2
         
         # Process contexts with their budgets
-        parent_context = self.select_context_within_budget(parent_texts, parent_budget, "parent")
-        sibling_context = self.select_context_within_budget(sibling_texts, sibling_budget, "sibling")
-        child_context = self.select_context_within_budget(child_texts, child_budget, "child")
+        if self.use_semantic_tags:
+            parent_context = self.select_tagged_context_within_budget(
+                parent_texts, parent_metadata, parent_budget, ContextRole.PARENT
+            )
+            sibling_context = self.select_tagged_context_within_budget(
+                sibling_texts, sibling_metadata, sibling_budget, ContextRole.SIBLING
+            )
+            child_context = self.select_tagged_context_within_budget(
+                child_texts, child_metadata, child_budget, ContextRole.CHILD
+            )
+        else:
+            parent_context = self.select_context_within_budget(parent_texts, parent_budget, "parent")
+            sibling_context = self.select_context_within_budget(sibling_texts, sibling_budget, "sibling")
+            child_context = self.select_context_within_budget(child_texts, child_budget, "child")
         
         # Combine all contexts
         combined_parts = []
         
         if parent_context:
-            combined_parts.append("=== Parent Context ===")
+            if not self.use_semantic_tags:
+                combined_parts.append("=== Parent Context ===")
             combined_parts.append(parent_context)
         
         if sibling_context:
-            combined_parts.append("=== Sibling Context ===")
+            if not self.use_semantic_tags:
+                combined_parts.append("=== Sibling Context ===")
             combined_parts.append(sibling_context)
-            
-        combined_parts.append("=== Main Content ===")
-        combined_parts.append(element_processed)
+        
+        # Add main content FIRST with tag if using semantic tags
+        main_parts = []
+        if self.use_semantic_tags and element_metadata:
+            element_tag = self.semantic_tagger.generate_tag(element_metadata, context_role=ContextRole.MAIN)
+            main_parts.append(f"{element_tag} {element_processed}")
+        else:
+            main_parts.append("=== Main Content ===")
+            main_parts.append(element_processed)
+        
+        # Combine with main element first
+        combined_parts = main_parts + combined_parts
         
         if child_context:
-            combined_parts.append("=== Child Context ===")
+            if not self.use_semantic_tags:
+                combined_parts.append("=== Child Context ===")
             combined_parts.append(child_context)
         
         combined = "\n\n".join(combined_parts)
@@ -207,6 +240,62 @@ class TokenAwareContextualEmbedding:
             logger.debug(f"Selected {len(selected)}/{len(texts)} {context_type} contexts, used {used_tokens}/{budget} tokens")
         
         return "\n---\n".join(selected)
+    
+    def select_tagged_context_within_budget(self, 
+                                           texts: List[str],
+                                           metadata_list: Optional[List[Dict[str, Any]]],
+                                           budget: int,
+                                           context_role: ContextRole) -> str:
+        """
+        Select and tag context texts within token budget.
+        
+        Args:
+            texts: List of context texts (ordered by priority)
+            metadata_list: List of metadata for each text
+            budget: Token budget for this context type
+            context_role: Role of this context
+            
+        Returns:
+            Combined tagged context within budget
+        """
+        if not texts or budget <= 0:
+            return ""
+        
+        selected = []
+        used_tokens = 0
+        
+        for i, text in enumerate(texts):
+            # Get metadata for this text
+            metadata = metadata_list[i] if metadata_list and i < len(metadata_list) else {}
+            
+            # Generate semantic tag
+            tag = self.semantic_tagger.generate_tag(metadata, context_role=context_role)
+            tagged_text = f"{tag} {text}"
+            
+            text_tokens = self.count_tokens(tagged_text)
+            
+            if used_tokens + text_tokens <= budget:
+                # Fits completely
+                selected.append(tagged_text)
+                used_tokens += text_tokens
+            elif used_tokens < budget:
+                # Partially fits - ensure tag is included
+                remaining_budget = budget - used_tokens
+                if remaining_budget > 50:  # Only include if meaningful amount remains
+                    tag_tokens = self.count_tokens(tag + " ")
+                    if tag_tokens < remaining_budget:
+                        text_budget = remaining_budget - tag_tokens
+                        truncated = self.truncate_to_tokens(text, text_budget)
+                        selected.append(f"{tag} {truncated}")
+                    break
+            else:
+                # No more room
+                break
+        
+        if selected:
+            logger.debug(f"Selected {len(selected)}/{len(texts)} {context_role.value} contexts, used {used_tokens}/{budget} tokens")
+        
+        return "\n".join(selected)
     
     def smart_truncate(self, text: str, max_tokens: int) -> str:
         """

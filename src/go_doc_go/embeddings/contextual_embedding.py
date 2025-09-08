@@ -1,7 +1,8 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import logging
 
 from .base import EmbeddingGenerator
+from .semantic_tagger import SemanticTagger, ContextRole
 from ..adapter import create_content_resolver
 from ..config import Config
 
@@ -33,7 +34,8 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                  ancestor_depth: int = 1,
                  child_count: int = 1,
                  max_tokens: int = 8192,
-                 tokenizer_model: str = "cl100k_base"):
+                 tokenizer_model: str = "cl100k_base",
+                 use_semantic_tags: bool = True):
         """
         Initialize the contextual embedding generator.
 
@@ -65,6 +67,10 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             "siblings": 0.20,
             "children": 0.15
         }
+        
+        # Semantic tagging
+        self.use_semantic_tags = use_semantic_tags
+        self.semantic_tagger = SemanticTagger(include_metadata=True) if use_semantic_tags else None
         
         # Initialize tokenizer
         self.tokenizer = None
@@ -193,7 +199,11 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                                  element_text: str,
                                  parent_texts: List[str],
                                  sibling_texts: List[str], 
-                                 child_texts: List[str]) -> str:
+                                 child_texts: List[str],
+                                 element_metadata: Optional[Dict[str, Any]] = None,
+                                 parent_metadata: Optional[List[Dict[str, Any]]] = None,
+                                 sibling_metadata: Optional[List[Dict[str, Any]]] = None,
+                                 child_metadata: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Build context with separate budgets for different context types.
         
@@ -230,24 +240,52 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         
         # Add parent context
         if parent_texts and parent_budget > 0:
-            parent_context = self._select_texts_within_budget(parent_texts, parent_budget, "Parent")
+            if self.use_semantic_tags and parent_metadata:
+                parent_context = self._select_tagged_texts_within_budget(
+                    parent_texts, parent_metadata, parent_budget, ContextRole.PARENT
+                )
+            else:
+                parent_context = self._select_texts_within_budget(parent_texts, parent_budget, "Parent")
+                if parent_context:
+                    parent_context = f"=== Parent Context ===\n{parent_context}"
             if parent_context:
-                contexts.append(f"=== Parent Context ===\n{parent_context}")
+                contexts.append(parent_context)
         
         # Add sibling context
         if sibling_texts and sibling_budget > 0:
-            sibling_context = self._select_texts_within_budget(sibling_texts, sibling_budget, "Sibling")
+            if self.use_semantic_tags and sibling_metadata:
+                sibling_context = self._select_tagged_texts_within_budget(
+                    sibling_texts, sibling_metadata, sibling_budget, ContextRole.SIBLING
+                )
+            else:
+                sibling_context = self._select_texts_within_budget(sibling_texts, sibling_budget, "Sibling")
+                if sibling_context:
+                    sibling_context = f"=== Sibling Context ===\n{sibling_context}"
             if sibling_context:
-                contexts.append(f"=== Sibling Context ===\n{sibling_context}")
+                contexts.append(sibling_context)
         
         # Add child context
         if child_texts and child_budget > 0:
-            child_context = self._select_texts_within_budget(child_texts, child_budget, "Child")
+            if self.use_semantic_tags and child_metadata:
+                child_context = self._select_tagged_texts_within_budget(
+                    child_texts, child_metadata, child_budget, ContextRole.CHILD
+                )
+            else:
+                child_context = self._select_texts_within_budget(child_texts, child_budget, "Child")
+                if child_context:
+                    child_context = f"=== Child Context ===\n{child_context}"
             if child_context:
-                contexts.append(f"=== Child Context ===\n{child_context}")
+                contexts.append(child_context)
         
-        # Combine all parts
-        all_parts = contexts + [f"=== Main Content ===\n{element_processed}"]
+        # Combine all parts - MAIN element first
+        if self.use_semantic_tags and element_metadata:
+            element_tag = self.semantic_tagger.generate_tag(element_metadata, context_role=ContextRole.MAIN)
+            main_content = f"{element_tag} {element_processed}"
+        else:
+            main_content = f"=== Main Content ===\n{element_processed}"
+        
+        # Main element goes first, then context
+        all_parts = [main_content] + contexts
         combined = "\n\n".join(all_parts)
         
         # Final safety check
@@ -293,6 +331,60 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         
         result = "\n---\n".join(selected)
         logger.debug(f"{context_type} context: {len(selected)}/{len(texts)} texts, {used_tokens}/{budget} tokens")
+        
+        return result
+    
+    def _select_tagged_texts_within_budget(self,
+                                          texts: List[str],
+                                          metadata_list: List[Dict[str, Any]],
+                                          budget: int,
+                                          context_role: ContextRole) -> str:
+        """
+        Select and tag texts within token budget.
+        
+        Args:
+            texts: List of context texts
+            metadata_list: List of metadata dicts for each text
+            budget: Token budget
+            context_role: Role of this context
+            
+        Returns:
+            Tagged and combined text within budget
+        """
+        if not texts or budget <= 0:
+            return ""
+        
+        selected = []
+        used_tokens = 0
+        
+        for i, text in enumerate(texts):
+            # Get metadata for this text
+            metadata = metadata_list[i] if i < len(metadata_list) else {}
+            
+            # Generate semantic tag
+            tag = self.semantic_tagger.generate_tag(metadata, context_role=context_role)
+            tagged_text = f"{tag} {text}"
+            
+            text_tokens = self.count_tokens(tagged_text)
+            
+            if used_tokens + text_tokens <= budget:
+                selected.append(tagged_text)
+                used_tokens += text_tokens
+            elif used_tokens < budget and budget - used_tokens > 50:
+                # Partial fit with meaningful remaining space
+                remaining = budget - used_tokens
+                # Ensure tag is included even in truncation
+                tag_tokens = self.count_tokens(tag + " ")
+                if tag_tokens < remaining:
+                    text_budget = remaining - tag_tokens
+                    truncated = self.truncate_to_tokens(text, text_budget)
+                    selected.append(f"{tag} {truncated} [...]")
+                break
+            else:
+                break
+        
+        result = "\n".join(selected)
+        logger.debug(f"{context_role.value} context: {len(selected)}/{len(texts)} texts, {used_tokens}/{budget} tokens")
         
         return result
 
