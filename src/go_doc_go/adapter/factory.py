@@ -14,6 +14,7 @@ from .jira import JiraAdapter
 from .mongodb import MongoDBAdapter
 from .s3 import S3Adapter
 from .servicenow import ServiceNowAdapter
+from .sharepoint import SharePointAdapter
 from .web import WebAdapter
 from ..config import Config
 from ..document_parser.csv import CsvParser
@@ -78,6 +79,13 @@ class ContentResolverFactory:
         # Add JIRA adapter if configured
         if 'jira' in content_sources:
             adapters['jira'] = JiraAdapter(content_sources.get('jira', {}))
+
+        # Add SharePoint adapter if configured
+        if 'sharepoint' in content_sources:
+            try:
+                adapters['sharepoint'] = SharePointAdapter(content_sources.get('sharepoint', {}))
+            except ImportError as e:
+                logger.warning(f"SharePoint adapter not available: {e}")
 
         return adapters
 
