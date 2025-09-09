@@ -88,9 +88,14 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
     global_visited_docs = set()
     logger.debug("Initialized global visited document tracking")
 
+    # Global set to track ALL fully processed docs across all sources
+    global_processed_docs = set()
+    logger.debug("Initialized global processed document tracking")
+
     # Process each content source
-    processed_docs = set()  # Track fully processed docs within this source
     for idx, source_config in enumerate(sources_to_process):
+        # Per-source tracking to prevent re-processing within the same source
+        processed_docs = set()
         source_type = source_config.get('type')
         source_name = source_config.get('name')
         logger.debug(f"Processing source {idx + 1}/{len(sources_to_process)}: {source_name} ({source_type})")
@@ -120,7 +125,7 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
             _ingest_document_recursively(
                 source, doc_id, db, relationship_detector, embedding_generator,
                 processed_docs, stats, source_config.get('max_link_depth', 1),
-                global_visited_docs, source_config  # ← Added source_config parameter
+                global_visited_docs, source_config, global_processed_docs  # ← Added global_processed_docs parameter
             )
             logger.debug(f"Completed document {doc_idx + 1}/{len(documents)}: {doc_id}")
 
@@ -130,11 +135,12 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
     if embedding_generator and stats['documents'] > 0:
         logger.info("Computing cross-document container relationships")
 
-        # Fix: processed_docs is a set of processed document IDs, not a dictionary
-        processed_doc_ids = list(global_visited_docs.intersection(processed_docs))
+        # Use global processed docs for cross-document relationship analysis
+        processed_doc_ids = list(global_processed_docs)
 
-        logger.info(f"Found {len(processed_doc_ids)} changed documents for relationship analysis")
-        relationship_count = _compute_cross_document_container_relationships(db, processed_doc_ids)
+        logger.info(f"Found {len(processed_doc_ids)} processed documents for relationship analysis")
+        relationship_count = _compute_cross_document_container_relationships(db, processed_doc_ids, config)
+        logger.info(f"Created {relationship_count} cross-document semantic relationships")
         stats['semantic_relationships'] = relationship_count
 
     # Log summary
@@ -153,7 +159,7 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
 
 def _ingest_document_recursively(source, doc_id, db, relationship_detector,
                                  embedding_generator: EmbeddingGenerator, processed_docs, stats,
-                                 max_depth, global_visited_docs, source_config, current_depth=0):  # ← Added source_config parameter
+                                 max_depth, global_visited_docs, source_config, global_processed_docs, current_depth=0):
     """
     Recursively ingest a document and its linked documents with global visited tracking.
     Skip documents that haven't changed since their last processing.
@@ -169,6 +175,7 @@ def _ingest_document_recursively(source, doc_id, db, relationship_detector,
         max_depth: Maximum link depth to follow
         global_visited_docs: Global set of all visited document IDs
         source_config: Source configuration containing topics and other settings
+        global_processed_docs: Global set of all processed document IDs across sources
         current_depth: Current depth in the recursion
     """
     from .document_parser.factory import get_parser_for_content
@@ -228,10 +235,11 @@ def _ingest_document_recursively(source, doc_id, db, relationship_detector,
             logger.warning(f"Error checking if document has changed: {str(e)}")
             # Continue with full processing
 
-    # Mark as processed in this source and globally visited
+    # Mark as processed in this source, globally visited, and globally processed
     processed_docs.add(doc_id)
     global_visited_docs.add(doc_id)
-    logger.debug(f"Marked document as processed and globally visited: {doc_id}")
+    global_processed_docs.add(doc_id)
+    logger.debug(f"Marked document as processed in source, globally visited, and globally processed: {doc_id}")
 
     try:
         # Fetch document content
@@ -276,7 +284,7 @@ def _ingest_document_recursively(source, doc_id, db, relationship_detector,
             logger.debug(f"Generating embeddings for {len(parsed_doc['elements'])} elements")
 
             # Generate embeddings using a consistent interface
-            embeddings = embedding_generator.generate_from_elements(parsed_doc['elements'])
+            embeddings = embedding_generator.generate_from_elements(parsed_doc['elements'], db)
 
             # Get topics from source configuration
             source_topics = source_config.get('topics', [])
@@ -320,7 +328,7 @@ def _ingest_document_recursively(source, doc_id, db, relationship_detector,
                 _ingest_document_recursively(
                     source, linked_id, db, relationship_detector,
                     embedding_generator, processed_docs, stats,
-                    max_depth, global_visited_docs, source_config, current_depth + 1  # ← Pass source_config to recursive calls
+                    max_depth, global_visited_docs, source_config, global_processed_docs, current_depth + 1  # ← Pass global_processed_docs to recursive calls
                 )
                 logger.debug(f"Completed processing linked document: {linked_id}")
         else:
@@ -334,25 +342,33 @@ def _ingest_document_recursively(source, doc_id, db, relationship_detector,
         logger.debug(f"Exception traceback for {doc_id}: {traceback.format_exc()}")
 
 
-def _compute_cross_document_container_relationships(db, processed_doc_ids):
+def _compute_cross_document_container_relationships(db, processed_doc_ids, config):
     """
     Compute semantic relationships between containers across documents.
 
     Args:
         db: DocumentDatabase instance
         processed_doc_ids: List of document IDs that were processed
+        config: Configuration object
 
     Returns:
         Number of relationships created
     """
     logger.info(f"Computing cross-document container relationships for {len(processed_doc_ids)} documents")
+    logger.debug(f"Input processed_doc_ids: {processed_doc_ids}")
 
     # Container element types we're interested in
     container_types = ["body", "div", "list", "header", "section", "title", "h1", "h2", "h3", "h4", "h5", "h6"]
-    similarity_threshold = (_config.config.get('relationship_detection', {})
+    logger.debug(f"Looking for container types: {container_types}")
+    
+    similarity_threshold = (config.config.get('relationship_detection', {})
                             .get('cross_document_semantic', {}).get('similarity_threshold'))
+    logger.debug(f"Similarity threshold from config: {similarity_threshold}")
+    logger.debug(f"Config relationship_detection section: {config.config.get('relationship_detection', {})}")
+    
     if similarity_threshold is None:
-        return
+        logger.warning("Similarity threshold not configured - skipping cross-document relationship generation")
+        return 0
 
     # Get all container elements from processed documents
     processed_containers = []
@@ -377,7 +393,10 @@ def _compute_cross_document_container_relationships(db, processed_doc_ids):
     for container_info in processed_containers:
         container = container_info["element"]
         element_id = container["element_id"]
-        db.delete_relationships_for_element(element_id, "semantic_section")
+        try:
+            db.delete_relationships_for_element(element_id, "semantic_section")
+        except Exception as e:
+            logger.warning(f"Failed to delete existing relationships for element {element_id}: {e}")
 
     # Compute new relationships
     new_relationships = []
@@ -393,6 +412,7 @@ def _compute_cross_document_container_relationships(db, processed_doc_ids):
     for container_info in processed_containers:
         container = container_info["element"]
         source = container_info["doc_id"]
+        element_id = container["element_id"]
         element_pk = container["element_pk"]
 
         # Get embedding
@@ -403,7 +423,7 @@ def _compute_cross_document_container_relationships(db, processed_doc_ids):
         # Search for similar containers in other documents
         filter_criteria = {
             "element_type": container_types,
-            "exclude_doc_source": [source]  # Exclude containers from the same document
+            "exclude_doc_id": [source]  # Exclude containers from the same document
         }
 
         similar_containers = db.search_by_embedding(
@@ -450,7 +470,10 @@ def _compute_cross_document_container_relationships(db, processed_doc_ids):
 
     # Store all new relationships
     for relationship in new_relationships:
-        db.store_relationship(relationship)
+        try:
+            db.store_relationship(relationship)
+        except Exception as e:
+            logger.warning(f"Failed to store cross-document relationship {relationship.get('relationship_id', 'unknown')}: {e}")
 
     logger.info(f"Created {relationship_count} cross-document semantic relationships")
     return relationship_count
