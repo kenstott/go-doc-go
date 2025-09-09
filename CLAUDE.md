@@ -1,7 +1,7 @@
-# Doculyzer Project Guidelines
+# Go-Doc-Go Project Guidelines
 
 ## Project Overview
-Doculyzer is a comprehensive document parsing and analysis system designed to extract structured information from various document formats (PDF, DOCX, XLSX, JSON, CSV, HTML, Markdown, etc.) and store it in a queryable format with relationship tracking.
+Go-Doc-Go is a comprehensive document parsing and analysis system designed to extract structured information from various document formats (PDF, DOCX, XLSX, JSON, CSV, HTML, Markdown, etc.) and store it in a queryable format with relationship tracking.
 
 ## Python Best Practices
 

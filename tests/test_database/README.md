@@ -1,6 +1,6 @@
 # Database Tests
 
-This directory contains comprehensive tests for the Doculyzer database components, including both SQLite and PostgreSQL support. The tests follow the same structure and patterns as the S3 tests, providing thorough coverage of database adapters, content sources, and integration scenarios.
+This directory contains comprehensive tests for the Go-Doc-Go database components, including both SQLite and PostgreSQL support. The tests follow the same structure and patterns as the S3 tests, providing thorough coverage of database adapters, content sources, and integration scenarios.
 
 ## Overview
 

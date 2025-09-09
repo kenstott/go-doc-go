@@ -88,7 +88,7 @@ content_sources:
       - "/Category:"
       - "/File:"
     headers:
-      User-Agent: "DoculyzerBot/1.0 (educational project; contact@lambda-connector-customizations.com)"
+      User-Agent: "Go-Doc-Go/1.0 (educational project; ken@kenstott.com)"
     max_link_depth: 1
     refresh_interval: 604800  # 7 days in seconds
     # Topics using dot notation hierarchy
@@ -107,7 +107,7 @@ content_sources:
       - "/Category:"
       - "/File:"
     headers:
-      User-Agent: "DoculyzerBot/1.0 (educational project; contact@lambda-connector-customizations.com)"
+      User-Agent: "Go-Doc-Go/1.0 (educational project; ken@kenstott.com)"
     max_link_depth: 1
     refresh_interval: 604800  # 7 days in seconds
     # Topics using dot notation hierarchy
