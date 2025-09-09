@@ -52,7 +52,7 @@ class PriorityContextualEmbedding:
     
     def __init__(self,
                  base_generator,
-                 max_tokens: int = 8192,
+                 max_tokens: int = 16384,
                  tokenizer_model: str = "cl100k_base",
                  use_semantic_tags: bool = True,
                  reserve_ratio: float = 0.05):

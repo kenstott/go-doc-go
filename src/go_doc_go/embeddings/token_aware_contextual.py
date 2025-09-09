@@ -18,7 +18,7 @@ class TokenAwareContextualEmbedding:
     
     def __init__(self, 
                  base_generator,
-                 max_tokens: int = 8192,  # Common limit for embedding models
+                 max_tokens: int = 16384,  # Default limit for embedding models
                  target_ratio: Dict[str, float] = None,
                  tokenizer_model: str = "cl100k_base",  # GPT-3.5/4 tokenizer
                  use_semantic_tags: bool = True):
@@ -398,7 +398,7 @@ class AdaptiveContextStrategy:
     Adaptive strategy for handling different document types and sizes.
     """
     
-    def __init__(self, max_tokens: int = 8192):
+    def __init__(self, max_tokens: int = 16384):
         self.max_tokens = max_tokens
         
         # Different strategies for different scenarios

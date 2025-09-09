@@ -173,7 +173,7 @@ class OpenAIEmbeddingGenerator(EmbeddingGenerator):
         """
         return hashlib.md5(text.encode('utf-8')).hexdigest()
 
-    def generate_from_elements(self, elements: List[Dict[str, Any]]) -> Dict[str, List[float]]:
+    def generate_from_elements(self, elements: List[Dict[str, Any]], db=None) -> Dict[str, List[float]]:
         """Generate embeddings for document elements."""
         embeddings = {}
 

@@ -72,12 +72,13 @@ class EmbeddingGenerator(ABC):
         pass
 
     @abstractmethod
-    def generate_from_elements(self, elements: List[Dict[str, Any]]) -> Dict[str, List[float]]:
+    def generate_from_elements(self, elements: List[Dict[str, Any]], db=None) -> Dict[str, List[float]]:
         """
         Generate embeddings for document elements.
 
         Args:
             elements: List of document elements
+            db: Optional database connection for cross-document relationships
 
         Returns:
             Dictionary mapping element_id to embedding

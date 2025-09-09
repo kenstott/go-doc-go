@@ -99,6 +99,7 @@ def get_embedding_generator(config: Config) -> EmbeddingGenerator:
         successor_count = embeddings.get("successor_count", 1)
         ancestor_depth = embeddings.get("ancestor_depth", 1)
         child_count = embeddings.get("child_count", 1)
+        max_tokens = config.get_embedding_max_tokens()
 
         contextual_generator = ContextualEmbeddingGenerator(
             config,
@@ -108,7 +109,8 @@ def get_embedding_generator(config: Config) -> EmbeddingGenerator:
             predecessor_count,
             successor_count,
             ancestor_depth,
-            child_count
+            child_count,
+            max_tokens
         )
         logger.info("Added contextual embedding wrapper")
         return contextual_generator

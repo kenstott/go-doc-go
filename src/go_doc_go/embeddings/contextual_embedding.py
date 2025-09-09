@@ -33,7 +33,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                  successor_count: int = 1,
                  ancestor_depth: int = 1,
                  child_count: int = 1,
-                 max_tokens: int = 8192,
+                 max_tokens: int = 16384,
                  tokenizer_model: str = "cl100k_base",
                  use_semantic_tags: bool = True):
         """
@@ -513,11 +513,15 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         except ValueError:
             return False
 
-    def generate_from_elements(self, elements: List[Dict[str, Any]]) -> Dict[str, List[float]]:
+    def generate_from_elements(self, elements: List[Dict[str, Any]], db=None) -> Dict[str, List[float]]:
         """
         Generate contextual embeddings for document elements, with size handling:
         - Skip root elements that exceed the size threshold
         - Truncate non-root elements that exceed the size threshold
+        
+        Args:
+            elements: List of document elements to generate embeddings for
+            db: Optional database connection for cross-document relationships
         """
         # Build element hierarchy
         hierarchy = self._build_element_hierarchy(elements)
@@ -550,7 +554,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 content = " ".join(content.split()[:max_words_for_embedding])
 
             # Get context elements
-            context_elements = self._get_context_elements(element, elements, hierarchy)
+            context_elements = self._get_context_elements(element, elements, hierarchy, db)
 
             # Get context contents using the resolver for text
             context_contents = []
@@ -596,7 +600,8 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
 
     def _get_context_elements(self, element: Dict[str, Any],
                               all_elements: List[Dict[str, Any]],
-                              hierarchy: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+                              hierarchy: Dict[str, List[str]],
+                              db=None) -> List[Dict[str, Any]]:
         """
         Get context elements for an element.
 
@@ -605,11 +610,13 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         - Meaningful predecessors (elements that come before in document order)
         - Meaningful successors (elements that come after in document order)
         - A limited number of meaningful children (directly nested elements)
+        - Cross-document relationships (if db is provided)
 
         Args:
             element: Element to get context for
             all_elements: List of all elements
             hierarchy: Element hierarchy
+            db: Database connection for cross-document relationships (optional)
 
         Returns:
             List of context elements
@@ -715,7 +722,77 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             if context_id in id_to_element:
                 context_elements.append(id_to_element[context_id])
 
+        # Add cross-document relationships if database is available
+        if db and hasattr(element, 'get') and element.get('element_pk'):
+            try:
+                cross_doc_elements = self._get_cross_document_context(element, db)
+                context_elements.extend(cross_doc_elements)
+                logger.debug(f"Added {len(cross_doc_elements)} cross-document context elements for {element_id}")
+            except Exception as e:
+                logger.warning(f"Failed to retrieve cross-document context for {element_id}: {e}")
+
         return context_elements
+
+    def _get_cross_document_context(self, element: Dict[str, Any], db) -> List[Dict[str, Any]]:
+        """
+        Get cross-document context elements for an element.
+        
+        Retrieves elements from other documents that have semantic relationships
+        with this element, prioritizing by relationship strength and type.
+        
+        Args:
+            element: Element to get cross-document context for
+            db: Database connection for relationship queries
+            
+        Returns:
+            List of cross-document context elements
+        """
+        cross_doc_elements = []
+        element_pk = element.get('element_pk')
+        if not element_pk:
+            return cross_doc_elements
+            
+        try:
+            # Get outgoing relationships (where this element is the source)
+            relationships = db.get_outgoing_relationships(element_pk)
+            
+            # Filter for cross-document semantic relationships
+            cross_doc_relationships = []
+            for rel in relationships:
+                metadata = rel.metadata or {}
+                if metadata.get('cross_document', False) and rel.relationship_type == 'semantic_section':
+                    cross_doc_relationships.append(rel)
+            
+            # Sort by similarity score (highest first)
+            cross_doc_relationships.sort(
+                key=lambda r: r.metadata.get('similarity_score', 0.0) if r.metadata else 0.0,
+                reverse=True
+            )
+            
+            # Limit cross-document context to avoid overwhelming the token budget
+            max_cross_doc_context = 3  # Conservative limit
+            
+            for rel in cross_doc_relationships[:max_cross_doc_context]:
+                try:
+                    target_element = db.get_element(rel.target_reference)
+                    if target_element and target_element.get('content_preview'):
+                        # Add metadata indicating this is cross-document context
+                        target_element = dict(target_element)  # Make a copy
+                        target_element['_cross_document'] = True
+                        target_element['_similarity_score'] = rel.metadata.get('similarity_score', 0.0)
+                        target_element['_source_doc_id'] = rel.metadata.get('target_doc_id')
+                        cross_doc_elements.append(target_element)
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to retrieve cross-document element {rel.target_reference}: {e}")
+                    continue
+                    
+            logger.debug(f"Retrieved {len(cross_doc_elements)} cross-document context elements")
+            
+        except Exception as e:
+            logger.warning(f"Error retrieving cross-document relationships: {e}")
+            
+        return cross_doc_elements
 
     @staticmethod
     def _is_empty_container(element: Dict[str, Any]) -> bool:
