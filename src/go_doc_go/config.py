@@ -49,7 +49,8 @@ class Config:
                 "enabled": False,
                 "model": "sentence-transformers/all-MiniLM-L6-v2",
                 "chunk_size": 512,
-                "overlap": 128
+                "overlap": 128,
+                "max_tokens": 16384
             },
             "content_sources": [],
             "relationship_detection": {
@@ -205,6 +206,10 @@ class Config:
     def get_embedding_params(self) -> Dict[str, Any]:
         """Get embedding parameters."""
         return self.config["embedding"]
+    
+    def get_embedding_max_tokens(self) -> int:
+        """Get the maximum tokens for contextual embeddings."""
+        return self.config["embedding"].get("max_tokens", 16384)
 
     def get_content_sources(self) -> List[Dict[str, Any]]:
         """Get configured content sources."""
