@@ -33,7 +33,7 @@ class WebAdapter(ContentSourceAdapter):
         # Initialize session with configured headers and auth
         self.session = requests.Session()
         self.headers = self.config.get("headers", {
-            "User-Agent": "Doculyzer/1.0 Web Content Adapter"
+            "User-Agent": "Go-Doc-Go/1.0 Web Content Adapter"
         })
         self.session.headers.update(self.headers)
 
