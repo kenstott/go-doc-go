@@ -71,4 +71,4 @@ docs/_templates/
 
 # Package files
 *.tar.gz
-*.zip
+*.zip.env.sharepoint
