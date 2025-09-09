@@ -1433,6 +1433,74 @@ class SQLiteDocumentDatabase(DocumentDatabase):
             logger.error(f"Error getting outgoing relationships for element {element_pk}: {str(e)}")
             return []
 
+    def store_relationship(self, relationship: Dict[str, Any]) -> None:
+        """
+        Store a single relationship between elements.
+        
+        Args:
+            relationship: Relationship data with relationship_id, source_id, 
+                         relationship_type, target_reference, and optional metadata
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        try:
+            relationship_id = relationship["relationship_id"]
+            metadata_json = json.dumps(relationship.get("metadata", {}), default=self._json_default)
+
+            self.conn.execute(
+                """
+                INSERT INTO relationships 
+                (relationship_id, source_id, relationship_type, target_reference, metadata)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    relationship_id,
+                    relationship.get("source_id", ""),
+                    relationship.get("relationship_type", ""),
+                    relationship.get("target_reference", ""),
+                    metadata_json
+                )
+            )
+            self.conn.commit()
+            logger.debug(f"Stored relationship {relationship_id}")
+            
+        except Exception as e:
+            logger.error(f"Error storing relationship {relationship.get('relationship_id', 'unknown')}: {str(e)}")
+            raise
+
+    def delete_relationships_for_element(self, element_id: str, relationship_type: str = None) -> None:
+        """
+        Delete relationships where the element is the source.
+        
+        Args:
+            element_id: ID of the element whose outgoing relationships to delete
+            relationship_type: Optional relationship type to filter by
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        try:
+            if relationship_type:
+                cursor = self.conn.execute(
+                    "DELETE FROM relationships WHERE source_id = ? AND relationship_type = ?",
+                    (element_id, relationship_type)
+                )
+            else:
+                cursor = self.conn.execute(
+                    "DELETE FROM relationships WHERE source_id = ?",
+                    (element_id,)
+                )
+            deleted_count = cursor.rowcount
+            self.conn.commit()
+            
+            type_filter = f" of type '{relationship_type}'" if relationship_type else ""
+            logger.debug(f"Deleted {deleted_count} relationships{type_filter} for element {element_id}")
+            
+        except Exception as e:
+            logger.error(f"Error deleting relationships for element {element_id}: {str(e)}")
+            raise
+
     # ========================================
     # DATE STORAGE AND SEARCH METHODS
     # ========================================
