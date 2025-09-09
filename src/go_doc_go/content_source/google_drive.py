@@ -94,19 +94,20 @@ except ImportError:
 class GoogleDriveContentSource(ContentSource):
     """Content source for Google Drive."""
 
-    # Define Google Drive document MIME types and their corresponding formats
+    # Define Google Drive document MIME types and their corresponding export formats
+    # Export Google Docs/Sheets/Slides as MS Office formats for better parsing
     GOOGLE_DOCUMENT_MIME_TYPES = {
-        'application/vnd.google-apps.document': 'text/html',
-        'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.google-apps.presentation': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.google-apps.document': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',  # Export as DOCX
+        'application/vnd.google-apps.spreadsheet': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',  # Export as XLSX
+        'application/vnd.google-apps.presentation': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',  # Export as PPTX
         'application/vnd.google-apps.drawing': 'image/png',
         'application/vnd.google-apps.script': 'application/json',
-        'application/vnd.google-apps.form': 'text/html'
+        'application/vnd.google-apps.form': 'text/html'  # Forms don't have a good Office equivalent
     }
 
     # File format extension map
     FILE_EXTENSIONS = {
-        'application/vnd.google-apps.document': 'html',
+        'application/vnd.google-apps.document': 'docx',
         'application/vnd.google-apps.spreadsheet': 'xlsx',
         'application/vnd.google-apps.presentation': 'pptx',
         'application/vnd.google-apps.drawing': 'png',
@@ -232,7 +233,7 @@ class GoogleDriveContentSource(ContentSource):
                 "web_view_link": file_metadata.get('webViewLink', ''),
                 "owners": [owner.get('displayName', '') for owner in file_metadata.get('owners', [])],
                 "is_google_doc": mime_type.startswith('application/vnd.google-apps.'),
-                "content_type": "binary" if is_binary else "text/html" if doc_type == "html" else "text/plain"
+                "content_type": self._get_content_type(doc_type, is_binary)
             }
 
             # Generate content hash for change detection
@@ -250,8 +251,7 @@ class GoogleDriveContentSource(ContentSource):
 
             return {
                 "id": qualified_source,
-                "content": content if not is_binary else "",
-                "binary_content": content if is_binary else None,
+                "content": content,  # Always put content here - parsers expect it
                 "doc_type": doc_type,
                 "metadata": metadata,
                 "content_hash": content_hash
@@ -372,7 +372,7 @@ class GoogleDriveContentSource(ContentSource):
                         "web_view_link": file.get('webViewLink', ''),
                         "owners": [owner.get('displayName', '') for owner in file.get('owners', [])],
                         "is_google_doc": mime_type.startswith('application/vnd.google-apps.'),
-                        "content_type": "text/html" if doc_type == "html" else "application/octet-stream"
+                        "content_type": self._get_content_type(doc_type, False)
                     },
                     "doc_type": doc_type
                 })
@@ -388,6 +388,18 @@ class GoogleDriveContentSource(ContentSource):
         except Exception as e:
             logger.error(f"Error listing Google Drive documents: {str(e)}")
             raise
+
+    def get_documents(self) -> List[Dict[str, Any]]:
+        """
+        Get all documents from Google Drive.
+        
+        This method is provided for compatibility with tests and other consumers
+        that expect a get_documents() method. It delegates to list_documents().
+        
+        Returns:
+            List of document dictionaries with id and metadata
+        """
+        return self.list_documents()
 
     def has_changed(self, source_id: str, last_modified: Optional[float] = None) -> bool:
         """
@@ -657,6 +669,14 @@ class GoogleDriveContentSource(ContentSource):
                     return response.decode('utf-8'), False
                 except UnicodeDecodeError:
                     return response, True
+            
+            # For Office formats (DOCX, XLSX, PPTX), return as binary
+            if export_mime_type in [
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            ]:
+                return response, True
 
             # For binary formats
             return response, True
@@ -694,11 +714,11 @@ class GoogleDriveContentSource(ContentSource):
             Document type string
         """
         if mime_type == 'application/vnd.google-apps.document':
-            return 'html'
+            return 'docx'  # Google Docs exported as DOCX
         elif mime_type == 'application/vnd.google-apps.spreadsheet':
-            return 'xlsx'
+            return 'xlsx'  # Google Sheets exported as XLSX
         elif mime_type == 'application/vnd.google-apps.presentation':
-            return 'pptx'
+            return 'pptx'  # Google Slides exported as PPTX
         elif mime_type == 'application/vnd.google-apps.form':
             return 'html'
         elif mime_type == 'application/vnd.google-apps.script':
@@ -720,6 +740,38 @@ class GoogleDriveContentSource(ContentSource):
         else:
             # Default to binary for unknown types
             return 'binary'
+
+    @staticmethod
+    def _get_content_type(doc_type: str, is_binary: bool) -> str:
+        """
+        Get the content type based on document type.
+        
+        Args:
+            doc_type: Document type string
+            is_binary: Whether the content is binary
+            
+        Returns:
+            Content type string
+        """
+        if is_binary:
+            return "binary"
+        
+        content_type_map = {
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'html': 'text/html',
+            'text': 'text/plain',
+            'txt': 'text/plain',
+            'pdf': 'application/pdf',
+            'json': 'application/json',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'binary': 'application/octet-stream'
+        }
+        
+        return content_type_map.get(doc_type, 'application/octet-stream')
 
     def _extract_file_id(self, source_id: str) -> str:
         """
