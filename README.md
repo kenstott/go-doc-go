@@ -314,7 +314,7 @@ Go-Doc-Go supports multiple content sources through a modular, pluggable archite
 | ServiceNow | ServiceNow platform content | `pysnow` | `pip install "go-doc-go[source-servicenow]"` |
 | MongoDB | MongoDB database content | `pymongo` | `pip install "go-doc-go[source-mongodb]"` |
 | SharePoint | Microsoft SharePoint content | `Office365-REST-Python-Client` | `pip install "go-doc-go[source-sharepoint]"` |
-| Google Drive | Google Drive content | `google-api-python-client` | `pip install "go-doc-go[source-gdrive]"` |
+| Google Drive | Google Drive content (auto-exports Docs/Sheets/Slides to MS Office) | `google-api-python-client` | `pip install "go-doc-go[source-gdrive]"` |
 
 ## Storage Backends
 
