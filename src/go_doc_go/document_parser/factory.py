@@ -14,6 +14,7 @@ from .docx import DocxParser
 from .html import HtmlParser
 from .json import JSONParser  # Import the JSON parser
 from .markdown import MarkdownParser
+from .parquet import ParquetParser
 from .pdf import PdfParser
 from .pptx import PptxParser
 from .text import TextParser
@@ -57,6 +58,8 @@ def create_parser(doc_type: str, config: Optional[Dict[str, Any]] = None) -> Doc
         return CsvParser(config)  # Added CSV parser support
     elif doc_type == "json":
         return JSONParser(config)  # Added JSON parser support
+    elif doc_type == "parquet":
+        return ParquetParser(config)
     elif doc_type == "text":
         return TextParser(config)
     else:

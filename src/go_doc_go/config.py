@@ -154,7 +154,14 @@ class Config:
         # Ensure storage path exists or create it
         storage_path = self.get_storage_path()
         logger.debug(f"Ensuring storage path exists: {storage_path}")
-        os.makedirs(storage_path, exist_ok=True)
+        # Only create directory if it's not a file path (e.g., SQLite db)
+        if not storage_path.endswith('.db'):
+            os.makedirs(storage_path, exist_ok=True)
+        else:
+            # For SQLite db files, ensure the parent directory exists
+            parent_dir = os.path.dirname(storage_path)
+            if parent_dir and parent_dir != '.':
+                os.makedirs(parent_dir, exist_ok=True)
 
         # Ensure logs directory exists
         log_dir = os.path.dirname(self.config["logging"]["file"])
@@ -215,6 +222,11 @@ class Config:
     def get_content_sources(self) -> List[Dict[str, Any]]:
         """Get configured content sources."""
         return self.config["content_sources"]
+    
+    @property
+    def content_sources(self) -> List[Dict[str, Any]]:
+        """Get configured content sources (property accessor)."""
+        return self.get_content_sources()
 
     # NEW: Get topics for a content source
     def get_source_topics(self, source_name: str) -> List[str]:
@@ -235,6 +247,11 @@ class Config:
     def get_relationship_detection_config(self) -> Dict[str, Any]:
         """Get relationship detection configuration."""
         return self.config["relationship_detection"]
+    
+    @property
+    def relationship_detection(self) -> Dict[str, Any]:
+        """Get relationship detection configuration (property accessor)."""
+        return self.get_relationship_detection_config()
 
     def get_logging_config(self) -> Dict[str, Any]:
         """Get logging configuration."""
@@ -351,6 +368,19 @@ class Config:
         self.config["content_sources"].append(source_config)
         logger.debug(f"Added content source: {source_config['name']} ({source_config['type']})")
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """
+        Get configuration value by key.
+        
+        Args:
+            key: Configuration key
+            default: Default value if key not found
+            
+        Returns:
+            Configuration value or default
+        """
+        return self.config.get(key, default)
+    
     def save(self, path: str) -> None:
         """
         Save current configuration to file.

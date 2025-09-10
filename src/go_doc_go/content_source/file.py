@@ -490,6 +490,7 @@ class FileContentSource(ContentSource):
             "ppt": ("ppt", "binary"),
             "xlsx": ("xlsx", "binary"),
             "xls": ("xls", "binary"),
+            "parquet": ("parquet", "binary"),
             "png": ("image", "binary"),
             "jpg": ("image", "binary"),
             "jpeg": ("image", "binary"),
