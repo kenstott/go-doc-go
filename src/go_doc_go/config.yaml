@@ -83,6 +83,22 @@ relationship_detection:
   semantic: false
   cross_document_semantic:
     similarity_threshold: 0.70
+  # Domain entity extraction and relationship detection
+  domain:
+    enabled: false  # Set to true to enable domain entity extraction and relationship detection
+    ontologies:
+      # List of domain ontology files to load
+      # - path: "./ontologies/automotive.yaml"
+      #   active: true
+      # - path: "./ontologies/pharmaceutical.yaml"
+      #   active: false
+    entity_extraction:
+      min_confidence: 0.5  # Minimum confidence for entity extraction
+      max_entities_per_element: 10  # Maximum domain entities per document element
+    relationship_detection:
+      min_confidence: 0.6  # Minimum confidence for relationship detection
+      # Distance constraints are defined per-rule in the ontology files
+    batch_size: 100
 
 logging:
   level: "INFO"

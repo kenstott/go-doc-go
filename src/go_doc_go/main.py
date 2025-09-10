@@ -65,9 +65,20 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
 
     # 3. Relationship detector
     logger.debug("Creating relationship detector")
+    
+    # Get ontology manager if domain detection is enabled
+    ontology_manager = None
+    if config.is_domain_detection_enabled():
+        ontology_manager = config.get_ontology_manager()
+        if ontology_manager:
+            active_domains = ontology_manager.active_domains
+            logger.info(f"Domain entity extraction enabled with {len(active_domains)} active domains: {active_domains}")
+    
     relationship_detector = create_relationship_detector(
         config.get_relationship_detection_config(),
-        embedding_generator
+        embedding_generator,
+        db=db,
+        ontology_manager=ontology_manager
     )
     logger.info("Initialized relationship detector")
     logger.debug(f"Relationship detector: {relationship_detector}")

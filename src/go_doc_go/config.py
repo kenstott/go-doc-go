@@ -25,6 +25,7 @@ class Config:
         """
         self.config = self._get_default_config()
         self._db_instance = None  # Add a database instance cache
+        self._ontology_manager = None  # Cache for ontology manager
 
         logger.debug(f"Initializing config, working directory: {os.getcwd()}")
 
@@ -288,6 +289,52 @@ class Config:
             self._db_instance = None
         else:
             logger.debug("No database instance to close")
+    
+    def get_ontology_manager(self):
+        """
+        Get the domain ontology manager singleton instance.
+        
+        Returns:
+            OntologyManager instance or None if domain detection is disabled
+        """
+        domain_config = self.config.get("relationship_detection", {}).get("domain", {})
+        
+        if not domain_config.get("enabled", False):
+            return None
+            
+        if self._ontology_manager is None:
+            logger.debug("Creating ontology manager")
+            from .domain import OntologyManager
+            
+            self._ontology_manager = OntologyManager()
+            
+            # Load configured ontologies
+            ontologies = domain_config.get("ontologies", [])
+            for ontology_config in ontologies:
+                if not isinstance(ontology_config, dict):
+                    continue
+                    
+                path = ontology_config.get("path")
+                active = ontology_config.get("active", True)
+                
+                if path and os.path.exists(path):
+                    try:
+                        name = self._ontology_manager.load_ontology(path)
+                        if active:
+                            self._ontology_manager.activate_domain(name)
+                            logger.info(f"Loaded and activated domain ontology: {name}")
+                        else:
+                            logger.info(f"Loaded domain ontology (inactive): {name}")
+                    except Exception as e:
+                        logger.error(f"Failed to load ontology from {path}: {e}")
+                else:
+                    logger.warning(f"Ontology file not found: {path}")
+        
+        return self._ontology_manager
+    
+    def is_domain_detection_enabled(self) -> bool:
+        """Check if domain entity extraction and relationship detection is enabled."""
+        return self.config.get("relationship_detection", {}).get("domain", {}).get("enabled", False)
 
     def add_content_source(self, source_config: Dict[str, Any]) -> None:
         """
