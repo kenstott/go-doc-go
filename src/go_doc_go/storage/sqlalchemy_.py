@@ -201,6 +201,65 @@ if SQLALCHEMY_AVAILABLE:
         content_hash = Column(String(255))
         last_modified = Column(Float)
         processing_count = Column(Integer, default=1)
+    
+    # Domain Entity Models
+    class DomainEntity(Base):
+        """Domain entity model for SQLAlchemy ORM."""
+        __tablename__ = 'domain_entities'
+        
+        entity_pk = Column(Integer, primary_key=True, autoincrement=True)
+        entity_id = Column(String(255), unique=True, nullable=False)
+        entity_type = Column(String(100))
+        name = Column(String(255))
+        domain = Column(String(100))
+        attributes = Column(Text)  # JSON string
+        created_at = Column(Float)
+        updated_at = Column(Float)
+        
+        # Relationships
+        element_mappings = relationship("ElementEntityMapping", back_populates="entity", cascade="all, delete-orphan")
+        relationships_as_source = relationship("EntityRelationship", 
+                                              foreign_keys="EntityRelationship.source_entity_pk",
+                                              back_populates="source_entity",
+                                              cascade="all, delete-orphan")
+        relationships_as_target = relationship("EntityRelationship",
+                                              foreign_keys="EntityRelationship.target_entity_pk",
+                                              back_populates="target_entity",
+                                              cascade="all, delete-orphan")
+    
+    class ElementEntityMapping(Base):
+        """Element to entity mapping model for SQLAlchemy ORM."""
+        __tablename__ = 'element_entity_mappings'
+        
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        element_pk = Column(Integer, ForeignKey('elements.element_pk', ondelete='CASCADE'))
+        entity_pk = Column(Integer, ForeignKey('domain_entities.entity_pk', ondelete='CASCADE'))
+        extraction_rule = Column(String(255))
+        confidence = Column(Float, default=1.0)
+        created_at = Column(Float)
+        
+        # Relationships
+        entity = relationship("DomainEntity", back_populates="element_mappings")
+    
+    class EntityRelationship(Base):
+        """Entity to entity relationship model for SQLAlchemy ORM."""
+        __tablename__ = 'entity_relationships'
+        
+        relationship_id = Column(Integer, primary_key=True, autoincrement=True)
+        source_entity_pk = Column(Integer, ForeignKey('domain_entities.entity_pk', ondelete='CASCADE'))
+        target_entity_pk = Column(Integer, ForeignKey('domain_entities.entity_pk', ondelete='CASCADE'))
+        relationship_type = Column(String(100))
+        domain = Column(String(100))
+        confidence = Column(Float, default=1.0)
+        metadata_ = Column('metadata', Text)  # JSON string
+        created_at = Column(Float)
+        updated_at = Column(Float)
+        
+        # Relationships
+        source_entity = relationship("DomainEntity", foreign_keys=[source_entity_pk], 
+                                    back_populates="relationships_as_source")
+        target_entity = relationship("DomainEntity", foreign_keys=[target_entity_pk],
+                                    back_populates="relationships_as_target")
 else:
     # Define placeholder classes if SQLAlchemy is not available
     Document = None
@@ -209,6 +268,9 @@ else:
     Embedding = None
     ElementDate = None
     ProcessingHistory = None
+    DomainEntity = None
+    ElementEntityMapping = None
+    EntityRelationship = None
     Base = None
 
 
@@ -3153,6 +3215,340 @@ class SQLAlchemyDocumentDatabase(DocumentDatabase):
         # Calculate cosine similarity
         return float(dot_product / (mag1 * mag2))
 
+
+
+    # ========================================
+    # DOMAIN ENTITY METHODS
+    # ========================================
+    
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """Store a domain entity and return its primary key."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Create new entity
+            new_entity = DomainEntity(
+                entity_id=entity.get("entity_id"),
+                entity_type=entity.get("entity_type"),
+                name=entity.get("name"),
+                domain=entity.get("domain"),
+                attributes=json.dumps(entity.get("attributes", {})),
+                created_at=time.time(),
+                updated_at=time.time()
+            )
+            
+            self.session.add(new_entity)
+            self.session.commit()
+            
+            logger.debug(f"Stored entity {new_entity.entity_pk}: {entity.get('name')}")
+            return new_entity.entity_pk
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error storing entity: {str(e)}")
+            raise
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Find existing entity
+            existing_entity = self.session.query(DomainEntity).filter_by(entity_pk=entity_pk).first()
+            if not existing_entity:
+                return False
+            
+            # Update fields
+            existing_entity.entity_id = entity.get("entity_id", existing_entity.entity_id)
+            existing_entity.entity_type = entity.get("entity_type", existing_entity.entity_type)
+            existing_entity.name = entity.get("name", existing_entity.name)
+            existing_entity.domain = entity.get("domain", existing_entity.domain)
+            existing_entity.attributes = json.dumps(entity.get("attributes", {}))
+            existing_entity.updated_at = time.time()
+            
+            self.session.commit()
+            
+            logger.debug(f"Updated entity {entity_pk}")
+            return True
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error updating entity {entity_pk}: {str(e)}")
+            return False
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and its associated mappings and relationships."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Find entity
+            entity = self.session.query(DomainEntity).filter_by(entity_pk=entity_pk).first()
+            if not entity:
+                return False
+            
+            # Delete entity (cascade will handle mappings and relationships)
+            self.session.delete(entity)
+            self.session.commit()
+            
+            logger.debug(f"Deleted entity {entity_pk} and its associations")
+            return True
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error deleting entity {entity_pk}: {str(e)}")
+            return False
+    
+    def get_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Get a domain entity by its primary key."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            entity = self.session.query(DomainEntity).filter_by(entity_pk=entity_pk).first()
+            if not entity:
+                return None
+            
+            return {
+                "entity_pk": entity.entity_pk,
+                "entity_id": entity.entity_id,
+                "entity_type": entity.entity_type,
+                "name": entity.name,
+                "domain": entity.domain,
+                "attributes": json.loads(entity.attributes) if entity.attributes else {},
+                "created_at": datetime.fromtimestamp(entity.created_at).isoformat() if entity.created_at else None,
+                "updated_at": datetime.fromtimestamp(entity.updated_at).isoformat() if entity.updated_at else None
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting entity {entity_pk}: {str(e)}")
+            return None
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities associated with a document."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Get all element_pks for the document
+            elements = self.session.query(Element).filter_by(doc_id=doc_id).all()
+            element_pks = [elem.element_pk for elem in elements]
+            
+            if not element_pks:
+                return []
+            
+            # Get all entities associated with these elements
+            mappings = self.session.query(ElementEntityMapping).filter(
+                ElementEntityMapping.element_pk.in_(element_pks)
+            ).all()
+            
+            entity_pks = list(set([mapping.entity_pk for mapping in mappings]))
+            
+            # Get all entities
+            entities = self.session.query(DomainEntity).filter(
+                DomainEntity.entity_pk.in_(entity_pks)
+            ).all()
+            
+            result = []
+            for entity in entities:
+                result.append({
+                    "entity_pk": entity.entity_pk,
+                    "entity_id": entity.entity_id,
+                    "entity_type": entity.entity_type,
+                    "name": entity.name,
+                    "domain": entity.domain,
+                    "attributes": json.loads(entity.attributes) if entity.attributes else {},
+                    "created_at": datetime.fromtimestamp(entity.created_at).isoformat() if entity.created_at else None,
+                    "updated_at": datetime.fromtimestamp(entity.updated_at).isoformat() if entity.updated_at else None
+                })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting entities for document {doc_id}: {str(e)}")
+            return []
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """Store element-to-entity mapping."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Create new mapping
+            new_mapping = ElementEntityMapping(
+                element_pk=mapping.get("element_pk"),
+                entity_pk=mapping.get("entity_pk"),
+                extraction_rule=mapping.get("extraction_rule", ""),
+                confidence=mapping.get("confidence", 1.0),
+                created_at=time.time()
+            )
+            
+            self.session.add(new_mapping)
+            self.session.commit()
+            
+            logger.debug(f"Stored element-entity mapping: element {mapping.get('element_pk')} -> entity {mapping.get('entity_pk')}")
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error storing element-entity mapping: {str(e)}")
+            raise
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings by element_pk, entity_pk, or both."""
+        if not element_pk and not entity_pk:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Build query
+            query = self.session.query(ElementEntityMapping)
+            
+            if element_pk and entity_pk:
+                query = query.filter_by(element_pk=element_pk, entity_pk=entity_pk)
+            elif element_pk:
+                query = query.filter_by(element_pk=element_pk)
+            else:
+                query = query.filter_by(entity_pk=entity_pk)
+            
+            # Count and delete
+            count = query.count()
+            query.delete()
+            self.session.commit()
+            
+            logger.debug(f"Deleted {count} element-entity mappings")
+            return count
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error deleting element-entity mappings: {str(e)}")
+            return 0
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Create new relationship
+            new_relationship = EntityRelationship(
+                source_entity_pk=relationship.get("source_entity_pk"),
+                target_entity_pk=relationship.get("target_entity_pk"),
+                relationship_type=relationship.get("relationship_type", ""),
+                domain=relationship.get("domain", ""),
+                confidence=relationship.get("confidence", 1.0),
+                metadata_=json.dumps(relationship.get("metadata", {})),
+                created_at=time.time(),
+                updated_at=time.time()
+            )
+            
+            self.session.add(new_relationship)
+            self.session.commit()
+            
+            logger.debug(f"Stored entity relationship {new_relationship.relationship_id}: {relationship.get('source_entity_pk')} -> {relationship.get('target_entity_pk')}")
+            return new_relationship.relationship_id
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error storing entity relationship: {str(e)}")
+            raise
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Find existing relationship
+            existing_rel = self.session.query(EntityRelationship).filter_by(relationship_id=relationship_id).first()
+            if not existing_rel:
+                return False
+            
+            # Update fields
+            existing_rel.source_entity_pk = relationship.get("source_entity_pk", existing_rel.source_entity_pk)
+            existing_rel.target_entity_pk = relationship.get("target_entity_pk", existing_rel.target_entity_pk)
+            existing_rel.relationship_type = relationship.get("relationship_type", existing_rel.relationship_type)
+            existing_rel.domain = relationship.get("domain", existing_rel.domain)
+            existing_rel.confidence = relationship.get("confidence", existing_rel.confidence)
+            existing_rel.metadata_ = json.dumps(relationship.get("metadata", {}))
+            existing_rel.updated_at = time.time()
+            
+            self.session.commit()
+            
+            logger.debug(f"Updated entity relationship {relationship_id}")
+            return True
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error updating entity relationship {relationship_id}: {str(e)}")
+            return False
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity relationships by source, target, or both."""
+        if not source_entity_pk and not target_entity_pk:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Build query
+            query = self.session.query(EntityRelationship)
+            
+            if source_entity_pk and target_entity_pk:
+                query = query.filter_by(source_entity_pk=source_entity_pk, target_entity_pk=target_entity_pk)
+            elif source_entity_pk:
+                query = query.filter_by(source_entity_pk=source_entity_pk)
+            else:
+                query = query.filter_by(target_entity_pk=target_entity_pk)
+            
+            # Count and delete
+            count = query.count()
+            query.delete()
+            self.session.commit()
+            
+            logger.debug(f"Deleted {count} entity relationships")
+            return count
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"Error deleting entity relationships: {str(e)}")
+            return 0
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (both as source and target)."""
+        if not self.session:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Get relationships where entity is source or target
+            relationships = self.session.query(EntityRelationship).filter(
+                (EntityRelationship.source_entity_pk == entity_pk) |
+                (EntityRelationship.target_entity_pk == entity_pk)
+            ).all()
+            
+            result = []
+            for rel in relationships:
+                result.append({
+                    "relationship_id": rel.relationship_id,
+                    "source_entity_pk": rel.source_entity_pk,
+                    "target_entity_pk": rel.target_entity_pk,
+                    "relationship_type": rel.relationship_type,
+                    "domain": rel.domain,
+                    "confidence": rel.confidence,
+                    "metadata": json.loads(rel.metadata_) if rel.metadata_ else {},
+                    "created_at": datetime.fromtimestamp(rel.created_at).isoformat() if rel.created_at else None,
+                    "updated_at": datetime.fromtimestamp(rel.updated_at).isoformat() if rel.updated_at else None
+                })
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting entity relationships for entity {entity_pk}: {str(e)}")
+            return []
 
 if __name__ == "__main__":
     # Example demonstrating structured search with SQLAlchemy

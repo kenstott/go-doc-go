@@ -141,12 +141,17 @@ class ElasticsearchDocumentDatabase(DocumentDatabase):
         self.history_index = f"{self.index_prefix}_history"
         self.embeddings_index = f"{self.index_prefix}_embeddings"
         self.dates_index = f"{self.index_prefix}_dates"
+        self.entities_index = f"{self.index_prefix}_entities"
+        self.entity_mappings_index = f"{self.index_prefix}_entity_mappings"
+        self.entity_relationships_index = f"{self.index_prefix}_entity_relationships"
 
         # Initialize Elasticsearch client to None - will be created in initialize()
         self.es = None
 
-        # Auto-increment counter
+        # Auto-increment counters
         self.element_pk_counter = 0
+        self.entity_pk_counter = 0
+        self.entity_relationship_counter = 0
 
         # Configuration for vector search
         self.vector_dimension = conn_params.get('vector_dimension', 384)
@@ -1129,6 +1134,52 @@ class ElasticsearchDocumentDatabase(DocumentDatabase):
             }
         }
 
+        # Entity index mapping
+        entities_mapping = {
+            "mappings": {
+                "properties": {
+                    "entity_pk": {"type": "long"},
+                    "entity_id": {"type": "keyword"},
+                    "entity_type": {"type": "keyword"},
+                    "name": {"type": "text", "fields": {"keyword": {"type": "keyword"}}},
+                    "domain": {"type": "keyword"},
+                    "attributes": {"type": "object", "enabled": False},
+                    "created_at": {"type": "date"},
+                    "updated_at": {"type": "date"}
+                }
+            }
+        }
+        
+        # Entity mappings index mapping
+        entity_mappings_mapping = {
+            "mappings": {
+                "properties": {
+                    "element_pk": {"type": "long"},
+                    "entity_pk": {"type": "long"},
+                    "relationship_type": {"type": "keyword"},
+                    "extraction_rule": {"type": "keyword"},
+                    "confidence": {"type": "float"},
+                    "created_at": {"type": "date"}
+                }
+            }
+        }
+        
+        # Entity relationships index mapping
+        entity_relationships_mapping = {
+            "mappings": {
+                "properties": {
+                    "relationship_id": {"type": "long"},
+                    "source_entity_pk": {"type": "long"},
+                    "target_entity_pk": {"type": "long"},
+                    "relationship_type": {"type": "keyword"},
+                    "domain": {"type": "keyword"},
+                    "confidence": {"type": "float"},
+                    "metadata": {"type": "object", "enabled": False},
+                    "created_at": {"type": "date"}
+                }
+            }
+        }
+
         # Create indices
         indices_to_create = [
             (self.documents_index, documents_mapping),
@@ -1136,7 +1187,10 @@ class ElasticsearchDocumentDatabase(DocumentDatabase):
             (self.relationships_index, relationships_mapping),
             (self.history_index, history_mapping),
             (self.embeddings_index, embeddings_mapping),
-            (self.dates_index, dates_mapping)
+            (self.dates_index, dates_mapping),
+            (self.entities_index, entities_mapping),
+            (self.entity_mappings_index, entity_mappings_mapping),
+            (self.entity_relationships_index, entity_relationships_mapping)
         ]
 
         for index_name, mapping in indices_to_create:
@@ -2861,6 +2915,313 @@ class ElasticsearchDocumentDatabase(DocumentDatabase):
         # Calculate cosine similarity
         return float(dot_product / (magnitude1 * magnitude2))
 
+
+
+    # ========================================
+    # DOMAIN ENTITY METHODS
+    # ========================================
+    
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """Store a domain entity and return its primary key."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        # Generate entity_pk
+        self.entity_pk_counter += 1
+        entity_pk = self.entity_pk_counter
+        
+        # Prepare entity document
+        es_entity = {
+            "entity_pk": entity_pk,
+            "entity_id": entity["entity_id"],
+            "entity_type": entity["entity_type"],
+            "name": entity["name"],
+            "domain": entity.get("domain"),
+            "attributes": entity.get("attributes", {}),
+            "created_at": entity.get("created_at", time.time()),
+            "updated_at": entity.get("updated_at", time.time())
+        }
+        
+        # Index the entity
+        self.es.index(index=self.entities_index, id=str(entity_pk), body=es_entity)
+        
+        return entity_pk
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Prepare update document
+            update_doc = {
+                "doc": {
+                    "entity_type": entity["entity_type"],
+                    "name": entity["name"],
+                    "domain": entity.get("domain"),
+                    "attributes": entity.get("attributes", {}),
+                    "updated_at": time.time()
+                }
+            }
+            
+            # Update the entity
+            self.es.update(index=self.entities_index, id=str(entity_pk), body=update_doc)
+            return True
+            
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.error(f"Error updating entity {entity_pk}: {str(e)}")
+            return False
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and its associated mappings and relationships."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Delete entity mappings
+            delete_query = {"query": {"term": {"entity_pk": entity_pk}}}
+            self.es.delete_by_query(index=self.entity_mappings_index, body=delete_query)
+            
+            # Delete entity relationships (as source or target)
+            delete_query = {
+                "query": {
+                    "bool": {
+                        "should": [
+                            {"term": {"source_entity_pk": entity_pk}},
+                            {"term": {"target_entity_pk": entity_pk}}
+                        ]
+                    }
+                }
+            }
+            self.es.delete_by_query(index=self.entity_relationships_index, body=delete_query)
+            
+            # Delete the entity itself
+            self.es.delete(index=self.entities_index, id=str(entity_pk))
+            return True
+            
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting entity {entity_pk}: {str(e)}")
+            return False
+    
+    def get_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Get a domain entity by its primary key."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        try:
+            result = self.es.get(index=self.entities_index, id=str(entity_pk))
+            return result['_source']
+        except NotFoundError:
+            return None
+        except Exception as e:
+            logger.error(f"Error getting entity {entity_pk}: {str(e)}")
+            return None
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities associated with a document."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        entities = []
+        
+        try:
+            # First get all elements for this document
+            elements_query = {"query": {"term": {"doc_id": doc_id}}}
+            elements_result = self.es.search(index=self.elements_index, body=elements_query, size=10000)
+            
+            element_pks = [hit['_source']['element_pk'] for hit in elements_result['hits']['hits']]
+            
+            if element_pks:
+                # Get all entity mappings for these elements
+                mappings_query = {"query": {"terms": {"element_pk": element_pks}}}
+                mappings_result = self.es.search(index=self.entity_mappings_index, body=mappings_query, size=10000)
+                
+                entity_pks = list(set([hit['_source']['entity_pk'] for hit in mappings_result['hits']['hits']]))
+                
+                if entity_pks:
+                    # Get all unique entities
+                    entities_query = {"query": {"terms": {"entity_pk": entity_pks}}}
+                    entities_result = self.es.search(index=self.entities_index, body=entities_query, size=10000)
+                    
+                    entities = [hit['_source'] for hit in entities_result['hits']['hits']]
+            
+            return entities
+            
+        except Exception as e:
+            logger.error(f"Error getting entities for document {doc_id}: {str(e)}")
+            return []
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """Store element-to-entity mapping."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        # Prepare mapping document
+        es_mapping = {
+            "element_pk": mapping["element_pk"],
+            "entity_pk": mapping["entity_pk"],
+            "relationship_type": mapping.get("relationship_type", "extracted_from"),
+            "extraction_rule": mapping.get("extraction_rule"),
+            "confidence": mapping.get("confidence", 1.0),
+            "created_at": mapping.get("created_at", time.time())
+        }
+        
+        # Create unique ID for the mapping
+        mapping_id = f"{mapping['element_pk']}_{mapping['entity_pk']}"
+        
+        # Index the mapping
+        self.es.index(index=self.entity_mappings_index, id=mapping_id, body=es_mapping)
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings by element_pk, entity_pk, or both."""
+        if not element_pk and not entity_pk:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        try:
+            if element_pk and entity_pk:
+                # Delete specific mapping
+                mapping_id = f"{element_pk}_{entity_pk}"
+                self.es.delete(index=self.entity_mappings_index, id=mapping_id)
+                return 1
+            elif element_pk:
+                # Delete all mappings for element
+                delete_query = {"query": {"term": {"element_pk": element_pk}}}
+                result = self.es.delete_by_query(index=self.entity_mappings_index, body=delete_query)
+                return result.get('deleted', 0)
+            else:
+                # Delete all mappings for entity
+                delete_query = {"query": {"term": {"entity_pk": entity_pk}}}
+                result = self.es.delete_by_query(index=self.entity_mappings_index, body=delete_query)
+                return result.get('deleted', 0)
+                
+        except NotFoundError:
+            return 0
+        except Exception as e:
+            logger.error(f"Error deleting entity mappings: {str(e)}")
+            return 0
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        # Generate relationship_id
+        self.entity_relationship_counter += 1
+        relationship_id = self.entity_relationship_counter
+        
+        # Prepare relationship document
+        es_relationship = {
+            "relationship_id": relationship_id,
+            "source_entity_pk": relationship["source_entity_pk"],
+            "target_entity_pk": relationship["target_entity_pk"],
+            "relationship_type": relationship["relationship_type"],
+            "domain": relationship.get("domain"),
+            "confidence": relationship.get("confidence", 1.0),
+            "metadata": relationship.get("metadata", {}),
+            "created_at": relationship.get("created_at", time.time())
+        }
+        
+        # Index the relationship
+        self.es.index(index=self.entity_relationships_index, id=str(relationship_id), body=es_relationship)
+        
+        return relationship_id
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Prepare update document
+            update_doc = {
+                "doc": {
+                    "relationship_type": relationship["relationship_type"],
+                    "domain": relationship.get("domain"),
+                    "confidence": relationship.get("confidence", 1.0),
+                    "metadata": relationship.get("metadata", {})
+                }
+            }
+            
+            # Update the relationship
+            self.es.update(index=self.entity_relationships_index, id=str(relationship_id), body=update_doc)
+            return True
+            
+        except NotFoundError:
+            return False
+        except Exception as e:
+            logger.error(f"Error updating entity relationship {relationship_id}: {str(e)}")
+            return False
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity relationships by source, target, or both."""
+        if not source_entity_pk and not target_entity_pk:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        try:
+            if source_entity_pk and target_entity_pk:
+                # Delete specific relationships
+                delete_query = {
+                    "query": {
+                        "bool": {
+                            "must": [
+                                {"term": {"source_entity_pk": source_entity_pk}},
+                                {"term": {"target_entity_pk": target_entity_pk}}
+                            ]
+                        }
+                    }
+                }
+            elif source_entity_pk:
+                # Delete all relationships where entity is source
+                delete_query = {"query": {"term": {"source_entity_pk": source_entity_pk}}}
+            else:
+                # Delete all relationships where entity is target
+                delete_query = {"query": {"term": {"target_entity_pk": target_entity_pk}}}
+            
+            result = self.es.delete_by_query(index=self.entity_relationships_index, body=delete_query)
+            return result.get('deleted', 0)
+            
+        except Exception as e:
+            logger.error(f"Error deleting entity relationships: {str(e)}")
+            return 0
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (both as source and target)."""
+        if not self.es:
+            raise ValueError("Database not initialized")
+        
+        relationships = []
+        
+        try:
+            # Get relationships where entity is source or target
+            query = {
+                "query": {
+                    "bool": {
+                        "should": [
+                            {"term": {"source_entity_pk": entity_pk}},
+                            {"term": {"target_entity_pk": entity_pk}}
+                        ]
+                    }
+                }
+            }
+            
+            result = self.es.search(index=self.entity_relationships_index, body=query, size=10000)
+            relationships = [hit['_source'] for hit in result['hits']['hits']]
+            
+            return relationships
+            
+        except Exception as e:
+            logger.error(f"Error getting entity relationships for {entity_pk}: {str(e)}")
+            return []
 
 if __name__ == "__main__":
     # Example demonstrating structured search with Elasticsearch

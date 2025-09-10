@@ -118,6 +118,10 @@ class SolrDocumentDatabase(DocumentDatabase):
         self.history_core = f"{self.core_prefix}_history"
         self.embeddings_core = f"{self.core_prefix}_embeddings"
         self.dates_core = f"{self.core_prefix}_dates"  # For structured search date support
+        # Domain entity cores
+        self.entities_core = f"{self.core_prefix}_entities"
+        self.entity_mappings_core = f"{self.core_prefix}_entity_mappings"
+        self.entity_relationships_core = f"{self.core_prefix}_entity_relationships"
 
         # Initialize SOLR clients to None - will be created in initialize()
         self.documents = None
@@ -126,9 +130,15 @@ class SolrDocumentDatabase(DocumentDatabase):
         self.history = None
         self.embeddings = None
         self.dates = None
+        # Domain entity cores
+        self.entities = None
+        self.entity_mappings = None
+        self.entity_relationships = None
 
         # Auto-increment counters
         self.element_pk_counter = 0
+        self.entity_pk_counter = 0
+        self.entity_relationship_counter = 0
 
         # Configuration for vector search
         self.vector_dimension = conn_params.get('vector_dimension', 384)
@@ -1008,6 +1018,10 @@ class SolrDocumentDatabase(DocumentDatabase):
             self.history = pysolr.Solr(f"{self.base_url}/{self.history_core}", always_commit=True)
             self.embeddings = pysolr.Solr(f"{self.base_url}/{self.embeddings_core}", always_commit=True)
             self.dates = pysolr.Solr(f"{self.base_url}/{self.dates_core}", always_commit=True)
+            # Domain entity cores
+            self.entities = pysolr.Solr(f"{self.base_url}/{self.entities_core}", always_commit=True)
+            self.entity_mappings = pysolr.Solr(f"{self.base_url}/{self.entity_mappings_core}", always_commit=True)
+            self.entity_relationships = pysolr.Solr(f"{self.base_url}/{self.entity_relationships_core}", always_commit=True)
 
             # Check if cores exist by making a simple query
             try:
@@ -1019,6 +1033,8 @@ class SolrDocumentDatabase(DocumentDatabase):
 
             # Initialize element_pk counter
             self._initialize_counter()
+            # Initialize entity counters
+            self._initialize_entity_counters()
 
             logger.info("SOLR document database initialized successfully")
             logger.info(f"Full-text config: store={self.store_full_text}, index={self.index_full_text}, "
@@ -1042,6 +1058,37 @@ class SolrDocumentDatabase(DocumentDatabase):
         except Exception as e:
             logger.error(f"Error initializing counter: {str(e)}")
             self.element_pk_counter = 0
+    
+    def _initialize_entity_counters(self) -> None:
+        """Initialize entity and entity_relationship counters based on highest existing values."""
+        try:
+            # Initialize entity_pk counter
+            if self.entities:
+                try:
+                    results = self.entities.search("*:*", sort="entity_pk desc", rows=1)
+                    if len(results) > 0:
+                        self.entity_pk_counter = int(results.docs[0].get("entity_pk", 0))
+                        logger.info(f"Initialized entity_pk counter to {self.entity_pk_counter}")
+                    else:
+                        self.entity_pk_counter = 0
+                except Exception:
+                    self.entity_pk_counter = 0
+            
+            # Initialize entity_relationship counter
+            if self.entity_relationships:
+                try:
+                    results = self.entity_relationships.search("*:*", sort="relationship_id desc", rows=1)
+                    if len(results) > 0:
+                        self.entity_relationship_counter = int(results.docs[0].get("relationship_id", 0))
+                        logger.info(f"Initialized entity_relationship counter to {self.entity_relationship_counter}")
+                    else:
+                        self.entity_relationship_counter = 0
+                except Exception:
+                    self.entity_relationship_counter = 0
+        except Exception as e:
+            logger.error(f"Error initializing entity counters: {str(e)}")
+            self.entity_pk_counter = 0
+            self.entity_relationship_counter = 0
 
     def close(self) -> None:
         """Close the database connection."""
@@ -3305,6 +3352,373 @@ class SolrDocumentDatabase(DocumentDatabase):
         # Calculate cosine similarity
         return float(dot_product / (magnitude1 * magnitude2))
 
+
+
+    # ========================================
+    # DOMAIN ENTITY METHODS
+    # ========================================
+    
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """Store a domain entity and return its primary key."""
+        if not self.entities:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Generate a new entity_pk
+            self.entity_pk_counter += 1
+            entity_pk = self.entity_pk_counter
+            
+            # Prepare entity document for SOLR
+            solr_doc = {
+                "entity_pk": entity_pk,
+                "entity_id": entity.get("entity_id", ""),
+                "entity_type": entity.get("entity_type", ""),
+                "name": entity.get("name", ""),
+                "domain": entity.get("domain", ""),
+                "attributes_json": json.dumps(entity.get("attributes", {})),
+                "created_at": entity.get("created_at", datetime.now().isoformat()),
+                "updated_at": entity.get("updated_at", datetime.now().isoformat())
+            }
+            
+            # Add to SOLR
+            self.entities.add([solr_doc])
+            
+            logger.debug(f"Stored entity {entity_pk}: {entity.get('name')}")
+            return entity_pk
+            
+        except Exception as e:
+            logger.error(f"Error storing entity: {str(e)}")
+            raise
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        if not self.entities:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Check if entity exists
+            results = self.entities.search(f"entity_pk:{entity_pk}", rows=1)
+            if len(results) == 0:
+                return False
+            
+            # Update the entity document
+            solr_doc = {
+                "entity_pk": entity_pk,
+                "entity_id": entity.get("entity_id", ""),
+                "entity_type": entity.get("entity_type", ""),
+                "name": entity.get("name", ""),
+                "domain": entity.get("domain", ""),
+                "attributes_json": json.dumps(entity.get("attributes", {})),
+                "created_at": entity.get("created_at", datetime.now().isoformat()),
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            # Update in SOLR (add with same pk will update)
+            self.entities.add([solr_doc])
+            
+            logger.debug(f"Updated entity {entity_pk}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating entity {entity_pk}: {str(e)}")
+            return False
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and its associated mappings and relationships."""
+        if not self.entities:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Delete associated mappings
+            if self.entity_mappings:
+                self.entity_mappings.delete(f"entity_pk:{entity_pk}")
+            
+            # Delete associated relationships (where entity is source or target)
+            if self.entity_relationships:
+                self.entity_relationships.delete(f"source_entity_pk:{entity_pk} OR target_entity_pk:{entity_pk}")
+            
+            # Delete the entity itself
+            self.entities.delete(f"entity_pk:{entity_pk}")
+            
+            logger.debug(f"Deleted entity {entity_pk} and its associations")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting entity {entity_pk}: {str(e)}")
+            return False
+    
+    def get_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Get a domain entity by its primary key."""
+        if not self.entities:
+            raise ValueError("Database not initialized")
+        
+        try:
+            results = self.entities.search(f"entity_pk:{entity_pk}", rows=1)
+            if len(results) == 0:
+                return None
+            
+            doc = results.docs[0]
+            
+            # Parse entity from SOLR document
+            entity = {
+                "entity_pk": doc.get("entity_pk"),
+                "entity_id": doc.get("entity_id", ""),
+                "entity_type": doc.get("entity_type", ""),
+                "name": doc.get("name", ""),
+                "domain": doc.get("domain", ""),
+                "created_at": doc.get("created_at", ""),
+                "updated_at": doc.get("updated_at", "")
+            }
+            
+            # Parse attributes
+            try:
+                attributes_json = doc.get("attributes_json", "{}")
+                entity["attributes"] = json.loads(attributes_json)
+            except (json.JSONDecodeError, TypeError):
+                entity["attributes"] = {}
+            
+            return entity
+            
+        except Exception as e:
+            logger.error(f"Error getting entity {entity_pk}: {str(e)}")
+            return None
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities associated with a document."""
+        if not self.entity_mappings or not self.entities:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # First get all element_pks for this document
+            if not self.elements:
+                return []
+            
+            element_results = self.elements.search(f"doc_id:{doc_id}", rows=10000)
+            if len(element_results) == 0:
+                return []
+            
+            element_pks = [doc.get("element_pk") for doc in element_results.docs]
+            
+            # Get all entity_pks associated with these elements
+            entity_pks = set()
+            for element_pk in element_pks:
+                mapping_results = self.entity_mappings.search(f"element_pk:{element_pk}", rows=10000)
+                for mapping in mapping_results.docs:
+                    entity_pk = mapping.get("entity_pk")
+                    if entity_pk:
+                        entity_pks.add(entity_pk)
+            
+            # Get all entities
+            entities = []
+            for entity_pk in entity_pks:
+                entity = self.get_entity(entity_pk)
+                if entity:
+                    entities.append(entity)
+            
+            return entities
+            
+        except Exception as e:
+            logger.error(f"Error getting entities for document {doc_id}: {str(e)}")
+            return []
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """Store element-to-entity mapping."""
+        if not self.entity_mappings:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Prepare mapping document for SOLR
+            solr_doc = {
+                "id": f"{mapping.get('element_pk')}_{mapping.get('entity_pk')}",  # Unique ID
+                "element_pk": mapping.get("element_pk"),
+                "entity_pk": mapping.get("entity_pk"),
+                "extraction_rule": mapping.get("extraction_rule", ""),
+                "confidence": mapping.get("confidence", 1.0),
+                "created_at": mapping.get("created_at", datetime.now().isoformat())
+            }
+            
+            # Add to SOLR
+            self.entity_mappings.add([solr_doc])
+            
+            logger.debug(f"Stored element-entity mapping: element {mapping.get('element_pk')} -> entity {mapping.get('entity_pk')}")
+            
+        except Exception as e:
+            logger.error(f"Error storing element-entity mapping: {str(e)}")
+            raise
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings by element_pk, entity_pk, or both."""
+        if not element_pk and not entity_pk:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        if not self.entity_mappings:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Build query based on provided parameters
+            queries = []
+            if element_pk:
+                queries.append(f"element_pk:{element_pk}")
+            if entity_pk:
+                queries.append(f"entity_pk:{entity_pk}")
+            
+            query = " AND ".join(queries)
+            
+            # Count before deletion
+            results = self.entity_mappings.search(query, rows=0)
+            count = results.hits
+            
+            # Delete matching mappings
+            self.entity_mappings.delete(query)
+            
+            logger.debug(f"Deleted {count} element-entity mappings")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Error deleting element-entity mappings: {str(e)}")
+            return 0
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        if not self.entity_relationships:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Generate a new relationship_id
+            self.entity_relationship_counter += 1
+            relationship_id = self.entity_relationship_counter
+            
+            # Prepare relationship document for SOLR
+            solr_doc = {
+                "relationship_id": relationship_id,
+                "source_entity_pk": relationship.get("source_entity_pk"),
+                "target_entity_pk": relationship.get("target_entity_pk"),
+                "relationship_type": relationship.get("relationship_type", ""),
+                "domain": relationship.get("domain", ""),
+                "confidence": relationship.get("confidence", 1.0),
+                "metadata_json": json.dumps(relationship.get("metadata", {})),
+                "created_at": relationship.get("created_at", datetime.now().isoformat()),
+                "updated_at": relationship.get("updated_at", datetime.now().isoformat())
+            }
+            
+            # Add to SOLR
+            self.entity_relationships.add([solr_doc])
+            
+            logger.debug(f"Stored entity relationship {relationship_id}: {relationship.get('source_entity_pk')} -> {relationship.get('target_entity_pk')}")
+            return relationship_id
+            
+        except Exception as e:
+            logger.error(f"Error storing entity relationship: {str(e)}")
+            raise
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        if not self.entity_relationships:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Check if relationship exists
+            results = self.entity_relationships.search(f"relationship_id:{relationship_id}", rows=1)
+            if len(results) == 0:
+                return False
+            
+            # Update the relationship document
+            solr_doc = {
+                "relationship_id": relationship_id,
+                "source_entity_pk": relationship.get("source_entity_pk"),
+                "target_entity_pk": relationship.get("target_entity_pk"),
+                "relationship_type": relationship.get("relationship_type", ""),
+                "domain": relationship.get("domain", ""),
+                "confidence": relationship.get("confidence", 1.0),
+                "metadata_json": json.dumps(relationship.get("metadata", {})),
+                "created_at": relationship.get("created_at", datetime.now().isoformat()),
+                "updated_at": datetime.now().isoformat()
+            }
+            
+            # Update in SOLR (add with same id will update)
+            self.entity_relationships.add([solr_doc])
+            
+            logger.debug(f"Updated entity relationship {relationship_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating entity relationship {relationship_id}: {str(e)}")
+            return False
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity relationships by source, target, or both."""
+        if not source_entity_pk and not target_entity_pk:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        if not self.entity_relationships:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Build query based on provided parameters
+            queries = []
+            if source_entity_pk:
+                queries.append(f"source_entity_pk:{source_entity_pk}")
+            if target_entity_pk:
+                queries.append(f"target_entity_pk:{target_entity_pk}")
+            
+            if len(queries) == 2:
+                # Both specified - use AND
+                query = " AND ".join(queries)
+            else:
+                # Only one specified
+                query = queries[0]
+            
+            # Count before deletion
+            results = self.entity_relationships.search(query, rows=0)
+            count = results.hits
+            
+            # Delete matching relationships
+            self.entity_relationships.delete(query)
+            
+            logger.debug(f"Deleted {count} entity relationships")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Error deleting entity relationships: {str(e)}")
+            return 0
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (both as source and target)."""
+        if not self.entity_relationships:
+            raise ValueError("Database not initialized")
+        
+        try:
+            # Get relationships where entity is source or target
+            query = f"source_entity_pk:{entity_pk} OR target_entity_pk:{entity_pk}"
+            results = self.entity_relationships.search(query, rows=10000)
+            
+            relationships = []
+            for doc in results.docs:
+                rel = {
+                    "relationship_id": doc.get("relationship_id"),
+                    "source_entity_pk": doc.get("source_entity_pk"),
+                    "target_entity_pk": doc.get("target_entity_pk"),
+                    "relationship_type": doc.get("relationship_type", ""),
+                    "domain": doc.get("domain", ""),
+                    "confidence": float(doc.get("confidence", 1.0)),
+                    "created_at": doc.get("created_at", ""),
+                    "updated_at": doc.get("updated_at", "")
+                }
+                
+                # Parse metadata
+                try:
+                    metadata_json = doc.get("metadata_json", "{}")
+                    rel["metadata"] = json.loads(metadata_json)
+                except (json.JSONDecodeError, TypeError):
+                    rel["metadata"] = {}
+                
+                relationships.append(rel)
+            
+            return relationships
+            
+        except Exception as e:
+            logger.error(f"Error getting entity relationships for entity {entity_pk}: {str(e)}")
+            return []
 
 if __name__ == "__main__":
     # Example demonstrating structured search with SOLR and full-text configuration

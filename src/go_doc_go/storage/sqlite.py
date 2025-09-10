@@ -688,6 +688,568 @@ class SQLiteDocumentDatabase(DocumentDatabase):
         
         return mappings
     
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """
+        Store a domain entity.
+        
+        Args:
+            entity: Entity dictionary with keys:
+                   - entity_id: str (required)
+                   - entity_type: str (required)
+                   - name: str
+                   - domain: str
+                   - attributes: dict
+                   - embedding: list (optional) - entity embedding vector
+                   
+        Returns:
+            entity_pk: Primary key of stored entity
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO entities 
+                (entity_id, entity_type, name, domain, attributes, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                entity['entity_id'],
+                entity['entity_type'],
+                entity.get('name'),
+                entity.get('domain'),
+                json.dumps(entity.get('attributes', {})),
+                time.time(),
+                time.time()
+            ))
+            
+            entity_pk = cursor.lastrowid
+            
+            # Store embedding if provided
+            if 'embedding' in entity and entity['embedding']:
+                self.store_entity_embedding(entity_pk, entity['embedding'], 
+                                          entity.get('embedding_model', 'unknown'))
+            
+            self.conn.commit()
+            return entity_pk
+            
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error storing entity: {e}")
+            raise
+    
+    def store_entity_embedding(self, entity_pk: int, embedding: List[float], model: str = 'unknown') -> None:
+        """Store embedding for an entity."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO entity_embeddings 
+                (entity_pk, embedding, dimensions, model, created_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                entity_pk,
+                json.dumps(embedding),
+                len(embedding),
+                model,
+                time.time()
+            ))
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error storing entity embedding: {e}")
+            raise
+    
+    def get_entity_embedding(self, entity_pk: int) -> Optional[List[float]]:
+        """Get embedding for an entity."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT embedding FROM entity_embeddings 
+            WHERE entity_pk = ?
+        """, (entity_pk,))
+        
+        row = cursor.fetchone()
+        if row and row[0]:
+            return json.loads(row[0])
+        return None
+    
+    def search_similar_entities(self, query_embedding: List[float], limit: int = 10, 
+                               entity_type: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Search for similar entities using cosine similarity.
+        
+        Args:
+            query_embedding: Query embedding vector
+            limit: Maximum number of results
+            entity_type: Optional filter by entity type
+            
+        Returns:
+            List of entities with similarity scores
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        # Get all entities with embeddings
+        sql = """
+            SELECT e.entity_pk, e.entity_id, e.entity_type, e.name, 
+                   e.attributes, ee.embedding
+            FROM entities e
+            INNER JOIN entity_embeddings ee ON e.entity_pk = ee.entity_pk
+        """
+        params = []
+        
+        if entity_type:
+            sql += " WHERE e.entity_type = ?"
+            params.append(entity_type)
+        
+        cursor = self.conn.cursor()
+        cursor.execute(sql, params)
+        
+        results = []
+        for row in cursor.fetchall():
+            entity_embedding = json.loads(row[5])
+            # Calculate cosine similarity
+            similarity = self._cosine_similarity(query_embedding, entity_embedding)
+            
+            results.append({
+                'entity_pk': row[0],
+                'entity_id': row[1],
+                'entity_type': row[2],
+                'name': row[3],
+                'attributes': json.loads(row[4]) if row[4] else {},
+                'similarity': similarity
+            })
+        
+        # Sort by similarity and return top results
+        results.sort(key=lambda x: x['similarity'], reverse=True)
+        return results[:limit]
+    
+    def get_entity(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        """Get entity by ID."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT entity_pk, entity_id, entity_type, name, domain, attributes, created_at, updated_at
+            FROM entities
+            WHERE entity_id = ?
+        """, (entity_id,))
+        
+        row = cursor.fetchone()
+        if row:
+            return {
+                'entity_pk': row[0],
+                'entity_id': row[1],
+                'entity_type': row[2],
+                'name': row[3],
+                'domain': row[4],
+                'attributes': json.loads(row[5]) if row[5] else {},
+                'created_at': row[6],
+                'updated_at': row[7]
+            }
+        return None
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """
+        Store element-entity mapping.
+        
+        Args:
+            mapping: Dictionary with keys:
+                    - element_pk: int
+                    - entity_pk: int
+                    - relationship_type: str
+                    - domain: str
+                    - confidence: float
+                    - extraction_method: str
+                    - metadata: dict
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                INSERT OR REPLACE INTO element_entity_mappings
+                (element_pk, entity_pk, relationship_type, domain, confidence, extraction_method, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                mapping['element_pk'],
+                mapping['entity_pk'],
+                mapping['relationship_type'],
+                mapping.get('domain'),
+                mapping.get('confidence', 1.0),
+                mapping.get('extraction_method'),
+                json.dumps(mapping.get('metadata', {}))
+            ))
+            
+            self.conn.commit()
+            
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error storing element-entity mapping: {e}")
+            raise
+    
+    def get_entities_for_element(self, element_pk: int) -> List[Dict[str, Any]]:
+        """Get all entities associated with an element."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT e.*, eem.relationship_type, eem.confidence, eem.extraction_method
+            FROM entities e
+            JOIN element_entity_mappings eem ON e.entity_pk = eem.entity_pk
+            WHERE eem.element_pk = ?
+        """, (element_pk,))
+        
+        entities = []
+        for row in cursor.fetchall():
+            entities.append({
+                'entity_pk': row[0],
+                'entity_id': row[1],
+                'entity_type': row[2],
+                'name': row[3],
+                'domain': row[4],
+                'attributes': json.loads(row[5]) if row[5] else {},
+                'relationship_type': row[8],
+                'confidence': row[9],
+                'extraction_method': row[10]
+            })
+        
+        return entities
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities extracted from a document."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT DISTINCT e.*
+            FROM entities e
+            JOIN element_entity_mappings eem ON e.entity_pk = eem.entity_pk
+            JOIN elements el ON eem.element_pk = el.element_pk
+            WHERE el.doc_id = ?
+        """, (doc_id,))
+        
+        entities = []
+        for row in cursor.fetchall():
+            entities.append({
+                'entity_pk': row[0],
+                'entity_id': row[1],
+                'entity_type': row[2],
+                'name': row[3],
+                'domain': row[4],
+                'attributes': json.loads(row[5]) if row[5] else {},
+                'created_at': row[6],
+                'updated_at': row[7]
+            })
+        
+        return entities
+    
+    def get_all_entities(self) -> List[Dict[str, Any]]:
+        """Get all entities."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT entity_pk, entity_id, entity_type, name, domain, attributes, created_at, updated_at
+            FROM entities
+        """)
+        
+        entities = []
+        for row in cursor.fetchall():
+            entities.append({
+                'entity_pk': row[0],
+                'entity_id': row[1],
+                'entity_type': row[2],
+                'name': row[3],
+                'domain': row[4],
+                'attributes': row[5],  # Keep as JSON string for now
+                'created_at': row[6],
+                'updated_at': row[7]
+            })
+        
+        return entities
+    
+    def get_element_entity_mappings(self, element_pk: int) -> List[Dict[str, Any]]:
+        """Get element-entity mappings for an element."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT eem.element_pk, eem.entity_pk, eem.relationship_type, 
+                   eem.domain, eem.confidence, eem.extraction_method, eem.metadata,
+                   e.entity_id, e.name, el.element_id
+            FROM element_entity_mappings eem
+            JOIN entities e ON eem.entity_pk = e.entity_pk
+            JOIN elements el ON eem.element_pk = el.element_pk
+            WHERE eem.element_pk = ?
+        """, (element_pk,))
+        
+        mappings = []
+        for row in cursor.fetchall():
+            mappings.append({
+                'element_pk': row[0],
+                'entity_pk': row[1],
+                'relationship_type': row[2],
+                'domain': row[3],
+                'confidence': row[4],
+                'extraction_method': row[5],
+                'extraction_rule': row[5],  # Alias for compatibility
+                'metadata': row[6],
+                'entity_id': row[7],
+                'name': row[8],
+                'element_id': row[9]  # Now includes element_id from elements table
+            })
+        
+        return mappings
+    
+    def get_all_entity_relationships(self) -> List[Dict[str, Any]]:
+        """Get all entity relationships."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT er.source_entity_pk, er.target_entity_pk, er.relationship_type, 
+                   er.confidence, er.domain, er.metadata, er.created_at,
+                   se.entity_id as source_entity_id, te.entity_id as target_entity_id
+            FROM entity_relationships er
+            JOIN entities se ON er.source_entity_pk = se.entity_pk
+            JOIN entities te ON er.target_entity_pk = te.entity_pk
+        """)
+        
+        relationships = []
+        for row in cursor.fetchall():
+            relationships.append({
+                'source_entity_pk': row[0],
+                'target_entity_pk': row[1],
+                'relationship_type': row[2],
+                'confidence': row[3],
+                'domain': row[4],
+                'metadata': row[5],
+                'created_at': row[6],
+                'source_entity_id': row[7],
+                'target_entity_id': row[8]
+            })
+        
+        return relationships
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        now = time.time()
+        
+        cursor.execute("""
+            INSERT INTO entity_relationships 
+            (source_entity_pk, target_entity_pk, relationship_type, confidence, domain, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            relationship['source_entity_pk'],
+            relationship['target_entity_pk'], 
+            relationship['relationship_type'],
+            relationship.get('confidence', 1.0),
+            relationship.get('domain'),
+            json.dumps(relationship.get('metadata', {})),
+            now
+        ))
+        
+        self.conn.commit()
+        return cursor.lastrowid
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE entities 
+                SET entity_type = ?, name = ?, domain = ?, attributes = ?, updated_at = ?
+                WHERE entity_pk = ?
+            """, (
+                entity['entity_type'],
+                entity.get('name'),
+                entity.get('domain'),
+                json.dumps(entity.get('attributes', {})),
+                time.time(),
+                entity_pk
+            ))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error updating entity {entity_pk}: {e}")
+            return False
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and all related mappings."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            # Delete element-entity mappings
+            cursor.execute("DELETE FROM element_entity_mappings WHERE entity_pk = ?", (entity_pk,))
+            
+            # Delete entity relationships where this entity is source or target
+            cursor.execute("""
+                DELETE FROM entity_relationships 
+                WHERE source_entity_pk = ? OR target_entity_pk = ?
+            """, (entity_pk, entity_pk))
+            
+            # Delete entity embeddings
+            cursor.execute("DELETE FROM entity_embeddings WHERE entity_pk = ?", (entity_pk,))
+            
+            # Delete the entity itself
+            cursor.execute("DELETE FROM entities WHERE entity_pk = ?", (entity_pk,))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error deleting entity {entity_pk}: {e}")
+            return False
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        if element_pk is None and entity_pk is None:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        cursor = self.conn.cursor()
+        try:
+            if element_pk and entity_pk:
+                cursor.execute("""
+                    DELETE FROM element_entity_mappings 
+                    WHERE element_pk = ? AND entity_pk = ?
+                """, (element_pk, entity_pk))
+            elif element_pk:
+                cursor.execute("DELETE FROM element_entity_mappings WHERE element_pk = ?", (element_pk,))
+            else:  # entity_pk only
+                cursor.execute("DELETE FROM element_entity_mappings WHERE entity_pk = ?", (entity_pk,))
+            
+            deleted_count = cursor.rowcount
+            self.conn.commit()
+            return deleted_count
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error deleting element-entity mappings: {e}")
+            return 0
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE entity_relationships 
+                SET source_entity_pk = ?, target_entity_pk = ?, relationship_type = ?,
+                    confidence = ?, domain = ?, metadata = ?
+                WHERE relationship_id = ?
+            """, (
+                relationship['source_entity_pk'],
+                relationship['target_entity_pk'],
+                relationship['relationship_type'],
+                relationship.get('confidence', 1.0),
+                relationship.get('domain'),
+                json.dumps(relationship.get('metadata', {})),
+                relationship_id
+            ))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error updating entity relationship {relationship_id}: {e}")
+            return False
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity-to-entity relationships."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        if source_entity_pk is None and target_entity_pk is None:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        cursor = self.conn.cursor()
+        try:
+            if source_entity_pk and target_entity_pk:
+                cursor.execute("""
+                    DELETE FROM entity_relationships 
+                    WHERE source_entity_pk = ? AND target_entity_pk = ?
+                """, (source_entity_pk, target_entity_pk))
+            elif source_entity_pk:
+                cursor.execute("""
+                    DELETE FROM entity_relationships 
+                    WHERE source_entity_pk = ?
+                """, (source_entity_pk,))
+            else:  # target_entity_pk only
+                cursor.execute("""
+                    DELETE FROM entity_relationships 
+                    WHERE target_entity_pk = ?
+                """, (target_entity_pk,))
+            
+            deleted_count = cursor.rowcount
+            self.conn.commit()
+            return deleted_count
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error deleting entity relationships: {e}")
+            return 0
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (where it's source or target)."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT er.relationship_id, er.source_entity_pk, er.target_entity_pk, 
+                   er.relationship_type, er.confidence, er.domain, er.metadata, er.created_at,
+                   se.entity_id as source_entity_id, te.entity_id as target_entity_id
+            FROM entity_relationships er
+            JOIN entities se ON er.source_entity_pk = se.entity_pk
+            JOIN entities te ON er.target_entity_pk = te.entity_pk
+            WHERE er.source_entity_pk = ? OR er.target_entity_pk = ?
+        """, (entity_pk, entity_pk))
+        
+        relationships = []
+        for row in cursor.fetchall():
+            relationships.append({
+                'relationship_id': row[0],
+                'source_entity_pk': row[1],
+                'target_entity_pk': row[2],
+                'relationship_type': row[3],
+                'confidence': row[4],
+                'domain': row[5],
+                'metadata': json.loads(row[6]) if row[6] else {},
+                'created_at': row[7],
+                'source_entity_id': row[8],
+                'target_entity_id': row[9],
+                'is_source': row[1] == entity_pk
+            })
+        
+        return relationships
+    
     def find_elements_by_term(self, term: str, domain: Optional[str] = None, 
                              min_confidence: float = 0.0, limit: int = 100) -> List[Tuple[int, str, float]]:
         """
@@ -948,6 +1510,8 @@ class SQLiteDocumentDatabase(DocumentDatabase):
             for element in elements:
                 element["doc_id"] = doc_id
 
+            # Use standard update for now - smart update capability is available via update_document_smart
+                
             self.update_document(doc_id, document, elements, relationships, element_dates)
             return
 
@@ -993,9 +1557,9 @@ class SQLiteDocumentDatabase(DocumentDatabase):
                     """,
                     (
                         element_id,
-                        element.get("doc_id", ""),
+                        doc_id,  # Use the document's doc_id, not element's doc_id
                         element.get("element_type", ""),
-                        element.get("parent_id", ""),
+                        element.get("parent_id") or None,  # Use None for missing parent_id
                         content_preview,
                         element.get("content_location", ""),
                         element.get("content_hash", ""),
@@ -1112,6 +1676,171 @@ class SQLiteDocumentDatabase(DocumentDatabase):
             self.conn.rollback()
             logger.error(f"Error updating document {doc_id}: {str(e)}")
             raise
+
+    def update_document_smart(self, doc_id: str, document: Dict[str, Any],
+                            elements: List[Dict[str, Any]],
+                            relationships: List[Dict[str, Any]],
+                            new_entities: Optional[List[Dict[str, Any]]] = None,
+                            element_dates: Optional[Dict[str, List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
+        """
+        Smart document update that preserves entities when possible.
+        
+        Args:
+            doc_id: Document ID to update
+            document: Document metadata
+            elements: New document elements
+            relationships: New document relationships  
+            new_entities: New entities extracted from document
+            element_dates: Optional element dates
+            
+        Returns:
+            Dictionary with update statistics:
+            - entities_created: number of new entities created
+            - entities_updated: number of existing entities updated
+            - entities_deleted: number of entities deleted
+            - entities_preserved: number of entities preserved unchanged
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+
+        # Check if document exists
+        cursor = self.conn.execute("SELECT doc_id FROM documents WHERE doc_id = ?", (doc_id,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Document not found: {doc_id}")
+
+        stats = {
+            'entities_created': 0,
+            'entities_updated': 0, 
+            'entities_deleted': 0,
+            'entities_preserved': 0
+        }
+
+        if new_entities is None:
+            new_entities = []
+
+        try:
+            # Get existing entities for this document
+            existing_entities = self.get_entities_for_document(doc_id)
+            existing_by_id = {e['entity_id']: e for e in existing_entities}
+            new_entities_by_id = {e['entity_id']: e for e in new_entities}
+
+            # Determine entity operations
+            existing_ids = set(existing_by_id.keys())
+            new_ids = set(new_entities_by_id.keys())
+
+            entities_to_delete = existing_ids - new_ids
+            entities_to_create = new_ids - existing_ids
+            entities_to_check = existing_ids & new_ids
+
+            logger.info(f"Entity update analysis for {doc_id}: "
+                       f"{len(entities_to_delete)} to delete, "
+                       f"{len(entities_to_create)} to create, "
+                       f"{len(entities_to_check)} to check for updates")
+
+            # Process entity updates/preservation
+            for entity_id in entities_to_check:
+                existing = existing_by_id[entity_id]
+                new_entity = new_entities_by_id[entity_id]
+                
+                # Compare entity attributes to see if update is needed
+                if self._entities_are_equivalent(existing, new_entity):
+                    stats['entities_preserved'] += 1
+                    logger.debug(f"Preserving unchanged entity: {entity_id}")
+                else:
+                    # Update the entity
+                    new_entity['entity_pk'] = existing['entity_pk']  # Preserve PK
+                    self.store_entity(new_entity)
+                    stats['entities_updated'] += 1
+                    logger.debug(f"Updated entity: {entity_id}")
+
+            # Now proceed with standard document update for elements/relationships
+            # Get all element PKs for this document  
+            cursor = self.conn.execute("SELECT element_pk FROM elements WHERE doc_id = ?", (doc_id,))
+            element_pks = [row[0] for row in cursor.fetchall()]
+
+            # Delete relationships related to this document's elements
+            if element_pks:
+                element_pks_placeholders = ','.join(['?'] * len(element_pks))
+                self.conn.execute(
+                    f"DELETE FROM relationships WHERE source_id IN (SELECT element_id FROM elements WHERE element_pk IN ({element_pks_placeholders}))",
+                    element_pks)
+
+            # Delete embeddings for this document's elements
+            if element_pks:
+                element_pks_placeholders = ','.join(['?'] * len(element_pks))
+                self.conn.execute(f"DELETE FROM embeddings WHERE element_pk IN ({element_pks_placeholders})",
+                                  element_pks)
+
+            # Delete dates for this document's elements
+            if element_pks:
+                element_pks_placeholders = ','.join(['?'] * len(element_pks))
+                self.conn.execute(f"DELETE FROM element_dates WHERE element_pk IN ({element_pks_placeholders})",
+                                  element_pks)
+
+            # Delete entities that are no longer present (CASCADE will clean up mappings)
+            for entity_id in entities_to_delete:
+                entity_pk = existing_by_id[entity_id]['entity_pk']
+                self.conn.execute("DELETE FROM entities WHERE entity_pk = ?", (entity_pk,))
+                stats['entities_deleted'] += 1
+                logger.debug(f"Deleted entity: {entity_id}")
+
+            # Delete all elements for this document (CASCADE will clean up element-entity mappings)
+            self.conn.execute("DELETE FROM elements WHERE doc_id = ?", (doc_id,))
+
+            # Delete the document itself
+            self.conn.execute("DELETE FROM documents WHERE doc_id = ?", (doc_id,))
+
+            # Commit the deletion part of the transaction
+            self.conn.commit()
+
+            # Store new entities that need to be created
+            for entity_id in entities_to_create:
+                self.store_entity(new_entities_by_id[entity_id])
+                stats['entities_created'] += 1
+                logger.debug(f"Created entity: {entity_id}")
+
+            # Now use store_document to insert everything else
+            # Note: We pass None for entities since we've handled them above
+            self.store_document(document, elements, relationships, element_dates)
+
+            logger.info(f"Smart document update completed for {doc_id}: {stats}")
+            return stats
+
+        except Exception as e:
+            # Rollback on error
+            self.conn.rollback()
+            logger.error(f"Error in smart document update {doc_id}: {str(e)}")
+            raise
+
+    def _entities_are_equivalent(self, entity1: Dict[str, Any], entity2: Dict[str, Any]) -> bool:
+        """
+        Compare two entities to determine if they are equivalent.
+        
+        Args:
+            entity1: First entity to compare
+            entity2: Second entity to compare
+            
+        Returns:
+            True if entities are equivalent, False otherwise
+        """
+        # Compare key fields that determine entity identity and content
+        key_fields = ['entity_type', 'name', 'domain', 'attributes']
+        
+        for field in key_fields:
+            val1 = entity1.get(field)
+            val2 = entity2.get(field)
+            
+            # Handle special case of attributes (dict comparison)
+            if field == 'attributes':
+                val1 = val1 or {}
+                val2 = val2 or {}
+                if val1 != val2:
+                    return False
+            else:
+                if val1 != val2:
+                    return False
+        
+        return True
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """Get document metadata by ID."""
@@ -3195,6 +3924,69 @@ class SQLiteDocumentDatabase(DocumentDatabase):
             self.conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_elements_type ON elements(element_type)
             """)
+
+            # Create entities table for domain-specific extractions
+            self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS entities (
+                entity_pk INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_id TEXT UNIQUE NOT NULL,
+                entity_type TEXT NOT NULL,
+                name TEXT,
+                domain TEXT,
+                attributes TEXT,  -- JSON
+                created_at REAL,
+                updated_at REAL
+            )
+            """)
+            
+            # Create entity embeddings table
+            self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS entity_embeddings (
+                entity_pk INTEGER PRIMARY KEY REFERENCES entities(entity_pk) ON DELETE CASCADE,
+                embedding TEXT,
+                dimensions INTEGER,
+                model TEXT,
+                created_at REAL
+            )
+            """)
+            
+            # Create element-entity mappings table
+            self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS element_entity_mappings (
+                element_pk INTEGER REFERENCES elements(element_pk) ON DELETE CASCADE,
+                entity_pk INTEGER REFERENCES entities(entity_pk) ON DELETE CASCADE,
+                relationship_type TEXT NOT NULL,
+                domain TEXT,
+                confidence REAL DEFAULT 1.0,
+                extraction_method TEXT,
+                metadata TEXT,  -- JSON
+                PRIMARY KEY (element_pk, entity_pk, relationship_type)
+            )
+            """)
+            
+            # Create entity relationships table for domain relationships
+            self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS entity_relationships (
+                relationship_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_entity_pk INTEGER REFERENCES entities(entity_pk) ON DELETE CASCADE,
+                target_entity_pk INTEGER REFERENCES entities(entity_pk) ON DELETE CASCADE,
+                relationship_type TEXT NOT NULL,
+                domain TEXT,
+                confidence REAL DEFAULT 1.0,
+                metadata TEXT,  -- JSON
+                created_at REAL,
+                UNIQUE(source_entity_pk, target_entity_pk, relationship_type)
+            )
+            """)
+            
+            # Create indexes for entity tables
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_domain ON entities(domain)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_elem_entity_element ON element_entity_mappings(element_pk)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_elem_entity_entity ON element_entity_mappings(entity_pk)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_entity_rel_source ON entity_relationships(source_entity_pk)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_entity_rel_target ON entity_relationships(target_entity_pk)")
 
             # ENHANCED: Create comprehensive indexes for element_dates table
             self.conn.execute("""

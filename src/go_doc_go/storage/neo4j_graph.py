@@ -3711,6 +3711,401 @@ class Neo4jDocumentDatabase(DocumentDatabase):
         self.store_element_dates(element_id, dates)
 
 
+
+    # ========================================
+    # DOMAIN ENTITY METHODS
+    # ========================================
+    
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """Store a domain entity and return its primary key."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            # Convert attributes to JSON string
+            attributes_json = json.dumps(entity.get("attributes", {}))
+            
+            # Create the entity node
+            result = session.run(
+                """
+                CREATE (e:DomainEntity {
+                    entity_id: $entity_id,
+                    entity_type: $entity_type,
+                    name: $name,
+                    domain: $domain,
+                    attributes: $attributes,
+                    created_at: $created_at,
+                    updated_at: $updated_at
+                })
+                RETURN id(e) AS entity_pk
+                """,
+                entity_id=entity["entity_id"],
+                entity_type=entity["entity_type"],
+                name=entity["name"],
+                domain=entity.get("domain"),
+                attributes=attributes_json,
+                created_at=entity.get("created_at", time.time()),
+                updated_at=entity.get("updated_at", time.time())
+            )
+            
+            record = result.single()
+            return record["entity_pk"] if record else None
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            # Convert attributes to JSON string
+            attributes_json = json.dumps(entity.get("attributes", {}))
+            
+            # Update the entity node
+            result = session.run(
+                """
+                MATCH (e:DomainEntity)
+                WHERE id(e) = $entity_pk
+                SET e.entity_type = $entity_type,
+                    e.name = $name,
+                    e.domain = $domain,
+                    e.attributes = $attributes,
+                    e.updated_at = $updated_at
+                RETURN id(e) AS entity_pk
+                """,
+                entity_pk=entity_pk,
+                entity_type=entity["entity_type"],
+                name=entity["name"],
+                domain=entity.get("domain"),
+                attributes=attributes_json,
+                updated_at=time.time()
+            )
+            
+            return result.single() is not None
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and its associated mappings and relationships."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            # Delete entity and all its relationships (CASCADE-like behavior)
+            result = session.run(
+                """
+                MATCH (e:DomainEntity)
+                WHERE id(e) = $entity_pk
+                DETACH DELETE e
+                RETURN COUNT(e) AS deleted_count
+                """,
+                entity_pk=entity_pk
+            )
+            
+            record = result.single()
+            return record and record["deleted_count"] > 0
+    
+    def get_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Get a domain entity by its primary key."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            result = session.run(
+                """
+                MATCH (e:DomainEntity)
+                WHERE id(e) = $entity_pk
+                RETURN e, id(e) AS entity_pk
+                """,
+                entity_pk=entity_pk
+            )
+            
+            record = result.single()
+            if record:
+                entity = dict(record["e"])
+                entity["entity_pk"] = record["entity_pk"]
+                # Parse attributes from JSON
+                if entity.get("attributes"):
+                    entity["attributes"] = json.loads(entity["attributes"])
+                return entity
+            return None
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities associated with a document."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        entities = []
+        with self.driver.session(database=self.database) as session:
+            # Get entities linked to elements of this document
+            result = session.run(
+                """
+                MATCH (d:Document {doc_id: $doc_id})
+                MATCH (elem:Element)-[:BELONGS_TO]->(d)
+                MATCH (elem)-[:MAPPED_TO_ENTITY]->(e:DomainEntity)
+                RETURN DISTINCT e, id(e) AS entity_pk
+                """,
+                doc_id=doc_id
+            )
+            
+            for record in result:
+                entity = dict(record["e"])
+                entity["entity_pk"] = record["entity_pk"]
+                # Parse attributes from JSON
+                if entity.get("attributes"):
+                    entity["attributes"] = json.loads(entity["attributes"])
+                entities.append(entity)
+        
+        return entities
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """Store element-to-entity mapping."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            # Create mapping relationship between element and entity
+            session.run(
+                """
+                MATCH (elem:Element)
+                WHERE id(elem) = $element_pk
+                MATCH (e:DomainEntity)
+                WHERE id(e) = $entity_pk
+                MERGE (elem)-[r:MAPPED_TO_ENTITY {
+                    relationship_type: $relationship_type,
+                    extraction_rule: $extraction_rule,
+                    confidence: $confidence,
+                    created_at: $created_at
+                }]->(e)
+                """,
+                element_pk=mapping["element_pk"],
+                entity_pk=mapping["entity_pk"],
+                relationship_type=mapping.get("relationship_type", "extracted_from"),
+                extraction_rule=mapping.get("extraction_rule", "domain_entity_extraction"),
+                confidence=mapping.get("confidence", 1.0),
+                created_at=mapping.get("created_at", time.time())
+            )
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings by element_pk, entity_pk, or both."""
+        if not element_pk and not entity_pk:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            if element_pk and entity_pk:
+                # Delete specific mapping
+                result = session.run(
+                    """
+                    MATCH (elem:Element)-[r:MAPPED_TO_ENTITY]->(e:DomainEntity)
+                    WHERE id(elem) = $element_pk AND id(e) = $entity_pk
+                    DELETE r
+                    RETURN COUNT(r) AS deleted_count
+                    """,
+                    element_pk=element_pk,
+                    entity_pk=entity_pk
+                )
+            elif element_pk:
+                # Delete all mappings for element
+                result = session.run(
+                    """
+                    MATCH (elem:Element)-[r:MAPPED_TO_ENTITY]->(e:DomainEntity)
+                    WHERE id(elem) = $element_pk
+                    DELETE r
+                    RETURN COUNT(r) AS deleted_count
+                    """,
+                    element_pk=element_pk
+                )
+            else:
+                # Delete all mappings for entity
+                result = session.run(
+                    """
+                    MATCH (elem:Element)-[r:MAPPED_TO_ENTITY]->(e:DomainEntity)
+                    WHERE id(e) = $entity_pk
+                    DELETE r
+                    RETURN COUNT(r) AS deleted_count
+                    """,
+                    entity_pk=entity_pk
+                )
+            
+            record = result.single()
+            return record["deleted_count"] if record else 0
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            # Generate a unique relationship ID
+            import uuid
+            relationship_id = abs(hash(uuid.uuid4()))
+            
+            # Convert metadata to JSON
+            metadata_json = json.dumps(relationship.get("metadata", {}))
+            
+            # Create entity-to-entity relationship
+            result = session.run(
+                """
+                MATCH (source:DomainEntity)
+                WHERE id(source) = $source_entity_pk
+                MATCH (target:DomainEntity)
+                WHERE id(target) = $target_entity_pk
+                CREATE (source)-[r:ENTITY_RELATES_TO {
+                    relationship_id: $relationship_id,
+                    relationship_type: $relationship_type,
+                    domain: $domain,
+                    confidence: $confidence,
+                    metadata: $metadata,
+                    created_at: $created_at
+                }]->(target)
+                RETURN r.relationship_id AS relationship_id
+                """,
+                source_entity_pk=relationship["source_entity_pk"],
+                target_entity_pk=relationship["target_entity_pk"],
+                relationship_id=relationship_id,
+                relationship_type=relationship["relationship_type"],
+                domain=relationship.get("domain", "default"),
+                confidence=relationship.get("confidence", 1.0),
+                metadata=metadata_json,
+                created_at=relationship.get("created_at", time.time())
+            )
+            
+            record = result.single()
+            return record["relationship_id"] if record else None
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            # Convert metadata to JSON
+            metadata_json = json.dumps(relationship.get("metadata", {}))
+            
+            # Update the relationship
+            result = session.run(
+                """
+                MATCH (source:DomainEntity)-[r:ENTITY_RELATES_TO]->(target:DomainEntity)
+                WHERE r.relationship_id = $relationship_id
+                SET r.relationship_type = $relationship_type,
+                    r.domain = $domain,
+                    r.confidence = $confidence,
+                    r.metadata = $metadata
+                RETURN r.relationship_id AS relationship_id
+                """,
+                relationship_id=relationship_id,
+                relationship_type=relationship["relationship_type"],
+                domain=relationship.get("domain", "default"),
+                confidence=relationship.get("confidence", 1.0),
+                metadata=metadata_json
+            )
+            
+            return result.single() is not None
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity relationships by source, target, or both."""
+        if not source_entity_pk and not target_entity_pk:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        with self.driver.session(database=self.database) as session:
+            if source_entity_pk and target_entity_pk:
+                # Delete specific relationships
+                result = session.run(
+                    """
+                    MATCH (source:DomainEntity)-[r:ENTITY_RELATES_TO]->(target:DomainEntity)
+                    WHERE id(source) = $source_entity_pk AND id(target) = $target_entity_pk
+                    DELETE r
+                    RETURN COUNT(r) AS deleted_count
+                    """,
+                    source_entity_pk=source_entity_pk,
+                    target_entity_pk=target_entity_pk
+                )
+            elif source_entity_pk:
+                # Delete all relationships where entity is source
+                result = session.run(
+                    """
+                    MATCH (source:DomainEntity)-[r:ENTITY_RELATES_TO]->(:DomainEntity)
+                    WHERE id(source) = $source_entity_pk
+                    DELETE r
+                    RETURN COUNT(r) AS deleted_count
+                    """,
+                    source_entity_pk=source_entity_pk
+                )
+            else:
+                # Delete all relationships where entity is target
+                result = session.run(
+                    """
+                    MATCH (:DomainEntity)-[r:ENTITY_RELATES_TO]->(target:DomainEntity)
+                    WHERE id(target) = $target_entity_pk
+                    DELETE r
+                    RETURN COUNT(r) AS deleted_count
+                    """,
+                    target_entity_pk=target_entity_pk
+                )
+            
+            record = result.single()
+            return record["deleted_count"] if record else 0
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (both as source and target)."""
+        if not self.driver:
+            raise ValueError("Database not initialized")
+        
+        relationships = []
+        with self.driver.session(database=self.database) as session:
+            # Get relationships where entity is source
+            result = session.run(
+                """
+                MATCH (source:DomainEntity)-[r:ENTITY_RELATES_TO]->(target:DomainEntity)
+                WHERE id(source) = $entity_pk
+                RETURN r.relationship_id AS relationship_id,
+                       id(source) AS source_entity_pk,
+                       id(target) AS target_entity_pk,
+                       r.relationship_type AS relationship_type,
+                       r.domain AS domain,
+                       r.confidence AS confidence,
+                       r.metadata AS metadata,
+                       r.created_at AS created_at
+                """,
+                entity_pk=entity_pk
+            )
+            
+            for record in result:
+                rel = dict(record)
+                # Parse metadata from JSON
+                if rel.get("metadata"):
+                    rel["metadata"] = json.loads(rel["metadata"])
+                relationships.append(rel)
+            
+            # Get relationships where entity is target
+            result = session.run(
+                """
+                MATCH (source:DomainEntity)-[r:ENTITY_RELATES_TO]->(target:DomainEntity)
+                WHERE id(target) = $entity_pk
+                RETURN r.relationship_id AS relationship_id,
+                       id(source) AS source_entity_pk,
+                       id(target) AS target_entity_pk,
+                       r.relationship_type AS relationship_type,
+                       r.domain AS domain,
+                       r.confidence AS confidence,
+                       r.metadata AS metadata,
+                       r.created_at AS created_at
+                """,
+                entity_pk=entity_pk
+            )
+            
+            for record in result:
+                rel = dict(record)
+                # Parse metadata from JSON
+                if rel.get("metadata"):
+                    rel["metadata"] = json.loads(rel["metadata"])
+                relationships.append(rel)
+        
+        return relationships
+
 if __name__ == "__main__":
     # Example demonstrating structured search with Neo4j and full text support
     conn_params = {

@@ -96,6 +96,13 @@ class FileDocumentDatabase(DocumentDatabase):
         self.element_dates = {}  # Store dates by element_id
         self.processing_history = {}  # Dictionary to track processing history
         self.embedding_generator = None
+        
+        # Domain entity storage structures
+        self.entities = {}  # entity_pk -> entity dict
+        self.next_entity_pk = 1  # Starting auto-increment value
+        self.element_entity_mappings = []  # List of mapping dicts
+        self.entity_relationships = {}  # relationship_id -> relationship dict
+        self.next_relationship_id = 1  # Starting auto-increment value
 
         # Log configuration
         logger.info(f"File database initialized with storage path: {self.storage_path}")
@@ -3002,6 +3009,485 @@ class FileDocumentDatabase(DocumentDatabase):
 
         return False
 
+    # ========================================
+    # DOMAIN ENTITY FILE OPERATIONS
+    # ========================================
+    
+    def _save_entity(self, entity_pk: int) -> None:
+        """Save entity to file."""
+        if entity_pk not in self.entities:
+            return
+        
+        file_path = os.path.join(self.storage_path, 'entities', f"{entity_pk}.json")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(self.entities[entity_pk], f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving entity to {file_path}: {str(e)}")
+    
+    def _load_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Load entity from file."""
+        file_path = os.path.join(self.storage_path, 'entities', f"{entity_pk}.json")
+        
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
+                    return json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading entity from {file_path}: {str(e)}")
+        
+        return None
+    
+    def _delete_entity_file(self, entity_pk: int) -> None:
+        """Delete entity file."""
+        file_path = os.path.join(self.storage_path, 'entities', f"{entity_pk}.json")
+        
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            logger.error(f"Error deleting entity file {file_path}: {str(e)}")
+    
+    def _save_entity_mappings(self) -> None:
+        """Save all entity mappings to file."""
+        file_path = os.path.join(self.storage_path, 'entity_mappings.json')
+        
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(self.element_entity_mappings, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving entity mappings: {str(e)}")
+    
+    def _load_entity_mappings(self) -> None:
+        """Load entity mappings from file."""
+        file_path = os.path.join(self.storage_path, 'entity_mappings.json')
+        
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
+                    self.element_entity_mappings = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading entity mappings: {str(e)}")
+            self.element_entity_mappings = []
+    
+    def _save_entity_relationship(self, relationship_id: int) -> None:
+        """Save entity relationship to file."""
+        if relationship_id not in self.entity_relationships:
+            return
+        
+        file_path = os.path.join(self.storage_path, 'entity_relationships', f"{relationship_id}.json")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(self.entity_relationships[relationship_id], f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving entity relationship to {file_path}: {str(e)}")
+    
+    def _delete_entity_relationship_file(self, relationship_id: int) -> None:
+        """Delete entity relationship file."""
+        file_path = os.path.join(self.storage_path, 'entity_relationships', f"{relationship_id}.json")
+        
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception as e:
+            logger.error(f"Error deleting entity relationship file {file_path}: {str(e)}")
+    
+    def _load_entity_relationship(self, relationship_id: int) -> Optional[Dict[str, Any]]:
+        """Load entity relationship from file."""
+        file_path = os.path.join(self.storage_path, 'entity_relationships', f"{relationship_id}.json")
+        
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
+                    return json.load(f)
+            return None
+        except Exception as e:
+            logger.error(f"Error loading entity relationship from {file_path}: {str(e)}")
+            return None
+    
+    def _save_element_entity_mappings(self) -> None:
+        """Save element-entity mappings to file."""
+        file_path = os.path.join(self.storage_path, 'element_entity_mappings.json')
+        
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(self.element_entity_mappings, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving element-entity mappings: {str(e)}")
+    
+    def _load_element_entity_mappings(self) -> None:
+        """Load element-entity mappings from file."""
+        file_path = os.path.join(self.storage_path, 'element_entity_mappings.json')
+        
+        try:
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
+                    self.element_entity_mappings = json.load(f)
+        except Exception as e:
+            logger.error(f"Error loading element-entity mappings: {str(e)}")
+            self.element_entity_mappings = []
+
+
+    # ========================================
+    # DOMAIN ENTITY METHODS
+    # ========================================
+    
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """Store a domain entity and return its primary key."""
+        try:
+            # Generate new entity_pk
+            entity_pk = self.next_entity_pk
+            self.next_entity_pk += 1
+            
+            # Store entity with timestamps
+            entity_data = {
+                "entity_pk": entity_pk,
+                "entity_id": entity.get("entity_id"),
+                "entity_type": entity.get("entity_type"),
+                "name": entity.get("name"),
+                "domain": entity.get("domain"),
+                "attributes": entity.get("attributes", {}),
+                "created_at": entity.get("created_at", datetime.now().isoformat()),
+                "updated_at": entity.get("updated_at", datetime.now().isoformat())
+            }
+            
+            self.entities[entity_pk] = entity_data
+            self._save_entity(entity_pk)
+            
+            logger.debug(f"Stored entity {entity_pk}: {entity.get('name')}")
+            return entity_pk
+            
+        except Exception as e:
+            logger.error(f"Error storing entity: {str(e)}")
+            raise
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        try:
+            if entity_pk not in self.entities:
+                # Try loading from file
+                loaded_entity = self._load_entity(entity_pk)
+                if not loaded_entity:
+                    return False
+                self.entities[entity_pk] = loaded_entity
+            
+            # Update entity fields
+            existing = self.entities[entity_pk]
+            existing["entity_id"] = entity.get("entity_id", existing.get("entity_id"))
+            existing["entity_type"] = entity.get("entity_type", existing.get("entity_type"))
+            existing["name"] = entity.get("name", existing.get("name"))
+            existing["domain"] = entity.get("domain", existing.get("domain"))
+            existing["attributes"] = entity.get("attributes", existing.get("attributes", {}))
+            existing["updated_at"] = datetime.now().isoformat()
+            
+            self._save_entity(entity_pk)
+            
+            logger.debug(f"Updated entity {entity_pk}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating entity {entity_pk}: {str(e)}")
+            return False
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and its associated mappings and relationships."""
+        try:
+            # Check if entity exists
+            if entity_pk not in self.entities:
+                loaded_entity = self._load_entity(entity_pk)
+                if not loaded_entity:
+                    return False
+            
+            # Delete associated mappings
+            self.element_entity_mappings = [
+                m for m in self.element_entity_mappings 
+                if m.get("entity_pk") != entity_pk
+            ]
+            self._save_entity_mappings()
+            
+            # Delete associated relationships
+            to_delete = []
+            for rel_id, rel in self.entity_relationships.items():
+                if (rel.get("source_entity_pk") == entity_pk or 
+                    rel.get("target_entity_pk") == entity_pk):
+                    to_delete.append(rel_id)
+            
+            for rel_id in to_delete:
+                del self.entity_relationships[rel_id]
+                self._delete_entity_relationship_file(rel_id)
+            
+            # Delete the entity
+            if entity_pk in self.entities:
+                del self.entities[entity_pk]
+            self._delete_entity_file(entity_pk)
+            
+            logger.debug(f"Deleted entity {entity_pk} and its associations")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting entity {entity_pk}: {str(e)}")
+            return False
+    
+    def get_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Get a domain entity by its primary key."""
+        try:
+            # Check in-memory cache first
+            if entity_pk in self.entities:
+                return self.entities[entity_pk].copy()
+            
+            # Try loading from file
+            entity = self._load_entity(entity_pk)
+            if entity:
+                self.entities[entity_pk] = entity
+                return entity.copy()
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting entity {entity_pk}: {str(e)}")
+            return None
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities associated with a document."""
+        try:
+            # Load mappings if not in memory
+            if not self.element_entity_mappings:
+                self._load_entity_mappings()
+            
+            # Get all element_pks for this document
+            element_pks = []
+            for element_id, element in self.elements.items():
+                if element.get("doc_id") == doc_id:
+                    element_pks.append(element.get("element_pk"))
+            
+            # Get all entity_pks associated with these elements
+            entity_pks = set()
+            for mapping in self.element_entity_mappings:
+                if mapping.get("element_pk") in element_pks:
+                    entity_pks.add(mapping.get("entity_pk"))
+            
+            # Get all entities
+            entities = []
+            for entity_pk in entity_pks:
+                entity = self.get_entity(entity_pk)
+                if entity:
+                    entities.append(entity)
+            
+            return entities
+            
+        except Exception as e:
+            logger.error(f"Error getting entities for document {doc_id}: {str(e)}")
+            return []
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """Store element-to-entity mapping."""
+        try:
+            # Create mapping entry
+            mapping_data = {
+                "element_pk": mapping.get("element_pk"),
+                "entity_pk": mapping.get("entity_pk"),
+                "extraction_rule": mapping.get("extraction_rule"),
+                "confidence": mapping.get("confidence", 1.0),
+                "created_at": mapping.get("created_at", datetime.now().isoformat())
+            }
+            
+            # Add to mappings list
+            self.element_entity_mappings.append(mapping_data)
+            
+            # Save mappings file
+            self._save_element_entity_mappings()
+            
+            logger.debug(f"Stored element-entity mapping: element_pk={mapping.get('element_pk')}, entity_pk={mapping.get('entity_pk')}")
+            
+        except Exception as e:
+            logger.error(f"Error storing element-entity mapping: {str(e)}")
+            raise
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings by element_pk, entity_pk, or both."""
+        if not element_pk and not entity_pk:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        try:
+            # Load mappings if not in memory
+            if not self.element_entity_mappings:
+                self._load_element_entity_mappings()
+            
+            # Count deletions
+            deleted_count = 0
+            
+            # Filter out mappings that match the criteria
+            new_mappings = []
+            for mapping in self.element_entity_mappings:
+                should_delete = False
+                
+                if element_pk is not None and entity_pk is not None:
+                    # Delete only if both match
+                    should_delete = (mapping.get("element_pk") == element_pk and 
+                                   mapping.get("entity_pk") == entity_pk)
+                elif element_pk is not None:
+                    # Delete all mappings for this element
+                    should_delete = mapping.get("element_pk") == element_pk
+                elif entity_pk is not None:
+                    # Delete all mappings for this entity
+                    should_delete = mapping.get("entity_pk") == entity_pk
+                
+                if should_delete:
+                    deleted_count += 1
+                else:
+                    new_mappings.append(mapping)
+            
+            # Update mappings and save
+            self.element_entity_mappings = new_mappings
+            self._save_element_entity_mappings()
+            
+            logger.debug(f"Deleted {deleted_count} element-entity mappings")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error deleting element-entity mappings: {str(e)}")
+            raise
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        try:
+            # Generate new relationship_id
+            relationship_id = self.next_entity_relationship_id
+            self.next_entity_relationship_id += 1
+            
+            # Store relationship with timestamps
+            relationship_data = {
+                "relationship_id": relationship_id,
+                "source_entity_pk": relationship.get("source_entity_pk"),
+                "target_entity_pk": relationship.get("target_entity_pk"),
+                "relationship_type": relationship.get("relationship_type"),
+                "confidence": relationship.get("confidence", 1.0),
+                "metadata": relationship.get("metadata", {}),
+                "created_at": relationship.get("created_at", datetime.now().isoformat()),
+                "updated_at": relationship.get("updated_at", datetime.now().isoformat())
+            }
+            
+            self.entity_relationships[relationship_id] = relationship_data
+            self._save_entity_relationship(relationship_id)
+            
+            logger.debug(f"Stored entity relationship {relationship_id}: {relationship.get('relationship_type')}")
+            return relationship_id
+            
+        except Exception as e:
+            logger.error(f"Error storing entity relationship: {str(e)}")
+            raise
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        try:
+            if relationship_id not in self.entity_relationships:
+                # Try loading from file
+                loaded_rel = self._load_entity_relationship(relationship_id)
+                if not loaded_rel:
+                    return False
+                self.entity_relationships[relationship_id] = loaded_rel
+            
+            # Update relationship fields
+            existing = self.entity_relationships[relationship_id]
+            existing["source_entity_pk"] = relationship.get("source_entity_pk", existing.get("source_entity_pk"))
+            existing["target_entity_pk"] = relationship.get("target_entity_pk", existing.get("target_entity_pk"))
+            existing["relationship_type"] = relationship.get("relationship_type", existing.get("relationship_type"))
+            existing["confidence"] = relationship.get("confidence", existing.get("confidence"))
+            existing["metadata"] = relationship.get("metadata", existing.get("metadata", {}))
+            existing["updated_at"] = datetime.now().isoformat()
+            
+            # Save to file
+            self._save_entity_relationship(relationship_id)
+            
+            logger.debug(f"Updated entity relationship {relationship_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating entity relationship {relationship_id}: {str(e)}")
+            return False
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity relationships by source, target, or both."""
+        if not source_entity_pk and not target_entity_pk:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        try:
+            # Load all relationships from files if needed
+            relationship_dir = os.path.join(self.storage_path, 'entity_relationships')
+            if os.path.exists(relationship_dir):
+                for filename in os.listdir(relationship_dir):
+                    if filename.endswith('.json'):
+                        rel_id = int(filename[:-5])  # Remove .json extension
+                        if rel_id not in self.entity_relationships:
+                            rel = self._load_entity_relationship(rel_id)
+                            if rel:
+                                self.entity_relationships[rel_id] = rel
+            
+            # Count deletions
+            deleted_count = 0
+            relationships_to_delete = []
+            
+            # Find relationships to delete
+            for rel_id, rel in self.entity_relationships.items():
+                should_delete = False
+                
+                if source_entity_pk is not None and target_entity_pk is not None:
+                    # Delete only if both match
+                    should_delete = (rel.get("source_entity_pk") == source_entity_pk and 
+                                   rel.get("target_entity_pk") == target_entity_pk)
+                elif source_entity_pk is not None:
+                    # Delete all relationships from this source
+                    should_delete = rel.get("source_entity_pk") == source_entity_pk
+                elif target_entity_pk is not None:
+                    # Delete all relationships to this target
+                    should_delete = rel.get("target_entity_pk") == target_entity_pk
+                
+                if should_delete:
+                    relationships_to_delete.append(rel_id)
+                    deleted_count += 1
+            
+            # Delete the relationships
+            for rel_id in relationships_to_delete:
+                del self.entity_relationships[rel_id]
+                self._delete_entity_relationship_file(rel_id)
+            
+            logger.debug(f"Deleted {deleted_count} entity relationships")
+            return deleted_count
+            
+        except Exception as e:
+            logger.error(f"Error deleting entity relationships: {str(e)}")
+            raise
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (both as source and target)."""
+        try:
+            # Load all relationships from files if needed
+            relationship_dir = os.path.join(self.storage_path, 'entity_relationships')
+            if os.path.exists(relationship_dir):
+                for filename in os.listdir(relationship_dir):
+                    if filename.endswith('.json'):
+                        rel_id = int(filename[:-5])  # Remove .json extension
+                        if rel_id not in self.entity_relationships:
+                            rel = self._load_entity_relationship(rel_id)
+                            if rel:
+                                self.entity_relationships[rel_id] = rel
+            
+            # Find all relationships where entity is source or target
+            relationships = []
+            for rel in self.entity_relationships.values():
+                if (rel.get("source_entity_pk") == entity_pk or 
+                    rel.get("target_entity_pk") == entity_pk):
+                    relationships.append(rel.copy())
+            
+            return relationships
+            
+        except Exception as e:
+            logger.error(f"Error getting entity relationships for entity {entity_pk}: {str(e)}")
+            return []
 
 if __name__ == "__main__":
     # Example demonstrating structured search with File database

@@ -3143,6 +3143,346 @@ class MongoDBDocumentDatabase(DocumentDatabase):
         except Exception as e:
             logger.error(f"Error creating vector search index: {str(e)}")
             return False
+    
+    # ========================================
+    # DOMAIN ENTITY METHODS
+    # ========================================
+    
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """Store a domain entity and return its primary key."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        now = time.time()
+        entity_doc = {
+            'entity_id': entity['entity_id'],
+            'entity_type': entity['entity_type'],
+            'name': entity['name'],
+            'domain': entity.get('domain'),
+            'attributes': entity.get('attributes', {}),
+            'created_at': now,
+            'updated_at': now
+        }
+        
+        result = self.entities_collection.insert_one(entity_doc)
+        # Return a numeric ID based on insertion order
+        return self.entities_collection.count_documents({'_id': {'$lte': result.inserted_id}})
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Find the entity by its numeric position
+        entities = list(self.entities_collection.find().sort('_id', 1).limit(entity_pk))
+        if len(entities) < entity_pk:
+            return False
+        
+        entity_id = entities[entity_pk - 1]['_id']
+        now = time.time()
+        
+        result = self.entities_collection.update_one(
+            {'_id': entity_id},
+            {'$set': {
+                'entity_type': entity['entity_type'],
+                'name': entity['name'],
+                'domain': entity.get('domain'),
+                'attributes': entity.get('attributes', {}),
+                'updated_at': now
+            }}
+        )
+        
+        return result.modified_count > 0
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and its associated mappings and relationships."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Find the entity by its numeric position
+        entities = list(self.entities_collection.find().sort('_id', 1).limit(entity_pk))
+        if len(entities) < entity_pk:
+            return False
+        
+        entity_doc = entities[entity_pk - 1]
+        entity_id = entity_doc['_id']
+        
+        # Delete associated mappings
+        self.element_entity_mappings_collection.delete_many({'entity_id': entity_id})
+        
+        # Delete associated relationships
+        self.entity_relationships_collection.delete_many({
+            '$or': [
+                {'source_entity_id': entity_id},
+                {'target_entity_id': entity_id}
+            ]
+        })
+        
+        # Delete the entity
+        result = self.entities_collection.delete_one({'_id': entity_id})
+        return result.deleted_count > 0
+    
+    def get_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Get a domain entity by its primary key."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Find the entity by its numeric position
+        entities = list(self.entities_collection.find().sort('_id', 1).limit(entity_pk))
+        if len(entities) < entity_pk:
+            return None
+        
+        entity_doc = entities[entity_pk - 1]
+        # Convert MongoDB document to standard format
+        entity_doc['entity_pk'] = entity_pk
+        entity_doc.pop('_id', None)
+        return entity_doc
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities associated with a document."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Find all elements for the document
+        elements = self.elements_collection.find({'doc_id': doc_id})
+        element_ids = [e['_id'] for e in elements]
+        
+        # Find all entity mappings for these elements
+        mappings = self.element_entity_mappings_collection.find({
+            'element_id': {'$in': element_ids}
+        })
+        entity_ids = list(set(m['entity_id'] for m in mappings))
+        
+        # Get all entities
+        entities = []
+        for entity_doc in self.entities_collection.find({'_id': {'$in': entity_ids}}):
+            # Calculate entity_pk based on position
+            entity_pk = self.entities_collection.count_documents({'_id': {'$lte': entity_doc['_id']}})
+            entity_doc['entity_pk'] = entity_pk
+            entity_doc.pop('_id', None)
+            entities.append(entity_doc)
+        
+        return entities
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """Store element-to-entity mapping."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Convert entity_pk to MongoDB _id
+        entities = list(self.entities_collection.find().sort('_id', 1).limit(mapping['entity_pk']))
+        if len(entities) < mapping['entity_pk']:
+            raise ValueError(f"Entity with pk {mapping['entity_pk']} not found")
+        entity_id = entities[mapping['entity_pk'] - 1]['_id']
+        
+        # Convert element_pk to MongoDB _id
+        elements = list(self.elements_collection.find().sort('_id', 1).limit(mapping['element_pk']))
+        if len(elements) < mapping['element_pk']:
+            raise ValueError(f"Element with pk {mapping['element_pk']} not found")
+        element_id = elements[mapping['element_pk'] - 1]['_id']
+        
+        now = time.time()
+        mapping_doc = {
+            'element_id': element_id,
+            'entity_id': entity_id,
+            'relationship_type': mapping['relationship_type'],
+            'confidence': mapping.get('confidence', 1.0),
+            'extraction_rule': mapping.get('extraction_rule'),
+            'metadata': mapping.get('metadata', {}),
+            'created_at': now
+        }
+        
+        # Upsert the mapping
+        self.element_entity_mappings_collection.replace_one(
+            {
+                'element_id': element_id,
+                'entity_id': entity_id,
+                'relationship_type': mapping['relationship_type']
+            },
+            mapping_doc,
+            upsert=True
+        )
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings by element_pk, entity_pk, or both."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        if not element_pk and not entity_pk:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        filter_query = {}
+        
+        if element_pk:
+            elements = list(self.elements_collection.find().sort('_id', 1).limit(element_pk))
+            if len(elements) >= element_pk:
+                element_id = elements[element_pk - 1]['_id']
+                filter_query['element_id'] = element_id
+        
+        if entity_pk:
+            entities = list(self.entities_collection.find().sort('_id', 1).limit(entity_pk))
+            if len(entities) >= entity_pk:
+                entity_id = entities[entity_pk - 1]['_id']
+                filter_query['entity_id'] = entity_id
+        
+        if not filter_query:
+            return 0
+        
+        result = self.element_entity_mappings_collection.delete_many(filter_query)
+        return result.deleted_count
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Convert entity_pks to MongoDB _ids
+        source_entities = list(self.entities_collection.find().sort('_id', 1).limit(relationship['source_entity_pk']))
+        if len(source_entities) < relationship['source_entity_pk']:
+            raise ValueError(f"Source entity with pk {relationship['source_entity_pk']} not found")
+        source_entity_id = source_entities[relationship['source_entity_pk'] - 1]['_id']
+        
+        target_entities = list(self.entities_collection.find().sort('_id', 1).limit(relationship['target_entity_pk']))
+        if len(target_entities) < relationship['target_entity_pk']:
+            raise ValueError(f"Target entity with pk {relationship['target_entity_pk']} not found")
+        target_entity_id = target_entities[relationship['target_entity_pk'] - 1]['_id']
+        
+        now = time.time()
+        relationship_doc = {
+            'source_entity_id': source_entity_id,
+            'target_entity_id': target_entity_id,
+            'relationship_type': relationship['relationship_type'],
+            'confidence': relationship.get('confidence', 1.0),
+            'domain': relationship.get('domain'),
+            'metadata': relationship.get('metadata', {}),
+            'created_at': now
+        }
+        
+        result = self.entity_relationships_collection.insert_one(relationship_doc)
+        # Return a numeric ID based on insertion order
+        return self.entity_relationships_collection.count_documents({'_id': {'$lte': result.inserted_id}})
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Find the relationship by its numeric position
+        relationships = list(self.entity_relationships_collection.find().sort('_id', 1).limit(relationship_id))
+        if len(relationships) < relationship_id:
+            return False
+        
+        rel_mongo_id = relationships[relationship_id - 1]['_id']
+        
+        # Convert entity_pks to MongoDB _ids
+        source_entities = list(self.entities_collection.find().sort('_id', 1).limit(relationship['source_entity_pk']))
+        if len(source_entities) < relationship['source_entity_pk']:
+            return False
+        source_entity_id = source_entities[relationship['source_entity_pk'] - 1]['_id']
+        
+        target_entities = list(self.entities_collection.find().sort('_id', 1).limit(relationship['target_entity_pk']))
+        if len(target_entities) < relationship['target_entity_pk']:
+            return False
+        target_entity_id = target_entities[relationship['target_entity_pk'] - 1]['_id']
+        
+        result = self.entity_relationships_collection.update_one(
+            {'_id': rel_mongo_id},
+            {'$set': {
+                'source_entity_id': source_entity_id,
+                'target_entity_id': target_entity_id,
+                'relationship_type': relationship['relationship_type'],
+                'confidence': relationship.get('confidence', 1.0),
+                'domain': relationship.get('domain'),
+                'metadata': relationship.get('metadata', {})
+            }}
+        )
+        
+        return result.modified_count > 0
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity relationships by source, target, or both."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        if not source_entity_pk and not target_entity_pk:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        filter_query = {'$or': []}
+        
+        if source_entity_pk:
+            entities = list(self.entities_collection.find().sort('_id', 1).limit(source_entity_pk))
+            if len(entities) >= source_entity_pk:
+                entity_id = entities[source_entity_pk - 1]['_id']
+                filter_query['$or'].extend([
+                    {'source_entity_id': entity_id},
+                    {'target_entity_id': entity_id}
+                ])
+        
+        if target_entity_pk and not source_entity_pk:
+            entities = list(self.entities_collection.find().sort('_id', 1).limit(target_entity_pk))
+            if len(entities) >= target_entity_pk:
+                entity_id = entities[target_entity_pk - 1]['_id']
+                filter_query['$or'].extend([
+                    {'source_entity_id': entity_id},
+                    {'target_entity_id': entity_id}
+                ])
+        
+        if source_entity_pk and target_entity_pk:
+            source_entities = list(self.entities_collection.find().sort('_id', 1).limit(source_entity_pk))
+            target_entities = list(self.entities_collection.find().sort('_id', 1).limit(target_entity_pk))
+            if len(source_entities) >= source_entity_pk and len(target_entities) >= target_entity_pk:
+                source_id = source_entities[source_entity_pk - 1]['_id']
+                target_id = target_entities[target_entity_pk - 1]['_id']
+                filter_query = {
+                    'source_entity_id': source_id,
+                    'target_entity_id': target_id
+                }
+        
+        if not filter_query.get('$or') and '$or' in filter_query:
+            return 0
+        
+        result = self.entity_relationships_collection.delete_many(filter_query)
+        return result.deleted_count
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (both as source and target)."""
+        if not self.db:
+            raise ValueError("Database not initialized")
+        
+        # Find the entity by its numeric position
+        entities = list(self.entities_collection.find().sort('_id', 1).limit(entity_pk))
+        if len(entities) < entity_pk:
+            return []
+        
+        entity_id = entities[entity_pk - 1]['_id']
+        
+        # Find all relationships
+        relationships = []
+        for rel_doc in self.entity_relationships_collection.find({
+            '$or': [
+                {'source_entity_id': entity_id},
+                {'target_entity_id': entity_id}
+            ]
+        }):
+            # Calculate relationship_id based on position
+            relationship_id = self.entity_relationships_collection.count_documents({'_id': {'$lte': rel_doc['_id']}})
+            
+            # Get source and target entity details
+            source_entity = self.entities_collection.find_one({'_id': rel_doc['source_entity_id']})
+            target_entity = self.entities_collection.find_one({'_id': rel_doc['target_entity_id']})
+            
+            rel_doc['relationship_id'] = relationship_id
+            rel_doc['source_entity_id'] = source_entity['entity_id'] if source_entity else None
+            rel_doc['target_entity_id'] = target_entity['entity_id'] if target_entity else None
+            
+            # Calculate entity_pks
+            rel_doc['source_entity_pk'] = self.entities_collection.count_documents({'_id': {'$lte': rel_doc['source_entity_id']}})
+            rel_doc['target_entity_pk'] = self.entities_collection.count_documents({'_id': {'$lte': rel_doc['target_entity_id']}})
+            
+            rel_doc.pop('_id', None)
+            relationships.append(rel_doc)
+        
+        return relationships
 
 
 if __name__ == "__main__":

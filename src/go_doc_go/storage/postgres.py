@@ -4145,6 +4145,288 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
         return self.find_elements(query)
 
 
+    # ========================================
+    # DOMAIN ENTITY METHODS
+    # ========================================
+    
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """Store a domain entity and return its primary key."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        now = time.time()
+        
+        cursor.execute("""
+            INSERT INTO entities 
+            (entity_id, entity_type, name, domain, attributes, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING entity_pk
+        """, (
+            entity['entity_id'],
+            entity['entity_type'],
+            entity['name'],
+            entity.get('domain'),
+            json.dumps(entity.get('attributes', {})),
+            now,
+            now
+        ))
+        
+        entity_pk = cursor.fetchone()[0]
+        self.conn.commit()
+        return entity_pk
+    
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """Update an existing domain entity."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        now = time.time()
+        
+        try:
+            cursor.execute("""
+                UPDATE entities 
+                SET entity_type = %s, name = %s, domain = %s, attributes = %s, updated_at = %s
+                WHERE entity_pk = %s
+            """, (
+                entity['entity_type'],
+                entity['name'],
+                entity.get('domain'),
+                json.dumps(entity.get('attributes', {})),
+                now,
+                entity_pk
+            ))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error updating entity {entity_pk}: {e}")
+            return False
+    
+    def delete_entity(self, entity_pk: int) -> bool:
+        """Delete a domain entity and its associated mappings and relationships."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            # Delete entity (cascade will handle mappings, relationships, embeddings)
+            cursor.execute("DELETE FROM entities WHERE entity_pk = %s", (entity_pk,))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error deleting entity {entity_pk}: {e}")
+            return False
+    
+    def get_entity(self, entity_pk: int) -> Optional[Dict[str, Any]]:
+        """Get a domain entity by its primary key."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cursor.execute("""
+            SELECT entity_pk, entity_id, entity_type, name, domain, attributes, created_at, updated_at
+            FROM entities
+            WHERE entity_pk = %s
+        """, (entity_pk,))
+        
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
+    
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Get all entities associated with a document."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cursor.execute("""
+            SELECT DISTINCT e.*
+            FROM entities e
+            JOIN element_entity_mappings eem ON e.entity_pk = eem.entity_pk
+            JOIN elements el ON eem.element_pk = el.element_pk
+            WHERE el.doc_id = %s
+        """, (doc_id,))
+        
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """Store element-to-entity mapping."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        now = time.time()
+        
+        cursor.execute("""
+            INSERT INTO element_entity_mappings 
+            (element_pk, entity_pk, relationship_type, confidence, extraction_rule, metadata, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (element_pk, entity_pk, relationship_type) DO UPDATE
+            SET confidence = EXCLUDED.confidence,
+                extraction_rule = EXCLUDED.extraction_rule,
+                metadata = EXCLUDED.metadata,
+                created_at = EXCLUDED.created_at
+        """, (
+            mapping['element_pk'],
+            mapping['entity_pk'],
+            mapping['relationship_type'],
+            mapping.get('confidence', 1.0),
+            mapping.get('extraction_rule'),
+            json.dumps(mapping.get('metadata', {})),
+            now
+        ))
+        
+        self.conn.commit()
+    
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """Delete element-entity mappings by element_pk, entity_pk, or both."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        if not element_pk and not entity_pk:
+            raise ValueError("At least one of element_pk or entity_pk must be provided")
+        
+        cursor = self.conn.cursor()
+        try:
+            if element_pk and entity_pk:
+                cursor.execute("""
+                    DELETE FROM element_entity_mappings 
+                    WHERE element_pk = %s AND entity_pk = %s
+                """, (element_pk, entity_pk))
+            elif element_pk:
+                cursor.execute("""
+                    DELETE FROM element_entity_mappings 
+                    WHERE element_pk = %s
+                """, (element_pk,))
+            else:  # entity_pk only
+                cursor.execute("""
+                    DELETE FROM element_entity_mappings 
+                    WHERE entity_pk = %s
+                """, (entity_pk,))
+            
+            count = cursor.rowcount
+            self.conn.commit()
+            return count
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error deleting element-entity mappings: {e}")
+            return 0
+    
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """Store entity-to-entity relationship and return the relationship_id."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        now = time.time()
+        
+        cursor.execute("""
+            INSERT INTO entity_relationships 
+            (source_entity_pk, target_entity_pk, relationship_type, confidence, domain, metadata, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING relationship_id
+        """, (
+            relationship['source_entity_pk'],
+            relationship['target_entity_pk'],
+            relationship['relationship_type'],
+            relationship.get('confidence', 1.0),
+            relationship.get('domain'),
+            json.dumps(relationship.get('metadata', {})),
+            now
+        ))
+        
+        relationship_id = cursor.fetchone()[0]
+        self.conn.commit()
+        return relationship_id
+    
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """Update an entity-to-entity relationship."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("""
+                UPDATE entity_relationships 
+                SET source_entity_pk = %s, target_entity_pk = %s, relationship_type = %s,
+                    confidence = %s, domain = %s, metadata = %s
+                WHERE relationship_id = %s
+            """, (
+                relationship['source_entity_pk'],
+                relationship['target_entity_pk'],
+                relationship['relationship_type'],
+                relationship.get('confidence', 1.0),
+                relationship.get('domain'),
+                json.dumps(relationship.get('metadata', {})),
+                relationship_id
+            ))
+            
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error updating entity relationship {relationship_id}: {e}")
+            return False
+    
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """Delete entity relationships by source, target, or both."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        if not source_entity_pk and not target_entity_pk:
+            raise ValueError("At least one of source_entity_pk or target_entity_pk must be provided")
+        
+        cursor = self.conn.cursor()
+        try:
+            if source_entity_pk and target_entity_pk:
+                cursor.execute("""
+                    DELETE FROM entity_relationships 
+                    WHERE source_entity_pk = %s AND target_entity_pk = %s
+                """, (source_entity_pk, target_entity_pk))
+            elif source_entity_pk:
+                cursor.execute("""
+                    DELETE FROM entity_relationships 
+                    WHERE source_entity_pk = %s OR target_entity_pk = %s
+                """, (source_entity_pk, source_entity_pk))
+            else:  # target_entity_pk only
+                cursor.execute("""
+                    DELETE FROM entity_relationships 
+                    WHERE source_entity_pk = %s OR target_entity_pk = %s
+                """, (target_entity_pk, target_entity_pk))
+            
+            count = cursor.rowcount
+            self.conn.commit()
+            return count
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error deleting entity relationships: {e}")
+            return 0
+    
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """Get all relationships for an entity (both as source and target)."""
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cursor.execute("""
+            SELECT r.*, 
+                   se.entity_id as source_entity_id,
+                   te.entity_id as target_entity_id
+            FROM entity_relationships r
+            JOIN entities se ON r.source_entity_pk = se.entity_pk
+            JOIN entities te ON r.target_entity_pk = te.entity_pk
+            WHERE r.source_entity_pk = %s OR r.target_entity_pk = %s
+        """, (entity_pk, entity_pk))
+        
+        return [dict(row) for row in cursor.fetchall()]
+
+
 if __name__ == "__main__":
     # Example demonstrating enhanced PostgreSQL implementation with full-text search
     conn_params = {
