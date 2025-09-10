@@ -460,6 +460,172 @@ class DocumentDatabase(ABC):
         pass
 
     # ========================================
+    # DOMAIN ENTITY OPERATIONS
+    # ========================================
+
+    @abstractmethod
+    def store_entity(self, entity: Dict[str, Any]) -> int:
+        """
+        Store a domain entity.
+        
+        Args:
+            entity: Entity dictionary with keys:
+                   - entity_id: str (required)
+                   - entity_type: str (required)
+                   - name: str
+                   - domain: str
+                   - attributes: dict
+                   
+        Returns:
+            entity_pk: Primary key of stored entity
+        """
+        pass
+
+    @abstractmethod
+    def update_entity(self, entity_pk: int, entity: Dict[str, Any]) -> bool:
+        """
+        Update an existing domain entity.
+        
+        Args:
+            entity_pk: Primary key of entity to update
+            entity: Updated entity data
+                   
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def delete_entity(self, entity_pk: int) -> bool:
+        """
+        Delete a domain entity.
+        
+        Args:
+            entity_pk: Primary key of entity to delete
+                   
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def get_entity(self, entity_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get entity by entity_id.
+        
+        Args:
+            entity_id: Entity identifier
+                   
+        Returns:
+            Entity dictionary or None if not found
+        """
+        pass
+
+    @abstractmethod
+    def get_entities_for_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all entities extracted from a document.
+        
+        Args:
+            doc_id: Document identifier
+                   
+        Returns:
+            List of entity dictionaries
+        """
+        pass
+
+    @abstractmethod
+    def store_element_entity_mapping(self, mapping: Dict[str, Any]) -> None:
+        """
+        Store element-entity mapping.
+        
+        Args:
+            mapping: Mapping dictionary with keys:
+                   - element_pk: int
+                   - entity_pk: int
+                   - relationship_type: str
+                   - domain: str
+                   - confidence: float
+                   - extraction_method: str
+                   - metadata: dict
+        """
+        pass
+
+    @abstractmethod
+    def delete_element_entity_mappings(self, element_pk: int = None, entity_pk: int = None) -> int:
+        """
+        Delete element-entity mappings.
+        
+        Args:
+            element_pk: Optional element primary key to filter by
+            entity_pk: Optional entity primary key to filter by
+                   
+        Returns:
+            Number of mappings deleted
+        """
+        pass
+
+    @abstractmethod
+    def store_entity_relationship(self, relationship: Dict[str, Any]) -> int:
+        """
+        Store entity-to-entity relationship.
+        
+        Args:
+            relationship: Relationship dictionary with keys:
+                   - source_entity_pk: int
+                   - target_entity_pk: int
+                   - relationship_type: str
+                   - confidence: float
+                   - domain: str
+                   - metadata: dict
+                   
+        Returns:
+            The relationship_id of the created relationship
+        """
+        pass
+
+    @abstractmethod
+    def update_entity_relationship(self, relationship_id: int, relationship: Dict[str, Any]) -> bool:
+        """
+        Update an entity-to-entity relationship.
+        
+        Args:
+            relationship_id: Relationship identifier
+            relationship: Updated relationship data
+                   
+        Returns:
+            True if updated successfully, False otherwise
+        """
+        pass
+
+    @abstractmethod
+    def delete_entity_relationships(self, source_entity_pk: int = None, target_entity_pk: int = None) -> int:
+        """
+        Delete entity-to-entity relationships.
+        
+        Args:
+            source_entity_pk: Optional source entity primary key to filter by
+            target_entity_pk: Optional target entity primary key to filter by
+                   
+        Returns:
+            Number of relationships deleted
+        """
+        pass
+
+    @abstractmethod
+    def get_entity_relationships(self, entity_pk: int) -> List[Dict[str, Any]]:
+        """
+        Get all relationships for an entity (where it's source or target).
+        
+        Args:
+            entity_pk: Entity primary key
+                   
+        Returns:
+            List of relationship dictionaries
+        """
+        pass
+
+    # ========================================
     # STRUCTURED SEARCH SYSTEM (required for all backends)
     # ========================================
 
