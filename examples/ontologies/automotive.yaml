@@ -1,0 +1,230 @@
+domain:
+  name: "automotive_engineering"
+  version: "1.0.0"
+  description: "Automotive engineering domain ontology for technical documentation"
+
+# Core domain terms
+terms:
+  - id: "brake_system"
+    label: "Braking System"
+    description: "Components and systems related to vehicle braking"
+    aliases: ["brakes", "brake assembly"]
+    
+  - id: "abs_system"
+    label: "Anti-lock Braking System"
+    description: "Electronic safety system that prevents wheel lockup"
+    aliases: ["ABS", "antilock"]
+    
+  - id: "engine"
+    label: "Engine"
+    description: "Vehicle propulsion system"
+    aliases: ["motor", "powerplant"]
+    
+  - id: "transmission"
+    label: "Transmission System"
+    description: "Power transfer from engine to wheels"
+    aliases: ["gearbox", "transaxle"]
+    
+  - id: "safety_requirement"
+    label: "Safety Requirement"
+    description: "Safety specifications and standards"
+    
+  - id: "test_procedure"
+    label: "Test Procedure"
+    description: "Testing and validation procedures"
+    
+  - id: "test_result"
+    label: "Test Result"
+    description: "Results from testing procedures"
+    
+  - id: "diagnostic_code"
+    label: "Diagnostic Trouble Code"
+    description: "Error codes from vehicle diagnostics"
+    aliases: ["DTC", "error code", "fault code"]
+    
+  - id: "component_spec"
+    label: "Component Specification"
+    description: "Technical specifications for components"
+    
+  - id: "maintenance_procedure"
+    label: "Maintenance Procedure"
+    description: "Service and maintenance instructions"
+
+# Mapping rules to identify elements as terms
+element_mappings:
+  - term_id: "brake_system"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "brake system, braking components, brake assembly, brake caliper, brake pads, brake rotor"
+        confidence_threshold: 0.75
+        element_types: ["paragraph", "list_item"]
+      
+      - type: "keywords"
+        keywords: ["brake", "caliper", "rotor", "brake pad"]
+        element_types: ["heading", "paragraph"]
+        
+  - term_id: "abs_system"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "anti-lock braking, ABS module, wheel speed sensor, ABS control"
+        confidence_threshold: 0.70
+        
+      - type: "regex"
+        pattern: "\\bABS\\b|anti-?lock"
+        case_sensitive: false
+        
+  - term_id: "engine"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "engine, motor, combustion engine, electric motor, powertrain"
+        confidence_threshold: 0.75
+        
+      - type: "keywords"
+        keywords: ["engine", "cylinder", "piston", "crankshaft", "camshaft"]
+        
+  - term_id: "transmission"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "transmission, gearbox, clutch, gear ratio, differential"
+        confidence_threshold: 0.75
+        
+      - type: "keywords"
+        keywords: ["transmission", "gear", "clutch", "CVT", "manual", "automatic"]
+        
+  - term_id: "safety_requirement"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "safety requirement, safety standard, FMVSS, ISO 26262, safety specification"
+        confidence_threshold: 0.80
+        element_types: ["paragraph", "list_item"]
+        
+      - type: "regex"
+        pattern: "FMVSS\\s*\\d+|ISO\\s*26262|SAE\\s*J\\d+"
+        
+  - term_id: "test_procedure"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "test procedure, testing method, validation process, test steps"
+        confidence_threshold: 0.75
+        
+      - type: "keywords"
+        keywords: ["test", "procedure", "validation", "verification"]
+        element_types: ["heading", "paragraph", "list_item"]
+        
+  - term_id: "test_result"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "test result, test outcome, pass fail, test data, measurement"
+        confidence_threshold: 0.75
+        
+      - type: "keywords"
+        keywords: ["result", "passed", "failed", "measurement", "data"]
+        
+  - term_id: "diagnostic_code"
+    rules:
+      - type: "regex"
+        pattern: "[PBCUl][0-9]{4}|DTC[-\\s]*[0-9]{3,5}"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "diagnostic code, trouble code, error code, fault code"
+        confidence_threshold: 0.80
+        
+  - term_id: "component_spec"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "specification, dimensions, tolerance, material properties, operating range"
+        confidence_threshold: 0.70
+        
+      - type: "keywords"
+        keywords: ["specification", "spec", "dimension", "tolerance", "rating"]
+        
+  - term_id: "maintenance_procedure"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "maintenance, service procedure, repair instructions, replacement steps"
+        confidence_threshold: 0.75
+        
+      - type: "keywords"
+        keywords: ["maintenance", "service", "repair", "replace", "inspect"]
+
+# Relationship rules between terms
+relationship_rules:
+  - id: "abs_part_of_brakes"
+    relationship_type: "part_of"
+    source:
+      term_id: "abs_system"
+      semantic_phrase: "ABS module, anti-lock system, wheel speed sensor"
+      confidence_threshold: 0.75
+    target:
+      term_id: "brake_system"
+      semantic_phrase: "braking system, brake assembly, brake components"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+    # No constraints - ABS is part of brakes regardless of document position
+      
+  - id: "test_validates_requirement"
+    relationship_type: "validates"
+    source:
+      term_id: "test_result"
+      semantic_phrase: "test passed, validation successful, meets requirement"
+      confidence_threshold: 0.80
+    target:
+      term_id: "safety_requirement"
+      semantic_phrase: "safety requirement met, specification satisfied, compliant with"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.75
+      calculation: "min"
+    bidirectional: false
+    
+  - id: "diagnostic_indicates_component"
+    relationship_type: "indicates_fault_in"
+    source:
+      term_id: "diagnostic_code"
+      semantic_phrase: "error code, fault detected, diagnostic trouble"
+      confidence_threshold: 0.85
+    target:
+      term_id: "brake_system"
+      semantic_phrase: "brake component, braking system fault"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+      
+  - id: "maintenance_for_component"
+    relationship_type: "maintains"
+    source:
+      term_id: "maintenance_procedure"
+      semantic_phrase: "service procedure, maintenance steps, repair instructions"
+      confidence_threshold: 0.75
+    target:
+      term_id: "brake_system"
+      semantic_phrase: "brake service, brake maintenance, brake repair"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+    bidirectional: true
+    
+  - id: "spec_defines_component"
+    relationship_type: "specifies"
+    source:
+      term_id: "component_spec"
+      semantic_phrase: "specification for, defines parameters, technical requirements"
+      confidence_threshold: 0.75
+    target:
+      term_id: "brake_system"
+      semantic_phrase: "brake specifications, brake parameters"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+# Domain-specific settings
+settings:
+  enable_hierarchical_relationships: true
+  infer_transitive_relationships: false
+  min_confidence_for_inference: 0.8
