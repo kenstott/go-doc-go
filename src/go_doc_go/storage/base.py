@@ -2390,6 +2390,159 @@ class DocumentDatabase(ABC):
         return []
 
     # ========================================
+    # DOMAIN ONTOLOGY MAPPING METHODS
+    # ========================================
+    
+    def supports_domain_mappings(self) -> bool:
+        """
+        Indicate whether this backend supports domain ontology mappings.
+        
+        Returns:
+            True if domain mappings are supported, False otherwise
+        """
+        # By default, assume support if we can store metadata
+        return True
+    
+    def store_element_term_mappings(self, element_pk: int, 
+                                   mappings: List[Dict[str, Any]]) -> None:
+        """
+        Store domain term mappings for an element.
+        
+        Each backend can implement this differently:
+        - Relational DBs: Store in element_ontology_mappings table
+        - Neo4j: Add as node labels or properties
+        - Document stores: Add to element metadata
+        
+        Args:
+            element_pk: Element primary key
+            mappings: List of mapping dictionaries, each containing:
+                     - term: Term ID (e.g., "brake_system")
+                     - domain: Domain name (e.g., "automotive")
+                     - confidence: Confidence score (0.0 to 1.0)
+                     - mapping_rule: Rule type used ("semantic", "regex", "keywords")
+        
+        Default implementation stores nothing.
+        Backends should override this method.
+        """
+        pass
+    
+    def get_element_term_mappings(self, element_pk: int) -> List[Dict[str, Any]]:
+        """
+        Get all domain term mappings for an element.
+        
+        Args:
+            element_pk: Element primary key
+            
+        Returns:
+            List of mapping dictionaries with keys:
+            - term: Term ID
+            - domain: Domain name
+            - confidence: Confidence score
+            - mapping_rule: Rule type used
+        
+        Default implementation returns empty list.
+        """
+        return []
+    
+    def find_elements_by_term(self, term: str, domain: Optional[str] = None,
+                             min_confidence: float = 0.0,
+                             limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Find all elements mapped to a specific term.
+        
+        Args:
+            term: Term ID to search for
+            domain: Optional domain name to filter by
+            min_confidence: Minimum confidence threshold
+            limit: Maximum number of results
+            
+        Returns:
+            List of dictionaries with element info and mapping details:
+            - element_pk: Element primary key
+            - element_id: Element ID
+            - confidence: Mapping confidence
+            - domain: Domain name
+            - mapping_rule: Rule type used
+        
+        Default implementation returns empty list.
+        """
+        return []
+    
+    def get_term_statistics(self, domain: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Get statistics about term usage across elements.
+        
+        Args:
+            domain: Optional domain name to filter by
+            
+        Returns:
+            Dictionary mapping term IDs to statistics:
+            - count: Number of elements mapped to this term
+            - avg_confidence: Average confidence score
+            - domains: List of domains this term appears in
+        
+        Default implementation returns empty dict.
+        """
+        return {}
+    
+    def delete_element_term_mappings(self, element_pk: int, 
+                                    domain: Optional[str] = None) -> bool:
+        """
+        Delete term mappings for an element.
+        
+        Args:
+            element_pk: Element primary key
+            domain: Optional domain name to delete mappings for (None = all domains)
+            
+        Returns:
+            True if mappings were deleted, False if none existed
+        
+        Default implementation returns False.
+        """
+        return False
+    
+    def bulk_store_term_mappings(self, mappings: List[Dict[str, Any]]) -> int:
+        """
+        Store multiple element-term mappings in a single operation.
+        
+        Useful for batch processing after running domain evaluator on many elements.
+        
+        Args:
+            mappings: List of mapping dictionaries, each containing:
+                     - element_pk: Element primary key
+                     - term: Term ID
+                     - domain: Domain name
+                     - confidence: Confidence score
+                     - mapping_rule: Rule type used
+                     
+        Returns:
+            Number of mappings stored
+        
+        Default implementation calls store_element_term_mappings for each element.
+        Backends should override for better performance.
+        """
+        # Group by element_pk
+        from collections import defaultdict
+        by_element = defaultdict(list)
+        
+        for mapping in mappings:
+            element_pk = mapping['element_pk']
+            by_element[element_pk].append({
+                'term': mapping['term'],
+                'domain': mapping['domain'],
+                'confidence': mapping['confidence'],
+                'mapping_rule': mapping['mapping_rule']
+            })
+        
+        # Store for each element
+        count = 0
+        for element_pk, element_mappings in by_element.items():
+            self.store_element_term_mappings(element_pk, element_mappings)
+            count += len(element_mappings)
+        
+        return count
+
+    # ========================================
     # DATE UTILITY METHODS
     # ========================================
 

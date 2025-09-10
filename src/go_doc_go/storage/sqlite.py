@@ -610,6 +610,240 @@ class SQLiteDocumentDatabase(DocumentDatabase):
             except Exception:
                 pass
 
+    # Domain Ontology Mapping Methods
+    def store_element_term_mappings(self, element_pk: int, mappings: List[Dict[str, Any]]) -> None:
+        """
+        Store domain term mappings for an element.
+        
+        Args:
+            element_pk: Primary key of the element
+            mappings: List of mappings with keys:
+                     - term: str
+                     - domain: str
+                     - confidence: float
+                     - mapping_rule: str (optional)
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        try:
+            # Delete existing mappings for this element
+            cursor.execute(
+                "DELETE FROM element_ontology_mappings WHERE element_pk = ?",
+                (element_pk,)
+            )
+            
+            # Insert new mappings
+            for mapping in mappings:
+                cursor.execute("""
+                    INSERT INTO element_ontology_mappings 
+                    (element_pk, term, domain, confidence, mapping_rule, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (
+                    element_pk,
+                    mapping['term'],
+                    mapping['domain'],
+                    mapping.get('confidence', 1.0),
+                    mapping.get('mapping_rule', ''),
+                    time.time()
+                ))
+            
+            self.conn.commit()
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error storing element term mappings: {e}")
+            raise
+    
+    def get_element_term_mappings(self, element_pk: int) -> List[Dict[str, Any]]:
+        """
+        Get all domain term mappings for an element.
+        
+        Args:
+            element_pk: Primary key of the element
+            
+        Returns:
+            List of mapping dictionaries
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT term, domain, confidence, mapping_rule, created_at
+            FROM element_ontology_mappings
+            WHERE element_pk = ?
+            ORDER BY confidence DESC
+        """, (element_pk,))
+        
+        mappings = []
+        for row in cursor.fetchall():
+            mappings.append({
+                'term': row[0],
+                'domain': row[1],
+                'confidence': row[2],
+                'mapping_rule': row[3],
+                'created_at': row[4]
+            })
+        
+        return mappings
+    
+    def find_elements_by_term(self, term: str, domain: Optional[str] = None, 
+                             min_confidence: float = 0.0, limit: int = 100) -> List[Tuple[int, str, float]]:
+        """
+        Find elements mapped to a specific term.
+        
+        Args:
+            term: Term identifier
+            domain: Optional domain to filter by
+            min_confidence: Minimum confidence threshold
+            limit: Maximum number of results
+            
+        Returns:
+            List of tuples (element_pk, element_id, confidence)
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        
+        if domain:
+            cursor.execute("""
+                SELECT eom.element_pk, e.element_id, eom.confidence
+                FROM element_ontology_mappings eom
+                JOIN elements e ON e.element_pk = eom.element_pk
+                WHERE eom.term = ? AND eom.domain = ? AND eom.confidence >= ?
+                ORDER BY eom.confidence DESC
+                LIMIT ?
+            """, (term, domain, min_confidence, limit))
+        else:
+            cursor.execute("""
+                SELECT eom.element_pk, e.element_id, eom.confidence
+                FROM element_ontology_mappings eom
+                JOIN elements e ON e.element_pk = eom.element_pk
+                WHERE eom.term = ? AND eom.confidence >= ?
+                ORDER BY eom.confidence DESC
+                LIMIT ?
+            """, (term, min_confidence, limit))
+        
+        return cursor.fetchall()
+    
+    def get_term_statistics(self, domain: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Get usage statistics for all terms.
+        
+        Args:
+            domain: Optional domain to filter by
+            
+        Returns:
+            Dictionary mapping term to statistics
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        
+        if domain:
+            cursor.execute("""
+                SELECT term, 
+                       COUNT(*) as count,
+                       AVG(confidence) as avg_confidence,
+                       MIN(confidence) as min_confidence,
+                       MAX(confidence) as max_confidence
+                FROM element_ontology_mappings
+                WHERE domain = ?
+                GROUP BY term
+                ORDER BY count DESC
+            """, (domain,))
+        else:
+            cursor.execute("""
+                SELECT term, domain,
+                       COUNT(*) as count,
+                       AVG(confidence) as avg_confidence,
+                       MIN(confidence) as min_confidence,
+                       MAX(confidence) as max_confidence
+                FROM element_ontology_mappings
+                GROUP BY term, domain
+                ORDER BY count DESC
+            """)
+        
+        stats = {}
+        for row in cursor.fetchall():
+            if domain:
+                term = row[0]
+                stats[term] = {
+                    'count': row[1],
+                    'avg_confidence': row[2],
+                    'min_confidence': row[3],
+                    'max_confidence': row[4],
+                    'domain': domain
+                }
+            else:
+                term = row[0]
+                dom = row[1]
+                key = f"{dom}:{term}"
+                stats[key] = {
+                    'count': row[2],
+                    'avg_confidence': row[3],
+                    'min_confidence': row[4],
+                    'max_confidence': row[5],
+                    'domain': dom
+                }
+        
+        return stats
+    
+    def bulk_store_term_mappings(self, mappings: List[Dict[str, Any]]) -> int:
+        """
+        Bulk store term mappings for multiple elements.
+        
+        Args:
+            mappings: List of mappings with keys:
+                     - element_pk: int
+                     - term: str
+                     - domain: str
+                     - confidence: float
+                     - mapping_rule: str (optional)
+                     
+        Returns:
+            Number of mappings stored
+        """
+        if not self.conn:
+            raise ValueError("Database not initialized")
+        
+        cursor = self.conn.cursor()
+        count = 0
+        
+        try:
+            for mapping in mappings:
+                try:
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO element_ontology_mappings 
+                        (element_pk, term, domain, confidence, mapping_rule, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (
+                        mapping['element_pk'],
+                        mapping['term'],
+                        mapping['domain'],
+                        mapping.get('confidence', 1.0),
+                        mapping.get('mapping_rule', ''),
+                        time.time()
+                    ))
+                    count += 1
+                except sqlite3.IntegrityError as e:
+                    # Skip duplicates
+                    logger.debug(f"Skipping duplicate mapping: {e}")
+                    continue
+            
+            self.conn.commit()
+            logger.info(f"Stored {count} term mappings")
+            
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Error in bulk storing term mappings: {e}")
+            raise
+        
+        return count
+
     def close(self) -> None:
         """Close the database connection."""
         if self.conn:
@@ -3054,6 +3288,32 @@ class SQLiteDocumentDatabase(DocumentDatabase):
 
             self.conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_processing_history_source_id ON processing_history(source_id)
+            """)
+
+            # Create domain ontology mapping table
+            self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS element_ontology_mappings (
+                mapping_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                element_pk INTEGER REFERENCES elements(element_pk) ON DELETE CASCADE,
+                term TEXT NOT NULL,
+                domain TEXT NOT NULL,
+                confidence REAL DEFAULT 1.0,
+                mapping_rule TEXT,
+                created_at REAL,
+                UNIQUE(element_pk, term, domain)
+            )
+            """)
+
+            self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ontology_mappings_element ON element_ontology_mappings(element_pk)
+            """)
+            
+            self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ontology_mappings_term ON element_ontology_mappings(term, domain)
+            """)
+            
+            self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_ontology_mappings_confidence ON element_ontology_mappings(confidence)
             """)
 
             self.conn.commit()
