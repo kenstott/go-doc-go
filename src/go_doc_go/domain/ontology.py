@@ -290,6 +290,81 @@ class RelationshipRule:
 
 
 @dataclass
+class DerivedEntityRule:
+    """Rule for extracting entities from element metadata."""
+    entity_type: str
+    source_element_types: List[str]
+    metadata_fields: List[str]
+    id_template: str  # e.g., "{entity_type}_{name}"
+    deduplication_key: str  # Field to use for deduplication
+    create_relationships: bool = True
+    relationship_type: str = "ASSOCIATED_WITH"
+    map_to_terms: bool = True
+    extract_content: bool = False  # Whether to include element content in entity
+    content_field: str = "content_preview"  # Field to extract content from
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'DerivedEntityRule':
+        """Create from dictionary."""
+        return cls(
+            entity_type=data['entity_type'],
+            source_element_types=data.get('source_element_types', ['*']),
+            metadata_fields=data['metadata_fields'],
+            id_template=data.get('id_template', '{entity_type}_{name}'),
+            deduplication_key=data.get('deduplication_key', 'name'),
+            create_relationships=data.get('create_relationships', True),
+            relationship_type=data.get('relationship_type', 'ASSOCIATED_WITH'),
+            map_to_terms=data.get('map_to_terms', True),
+            extract_content=data.get('extract_content', False),
+            content_field=data.get('content_field', 'content_preview')
+        )
+
+
+@dataclass
+class MatchingCriteria:
+    """Criteria for matching entities in relationships."""
+    same_source_element: bool = False
+    same_document: bool = False  # Match entities from the same document
+    metadata_match: List[Dict[str, str]] = field(default_factory=list)  # [{"source_field": "name", "target_field": "speaker"}]
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'MatchingCriteria':
+        """Create from dictionary."""
+        return cls(
+            same_source_element=data.get('same_source_element', False),
+            same_document=data.get('same_document', False),
+            metadata_match=data.get('metadata_match', [])
+        )
+
+
+@dataclass  
+class EntityRelationshipRule:
+    """Rule for creating relationships between domain entities."""
+    name: str
+    description: str
+    source_entity_type: str
+    target_entity_type: str
+    relationship_type: str
+    matching_criteria: MatchingCriteria
+    confidence: float = 0.80
+    bidirectional: bool = False
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'EntityRelationshipRule':
+        """Create from dictionary."""
+        return cls(
+            name=data['name'],
+            description=data.get('description', ''),
+            source_entity_type=data['source_entity_type'],
+            target_entity_type=data['target_entity_type'],
+            relationship_type=data['relationship_type'],
+            matching_criteria=MatchingCriteria.from_dict(data.get('matching_criteria', {})),
+            confidence=data.get('confidence', 0.80),
+            bidirectional=data.get('bidirectional', False)
+        )
+
+
+@dataclass
 class DomainOntology:
     """Complete domain ontology definition."""
     name: str
@@ -299,11 +374,15 @@ class DomainOntology:
     terms: List[Term]
     element_mappings: List[ElementMapping]
     relationship_rules: List[RelationshipRule]
+    derived_entity_rules: List[DerivedEntityRule] = field(default_factory=list)
+    entity_relationship_rules: List[EntityRelationshipRule] = field(default_factory=list)
     
     # Lookup dictionaries for performance
     _terms_by_id: Dict[str, Term] = field(default_factory=dict, init=False, repr=False)
     _mappings_by_term: Dict[str, List[MappingRule]] = field(default_factory=dict, init=False, repr=False)
     _rules_by_relationship: Dict[str, List[RelationshipRule]] = field(default_factory=dict, init=False, repr=False)
+    _derived_rules_by_type: Dict[str, List[DerivedEntityRule]] = field(default_factory=dict, init=False, repr=False)
+    _entity_rules_by_source: Dict[str, List[EntityRelationshipRule]] = field(default_factory=dict, init=False, repr=False)
     
     def __post_init__(self):
         """Build lookup dictionaries after initialization."""
@@ -327,6 +406,20 @@ class DomainOntology:
             if rule.relationship_type not in self._rules_by_relationship:
                 self._rules_by_relationship[rule.relationship_type] = []
             self._rules_by_relationship[rule.relationship_type].append(rule)
+        
+        # Derived entity rules by type
+        self._derived_rules_by_type = {}
+        for rule in self.derived_entity_rules:
+            if rule.entity_type not in self._derived_rules_by_type:
+                self._derived_rules_by_type[rule.entity_type] = []
+            self._derived_rules_by_type[rule.entity_type].append(rule)
+        
+        # Entity relationship rules by source entity type
+        self._entity_rules_by_source = {}
+        for rule in self.entity_relationship_rules:
+            if rule.source_entity_type not in self._entity_rules_by_source:
+                self._entity_rules_by_source[rule.source_entity_type] = []
+            self._entity_rules_by_source[rule.source_entity_type].append(rule)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'DomainOntology':
@@ -339,7 +432,9 @@ class DomainOntology:
             settings=DomainSettings.from_dict(domain_info.get('settings', {})),
             terms=[Term.from_dict(t) for t in data.get('terms', [])],
             element_mappings=[ElementMapping.from_dict(m) for m in data.get('element_mappings', [])],
-            relationship_rules=[RelationshipRule.from_dict(r) for r in data.get('relationship_rules', [])]
+            relationship_rules=[RelationshipRule.from_dict(r) for r in data.get('relationship_rules', [])],
+            derived_entity_rules=[DerivedEntityRule.from_dict(r) for r in data.get('derived_entity_rules', [])],
+            entity_relationship_rules=[EntityRelationshipRule.from_dict(r) for r in data.get('entity_relationship_rules', [])]
         )
     
     def get_term(self, term_id: str) -> Optional[Term]:
