@@ -1,0 +1,943 @@
+domain:
+  name: "financial_markets"
+  version: "1.0.0"
+  description: "Financial markets ontology for extracting entities and relationships from unstructured financial documents like earnings calls, analyst reports, and news"
+  settings:
+    default_confidence_threshold: 0.65
+    max_relationships_per_pair: 5
+    enable_transitive_inference: true
+  
+  # Neo4j export configuration
+  neo4j_export:
+    # Metadata fields to flatten as node attributes
+    document_attributes:
+      - company
+      - ticker
+      - quarter
+      - year
+      - date
+      - fiscal_period
+    
+    element_attributes:
+      - speaker
+      - speaker_role
+      - section
+      - contains_metrics
+      
+    # Title generation templates
+    title_templates:
+      document: "{company} {quarter} {year} Earnings Call"
+      element: 
+        default: "{section}"
+        paragraph: "{speaker} - {section}"
+
+# Core financial market terms
+terms:
+  # Companies and Organizations
+  - id: "company"
+    label: "Company"
+    description: "Public or private company mentioned in financial context"
+    aliases: ["corporation", "firm", "enterprise", "business"]
+    
+  - id: "ticker"
+    label: "Stock Ticker"
+    description: "Stock ticker symbol"
+    aliases: ["symbol", "stock symbol", "trading symbol"]
+    
+  - id: "competitor"
+    label: "Competitor"
+    description: "Competing company in the same market"
+    aliases: ["rival", "competition", "peer company"]
+    
+  - id: "customer"
+    label: "Customer"
+    description: "Customer or client of a company"
+    aliases: ["client", "buyer", "account"]
+    
+  - id: "supplier"
+    label: "Supplier"
+    description: "Supplier or vendor to a company"
+    aliases: ["vendor", "provider", "partner"]
+
+  # People and Roles
+  - id: "ceo"
+    label: "Chief Executive Officer"
+    description: "CEO or equivalent top executive"
+    aliases: ["chief executive", "president", "managing director"]
+    
+  - id: "cfo"
+    label: "Chief Financial Officer"
+    description: "CFO or equivalent financial executive"
+    aliases: ["finance chief", "treasurer"]
+    
+  - id: "analyst"
+    label: "Financial Analyst"
+    description: "Sell-side or buy-side analyst"
+    aliases: ["research analyst", "equity analyst", "investment analyst"]
+    
+  - id: "investor"
+    label: "Investor"
+    description: "Institutional or retail investor"
+    aliases: ["shareholder", "stockholder", "fund manager", "portfolio manager"]
+
+  # Financial Metrics and KPIs
+  - id: "revenue"
+    label: "Revenue"
+    description: "Company revenue or sales"
+    aliases: ["sales", "top line", "turnover", "gross revenue"]
+    
+  - id: "earnings"
+    label: "Earnings"
+    description: "Company earnings or profit"
+    aliases: ["profit", "net income", "bottom line", "EPS"]
+    
+  - id: "guidance"
+    label: "Guidance"
+    description: "Forward-looking guidance or forecast"
+    aliases: ["outlook", "forecast", "projection", "expectation"]
+    
+  - id: "margin"
+    label: "Profit Margin"
+    description: "Profit margin metrics"
+    aliases: ["gross margin", "operating margin", "EBITDA margin", "net margin"]
+    
+  - id: "growth_rate"
+    label: "Growth Rate"
+    description: "Growth rate or percentage"
+    aliases: ["YoY growth", "QoQ growth", "CAGR", "growth"]
+    
+  - id: "market_share"
+    label: "Market Share"
+    description: "Market share percentage"
+    aliases: ["market position", "share of market"]
+
+  # Market and Industry
+  - id: "market"
+    label: "Market"
+    description: "Market or market segment"
+    aliases: ["marketplace", "sector", "vertical", "industry"]
+    
+  - id: "product"
+    label: "Product"
+    description: "Product or service offering"
+    aliases: ["offering", "solution", "service", "platform"]
+    
+  - id: "technology"
+    label: "Technology"
+    description: "Technology or innovation"
+    aliases: ["tech", "innovation", "platform", "system", "software"]
+    
+  - id: "trend"
+    label: "Market Trend"
+    description: "Market or industry trend"
+    aliases: ["tendency", "pattern", "movement", "shift"]
+
+  # Financial Events and Actions
+  - id: "earnings_call"
+    label: "Earnings Call"
+    description: "Quarterly earnings conference call"
+    aliases: ["conference call", "quarterly call", "investor call"]
+    
+  - id: "acquisition"
+    label: "Acquisition"
+    description: "Merger or acquisition activity"
+    aliases: ["M&A", "merger", "takeover", "buyout", "deal"]
+    
+  - id: "ipo"
+    label: "Initial Public Offering"
+    description: "IPO or public listing"
+    aliases: ["public offering", "going public", "listing"]
+    
+  - id: "dividend"
+    label: "Dividend"
+    description: "Dividend payment or declaration"
+    aliases: ["distribution", "payout", "yield"]
+    
+  - id: "buyback"
+    label: "Share Buyback"
+    description: "Stock repurchase program"
+    aliases: ["share repurchase", "stock buyback", "repurchase program"]
+
+  # People entities
+  - id: "speaker"
+    label: "Speaker"
+    description: "Person speaking in earnings calls or financial communications"
+    aliases: ["presenter", "participant"]
+    
+  - id: "person"
+    label: "Person"
+    description: "Individual person mentioned in financial context"
+    aliases: ["individual", "executive", "participant"]
+
+  # Investment Opinions and Ratings
+  - id: "rating"
+    label: "Analyst Rating"
+    description: "Analyst recommendation or rating"
+    aliases: ["recommendation", "call", "opinion"]
+    
+  - id: "buy_rating"
+    label: "Buy Rating"
+    description: "Buy or overweight rating"
+    aliases: ["buy", "strong buy", "overweight", "outperform", "accumulate"]
+    
+  - id: "sell_rating"
+    label: "Sell Rating"
+    description: "Sell or underweight rating"
+    aliases: ["sell", "strong sell", "underweight", "underperform", "reduce"]
+    
+  - id: "hold_rating"
+    label: "Hold Rating"
+    description: "Hold or neutral rating"
+    aliases: ["hold", "neutral", "market perform", "equal weight"]
+    
+  - id: "price_target"
+    label: "Price Target"
+    description: "Stock price target"
+    aliases: ["target price", "PT", "fair value", "target"]
+
+  # Market Conditions and Sentiment
+  - id: "bullish"
+    label: "Bullish Sentiment"
+    description: "Positive market sentiment"
+    aliases: ["positive", "optimistic", "upbeat", "favorable"]
+    
+  - id: "bearish"
+    label: "Bearish Sentiment"
+    description: "Negative market sentiment"
+    aliases: ["negative", "pessimistic", "cautious", "unfavorable"]
+    
+  - id: "volatility"
+    label: "Market Volatility"
+    description: "Market volatility or uncertainty"
+    aliases: ["uncertainty", "fluctuation", "instability", "turbulence"]
+
+  # Business Operations
+  - id: "expansion"
+    label: "Business Expansion"
+    description: "Business expansion or growth initiative"
+    aliases: ["growth", "scaling", "expansion plan"]
+    
+  - id: "restructuring"
+    label: "Restructuring"
+    description: "Corporate restructuring or reorganization"
+    aliases: ["reorganization", "transformation", "turnaround"]
+    
+  - id: "partnership"
+    label: "Partnership"
+    description: "Strategic partnership or alliance"
+    aliases: ["alliance", "collaboration", "joint venture", "JV"]
+
+  # Risk and Challenges
+  - id: "risk"
+    label: "Risk Factor"
+    description: "Business or market risk"
+    aliases: ["threat", "challenge", "headwind", "concern"]
+    
+  - id: "opportunity"
+    label: "Opportunity"
+    description: "Business or market opportunity"
+    aliases: ["potential", "tailwind", "catalyst", "driver"]
+    
+  - id: "competition"
+    label: "Competition"
+    description: "Competitive pressure or dynamics"
+    aliases: ["competitive pressure", "rivalry", "competitive landscape"]
+
+# Mapping rules to identify elements as terms
+element_mappings:
+  # Company identification
+  - term_id: "company"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "company, corporation, firm, business, enterprise"
+        confidence_threshold: 0.70
+        
+      - type: "regex"
+        pattern: "\\b[A-Z][A-Za-z]+(?:\\s+[A-Z][A-Za-z]+)*\\s+(?:Inc|Corp|Co|Ltd|LLC|plc|AG|SA|NV)\\b"
+        case_sensitive: true
+        
+      - type: "keywords"
+        keywords: ["Apple", "Microsoft", "Amazon", "Google", "Tesla", "Meta", "Netflix"]
+        case_sensitive: true
+
+  - term_id: "ticker"
+    rules:
+      - type: "regex"
+        pattern: "\\b(?:NYSE|NASDAQ|LSE|TSX)?:?\\s*[A-Z]{1,5}\\b"
+        case_sensitive: true
+        element_types: ["paragraph", "list_item"]
+        
+      - type: "regex"
+        pattern: "\\([A-Z]{1,5}\\)"
+        case_sensitive: true
+
+  # Executive identification
+  - term_id: "ceo"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "CEO, chief executive officer, president, managing director"
+        confidence_threshold: 0.75
+        
+      - type: "regex"
+        pattern: "\\b(?:CEO|Chief Executive Officer?|President and CEO|President & CEO)\\b"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["CEO", "chief executive", "president"]
+
+  - term_id: "cfo"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "CFO, chief financial officer, finance chief, treasurer"
+        confidence_threshold: 0.75
+        
+      - type: "regex"
+        pattern: "\\b(?:CFO|Chief Financial Officer?|EVP.*Finance|Treasurer)\\b"
+        case_sensitive: false
+
+  # Speaker identification from content
+  - term_id: "speaker"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "speaker, presenter, participant in call, speaking today"
+        confidence_threshold: 0.70
+        element_types: ["paragraph"]
+        
+      - type: "keywords"
+        keywords: ["speaking", "presenting", "joined us today", "on the call"]
+        element_types: ["paragraph"]
+
+  # General person identification
+  - term_id: "person"
+    rules:
+      - type: "semantic" 
+        semantic_phrase: "person, individual, executive, participant, attendee"
+        confidence_threshold: 0.65
+        
+      - type: "regex"
+        pattern: "\\b[A-Z][a-z]+\\s+[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?\\b"
+        case_sensitive: true
+        element_types: ["paragraph", "list_item"]
+
+  # Financial metrics
+  - term_id: "revenue"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "revenue, sales, top line, turnover, income from operations"
+        confidence_threshold: 0.70
+        
+      - type: "regex"
+        pattern: "\\$?\\d+(?:\\.\\d+)?\\s*(?:billion|million|B|M)\\s+(?:in\\s+)?(?:revenue|sales)"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["revenue", "sales", "turnover", "top line"]
+
+  - term_id: "earnings"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "earnings, profit, net income, EPS, earnings per share, bottom line"
+        confidence_threshold: 0.70
+        
+      - type: "regex"
+        pattern: "\\$?\\d+(?:\\.\\d+)?\\s*(?:per share|EPS)|earnings of \\$?\\d+"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["earnings", "profit", "net income", "EPS", "bottom line"]
+
+  - term_id: "guidance"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "guidance, outlook, forecast, expect, project, anticipate"
+        confidence_threshold: 0.65
+        
+      - type: "keywords"
+        keywords: ["guidance", "outlook", "forecast", "expect", "project", "anticipate"]
+        
+      - type: "regex"
+        pattern: "(?:we|company)\\s+(?:expect|anticipate|project|forecast|guide)"
+        case_sensitive: false
+
+  - term_id: "growth_rate"
+    rules:
+      - type: "regex"
+        pattern: "\\d+(?:\\.\\d+)?%\\s+(?:growth|increase|gain|rise)"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "year over year growth, YoY, quarter over quarter, QoQ, CAGR"
+        confidence_threshold: 0.70
+        
+      - type: "keywords"
+        keywords: ["YoY", "QoQ", "year-over-year", "quarter-over-quarter", "CAGR"]
+
+  # Market sentiment
+  - term_id: "bullish"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "bullish, positive, optimistic, upbeat, strong, outperform"
+        confidence_threshold: 0.65
+        
+      - type: "keywords"
+        keywords: ["bullish", "positive", "optimistic", "upbeat", "strong momentum", "tailwind"]
+
+  - term_id: "bearish"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "bearish, negative, pessimistic, cautious, weak, underperform"
+        confidence_threshold: 0.65
+        
+      - type: "keywords"
+        keywords: ["bearish", "negative", "pessimistic", "cautious", "headwind", "concern"]
+
+  # Analyst ratings
+  - term_id: "buy_rating"
+    rules:
+      - type: "regex"
+        pattern: "\\b(?:strong\\s+)?buy\\b|\\b(?:over)?weight\\b|\\boutperform\\b"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["buy", "strong buy", "overweight", "outperform", "accumulate"]
+
+  - term_id: "sell_rating"
+    rules:
+      - type: "regex"
+        pattern: "\\b(?:strong\\s+)?sell\\b|\\bunder(?:weight|perform)\\b|\\breduce\\b"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["sell", "strong sell", "underweight", "underperform", "reduce"]
+
+  - term_id: "price_target"
+    rules:
+      - type: "regex"
+        pattern: "(?:price target|PT|target price)\\s*(?:of\\s*)?\\$?\\d+(?:\\.\\d+)?"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "price target, target price, fair value, valuation target"
+        confidence_threshold: 0.70
+
+  # Corporate actions
+  - term_id: "acquisition"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "acquisition, merger, M&A, takeover, buyout, acquire, purchase"
+        confidence_threshold: 0.70
+        
+      - type: "regex"
+        pattern: "(?:acquire|acquisition|merger|buyout|takeover)\\s+(?:of|with)?\\s+[A-Z][A-Za-z]+"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["acquire", "acquisition", "merger", "M&A", "takeover", "buyout"]
+
+  - term_id: "partnership"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "partnership, alliance, collaboration, joint venture, strategic partnership"
+        confidence_threshold: 0.70
+        
+      - type: "keywords"
+        keywords: ["partnership", "alliance", "collaboration", "joint venture", "JV"]
+
+  # Risk and opportunity
+  - term_id: "risk"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "risk, threat, challenge, headwind, concern, pressure, weakness"
+        confidence_threshold: 0.65
+        
+      - type: "keywords"
+        keywords: ["risk", "threat", "challenge", "headwind", "concern", "pressure"]
+
+  - term_id: "opportunity"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "opportunity, potential, tailwind, catalyst, driver, strength"
+        confidence_threshold: 0.65
+        
+      - type: "keywords"
+        keywords: ["opportunity", "potential", "tailwind", "catalyst", "driver", "upside"]
+
+# Relationship rules between terms
+relationship_rules:
+  # Company relationships
+  - id: "company_has_ceo"
+    relationship_type: "has_executive"
+    description: "Company has CEO"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, corporation, we, our"
+      confidence_threshold: 0.70
+    target:
+      term_id: "ceo"
+      semantic_phrase: "CEO, chief executive, president"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+    constraints:
+      hierarchy_level: 0  # Same paragraph/section
+      
+  - id: "company_has_cfo"
+    relationship_type: "has_executive"
+    description: "Company has CFO"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, corporation, we, our"
+      confidence_threshold: 0.70
+    target:
+      term_id: "cfo"
+      semantic_phrase: "CFO, chief financial officer, finance chief"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+    constraints:
+      hierarchy_level: 0  # Same paragraph/section
+      
+  - id: "company_competes_with"
+    relationship_type: "competes_with"
+    description: "Company competes with another company"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, we, our firm"
+      confidence_threshold: 0.70
+    target:
+      term_id: "competitor"
+      semantic_phrase: "competitor, rival, competing firm, peer"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+    bidirectional: true
+
+  - id: "company_has_customer"
+    relationship_type: "has_customer"
+    description: "Company has customer relationship"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, we, our, supplier, vendor"
+      confidence_threshold: 0.70
+    target:
+      term_id: "customer"
+      semantic_phrase: "customer, client, account, buyer"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+  # Financial performance relationships
+  - id: "company_reports_revenue"
+    relationship_type: "reports"
+    description: "Company reports revenue"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, we, our"
+      confidence_threshold: 0.70
+    target:
+      term_id: "revenue"
+      semantic_phrase: "revenue, sales, top line"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+    constraints:
+      hierarchy_level: 1  # Same section
+
+  - id: "company_provides_guidance"
+    relationship_type: "provides"
+    description: "Company provides guidance"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, management, we"
+      confidence_threshold: 0.70
+    target:
+      term_id: "guidance"
+      semantic_phrase: "guidance, outlook, forecast, expect"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+  - id: "revenue_shows_growth"
+    relationship_type: "demonstrates"
+    description: "Revenue shows growth rate"
+    source:
+      term_id: "revenue"
+      semantic_phrase: "revenue, sales"
+      confidence_threshold: 0.70
+    target:
+      term_id: "growth_rate"
+      semantic_phrase: "growth, increase, rise, gain"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.60
+      calculation: "average"
+    constraints:
+      hierarchy_level: 0  # Same sentence/paragraph
+
+  # Analyst relationships
+  - id: "analyst_rates_company"
+    relationship_type: "rates"
+    description: "Analyst provides rating for company"
+    source:
+      term_id: "analyst"
+      semantic_phrase: "analyst, research, we rate, our view"
+      confidence_threshold: 0.70
+    target:
+      term_id: "company"
+      semantic_phrase: "company, stock, shares"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+  - id: "analyst_assigns_rating"
+    relationship_type: "assigns"
+    description: "Analyst assigns specific rating"
+    source:
+      term_id: "analyst"
+      semantic_phrase: "analyst, we, our rating"
+      confidence_threshold: 0.70
+    target:
+      term_id: "buy_rating"
+      semantic_phrase: "buy, overweight, outperform"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+  - id: "analyst_sets_target"
+    relationship_type: "sets"
+    description: "Analyst sets price target"
+    source:
+      term_id: "analyst"
+      semantic_phrase: "analyst, we set, our target"
+      confidence_threshold: 0.70
+    target:
+      term_id: "price_target"
+      semantic_phrase: "price target, target price, PT"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+  # Market sentiment relationships
+  - id: "company_sentiment_bullish"
+    relationship_type: "exhibits"
+    description: "Company exhibits bullish indicators"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, stock, shares"
+      confidence_threshold: 0.65
+    target:
+      term_id: "bullish"
+      semantic_phrase: "bullish, positive, strong, outperform"
+      confidence_threshold: 0.65
+    confidence:
+      minimum: 0.60
+      calculation: "average"
+
+  - id: "market_presents_opportunity"
+    relationship_type: "presents"
+    description: "Market presents opportunity"
+    source:
+      term_id: "market"
+      semantic_phrase: "market, sector, industry"
+      confidence_threshold: 0.65
+    target:
+      term_id: "opportunity"
+      semantic_phrase: "opportunity, potential, catalyst"
+      confidence_threshold: 0.65
+    confidence:
+      minimum: 0.60
+      calculation: "average"
+
+  - id: "market_poses_risk"
+    relationship_type: "poses"
+    description: "Market poses risk"
+    source:
+      term_id: "market"
+      semantic_phrase: "market, environment, conditions"
+      confidence_threshold: 0.65
+    target:
+      term_id: "risk"
+      semantic_phrase: "risk, threat, challenge, headwind"
+      confidence_threshold: 0.65
+    confidence:
+      minimum: 0.60
+      calculation: "average"
+
+  # Corporate action relationships
+  - id: "company_acquires_company"
+    relationship_type: "acquires"
+    description: "Company acquires another company"
+    source:
+      term_id: "company"
+      semantic_phrase: "acquirer, buyer, we acquired"
+      confidence_threshold: 0.70
+    target:
+      term_id: "acquisition"
+      semantic_phrase: "target, acquired company, acquisition"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+    bidirectional: false
+
+  - id: "company_forms_partnership"
+    relationship_type: "partners_with"
+    description: "Company forms partnership"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, we, our firm"
+      confidence_threshold: 0.70
+    target:
+      term_id: "partnership"
+      semantic_phrase: "partner, alliance, collaboration"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+    bidirectional: true
+
+  # Product and market relationships
+  - id: "company_offers_product"
+    relationship_type: "offers"
+    description: "Company offers product or service"
+    source:
+      term_id: "company"
+      semantic_phrase: "company, we offer, our"
+      confidence_threshold: 0.70
+    target:
+      term_id: "product"
+      semantic_phrase: "product, service, offering, solution"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+  - id: "product_targets_market"
+    relationship_type: "targets"
+    description: "Product targets specific market"
+    source:
+      term_id: "product"
+      semantic_phrase: "product, service, solution"
+      confidence_threshold: 0.70
+    target:
+      term_id: "market"
+      semantic_phrase: "market, segment, vertical, industry"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.60
+      calculation: "average"
+
+# Derived entity extraction rules
+derived_entity_rules:
+  # Extract speakers from paragraph metadata
+  - entity_type: "speaker"
+    source_element_types: ["paragraph", "list_item"]
+    metadata_fields: ["speaker", "speaker_name"]
+    id_template: "speaker_{name}"
+    deduplication_key: "name"
+    create_relationships: true
+    relationship_type: "SPOKE_IN"
+    map_to_terms: true
+
+  # Extract speaker roles from metadata
+  - entity_type: "role"
+    source_element_types: ["paragraph", "list_item"]  
+    metadata_fields: ["speaker_role", "role", "title"]
+    id_template: "role_{name}"
+    deduplication_key: "name"
+    create_relationships: true
+    relationship_type: "HAS_ROLE"
+    map_to_terms: false
+
+  # Extract companies from metadata
+  - entity_type: "company"
+    source_element_types: ["paragraph", "section", "document"]
+    metadata_fields: ["company", "company_name", "issuer"]
+    id_template: "company_{name}"
+    deduplication_key: "name"
+    create_relationships: true
+    relationship_type: "ASSOCIATED_WITH"
+    map_to_terms: true
+
+  # Extract tickers from metadata
+  - entity_type: "ticker"
+    source_element_types: ["paragraph", "section", "document"]
+    metadata_fields: ["ticker", "symbol", "stock_symbol"]
+    id_template: "ticker_{name}"
+    deduplication_key: "name"
+    create_relationships: true
+    relationship_type: "SYMBOL_FOR"
+    map_to_terms: true
+
+  # Extract quarters/fiscal periods
+  - entity_type: "fiscal_period"
+    source_element_types: ["document", "section"]
+    metadata_fields: ["quarter", "fiscal_period", "period"]
+    id_template: "period_{name}"
+    deduplication_key: "name"
+    create_relationships: true
+    relationship_type: "REPORTED_IN"
+    map_to_terms: false
+
+  # Extract earnings call entity from document
+  - entity_type: "earnings_call"
+    source_element_types: ["document"]
+    metadata_fields: ["company", "ticker", "quarter", "year"]
+    id_template: "earnings_call_{company}_{quarter}_{year}"
+    deduplication_key: "name"  # Will use the first field (company) plus others as name
+    create_relationships: true
+    relationship_type: "FROM_CALL"
+    map_to_terms: false
+    extract_content: false
+
+  # Extract earnings call comments/statements from paragraphs
+  - entity_type: "earnings_call_comment"
+    source_element_types: ["paragraph"]
+    metadata_fields: ["section", "speaker", "speaker_role"]  # Use section to identify comment contexts
+    id_template: "comment_{element_id}"  # Use element_id to ensure uniqueness
+    deduplication_key: "element_id"  # Each paragraph creates one comment
+    create_relationships: true
+    relationship_type: "MADE_COMMENT"
+    map_to_terms: true
+    # Additional attributes for comment entities
+    extract_content: true  # Include paragraph content as comment text
+    content_field: "content_preview"
+
+# Entity relationship rules - define domain relationships between business entities
+entity_relationship_rules:
+  # Speaker -> SPOKE -> Comment relationships
+  - name: "speaker_comment_relationship"
+    description: "Connect speakers to their comments/statements"
+    source_entity_type: "speaker"
+    target_entity_type: "earnings_call_comment"
+    relationship_type: "SPOKE"
+    matching_criteria:
+      # Match when both entities are derived from the same element
+      same_source_element: true
+      # Or when speaker metadata matches comment metadata
+      metadata_match:
+        - source_field: "name"
+          target_field: "speaker"
+        - source_field: "name" 
+          target_field: "speaker_name"
+    confidence: 0.95
+    bidirectional: false
+
+  # Speaker -> HAS_ROLE -> Role relationships
+  - name: "speaker_role_relationship"
+    description: "Connect speakers to their roles"
+    source_entity_type: "speaker" 
+    target_entity_type: "role"
+    relationship_type: "HAS_ROLE"
+    matching_criteria:
+      same_source_element: true
+      # Speaker and role derived from same element means speaker has that role
+    confidence: 0.95
+    bidirectional: false
+
+  # Earnings Call -> CONTAINS -> Comment relationships
+  - name: "call_contains_comment"
+    description: "Connect earnings calls to comments made during the call"
+    source_entity_type: "earnings_call"
+    target_entity_type: "earnings_call_comment"
+    relationship_type: "CONTAINS"
+    matching_criteria:
+      # Match based on same document - all comments in a document belong to that call
+      same_document: true
+    confidence: 1.0
+    bidirectional: false
+
+  # Company -> HAS_PERIOD -> Fiscal Period relationships
+  - name: "company_fiscal_period_relationship"
+    description: "Connect companies to their fiscal periods"
+    source_entity_type: "company"
+    target_entity_type: "fiscal_period"
+    relationship_type: "HAS_PERIOD"
+    matching_criteria:
+      # Match when both are from same document (company and its fiscal period)
+      same_document: true
+    confidence: 0.95
+    bidirectional: false
+
+  # Fiscal Period -> HAS_CALL -> Earnings Call relationships
+  - name: "fiscal_period_earnings_call_relationship"
+    description: "Connect fiscal periods to their earnings calls"
+    source_entity_type: "fiscal_period"
+    target_entity_type: "earnings_call"
+    relationship_type: "HAS_CALL"
+    matching_criteria:
+      # Match when both are from same document
+      same_document: true
+      # Or match on quarter/period fields
+      metadata_match:
+        - source_field: "name"
+          target_field: "quarter"
+    confidence: 0.95
+    bidirectional: false
+
+  # Company -> HAS_TICKER -> Ticker relationships
+  - name: "company_ticker_relationship"
+    description: "Connect companies to their stock tickers"
+    source_entity_type: "company"
+    target_entity_type: "ticker"
+    relationship_type: "HAS_TICKER"
+    matching_criteria:
+      # Match when both are from same document
+      same_document: true
+    confidence: 0.95
+    bidirectional: false
+
+  # Company -> HAS -> CEO relationships
+  - name: "company_ceo_relationship"
+    description: "Connect companies to their CEOs"
+    source_entity_type: "company"
+    target_entity_type: "role"
+    relationship_type: "HAS"
+    matching_criteria:
+      # Match when both are from same document and role name is CEO
+      same_document: true
+      # Only match CEO role specifically
+      metadata_match:
+        - target_field: "name"
+          target_value: "CEO"
+    confidence: 0.95
+    bidirectional: false
+
+  # Company -> HAS -> CFO relationships
+  - name: "company_cfo_relationship"
+    description: "Connect companies to their CFOs"
+    source_entity_type: "company"
+    target_entity_type: "role"
+    relationship_type: "HAS"
+    matching_criteria:
+      # Match when both are from same document and role name is CFO
+      same_document: true
+      # Only match CFO role specifically
+      metadata_match:
+        - target_field: "name"
+          target_value: "CFO"
+    confidence: 0.95
+    bidirectional: false
+
+# Domain-specific settings
+settings:
+  enable_hierarchical_relationships: true
+  infer_transitive_relationships: true
+  min_confidence_for_inference: 0.70
+  special_processing:
+    extract_monetary_values: true
+    extract_percentages: true
+    extract_dates: true
+    normalize_company_names: true
+    detect_ticker_symbols: true
+    track_sentiment: true
+    identify_forward_looking_statements: true

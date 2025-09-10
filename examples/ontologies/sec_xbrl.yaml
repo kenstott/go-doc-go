@@ -1,0 +1,660 @@
+domain:
+  name: "sec_xbrl_reporting"
+  version: "1.0.0"
+  description: "SEC XBRL financial reporting ontology for extracting entities and relationships from regulatory filings"
+  settings:
+    default_confidence_threshold: 0.70
+    max_relationships_per_pair: 5
+    enable_transitive_inference: true
+
+# Core SEC/XBRL financial reporting terms
+terms:
+  # Company and Entity Terms
+  - id: "registrant"
+    label: "SEC Registrant"
+    description: "Company filing with the SEC"
+    aliases: ["filer", "reporting entity", "issuer", "company"]
+    
+  - id: "subsidiary"
+    label: "Subsidiary"
+    description: "Company owned by the registrant"
+    aliases: ["controlled entity", "affiliate", "division"]
+    
+  - id: "officer"
+    label: "Executive Officer"
+    description: "Executive officers of the company"
+    aliases: ["CEO", "CFO", "COO", "CTO", "executive", "officer"]
+    
+  - id: "director"
+    label: "Board Director"
+    description: "Member of the board of directors"
+    aliases: ["board member", "independent director"]
+    
+  - id: "auditor"
+    label: "Independent Auditor"
+    description: "External auditing firm"
+    aliases: ["accounting firm", "CPA", "public accountant"]
+
+  # Financial Statement Components
+  - id: "balance_sheet"
+    label: "Balance Sheet"
+    description: "Statement of financial position"
+    aliases: ["statement of financial position", "consolidated balance sheet"]
+    
+  - id: "income_statement"
+    label: "Income Statement"
+    description: "Statement of operations and comprehensive income"
+    aliases: ["statement of operations", "P&L", "profit and loss", "statement of earnings"]
+    
+  - id: "cash_flow_statement"
+    label: "Cash Flow Statement"
+    description: "Statement of cash flows"
+    aliases: ["statement of cash flows", "cash flow"]
+    
+  - id: "equity_statement"
+    label: "Statement of Stockholders' Equity"
+    description: "Statement of changes in equity"
+    aliases: ["statement of changes in equity", "stockholders equity"]
+
+  # Key Financial Metrics
+  - id: "revenue"
+    label: "Revenue"
+    description: "Total revenue or sales"
+    aliases: ["sales", "net revenue", "total revenue", "gross revenue", "turnover"]
+    
+  - id: "net_income"
+    label: "Net Income"
+    description: "Net income or loss"
+    aliases: ["net earnings", "net profit", "net loss", "bottom line"]
+    
+  - id: "eps"
+    label: "Earnings Per Share"
+    description: "Earnings per share metrics"
+    aliases: ["basic EPS", "diluted EPS", "earnings per share"]
+    
+  - id: "total_assets"
+    label: "Total Assets"
+    description: "Total assets on balance sheet"
+    aliases: ["assets", "total assets"]
+    
+  - id: "total_liabilities"
+    label: "Total Liabilities"
+    description: "Total liabilities on balance sheet"
+    aliases: ["liabilities", "total liabilities"]
+    
+  - id: "stockholders_equity"
+    label: "Stockholders' Equity"
+    description: "Total stockholders' equity"
+    aliases: ["shareholders equity", "equity", "total equity"]
+    
+  - id: "operating_cash_flow"
+    label: "Operating Cash Flow"
+    description: "Cash flow from operations"
+    aliases: ["cash from operations", "operating activities", "OCF"]
+    
+  - id: "free_cash_flow"
+    label: "Free Cash Flow"
+    description: "Free cash flow"
+    aliases: ["FCF", "free cash"]
+
+  # XBRL-Specific Concepts
+  - id: "gaap_metric"
+    label: "US GAAP Metric"
+    description: "US GAAP taxonomy element"
+    aliases: ["us-gaap", "GAAP"]
+    
+  - id: "dei_element"
+    label: "Document and Entity Information"
+    description: "DEI taxonomy element"
+    aliases: ["dei", "document information"]
+    
+  - id: "dimension"
+    label: "XBRL Dimension"
+    description: "Dimensional breakdown of data"
+    aliases: ["axis", "segment", "dimensional data"]
+    
+  - id: "context"
+    label: "XBRL Context"
+    description: "Reporting context (period, entity, segment)"
+    aliases: ["reporting context", "period context"]
+    
+  - id: "fiscal_period"
+    label: "Fiscal Period"
+    description: "Reporting period (quarterly, annual)"
+    aliases: ["reporting period", "fiscal year", "fiscal quarter", "FY", "Q1", "Q2", "Q3", "Q4"]
+
+  # SEC Form Types
+  - id: "form_10k"
+    label: "Form 10-K"
+    description: "Annual report"
+    aliases: ["10-K", "annual report", "10K"]
+    
+  - id: "form_10q"
+    label: "Form 10-Q"
+    description: "Quarterly report"
+    aliases: ["10-Q", "quarterly report", "10Q"]
+    
+  - id: "form_8k"
+    label: "Form 8-K"
+    description: "Current report"
+    aliases: ["8-K", "current report", "8K"]
+    
+  - id: "form_20f"
+    label: "Form 20-F"
+    description: "Annual report for foreign issuers"
+    aliases: ["20-F", "20F"]
+    
+  - id: "proxy_statement"
+    label: "Proxy Statement"
+    description: "DEF 14A proxy statement"
+    aliases: ["DEF 14A", "proxy", "definitive proxy"]
+
+  # Business Segments and Operations
+  - id: "segment"
+    label: "Business Segment"
+    description: "Operating or reportable segment"
+    aliases: ["operating segment", "reportable segment", "business unit", "division"]
+    
+  - id: "geographic_area"
+    label: "Geographic Area"
+    description: "Geographic region or market"
+    aliases: ["region", "geography", "market", "country"]
+    
+  - id: "product_line"
+    label: "Product Line"
+    description: "Product or service category"
+    aliases: ["product", "service", "product category"]
+
+  # Risk and Compliance
+  - id: "risk_factor"
+    label: "Risk Factor"
+    description: "Identified business risk"
+    aliases: ["risk", "business risk", "material risk"]
+    
+  - id: "internal_control"
+    label: "Internal Control"
+    description: "Internal control over financial reporting"
+    aliases: ["ICFR", "control", "sox control"]
+    
+  - id: "material_weakness"
+    label: "Material Weakness"
+    description: "Material weakness in internal controls"
+    aliases: ["control deficiency", "weakness"]
+    
+  - id: "going_concern"
+    label: "Going Concern"
+    description: "Going concern assessment"
+    aliases: ["continuity", "viability"]
+
+  # Accounting Policies and Estimates
+  - id: "accounting_policy"
+    label: "Accounting Policy"
+    description: "Significant accounting policy"
+    aliases: ["accounting principle", "policy", "GAAP policy"]
+    
+  - id: "critical_estimate"
+    label: "Critical Accounting Estimate"
+    description: "Critical accounting estimate or judgment"
+    aliases: ["estimate", "judgment", "assumption"]
+    
+  - id: "revenue_recognition"
+    label: "Revenue Recognition"
+    description: "Revenue recognition policy"
+    aliases: ["rev rec", "ASC 606"]
+
+  # Transactions and Events
+  - id: "acquisition"
+    label: "Business Acquisition"
+    description: "Business combination or acquisition"
+    aliases: ["merger", "business combination", "M&A", "takeover"]
+    
+  - id: "disposition"
+    label: "Disposition"
+    description: "Sale or disposal of business/assets"
+    aliases: ["divestiture", "sale", "disposal"]
+    
+  - id: "restructuring"
+    label: "Restructuring"
+    description: "Restructuring activities"
+    aliases: ["reorganization", "reorg"]
+    
+  - id: "impairment"
+    label: "Impairment"
+    description: "Asset impairment"
+    aliases: ["writedown", "write-down", "goodwill impairment"]
+
+  # Debt and Equity
+  - id: "debt_instrument"
+    label: "Debt Instrument"
+    description: "Debt securities or credit facilities"
+    aliases: ["loan", "bond", "note", "credit facility", "term loan"]
+    
+  - id: "equity_instrument"
+    label: "Equity Instrument"
+    description: "Equity securities"
+    aliases: ["stock", "share", "common stock", "preferred stock"]
+    
+  - id: "dividend"
+    label: "Dividend"
+    description: "Dividend declaration or payment"
+    aliases: ["distribution", "cash dividend", "stock dividend"]
+    
+  - id: "share_repurchase"
+    label: "Share Repurchase"
+    description: "Stock buyback program"
+    aliases: ["buyback", "stock buyback", "repurchase program"]
+
+# Mapping rules to identify elements as terms
+element_mappings:
+  # Company identification
+  - term_id: "registrant"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "registrant, company, corporation, we, our, us"
+        confidence_threshold: 0.75
+        element_types: ["paragraph", "xbrl:context"]
+      
+      - type: "regex"
+        pattern: "\\b(dei:EntityRegistrantName|dei:TradingSymbol|dei:EntityCentralIndexKey)\\b"
+        case_sensitive: false
+        
+  # Financial statements
+  - term_id: "balance_sheet"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "balance sheet, statement of financial position, assets liabilities equity"
+        confidence_threshold: 0.80
+        
+      - type: "keywords"
+        keywords: ["balance sheet", "financial position", "consolidated balance"]
+        element_types: ["heading", "table", "xbrl:presentation"]
+        
+  - term_id: "income_statement"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "income statement, statement of operations, revenue expenses profit loss"
+        confidence_threshold: 0.80
+        
+      - type: "keywords"
+        keywords: ["income statement", "operations", "comprehensive income", "P&L"]
+        
+  # Revenue recognition
+  - term_id: "revenue"
+    rules:
+      - type: "regex"
+        pattern: "\\b(us-gaap:Revenues?|us-gaap:SalesRevenue.*|us-gaap:RevenueFromContract.*)\\b"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "revenue, sales, net revenue, total revenue"
+        confidence_threshold: 0.75
+        
+      - type: "keywords"
+        keywords: ["revenue", "sales", "turnover"]
+        element_types: ["xbrl:monetary", "table_cell", "paragraph"]
+        
+  - term_id: "net_income"
+    rules:
+      - type: "regex"
+        pattern: "\\b(us-gaap:NetIncomeLoss|us-gaap:ProfitLoss|us-gaap:NetIncome)\\b"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "net income, net loss, net earnings, bottom line"
+        confidence_threshold: 0.80
+        
+  # Cash flow items
+  - term_id: "operating_cash_flow"
+    rules:
+      - type: "regex"
+        pattern: "\\b(us-gaap:NetCashProvided.*Operating.*|us-gaap:CashFlow.*Operating.*)\\b"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "cash from operations, operating cash flow, cash provided by operating activities"
+        confidence_threshold: 0.75
+        
+  # Segments
+  - term_id: "segment"
+    rules:
+      - type: "regex"
+        pattern: "\\b(us-gaap:SegmentReport.*|segment:\\w+|srt:SegmentAxis)\\b"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "operating segment, reportable segment, business segment"
+        confidence_threshold: 0.75
+        
+      - type: "keywords"
+        keywords: ["segment", "division", "business unit"]
+        
+  # Risk factors
+  - term_id: "risk_factor"
+    rules:
+      - type: "semantic"
+        semantic_phrase: "risk factor, business risk, material risk, could adversely affect"
+        confidence_threshold: 0.70
+        element_types: ["heading", "paragraph", "list_item"]
+        
+      - type: "keywords"
+        keywords: ["risk", "uncertainty", "could harm", "may adversely"]
+        
+  # Acquisitions
+  - term_id: "acquisition"
+    rules:
+      - type: "regex"
+        pattern: "\\b(us-gaap:BusinessCombination.*|us-gaap:Acquisition.*|acquired|acquisition)\\b"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "acquisition, business combination, merger, acquired company, purchase price"
+        confidence_threshold: 0.75
+        
+  # Debt instruments
+  - term_id: "debt_instrument"
+    rules:
+      - type: "regex"
+        pattern: "\\b(us-gaap:.*Debt.*|us-gaap:.*Notes.*|us-gaap:.*Bonds.*|us-gaap:.*CreditFacility.*)\\b"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "debt, loan, bond, note, credit facility, borrowing"
+        confidence_threshold: 0.75
+        
+  # Form types
+  - term_id: "form_10k"
+    rules:
+      - type: "regex"
+        pattern: "\\b(10-?K|Form 10-?K|FORM 10-?K)\\b"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["10-K", "annual report"]
+        
+  - term_id: "form_10q"
+    rules:
+      - type: "regex"
+        pattern: "\\b(10-?Q|Form 10-?Q|FORM 10-?Q)\\b"
+        case_sensitive: false
+        
+      - type: "keywords"
+        keywords: ["10-Q", "quarterly report"]
+        
+  # XBRL contexts and dimensions
+  - term_id: "context"
+    rules:
+      - type: "regex"
+        pattern: "<(xbrli:)?context\\s+id="
+        case_sensitive: false
+        element_types: ["xbrl:context"]
+        
+  - term_id: "dimension"
+    rules:
+      - type: "regex"
+        pattern: "<(xbrldi:)?.*Member>|dimension=|axis="
+        case_sensitive: false
+        element_types: ["xbrl:dimension"]
+        
+  - term_id: "fiscal_period"
+    rules:
+      - type: "regex"
+        pattern: "\\b(FY\\d{4}|Q[1-4]\\s*\\d{4}|fiscal\\s+(year|quarter)\\s+\\d{4})\\b"
+        case_sensitive: false
+        
+      - type: "semantic"
+        semantic_phrase: "fiscal year, fiscal quarter, reporting period, three months ended, year ended"
+        confidence_threshold: 0.70
+
+# Relationship rules between terms
+relationship_rules:
+  # Company structure relationships
+  - id: "company_owns_subsidiary"
+    relationship_type: "owns"
+    description: "Registrant owns subsidiary"
+    source:
+      term_id: "registrant"
+      semantic_phrase: "parent company, holding company, we own, our subsidiary"
+      confidence_threshold: 0.75
+    target:
+      term_id: "subsidiary"
+      semantic_phrase: "subsidiary, wholly-owned, majority-owned, controlled entity"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+    constraints:
+      hierarchy_level: -1  # Same document
+      
+  - id: "company_has_officer"
+    relationship_type: "has_officer"
+    description: "Company has executive officer"
+    source:
+      term_id: "registrant"
+      semantic_phrase: "company, registrant, we, our"
+      confidence_threshold: 0.70
+    target:
+      term_id: "officer"
+      semantic_phrase: "chief executive officer, chief financial officer, president, executive"
+      confidence_threshold: 0.80
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+      
+  - id: "auditor_audits_company"
+    relationship_type: "audits"
+    description: "Auditor audits company"
+    source:
+      term_id: "auditor"
+      semantic_phrase: "independent auditor, accounting firm, audited by"
+      confidence_threshold: 0.80
+    target:
+      term_id: "registrant"
+      semantic_phrase: "company, financial statements, we, our"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.75
+      calculation: "average"
+
+  # Financial statement relationships
+  - id: "statement_contains_metric"
+    relationship_type: "contains"
+    description: "Financial statement contains metric"
+    source:
+      term_id: "balance_sheet"
+      semantic_phrase: "balance sheet, statement of financial position"
+      confidence_threshold: 0.80
+    target:
+      term_id: "total_assets"
+      semantic_phrase: "total assets, assets"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+    constraints:
+      hierarchy_level: 0  # Same parent element
+      
+  - id: "income_statement_shows_revenue"
+    relationship_type: "reports"
+    description: "Income statement reports revenue"
+    source:
+      term_id: "income_statement"
+      semantic_phrase: "income statement, statement of operations"
+      confidence_threshold: 0.80
+    target:
+      term_id: "revenue"
+      semantic_phrase: "revenue, sales, net revenue"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+    constraints:
+      hierarchy_level: 1  # Within same section
+      
+  - id: "segment_generates_revenue"
+    relationship_type: "generates"
+    description: "Business segment generates revenue"
+    source:
+      term_id: "segment"
+      semantic_phrase: "segment, division, business unit"
+      confidence_threshold: 0.75
+    target:
+      term_id: "revenue"
+      semantic_phrase: "segment revenue, revenue from segment"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+      
+  # Risk and compliance relationships
+  - id: "risk_affects_operations"
+    relationship_type: "affects"
+    description: "Risk factor affects business operations"
+    source:
+      term_id: "risk_factor"
+      semantic_phrase: "risk, could adversely affect, may harm"
+      confidence_threshold: 0.75
+    target:
+      term_id: "revenue"
+      semantic_phrase: "revenue, sales, financial performance"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+      
+  - id: "control_mitigates_risk"
+    relationship_type: "mitigates"
+    description: "Internal control mitigates risk"
+    source:
+      term_id: "internal_control"
+      semantic_phrase: "internal control, control procedure, ICFR"
+      confidence_threshold: 0.75
+    target:
+      term_id: "risk_factor"
+      semantic_phrase: "risk, material weakness, control deficiency"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+      
+  # Transaction relationships
+  - id: "company_acquires_company"
+    relationship_type: "acquires"
+    description: "Company acquires another company"
+    source:
+      term_id: "registrant"
+      semantic_phrase: "we acquired, our acquisition, the company purchased"
+      confidence_threshold: 0.80
+    target:
+      term_id: "acquisition"
+      semantic_phrase: "acquired company, target, acquisition target, purchased entity"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.75
+      calculation: "min"
+    bidirectional: false
+    
+  - id: "acquisition_affects_assets"
+    relationship_type: "increases"
+    description: "Acquisition increases assets"
+    source:
+      term_id: "acquisition"
+      semantic_phrase: "acquisition, business combination, purchase"
+      confidence_threshold: 0.75
+    target:
+      term_id: "total_assets"
+      semantic_phrase: "assets increased, goodwill, intangible assets"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+      
+  # Debt relationships
+  - id: "company_issues_debt"
+    relationship_type: "issues"
+    description: "Company issues debt instrument"
+    source:
+      term_id: "registrant"
+      semantic_phrase: "we issued, the company borrowed, our debt"
+      confidence_threshold: 0.75
+    target:
+      term_id: "debt_instrument"
+      semantic_phrase: "notes, bonds, credit facility, term loan"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+      
+  # Form and filing relationships
+  - id: "form_contains_statement"
+    relationship_type: "includes"
+    description: "SEC form contains financial statement"
+    source:
+      term_id: "form_10k"
+      semantic_phrase: "Form 10-K, annual report"
+      confidence_threshold: 0.85
+    target:
+      term_id: "balance_sheet"
+      semantic_phrase: "balance sheet, financial position"
+      confidence_threshold: 0.80
+    confidence:
+      minimum: 0.75
+      calculation: "average"
+    constraints:
+      hierarchy_level: -1  # Same document
+      
+  # XBRL-specific relationships
+  - id: "context_defines_period"
+    relationship_type: "defines"
+    description: "XBRL context defines fiscal period"
+    source:
+      term_id: "context"
+      semantic_phrase: "context, reporting context, xbrl context"
+      confidence_threshold: 0.80
+      element_types: ["xbrl:context"]
+    target:
+      term_id: "fiscal_period"
+      semantic_phrase: "period, fiscal year, fiscal quarter, instant, duration"
+      confidence_threshold: 0.75
+    confidence:
+      minimum: 0.70
+      calculation: "average"
+      
+  - id: "dimension_segments_metric"
+    relationship_type: "segments"
+    description: "Dimension segments financial metric"
+    source:
+      term_id: "dimension"
+      semantic_phrase: "dimension, axis, segment dimension"
+      confidence_threshold: 0.75
+      element_types: ["xbrl:dimension"]
+    target:
+      term_id: "revenue"
+      semantic_phrase: "revenue by segment, segmented revenue"
+      confidence_threshold: 0.70
+    confidence:
+      minimum: 0.65
+      calculation: "average"
+
+# Domain-specific settings
+settings:
+  enable_hierarchical_relationships: true
+  infer_transitive_relationships: true
+  min_confidence_for_inference: 0.75
+  xbrl_namespace_prefixes:
+    - "us-gaap"
+    - "dei"
+    - "srt"
+    - "country"
+    - "currency"
+    - "exch"
+    - "naics"
+    - "sic"
+    - "stpr"
+    - "invest"
+  special_processing:
+    extract_monetary_values: true
+    extract_dates: true
+    extract_percentages: true
+    normalize_accounting_terms: true
+    link_footnotes: true
+    track_amendments: true
