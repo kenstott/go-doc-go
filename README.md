@@ -1,41 +1,55 @@
-# Go-Doc-Go
+# The Go-Doc-Go Knowledge Engine
 
-## Universal, Searchable, Structured Document Manager
+## An extensible, declarative, unstructured text data pipeline for building intelligent search and knowledge graphs
 
-Go-Doc-Go is a powerful document management system that creates a universal, structured representation of documents from various sources while maintaining pointers to the original content rather than duplicating it.
+The Go-Doc-Go Knowledge Engine is an advanced document processing and knowledge extraction system that transforms unstructured text from various sources into intelligent, searchable knowledge graphs through declarative configuration and domain-specific entity extraction, while maintaining efficient pointers to original content.
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌────────────────┐
-│ Content Sources │     │Document Ingester│     │  Storage Layer │
-└────────┬────────┘     └────────┬────────┘     └────────┬───────┘
-         │                       │                       │
-┌────────┼────────┐     ┌────────┼────────┐     ┌────────┼──────┐
-│ Confluence API  │     │Parser Adapters  │     │SQLite Backend │
-│ Markdown Files  │◄───►│Structure Extract│◄───►│MongoDB Backend│
-│ HTML from URLs  │     │Embedding Gen    │     │Vector Database│
-│ DOCX Documents  │     │Relationship Map │     │Elasticsearch  │
-└─────────────────┘     └─────────────────┘     └───────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ Content Sourcer │     │Document Ingester│     │ Storage Manager │     │Domain Ontologist│
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │                       │
+┌────────┼────────┐     ┌────────┼────────┐     ┌────────┼────────┐     ┌────────┼────────┐
+│ Confluence API  │     │Parser Adapters  │     │SQLite Backend  │     │Entity Extraction│
+│ SharePoint Docs │◄───►│Structure Extract│◄───►│MongoDB Backend │◄───►│Semantic Mapping │
+│ S3 Buckets      │     │Embedding Gen    │     │Vector Database │     │Relationship Det │
+│ Local Files     │     │Relationship Map │     │Elasticsearch   │     │Business Rules   │
+└─────────────────┘     └─────────────────┘     └─────────────────┘     └─────────────────┘
+
+Flow: Sources → Ingestion → Storage ← Domain Analysis (reads from & writes to storage)
 ```
 
 ## Key Features
 
-- **Universal Document Model**: Common representation across document types
-- **Preservation of Structure**: Maintains hierarchical document structure
-- **Content Resolution**: Resolves pointers back to original content when needed
-- **Flexible Full-Text Storage**: Configurable text storage and indexing options for optimal performance and storage efficiency
-- **Advanced Structured Search**: Powerful query language with logical operators, similarity thresholds, and backend capability detection
-- **Enhanced Search Capabilities**: Advanced pattern matching, element type filtering, and metadata search with LIKE patterns and ElementType enum support
-- **Contextual Semantic Search**: Uses advanced embedding techniques that incorporate document context (hierarchy, neighbors) for more accurate semantic search
-- **Topic-Aware Organization**: Categorize and filter content by topics for enhanced organization and discovery
-- **Element-Level Precision**: Maintains granular accuracy to specific document elements
-- **Relationship Mapping**: Identifies connections between document elements
-- **Configurable Vector Representations**: Support for different vector dimensions based on content needs, allowing larger vectors for technical content and smaller vectors for general content
-- **Modular Dependencies**: Only install the components you need, with graceful fallbacks when optional dependencies are missing
-- **Backend-Agnostic Architecture**: Pluggable storage backends with automatic capability detection and query optimization
-- **📄 Document Materialization**: Comprehensive document reconstruction and format conversion with intelligent element mapping
-- **🔄 Batch Document Processing**: Efficient bulk document retrieval and format conversion for performance optimization
-- **📊 Document Analytics**: Rich document statistics, outlines, and structural analysis capabilities
-- **🎯 Enhanced Search Integration**: Seamless integration of search results with complete document content in multiple formats
+### 🔧 Extensible & Declarative Pipeline Architecture
+- **📝 Configuration-Driven Processing**: Define entire data pipelines through YAML/JSON configuration without coding
+- **🧩 Pluggable Components**: Modular content sources, parsers, storage backends, and embedding providers
+- **🎛️ Declarative Rules Engine**: Configure entity extraction and relationship detection through business rules
+- **🔌 Backend-Agnostic Design**: Automatic capability detection and optimization across different storage systems
+
+### 🧠 Intelligent Knowledge Graph Construction  
+- **🎯 Domain Entity Extraction & Relationship Detection**: Apply business ontologies to automatically extract domain-specific entities (customers, products, regulations) and discover semantic relationships between them using configurable rules (semantic similarity, regex, keywords)
+- **🌐 Cross-Document Intelligence**: Discover relationships spanning multiple documents and sources for comprehensive knowledge graphs
+- **📊 Confidence Scoring & Optimization**: Configurable thresholds for precision vs. recall to match your quality requirements
+- **🔗 Semantic Relationship Discovery**: Automatically finds connections between entities based on declarative business rules
+
+### 📄 Advanced Document Processing Pipeline
+- **🏗️ Universal Document Model**: Common structured representation across all document types and formats
+- **🎯 Element-Level Precision**: Maintains granular accuracy to specific document elements with hierarchical relationships
+- **📋 Document Materialization**: Comprehensive reconstruction and format conversion with intelligent element mapping
+- **⚡ Batch Processing**: Efficient bulk document retrieval and format conversion for performance optimization
+
+### 🔍 Intelligent Search & Discovery
+- **🧭 Contextual Semantic Search**: Advanced embedding techniques incorporating document context (hierarchy, neighbors)
+- **🔎 Advanced Structured Search**: Powerful query language with logical operators, similarity thresholds, and backend optimization
+- **🏷️ Topic-Aware Organization**: Categorize and filter content by topics for enhanced organization and discovery
+- **📈 Pattern Matching & Filtering**: Advanced element type filtering, metadata search, and regex pattern support
+
+### ⚙️ Enterprise-Ready Configuration
+- **🎛️ Flexible Full-Text Storage**: Declaratively configure text storage and indexing for optimal performance and efficiency
+- **📊 Configurable Vector Representations**: Support different vector dimensions based on content needs
+- **🔧 Modular Dependencies**: Only install components you need, with graceful fallbacks when dependencies are missing
+- **📊 Document Analytics**: Rich statistics, outlines, and structural analysis capabilities
 
 ## Full-Text Storage and Search Configuration
 
@@ -465,6 +479,124 @@ print(f"JSON: {len(json_doc.formatted_content or '')} chars")
 if markdown_doc.materialization_error:
     print(f"Error: {markdown_doc.materialization_error}")
 ```
+
+## Intelligent Knowledge Graph Construction
+
+The Go-Doc-Go Knowledge Engine's declarative ontology system transforms unstructured documents into intelligent, searchable knowledge graphs through automated business entity extraction and semantic relationship discovery. This extensible pipeline enables organizations to apply their domain expertise at scale through configuration-driven processing.
+
+### Why Domain Entity Extraction Matters
+
+- **🎯 Business Context**: Automatically identify customers, products, regulations, components, or any domain-specific entities
+- **🔍 Knowledge Discovery**: Uncover hidden relationships between entities across thousands of documents
+- **📊 Compliance & Audit**: Track regulatory references, safety requirements, and compliance relationships
+- **🚀 Accelerated Analysis**: Convert months of manual document review into minutes of automated extraction
+
+### Core Capabilities
+
+- **🧩 Flexible Entity Definition**: Define any entity type relevant to your domain (people, products, regulations, etc.)
+- **🎯 Two-Phase Processing**: First extracts entities from document elements, then discovers relationships
+- **📝 Multiple Extraction Methods**: 
+  - **Semantic Similarity**: Match concepts using AI embeddings (e.g., "brake system" matches "ABS", "anti-lock", "braking mechanism")
+  - **Pattern Matching**: Extract codes, IDs, references using regex (e.g., "PROD-12345", "Section 4.2.1")
+  - **Keyword Detection**: Simple keyword and phrase matching
+- **🔗 Relationship Discovery**: Automatically finds connections between entities based on business rules
+- **📊 Confidence Scoring**: Configurable thresholds for precision vs. recall optimization
+- **🌐 Cross-Document Intelligence**: Discover relationships spanning multiple documents and sources
+
+### Real-World Applications
+
+| Industry | Entity Examples | Relationship Examples |
+|----------|----------------|----------------------|
+| **Automotive** | Components, Safety Standards, Diagnostic Codes | Component COMPLIES_WITH Standard, Code DIAGNOSES Component |
+| **Pharmaceutical** | Drugs, Clinical Trials, Adverse Events | Drug TESTED_IN Trial, Drug CAUSES Adverse_Event |
+| **Financial** | Companies, Executives, Metrics | Executive SPEAKS_ABOUT Metric, Company REPORTS Revenue |
+| **Legal** | Parties, Clauses, Obligations | Party BOUND_BY Clause, Clause REFERENCES Regulation |
+| **Engineering** | Systems, Requirements, Tests | System SATISFIES Requirement, Test VALIDATES System |
+
+### Quick Example
+
+```yaml
+# Define your domain ontology
+name: automotive
+version: "1.0"
+
+terms:
+  - id: brake_system
+    name: "Brake System"
+    aliases: ["ABS", "anti-lock", "braking"]
+    
+  - id: safety_requirement
+    name: "Safety Requirement"
+    
+element_mappings:
+  # Semantic matching for brake systems
+  - term: brake_system
+    rule_type: semantic
+    semantic_phrase: "brake ABS anti-lock rotor pad caliper"
+    threshold: 0.7
+    
+  # Pattern matching for safety standards
+  - term: safety_requirement
+    rule_type: regex
+    patterns: ["FMVSS-[0-9]+", "ISO[\\s-]?26262"]
+
+relationship_rules:
+  - id: compliance_relationship
+    source_terms: ["brake_system"]
+    target_terms: ["safety_requirement"]
+    relationship_type: COMPLIES_WITH
+    constraints:
+      hierarchy_level: -1  # Same document
+```
+
+### Configuration
+
+```yaml
+relationship_detection:
+  domain:
+    enabled: true
+    ontologies:
+      - path: "./ontologies/automotive.yaml"
+        active: true
+      - path: "./ontologies/regulatory.yaml"
+        active: true
+    entity_extraction:
+      min_confidence: 0.5
+      batch_size: 100
+    relationship_detection:
+      min_confidence: 0.6
+```
+
+### Usage
+
+```python
+from go_doc_go import Config
+from go_doc_go.domain import OntologyManager
+
+# Process documents with domain extraction
+config = Config("config.yaml")
+ontology_manager = config.get_ontology_manager()
+
+# Query extracted entities
+brake_systems = db.find_elements_by_term("brake_system", domain="automotive")
+print(f"Found {len(brake_systems)} brake system references")
+
+# Analyze entity relationships
+relationships = db.get_entity_relationships(entity_type="brake_system")
+for rel in relationships:
+    print(f"{rel.source} -> {rel.relationship_type} -> {rel.target}")
+
+# Get domain statistics
+stats = db.get_term_statistics("automotive")
+print(f"Domain coverage: {stats['total_terms']} unique concepts found")
+```
+
+### Documentation
+
+- 📖 **[Complete Domain Entity Extraction Guide](docs/domain-ontology.md)** - Architecture, API reference, and advanced features
+- 🚀 **[Quick Start Guide](docs/domain-quickstart.md)** - Get started in 5 minutes
+- 🔧 **[Ontology Management Guide](docs/ontology-management.md)** - Best practices for creating and maintaining ontologies
+- 📚 **[Example Ontologies](examples/ontologies/)** - Pre-built ontologies for common domains
 
 ## Advanced Structured Search System
 
