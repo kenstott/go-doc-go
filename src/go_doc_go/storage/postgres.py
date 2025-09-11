@@ -967,8 +967,9 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
                     f"Connected to PostgreSQL at {self.conn_params.get('host', 'localhost')}:{self.conn_params.get('port', 5432)}"
                 )
 
-            # Set connection settings
-            self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+            # Use READ COMMITTED isolation level for proper transaction support
+            # Note: We'll temporarily switch to AUTOCOMMIT only when needed for DDL operations
+            self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
             self.cursor = self.conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         except Exception as e:
             logger.error(f"Error connecting to PostgreSQL: {str(e)}")
@@ -1012,12 +1013,21 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
 
                 if not pgvector_installed:
                     try:
-                        # Try to install pgvector
+                        # CREATE EXTENSION requires AUTOCOMMIT mode temporarily
                         logger.info("Installing pgvector extension...")
+                        
+                        # Save current isolation level and switch to AUTOCOMMIT
+                        self.conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
                         self.cursor.execute("CREATE EXTENSION vector")
+                        
+                        # Restore normal transaction mode
+                        self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
+                        
                         self.vector_extension = "pgvector"
                         logger.info("Successfully installed pgvector extension")
                     except Exception as e:
+                        # Make sure to restore normal transaction mode even on error
+                        self.conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_READ_COMMITTED)
                         logger.warning(f"Failed to install pgvector extension: {str(e)}")
                 else:
                     self.vector_extension = "pgvector"
