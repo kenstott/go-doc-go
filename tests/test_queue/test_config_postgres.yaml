@@ -1,0 +1,17 @@
+---
+# Test configuration for PostgreSQL integration tests
+storage:
+  backend: postgresql
+  host: localhost
+  port: 5432
+  database: go_doc_go_test
+  # Use default user (your system user)
+
+embedding:
+  enabled: false  # Disable for queue testing
+
+relationship_detection:
+  enabled: false  # Disable for queue testing
+
+logging:
+  level: INFO
