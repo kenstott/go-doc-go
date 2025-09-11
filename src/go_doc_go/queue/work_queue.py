@@ -16,16 +16,21 @@ logger = logging.getLogger(__name__)
 
 
 class RunCoordinator:
-    """Manages processing runs based on configuration hash."""
+    """Manages processing runs with elected leader coordination."""
     
-    def __init__(self, db):
+    def __init__(self, db, worker_id: str):
         """
         Initialize run coordinator.
         
         Args:
             db: Database connection (must support transactions)
+            worker_id: Unique worker identifier
         """
         self.db = db
+        self.worker_id = worker_id
+        self.leader_lease_duration = 60  # seconds
+        self.is_leader_cache = False
+        self.last_leader_check = None
     
     @staticmethod
     def get_run_id_from_config(config: Dict[str, Any]) -> str:
@@ -143,6 +148,99 @@ class RunCoordinator:
                 )
                 WHERE run_id = %s
             """, (run_id,))
+    
+    def attempt_leader_election(self, run_id: str) -> bool:
+        """
+        Attempt to become the leader for a processing run.
+        
+        Args:
+            run_id: Processing run ID
+            
+        Returns:
+            True if this worker became or remains the leader
+        """
+        try:
+            result = self.db.execute("""
+                SELECT attempt_leader_election(%s, %s, %s) as elected
+            """, (run_id, self.worker_id, self.leader_lease_duration))
+            
+            elected = result.get('elected', False) if result else False
+            self.is_leader_cache = elected
+            self.last_leader_check = time.time()
+            
+            if elected:
+                logger.info(f"Worker {self.worker_id} elected as leader for run {run_id}")
+            
+            return elected
+            
+        except Exception as e:
+            logger.error(f"Leader election failed for worker {self.worker_id}: {e}")
+            self.is_leader_cache = False
+            return False
+    
+    def is_leader(self, run_id: str) -> bool:
+        """
+        Check if this worker is currently the leader.
+        
+        Args:
+            run_id: Processing run ID
+            
+        Returns:
+            True if this worker is the current leader
+        """
+        # Check cache first (avoid frequent DB queries)
+        if (self.last_leader_check and 
+            time.time() - self.last_leader_check < 10):  # 10 second cache
+            return self.is_leader_cache
+        
+        try:
+            result = self.db.execute("""
+                SELECT leader_worker_id, leader_lease_expires
+                FROM processing_runs
+                WHERE run_id = %s
+            """, (run_id,))
+            
+            if result:
+                leader_id = result.get('leader_worker_id')
+                lease_expires = result.get('leader_lease_expires')
+                
+                # Check if we're the leader and lease hasn't expired
+                is_leader = (leader_id == self.worker_id and 
+                           lease_expires and lease_expires > datetime.now())
+                
+                self.is_leader_cache = is_leader
+                self.last_leader_check = time.time()
+                return is_leader
+            
+            self.is_leader_cache = False
+            self.last_leader_check = time.time()
+            return False
+            
+        except Exception as e:
+            logger.error(f"Leader check failed for worker {self.worker_id}: {e}")
+            return False
+    
+    def renew_leadership(self, run_id: str) -> bool:
+        """
+        Renew leadership lease if this worker is the leader.
+        
+        Args:
+            run_id: Processing run ID
+            
+        Returns:
+            True if lease was renewed successfully
+        """
+        if not self.is_leader_cache:
+            return False
+            
+        try:
+            # Attempt to renew (this also handles case where we lost leadership)
+            return self.attempt_leader_election(run_id)
+            
+        except Exception as e:
+            logger.error(f"Leadership renewal failed for worker {self.worker_id}: {e}")
+            self.is_leader_cache = False
+            return False
 
 
 class WorkQueue:
