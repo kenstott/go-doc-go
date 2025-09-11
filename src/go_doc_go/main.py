@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 _config = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
 
 
-def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
+def ingest_documents(config: Config, source_configs=None, max_link_depth=None, 
+                    processing_mode: str = None):
     """
     Ingest documents from configured content sources, including following links to specified depth.
     Uses global visited tracking to prevent duplicate processing across all sources.
@@ -24,6 +25,8 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
         config: Configuration object
         source_configs: Optional list of content source configs (overrides config)
         max_link_depth: Optional override for link depth (overrides source config)
+        processing_mode: Processing mode ('single', 'distributed', or 'worker'). 
+                        Overrides config if specified.
 
     Returns:
         Dictionary with statistics about ingested documents
@@ -47,7 +50,26 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None):
             config = ConfigClass(config)
         else:
             raise ValueError("config must be a Config instance, dictionary, or path string")
+    
+    # Determine processing mode
+    mode = processing_mode or config.config.get('processing', {}).get('mode', 'single')
+    logger.info(f"Using processing mode: {mode}")
+    
+    # Route to appropriate processing method
+    if mode == 'distributed':
+        return _ingest_documents_distributed(config, source_configs, max_link_depth)
+    elif mode == 'worker':
+        return _ingest_documents_worker(config)
+    else:
+        return _ingest_documents_single(config, source_configs, max_link_depth)
 
+
+def _ingest_documents_single(config: Config, source_configs=None, max_link_depth=None):
+    """
+    Single-process document ingestion (original implementation).
+    """
+    logger.debug("Using single-process document ingestion")
+    
     # 1. Document database
     logger.debug("Getting document database from config")
     db = config.get_document_database()
@@ -488,3 +510,65 @@ def _compute_cross_document_container_relationships(db, processed_doc_ids, confi
 
     logger.info(f"Created {relationship_count} cross-document semantic relationships")
     return relationship_count
+
+
+def _ingest_documents_distributed(config: Config, source_configs=None, max_link_depth=None):
+    """
+    Distributed document ingestion using work queue coordination.
+    """
+    logger.info("Using distributed document ingestion with work queue coordination")
+    
+    from .queue.coordinator import ProcessingCoordinator
+    from .content_source.factory import register_content_source, get_content_source
+    
+    try:
+        # Initialize coordinator
+        coordinator = ProcessingCoordinator(config)
+        
+        # Pre-register content sources for workers to use
+        sources_to_process = source_configs or config.get_content_sources()
+        for source_config in sources_to_process:
+            source_name = source_config.get('name')
+            source = get_content_source(source_config)
+            register_content_source(source_name, source)
+            logger.debug(f"Registered content source for queue processing: {source_name}")
+        
+        # Coordinate the distributed processing run
+        stats = coordinator.coordinate_processing_run(sources_to_process, max_link_depth)
+        
+        logger.info(f"Distributed processing completed: {stats}")
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Distributed processing failed: {str(e)}")
+        raise
+
+
+def _ingest_documents_worker(config: Config):
+    """
+    Worker-mode document ingestion - processes documents from queue.
+    """
+    logger.info("Using worker-mode document ingestion")
+    
+    from .queue.worker import DocumentWorker
+    from .content_source.factory import register_content_source, get_content_source
+    
+    try:
+        # Pre-register content sources from config for this worker
+        sources_to_process = config.get_content_sources()
+        for source_config in sources_to_process:
+            source_name = source_config.get('name')
+            source = get_content_source(source_config)
+            register_content_source(source_name, source)
+            logger.debug(f"Registered content source for worker: {source_name}")
+        
+        # Create and start worker
+        worker = DocumentWorker(config)
+        stats = worker.start()
+        
+        logger.info(f"Worker processing completed: {stats}")
+        return stats
+        
+    except Exception as e:
+        logger.error(f"Worker processing failed: {str(e)}")
+        raise
