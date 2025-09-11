@@ -37,6 +37,7 @@ def create_schema(db, force: bool = False) -> None:
                 DROP FUNCTION IF EXISTS update_updated_at_column CASCADE;
                 DROP FUNCTION IF EXISTS check_stale_workers CASCADE;
                 DROP FUNCTION IF EXISTS reclaim_stale_work CASCADE;
+                DROP FUNCTION IF EXISTS attempt_leader_election CASCADE;
             """
             db.execute_raw(drop_sql)
         

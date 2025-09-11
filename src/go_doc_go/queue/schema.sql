@@ -26,7 +26,13 @@ CREATE TABLE IF NOT EXISTS processing_runs (
     documents_failed INTEGER DEFAULT 0,
     documents_retried INTEGER DEFAULT 0,
     
-    -- Post-processing coordination
+    -- Leader election
+    leader_worker_id VARCHAR(100),
+    leader_elected_at TIMESTAMP,
+    leader_heartbeat TIMESTAMP,
+    leader_lease_expires TIMESTAMP,
+    
+    -- Post-processing coordination (handled by leader)
     post_processor_worker_id VARCHAR(100),
     post_processing_lock_acquired_at TIMESTAMP,
     
@@ -193,5 +199,47 @@ BEGIN
     
     GET DIAGNOSTICS reclaimed_count = ROW_COUNT;
     RETURN reclaimed_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create function to attempt leader election (atomic)
+CREATE OR REPLACE FUNCTION attempt_leader_election(
+    p_run_id VARCHAR(16),
+    p_worker_id VARCHAR(100),
+    p_lease_duration_seconds INTEGER DEFAULT 60
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+    elected BOOLEAN := FALSE;
+BEGIN
+    -- Try to become leader if no current leader or lease expired
+    UPDATE processing_runs
+    SET leader_worker_id = p_worker_id,
+        leader_elected_at = CURRENT_TIMESTAMP,
+        leader_heartbeat = CURRENT_TIMESTAMP,
+        leader_lease_expires = CURRENT_TIMESTAMP + (p_lease_duration_seconds || ' seconds')::INTERVAL
+    WHERE run_id = p_run_id
+      AND (
+        leader_worker_id IS NULL OR 
+        leader_lease_expires < CURRENT_TIMESTAMP
+      );
+    
+    -- Check if we became leader
+    IF FOUND THEN
+        elected := TRUE;
+    ELSE
+        -- Check if we're already the leader and just need to renew lease
+        UPDATE processing_runs
+        SET leader_heartbeat = CURRENT_TIMESTAMP,
+            leader_lease_expires = CURRENT_TIMESTAMP + (p_lease_duration_seconds || ' seconds')::INTERVAL
+        WHERE run_id = p_run_id
+          AND leader_worker_id = p_worker_id;
+          
+        IF FOUND THEN
+            elected := TRUE;
+        END IF;
+    END IF;
+    
+    RETURN elected;
 END;
 $$ LANGUAGE plpgsql;
