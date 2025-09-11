@@ -4,11 +4,12 @@ This guide provides comprehensive instructions for deploying and horizontally sc
 
 ## Architecture Overview
 
-The Go-Doc-Go distributed processing system uses a **pull-based architecture** where:
-- Each process instance IS a worker (no special coordinator processes)
-- Workers pull work from a shared PostgreSQL queue
-- Automatic coordination through config hash-based run management
-- "Last man standing" post-processing for cross-document relationships
+The Go-Doc-Go distributed processing system uses an **elected leader architecture** where:
+- Each process instance is an identical worker
+- One worker is automatically elected as the leader for each processing run
+- The elected leader handles document discovery and post-processing
+- All workers (including leader) pull and process documents from the shared queue
+- Leader election uses PostgreSQL for atomic coordination
 
 ## Prerequisites
 
@@ -61,33 +62,31 @@ storage:
 
 ### Manual Scaling with Docker
 
-#### 1. Start Coordinator
-```bash
-# Terminal 1: Start coordinator (discovers documents, manages run)
-docker run --rm \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  -e GO_DOC_GO_CONFIG_PATH=/app/config.yaml \
-  go-doc-go:latest \
-  python -m go_doc_go.cli.coordinator
-```
+All instances run the same command - they are identical workers that automatically elect a leader:
 
-#### 2. Scale Workers Horizontally
 ```bash
-# Terminal 2: Start worker 1
+# Terminal 1: Start worker 1 (may become leader)
 docker run --rm \
   -v $(pwd)/config.yaml:/app/config.yaml \
   -e GO_DOC_GO_CONFIG_PATH=/app/config.yaml \
   go-doc-go:latest \
   python -m go_doc_go.cli.worker --worker-id worker-01
 
-# Terminal 3: Start worker 2  
+# Terminal 2: Start worker 2 (automatically joins run)
 docker run --rm \
   -v $(pwd)/config.yaml:/app/config.yaml \
   -e GO_DOC_GO_CONFIG_PATH=/app/config.yaml \
   go-doc-go:latest \
   python -m go_doc_go.cli.worker --worker-id worker-02
 
-# Add more workers as needed...
+# Terminal 3: Start worker 3 (automatically joins run)
+docker run --rm \
+  -v $(pwd)/config.yaml:/app/config.yaml \
+  -e GO_DOC_GO_CONFIG_PATH=/app/config.yaml \
+  go-doc-go:latest \
+  python -m go_doc_go.cli.worker --worker-id worker-03
+
+# Add more identical workers as needed...
 ```
 
 ### Kubernetes Deployment
@@ -121,59 +120,14 @@ data:
         # ... source config
 ```
 
-#### Coordinator Deployment
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: go-doc-go-coordinator
-spec:
-  replicas: 1  # Only one coordinator per run
-  selector:
-    matchLabels:
-      app: go-doc-go-coordinator
-  template:
-    metadata:
-      labels:
-        app: go-doc-go-coordinator
-    spec:
-      containers:
-      - name: coordinator
-        image: go-doc-go:latest
-        command: ["python", "-m", "go_doc_go.cli.coordinator"]
-        env:
-        - name: GO_DOC_GO_CONFIG_PATH
-          value: "/app/config.yaml"
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-secret
-              key: password
-        volumeMounts:
-        - name: config
-          mountPath: /app/config.yaml
-          subPath: config.yaml
-        resources:
-          requests:
-            memory: "1Gi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi" 
-            cpu: "1000m"
-      volumes:
-      - name: config
-        configMap:
-          name: go-doc-go-config
-```
-
-#### Worker Deployment (Horizontally Scalable)
+#### Worker Deployment (All Identical - Leader Election Automatic)
 ```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: go-doc-go-workers
 spec:
-  replicas: 5  # Scale this based on workload
+  replicas: 5  # Scale this based on workload - all workers are identical
   selector:
     matchLabels:
       app: go-doc-go-worker
@@ -197,7 +151,7 @@ spec:
         - name: WORKER_ID
           valueFrom:
             fieldRef:
-              fieldPath: metadata.name
+              fieldPath: metadata.name  # Each pod gets unique worker ID
         volumeMounts:
         - name: config
           mountPath: /app/config.yaml
@@ -372,8 +326,9 @@ python -m go_doc_go.cli.monitor --run-id <run_id> --alerts
 #### 4. Cross-Document Relationships Missing
 **Symptoms**: Post-processing doesn't run or fails
 **Solution**:
-- Ensure at least one worker remains active until completion
-- Check "last man standing" coordination logs
+- Check leader election logs - ensure a leader was elected
+- Verify leader lease renewal is working
+- Check post-processing coordination logs
 - Verify embedding configuration is correct
 
 ### Performance Tuning
@@ -431,12 +386,12 @@ work_queue:
 - [ ] Resource limits defined
 
 ### Initial Deployment
-- [ ] Deploy coordinator with health checks
-- [ ] Deploy initial worker set (2-3 instances)
+- [ ] Deploy initial worker set (2-3 identical instances)
+- [ ] Verify leader election working (check logs for elected leader)
 - [ ] Verify queue operations working
 - [ ] Test document processing end-to-end
 - [ ] Validate monitoring and alerting
-- [ ] Test failure scenarios
+- [ ] Test leader failover scenarios
 
 ### Production Scaling
 - [ ] Implement horizontal pod autoscaling
