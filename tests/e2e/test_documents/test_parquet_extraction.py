@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Test parquet parsing and entity extraction."""
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
+
 from go_doc_go.document_parser.parquet import ParquetParser
 from go_doc_go.storage.sqlite import SQLiteDocumentDatabase
 from go_doc_go.domain import OntologyManager
