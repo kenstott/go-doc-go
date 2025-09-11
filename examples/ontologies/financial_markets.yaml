@@ -1,3 +1,67 @@
+# ==========================================
+# REUSABLE ANCHORS - DEFINE ONCE, USE EVERYWHERE
+# ==========================================
+
+# Confidence thresholds (eliminates 51+ repetitions)
+confidence_thresholds:
+  high: &high_confidence 0.75
+  medium: &medium_confidence 0.70  
+  low: &low_confidence 0.65
+
+# Common semantic phrases (eliminates 12+ repetitions each)
+semantic_phrases:
+  company: &company_phrase "company, corporation, firm, business, enterprise, we, our"
+  executive: &exec_phrase "CEO, CFO, president, chief executive, chief financial"
+  financial: &financial_phrase "revenue, earnings, profit, sales, income"
+  analyst: &analyst_phrase "analyst, research analyst, equity analyst, investment analyst"
+  bullish: &bullish_phrase "bullish, positive, optimistic, strong, outperform"
+  bearish: &bearish_phrase "bearish, negative, pessimistic, weak, underperform"
+
+# Common element types (eliminates 20+ repetitions)
+element_types:
+  text_elements: &text_types ["paragraph", "list_item", "heading"]
+  financial_elements: &financial_types ["paragraph", "table_cell", "list_item"]
+
+# Common rule templates (eliminates pattern repetition)
+rule_templates:
+  semantic_base: &semantic_template
+    type: "semantic"
+    confidence_threshold: *medium_confidence
+    element_types: *text_types
+    
+  regex_base: &regex_template
+    type: "regex"
+    case_sensitive: false
+    confidence_threshold: *high_confidence
+    
+  keyword_base: &keyword_template
+    type: "keywords"
+    confidence_threshold: *low_confidence
+
+# Relationship rule templates (eliminates massive repetition)
+relationship_templates:
+  company_source: &company_source
+    term_id: "company"
+    semantic_phrase: *company_phrase
+    confidence_threshold: *medium_confidence
+    
+  executive_target: &executive_target_base
+    confidence_threshold: *high_confidence
+    
+  standard_confidence: &standard_confidence
+    minimum: *low_confidence
+    calculation: "average"
+    
+  same_paragraph: &same_paragraph
+    hierarchy_level: 0  # Same paragraph/section
+    
+  same_section: &same_section  
+    hierarchy_level: 1  # Same section
+
+# ==========================================
+# ONTOLOGY DEFINITION
+# ==========================================
+
 domain:
   name: "financial_markets"
   version: "1.0.0"
@@ -248,122 +312,112 @@ element_mappings:
   # Company identification
   - term_id: "company"
     rules:
-      - type: "semantic"
-        semantic_phrase: "company, corporation, firm, business, enterprise"
-        confidence_threshold: 0.70
+      - <<: *semantic_template
+        semantic_phrase: *company_phrase
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\b[A-Z][A-Za-z]+(?:\\s+[A-Z][A-Za-z]+)*\\s+(?:Inc|Corp|Co|Ltd|LLC|plc|AG|SA|NV)\\b"
         case_sensitive: true
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["Apple", "Microsoft", "Amazon", "Google", "Tesla", "Meta", "Netflix"]
         case_sensitive: true
 
   - term_id: "ticker"
     rules:
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\b(?:NYSE|NASDAQ|LSE|TSX)?:?\\s*[A-Z]{1,5}\\b"
         case_sensitive: true
-        element_types: ["paragraph", "list_item"]
+        element_types: *financial_types
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\([A-Z]{1,5}\\)"
         case_sensitive: true
 
   # Executive identification
   - term_id: "ceo"
     rules:
-      - type: "semantic"
-        semantic_phrase: "CEO, chief executive officer, president, managing director"
-        confidence_threshold: 0.75
+      - <<: *semantic_template
+        semantic_phrase: *exec_phrase
+        confidence_threshold: *high_confidence
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\b(?:CEO|Chief Executive Officer?|President and CEO|President & CEO)\\b"
-        case_sensitive: false
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["CEO", "chief executive", "president"]
 
   - term_id: "cfo"
     rules:
-      - type: "semantic"
+      - <<: *semantic_template
         semantic_phrase: "CFO, chief financial officer, finance chief, treasurer"
-        confidence_threshold: 0.75
+        confidence_threshold: *high_confidence
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\b(?:CFO|Chief Financial Officer?|EVP.*Finance|Treasurer)\\b"
-        case_sensitive: false
 
   # Speaker identification from content
   - term_id: "speaker"
     rules:
-      - type: "semantic"
+      - <<: *semantic_template
         semantic_phrase: "speaker, presenter, participant in call, speaking today"
-        confidence_threshold: 0.70
         element_types: ["paragraph"]
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["speaking", "presenting", "joined us today", "on the call"]
         element_types: ["paragraph"]
 
   # General person identification
   - term_id: "person"
     rules:
-      - type: "semantic" 
+      - <<: *semantic_template
         semantic_phrase: "person, individual, executive, participant, attendee"
-        confidence_threshold: 0.65
+        confidence_threshold: *low_confidence
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\b[A-Z][a-z]+\\s+[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?\\b"
         case_sensitive: true
-        element_types: ["paragraph", "list_item"]
+        element_types: *text_types
 
   # Financial metrics
   - term_id: "revenue"
     rules:
-      - type: "semantic"
-        semantic_phrase: "revenue, sales, top line, turnover, income from operations"
-        confidence_threshold: 0.70
+      - <<: *semantic_template
+        semantic_phrase: *financial_phrase
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\$?\\d+(?:\\.\\d+)?\\s*(?:billion|million|B|M)\\s+(?:in\\s+)?(?:revenue|sales)"
-        case_sensitive: false
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["revenue", "sales", "turnover", "top line"]
 
   - term_id: "earnings"
     rules:
-      - type: "semantic"
+      - <<: *semantic_template
         semantic_phrase: "earnings, profit, net income, EPS, earnings per share, bottom line"
-        confidence_threshold: 0.70
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\$?\\d+(?:\\.\\d+)?\\s*(?:per share|EPS)|earnings of \\$?\\d+"
-        case_sensitive: false
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["earnings", "profit", "net income", "EPS", "bottom line"]
 
   - term_id: "guidance"
     rules:
-      - type: "semantic"
+      - <<: *semantic_template
         semantic_phrase: "guidance, outlook, forecast, expect, project, anticipate"
-        confidence_threshold: 0.65
+        confidence_threshold: *low_confidence
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["guidance", "outlook", "forecast", "expect", "project", "anticipate"]
         
-      - type: "regex"
+      - <<: *regex_template
         pattern: "(?:we|company)\\s+(?:expect|anticipate|project|forecast|guide)"
-        case_sensitive: false
 
   - term_id: "growth_rate"
     rules:
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\d+(?:\\.\\d+)?%\\s+(?:growth|increase|gain|rise)"
-        case_sensitive: false
         
       - type: "semantic"
         semantic_phrase: "year over year growth, YoY, quarter over quarter, QoQ, CAGR"
@@ -375,26 +429,26 @@ element_mappings:
   # Market sentiment
   - term_id: "bullish"
     rules:
-      - type: "semantic"
-        semantic_phrase: "bullish, positive, optimistic, upbeat, strong, outperform"
-        confidence_threshold: 0.65
+      - <<: *semantic_template
+        semantic_phrase: *bullish_phrase
+        confidence_threshold: *low_confidence
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["bullish", "positive", "optimistic", "upbeat", "strong momentum", "tailwind"]
 
   - term_id: "bearish"
     rules:
-      - type: "semantic"
-        semantic_phrase: "bearish, negative, pessimistic, cautious, weak, underperform"
-        confidence_threshold: 0.65
+      - <<: *semantic_template
+        semantic_phrase: *bearish_phrase
+        confidence_threshold: *low_confidence
         
-      - type: "keywords"
+      - <<: *keyword_template
         keywords: ["bearish", "negative", "pessimistic", "cautious", "headwind", "concern"]
 
   # Analyst ratings
   - term_id: "buy_rating"
     rules:
-      - type: "regex"
+      - <<: *regex_template
         pattern: "\\b(?:strong\\s+)?buy\\b|\\b(?:over)?weight\\b|\\boutperform\\b"
         case_sensitive: false
         
@@ -468,36 +522,24 @@ relationship_rules:
   - id: "company_has_ceo"
     relationship_type: "has_executive"
     description: "Company has CEO"
-    source:
-      term_id: "company"
-      semantic_phrase: "company, corporation, we, our"
-      confidence_threshold: 0.70
+    source: *company_source
     target:
+      <<: *executive_target_base
       term_id: "ceo"
-      semantic_phrase: "CEO, chief executive, president"
-      confidence_threshold: 0.75
-    confidence:
-      minimum: 0.65
-      calculation: "average"
-    constraints:
-      hierarchy_level: 0  # Same paragraph/section
+      semantic_phrase: *exec_phrase
+    confidence: *standard_confidence
+    constraints: *same_paragraph
       
   - id: "company_has_cfo"
     relationship_type: "has_executive"
     description: "Company has CFO"
-    source:
-      term_id: "company"
-      semantic_phrase: "company, corporation, we, our"
-      confidence_threshold: 0.70
+    source: *company_source
     target:
+      <<: *executive_target_base
       term_id: "cfo"
       semantic_phrase: "CFO, chief financial officer, finance chief"
-      confidence_threshold: 0.75
-    confidence:
-      minimum: 0.65
-      calculation: "average"
-    constraints:
-      hierarchy_level: 0  # Same paragraph/section
+    confidence: *standard_confidence
+    constraints: *same_paragraph
       
   - id: "company_competes_with"
     relationship_type: "competes_with"

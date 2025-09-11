@@ -1,0 +1,53 @@
+# End-to-End Test Configuration for Domain Entity Extraction
+# This config demonstrates the complete pipeline:
+# 1. Document ingestion from file system
+# 2. Element/relationship extraction (universal doc)
+# 3. Domain entity extraction (financial ontology)
+# 4. Export to Neo4j
+
+storage:
+  backend: "sqlite"
+  path: "./test_e2e.db"  # Persistent DB for inspection
+  
+embedding:
+  enabled: false  # Disable for faster testing
+  
+content_sources:
+  - name: "earnings-calls"
+    type: "file"
+    base_path: "./test_documents"
+    file_pattern: "*.parquet"  # Will look for parquet earnings call transcripts
+    
+parsers:
+  parquet:
+    speaker_column: "speaker_name"
+    role_column: "speaker_role"
+    text_column: "paragraph_text"
+    section_column: "section_type"
+    
+relationship_detection:
+  enabled: true
+  hierarchy:
+    enabled: true
+    
+# Domain configuration
+domain:
+  enabled: true
+  ontologies:
+    - "./examples/ontologies/financial_markets.yaml"
+  config:
+    min_mapping_confidence: 0.60
+    min_relationship_confidence: 0.60
+    
+# Neo4j export configuration  
+neo4j:
+  enabled: true
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: "doculyzer123"
+  database: "neo4j"
+  clear_before_export: true
+  
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
