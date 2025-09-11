@@ -636,25 +636,9 @@ relationship_rules:
       calculation: "average"
 
 # Domain-specific settings
+# Note: Only implemented settings are included here.
+# See docs/design-ideas.md for aspirational features.
 settings:
-  enable_hierarchical_relationships: true
-  infer_transitive_relationships: true
-  min_confidence_for_inference: 0.75
-  xbrl_namespace_prefixes:
-    - "us-gaap"
-    - "dei"
-    - "srt"
-    - "country"
-    - "currency"
-    - "exch"
-    - "naics"
-    - "sic"
-    - "stpr"
-    - "invest"
-  special_processing:
-    extract_monetary_values: true
-    extract_dates: true
-    extract_percentages: true
-    normalize_accounting_terms: true
-    link_footnotes: true
-    track_amendments: true
+  enable_transitive_inference: false  # Currently implemented but disabled by default
+  default_confidence_threshold: 0.75  # Higher confidence for regulatory documents
+  max_relationships_per_pair: 5       # More relationships allowed for complex SEC docs
