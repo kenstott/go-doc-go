@@ -72,3 +72,13 @@ docs/_templates/
 # Package files
 *.tar.gz
 *.zip.env.sharepoint
+
+# Development utilities and scripts
+add_entity_methods_to_storage_providers.py
+debug_parser.py
+enable_google_drive_api.py
+
+# Environment configuration
+.env.google_drive
+.env.sharepoint
+GOOGLE_DRIVE_SETUP_STATUS.md
