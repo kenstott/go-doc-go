@@ -1,5 +1,5 @@
 """
-Processing coordinator for managing distributed document processing runs.
+Elected leader worker for managing distributed document processing runs.
 """
 
 import logging
@@ -13,32 +13,33 @@ from .work_queue import WorkQueue, RunCoordinator
 logger = logging.getLogger(__name__)
 
 
-class ProcessingCoordinator:
+class ElectedLeaderWorker:
     """
-    Coordinates document processing runs by discovering documents,
-    populating the work queue, and managing post-processing.
+    Worker that can be elected as leader to handle document discovery,
+    queue population, and post-processing while still processing documents.
     """
     
-    def __init__(self, config: Config, coordinator_id: Optional[str] = None):
+    def __init__(self, config: Config, worker_id: str):
         """
-        Initialize processing coordinator.
+        Initialize elected leader worker.
         
         Args:
             config: Configuration object  
-            coordinator_id: Optional coordinator ID
+            worker_id: Unique worker ID
         """
         self.config = config
-        self.coordinator_id = coordinator_id or "coordinator"
+        self.worker_id = worker_id
         self.db = None
         self.work_queue = None
         self.run_coordinator = None
+        self.is_leader = False
         
-        logger.info(f"Initialized ProcessingCoordinator: {self.coordinator_id}")
+        logger.info(f"Initialized ElectedLeaderWorker: {self.worker_id}")
     
-    def coordinate_processing_run(self, source_configs: Optional[List[Dict]] = None,
-                                 max_link_depth: Optional[int] = None) -> Dict[str, Any]:
+    def run_as_worker_with_leader_duties(self, source_configs: Optional[List[Dict]] = None,
+                                        max_link_depth: Optional[int] = None) -> Dict[str, Any]:
         """
-        Coordinate a complete distributed processing run.
+        Run as a worker that attempts to become leader for discovery and post-processing.
         
         Args:
             source_configs: Optional list of content source configs (overrides config)
@@ -47,7 +48,7 @@ class ProcessingCoordinator:
         Returns:
             Run statistics and information
         """
-        logger.info(f"Starting coordinated processing run with coordinator {self.coordinator_id}")
+        logger.info(f"Starting worker {self.worker_id} with leader election")
         
         # Initialize components
         self._initialize_components()
@@ -60,49 +61,74 @@ class ProcessingCoordinator:
         run_info = self.run_coordinator.ensure_run_exists(run_id, self.config.config)
         logger.info(f"Processing run initialized: {run_info}")
         
-        # Discover and queue documents from all sources
-        sources_to_process = source_configs or self.config.get_content_sources()
-        queuing_stats = self._discover_and_queue_documents(
-            sources_to_process, run_id, max_link_depth
-        )
+        # Register as worker
+        self.run_coordinator.register_worker(run_id, self.worker_id, {
+            'version': '1.0.0',
+            'capabilities': {'leader_eligible': True}
+        })
         
-        logger.info(f"Document discovery completed: {queuing_stats}")
+        # Attempt to become leader
+        if self.run_coordinator.attempt_leader_election(run_id):
+            logger.info(f"Worker {self.worker_id} elected as leader")
+            self.is_leader = True
+            
+            # As leader, discover and queue documents from all sources
+            sources_to_process = source_configs or self.config.get_content_sources()
+            queuing_stats = self._discover_and_queue_documents(
+                sources_to_process, run_id, max_link_depth
+            )
+            logger.info(f"Document discovery completed: {queuing_stats}")
+        else:
+            logger.info(f"Worker {self.worker_id} not elected as leader - will process documents from queue")
+            queuing_stats = {"documents_queued": 0}
         
-        # Wait for processing to complete
-        completion_stats = self._wait_for_processing_completion(run_id)
+        # All workers (including leader) process documents from queue
+        # This is the main worker loop that will be implemented elsewhere
         
-        logger.info(f"Processing completion detected: {completion_stats}")
+        # If we are the leader, we also handle "last man standing" duties
+        if self.is_leader:
+            # Wait for processing to complete
+            completion_stats = self._wait_for_processing_completion(run_id)
+            logger.info(f"Processing completion detected: {completion_stats}")
+            
+            # Perform post-processing
+            post_processing_stats = self._perform_post_processing(run_id)
+            logger.info(f"Post-processing completed: {post_processing_stats}")
+            
+            # Combine all statistics
+            final_stats = {
+                "run_id": run_id,
+                "worker_id": self.worker_id,
+                "is_leader": True,
+                "documents_queued": queuing_stats["documents_queued"],
+                "documents_processed": completion_stats["documents_processed"],
+                "documents_failed": completion_stats["documents_failed"],
+                "cross_document_relationships": post_processing_stats.get("relationships_created", 0),
+                "total_runtime_seconds": completion_stats.get("total_runtime", 0)
+            }
+        else:
+            # Non-leader workers just return basic stats
+            final_stats = {
+                "run_id": run_id,
+                "worker_id": self.worker_id,
+                "is_leader": False,
+                "message": "Worker participating in distributed processing"
+            }
         
-        # Perform post-processing
-        post_processing_stats = self._perform_post_processing(run_id)
-        
-        logger.info(f"Post-processing completed: {post_processing_stats}")
-        
-        # Combine all statistics
-        final_stats = {
-            "run_id": run_id,
-            "coordinator_id": self.coordinator_id,
-            "documents_queued": queuing_stats["documents_queued"],
-            "documents_processed": completion_stats["documents_processed"],
-            "documents_failed": completion_stats["documents_failed"],
-            "cross_document_relationships": post_processing_stats.get("relationships_created", 0),
-            "total_runtime_seconds": completion_stats.get("total_runtime", 0)
-        }
-        
-        logger.info(f"Coordinated processing run completed: {final_stats}")
+        logger.info(f"Worker {self.worker_id} completed run participation: {final_stats}")
         return final_stats
     
     def _initialize_components(self):
         """Initialize database and coordination components."""
-        logger.debug("Initializing coordinator components")
+        logger.debug("Initializing worker components")
         
         # Initialize database
         self.db = self.config.get_document_database()
         logger.debug(f"Database initialized: {type(self.db).__name__}")
         
-        # Initialize work queue and run coordinator
-        self.work_queue = WorkQueue(self.db, self.coordinator_id)
-        self.run_coordinator = RunCoordinator(self.db)
+        # Initialize work queue and run coordinator with worker ID
+        self.work_queue = WorkQueue(self.db, self.worker_id)
+        self.run_coordinator = RunCoordinator(self.db, self.worker_id)
         
         logger.debug("Coordinator components initialized")
     
