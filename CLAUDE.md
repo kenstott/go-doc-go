@@ -113,11 +113,16 @@ tests/
 [tool.pytest.ini_options]
 markers = [
     "unit: Unit tests - fast, isolated component tests",
-    "integration: Integration tests - test component interactions",
+    "integration: Integration tests - test component interactions", 
     "performance: Performance tests - measure speed and resources",
     "slow: Tests that take > 1 second",
     "requires_pdf: Tests requiring PyMuPDF",
-    "requires_docx: Tests requiring python-docx"
+    "requires_docx: Tests requiring python-docx",
+    "requires_postgres: Tests requiring PostgreSQL Docker instance",
+    "atomic: Tests verifying atomic operations and concurrency",
+    "queue_lifecycle: Tests covering full document processing lifecycle",
+    "stub: Temporary tests for debugging - must be deleted after use",
+    "temp: Temporary experimental tests - must be deleted after use"
 ]
 ```
 
@@ -193,11 +198,23 @@ pytest -m integration
 # Run performance tests
 pytest -m performance
 
+# Run PostgreSQL tests
+pytest -m requires_postgres
+
+# Run atomic operation tests
+pytest -m atomic
+
 # Run all non-slow tests
 pytest -m "not slow"
 
+# Run specific test categories together
+pytest -m "unit or performance"
+
 # Run with coverage for unit tests only
 pytest -m unit --cov=src/go_doc_go --cov-report=html
+
+# Run full queue system tests
+pytest -m "atomic or queue_lifecycle or requires_postgres" --timeout=300
 ```
 
 ### Test Design Principles
@@ -439,7 +456,55 @@ class SomeParser(DocumentParser):
 
 ## Development Workflow
 
-### Before Committing
+### Pre-Commit Verification Checklist - MANDATORY
+Before any git commit, ALL of the following MUST pass:
+
+```bash
+#!/bin/bash
+# pre-commit-checklist.sh - run before any git commit
+
+echo "Pre-Commit Checklist - MANDATORY"
+echo "=================================="
+
+# 1. All modified code builds without errors
+python -m py_compile src/go_doc_go/**/*.py || { echo "✗ Compilation errors found"; exit 1; }
+echo "✓ Code compiles without errors"
+
+# 2. All related tests pass (provide command + output)
+pytest -v || { echo "✗ Tests failed"; exit 1; }
+echo "✓ All tests pass"
+
+# 3. No debugging artifacts left in code
+if grep -r "print(" src/go_doc_go/ --include="*.py" | grep -v "__main__"; then
+    echo "✗ Debug print statements found - remove before commit"
+    exit 1
+fi
+echo "✓ No debugging artifacts"
+
+# 4. Code quality checks
+flake8 src/ tests/ || { echo "✗ Linting errors found"; exit 1; }
+echo "✓ Linting passed"
+
+mypy src/ || { echo "✗ Type checking errors found"; exit 1; }
+echo "✓ Type checking passed"
+
+black --check src/ tests/ || { echo "✗ Code formatting required"; exit 1; }
+echo "✓ Code formatting verified"
+
+# 5. Coverage requirements met
+pytest --cov=src/go_doc_go --cov-report=term --cov-fail-under=70 || { echo "✗ Coverage below 70%"; exit 1; }
+echo "✓ Coverage requirements met"
+
+# 6. Performance benchmarks (if performance-critical code changed)
+if git diff --name-only HEAD^ | grep -E "(queue|parser)" > /dev/null; then
+    pytest -m performance || { echo "✗ Performance tests failed"; exit 1; }
+    echo "✓ Performance benchmarks met"
+fi
+
+echo "All checks passed - ready to commit"
+```
+
+### Before Committing (Legacy)
 1. Run unit tests: `pytest -m unit`
 2. Check coverage: `pytest --cov=src/go_doc_go --cov-report=term-missing`
 3. Run linter: `flake8 src/ tests/`
@@ -452,11 +517,21 @@ class SomeParser(DocumentParser):
 - **Utility modules**: Minimum 90% coverage
 - **New code**: Must include tests before merging
 
-### Performance Benchmarks
+### Performance Benchmarks and SLAs
+
+#### Document Processing SLAs
 - Standard document (< 10MB): Parse in < 1 second
-- Large document (< 100MB): Parse in < 10 seconds
+- Large document (< 100MB): Parse in < 10 seconds  
 - Memory usage: < 5x document size
 - Concurrent parsing: Support 10 simultaneous parsers
+
+#### Work Queue System SLAs
+- **Document claiming latency**: < 10ms per document
+- **Sustained throughput**: > 1000 docs/second with 10 concurrent workers
+- **Memory usage per worker**: < 100MB base memory
+- **Maximum concurrent workers**: 50 workers supported
+- **Claim timeout**: 5 minutes (300 seconds)
+- **Heartbeat interval**: 30 seconds
 
 ## Debugging and Troubleshooting
 
@@ -515,6 +590,9 @@ def debug_element_structure(elements: List[Dict], max_depth: int = 3):
 5. **Error Handling**: Fail fast with clear error messages, log all errors
 6. **Memory Management**: Stream large files, use generators where possible
 7. **Extensibility**: New parsers extend `DocumentParser` base class
+8. **Work Queue Coordination**: Use config hash as run_id for automatic worker coordination
+9. **Atomic Operations**: Use PostgreSQL row-level locking for atomic document claiming
+10. **Distributed Processing**: Pull-based work queue pattern with identical workers
 
 ## Common Issues and Solutions
 
@@ -548,15 +626,123 @@ def deterministic_uuid(monkeypatch):
     monkeypatch.setattr(uuid, 'uuid4', mock_uuid4)
 ```
 
+## Implementation Honesty Rules - CRITICAL
+
+### NEVER Claim Completion of Unimplemented Features
+- **NEVER** claim a feature is "enhanced" or "implemented" when you've only added stubs
+- **NEVER** write commit messages claiming functionality that doesn't exist
+- **NEVER** say "I've added X" when X is just empty methods or placeholder code
+- **ALWAYS** be explicit about what is actually implemented vs what is stubbed
+
+### Stub Code Rules - ZERO TOLERANCE
+- **PROHIBITED**: Any stub method without `# STUB:` comment and issue tracking
+- **REQUIRED**: All stubs must have associated TODO with specific completion criteria
+- **REQUIRED**: Stub methods must throw `NotImplementedError` with descriptive message
+
+```python
+# EXAMPLE - Proper stub implementation
+class WorkQueue:
+    def add_priority_document(self, doc_id: str, priority: int) -> int:
+        """
+        Add high-priority document to queue.
+        
+        STUB: Priority handling not implemented - needs queue reordering logic
+        TODO: Implement priority-based claiming in claim_next_document()
+        """
+        raise NotImplementedError(
+            "Priority document handling not implemented - stub only"
+        )
+```
+
+### Commit Message Integrity
+- **REQUIRED**: Commit messages MUST accurately reflect what was done
+- Use `wip:` prefix for work-in-progress commits with stubs
+- Use `stub:` or `scaffold:` prefix when adding structure without implementation
+- Only use `feat:` when the feature actually works
+
+### Completion Claims - VERIFICATION REQUIRED
+**ONLY** claim something is complete when:
+- It actually processes real data end-to-end
+- It has been tested with real inputs and produces meaningful outputs
+- All public methods return real data (not empty lists/null)
+- No `NotImplementedError` in production code paths
+
+## Quality Gates - NON-NEGOTIABLE
+
+A task is ONLY complete when ALL of the following pass:
+
+1. **Functionality Verified**: Real execution with expected inputs/outputs
+2. **Tests Passing**: All unit and related tests green
+3. **Code Quality**: No warnings, proper error handling, no debug artifacts
+4. **Documentation Current**: Comments and docs reflect actual behavior
+5. **Regression Tested**: Related functionality still works
+6. **Performance Verified**: SLAs met under expected load
+
+### Verification Evidence Required
+When claiming completion, provide:
+1. **Test execution output** showing success
+2. **Sample data** demonstrating functionality
+3. **Command used** for verification
+4. **Expected vs actual results** comparison
+
+## Mandatory Status Reporting Format
+
+For every work session, use this exact format:
+
+```
+**TASK STATUS REPORT**
+- **Current Task**: [specific task description]
+- **Status**: [In Progress/Blocked/Complete]
+- **Actions Taken**: [specific commands executed, files modified]
+- **Verification**: [test results, execution output, proof of functionality]
+- **Next Steps**: [if not complete, specific next actions]
+- **Blockers**: [if blocked, specific technical obstacles]
+```
+
+## Root Cause Analysis - REQUIRED
+
+### Problem Resolution Standards
+- **PROHIBITED**: Surface-level fixes without understanding root cause
+- **REQUIRED**: Document investigation process and findings
+- **REQUIRED**: Trace through full execution path for failures
+- **REQUIRED**: Test fix against original failure scenario
+
+### Evidence-Based Development
+- **REQUIRED**: Use debugger/logging to understand actual program behavior
+- **REQUIRED**: Generate stack traces for complex issue analysis
+- **REQUIRED**: Test hypotheses with isolated test cases
+- **PROHIBITED**: Guessing at solutions without evidence
+
 ## Code Review Checklist
 
-- [ ] All new code has tests
-- [ ] Tests validate design objectives, not implementation
+### Functionality Requirements
+- [ ] All new code has tests that verify design objectives
+- [ ] Code actually works end-to-end (not just stubs)
+- [ ] Error handling covers expected failure modes
+- [ ] Performance tests for resource-intensive operations
+
+### Code Quality Requirements
 - [ ] No duplicated code (DRY principle followed)
 - [ ] Type hints used for all functions
-- [ ] Error handling is specific and logged
-- [ ] Performance tests for resource-intensive operations
-- [ ] Documentation updated for API changes
+- [ ] Error handling is specific and logged with context
+- [ ] No debug artifacts (print statements, temporary files)
 - [ ] Element types and relationships use proper enums
 - [ ] Memory usage is bounded for large inputs
-- [ ] Coverage meets minimum requirements
+
+### Testing Requirements  
+- [ ] Tests validate design objectives, not current implementation
+- [ ] Coverage meets minimum requirements (70% overall, 80% critical)
+- [ ] Performance tests verify SLA compliance
+- [ ] All test categories properly marked with pytest markers
+
+### Documentation Requirements
+- [ ] Documentation updated for API changes
+- [ ] Commit message accurately describes actual changes
+- [ ] Stub code properly marked and tracked
+- [ ] Status reporting format followed for complex tasks
+
+### Verification Requirements
+- [ ] Pre-commit checklist script passes
+- [ ] All related tests pass with evidence provided
+- [ ] Performance benchmarks met
+- [ ] No regressions in related functionality

@@ -51,6 +51,66 @@ Flow: Sources → Ingestion → Storage ← Domain Analysis (reads from & writes
 - **🔧 Modular Dependencies**: Only install components you need, with graceful fallbacks when dependencies are missing
 - **📊 Document Analytics**: Rich statistics, outlines, and structural analysis capabilities
 
+## Storage Backend Architecture
+
+Go-Doc-Go supports multiple storage backends with different capabilities and trade-offs:
+
+### Available Storage Backends
+
+```yaml
+storage:
+  backend: "sqlite"      # File-based, good for development
+  # backend: "postgres"  # Production-ready, ACID compliant, time-travel support
+  # backend: "neo4j"     # Graph database, relationships are first-class
+  # backend: "mongodb"   # Document store, flexible schema
+  # backend: "elasticsearch"  # Full-text search optimized
+```
+
+### Neo4j: Dual-Role Architecture
+
+⚠️ **Important**: Neo4j can serve TWO different roles in the system:
+
+#### Option 1: Neo4j as Primary Storage Backend
+```yaml
+storage:
+  backend: "neo4j"
+  neo4j:
+    uri: "bolt://localhost:7687"
+    username: "neo4j"
+    password: "password"
+```
+- Neo4j stores ALL data (documents, elements, relationships)
+- Direct graph operations, no intermediate storage
+- Best for: Graph-first applications
+
+#### Option 2: Neo4j as Export Target (Recommended)
+```yaml
+storage:
+  backend: "postgres"  # Primary storage
+neo4j:
+  enabled: true  # Export to Neo4j for visualization
+  uri: "bolt://localhost:7687"
+```
+- PostgreSQL/SQLite as primary storage
+- Neo4j receives exported data for graph analysis
+- Best for: Hybrid approach with reliable storage + graph visualization
+
+### Time-Travel Considerations
+
+If you plan to implement time-travel/versioning features:
+
+```yaml
+# RECOMMENDED for time-travel:
+storage:
+  backend: "postgres"  # Native MVCC, temporal support
+  
+# NOT RECOMMENDED for time-travel:
+storage:
+  backend: "neo4j"  # Complex temporal queries, no native versioning
+```
+
+PostgreSQL provides native temporal support while Neo4j would require complex workarounds for time-travel queries.
+
 ## Full-Text Storage and Search Configuration
 
 Go-Doc-Go provides flexible full-text storage and indexing options that can be configured independently to optimize for your specific use case:

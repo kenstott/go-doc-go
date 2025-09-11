@@ -1110,6 +1110,70 @@ class DocumentAnalysisAgent:
 - **Dependencies**: External systems or libraries needed
 - **Risk**: Probability of successful implementation
 
+## Neo4j Architecture: Dual-Role Clarification
+
+### Current State
+Neo4j can serve TWO different roles in the system:
+
+1. **Primary Storage Backend** (`storage.backend: "neo4j"`)
+   - Neo4j IS the database storing all documents, elements, relationships
+   - No intermediate storage, direct graph operations
+   - Located in: `src/go_doc_go/storage/neo4j_graph.py`
+   - Full DocumentDatabase implementation
+
+2. **Export Target** (`neo4j.enabled: true`)
+   - Neo4j receives EXPORTED data from primary storage (SQLite/PostgreSQL)
+   - Post-processing step for graph visualization
+   - Located in: `tests/integration/neo4j_exporter.py`
+   - Read-only graph view of relational data
+
+### Complexity Warning: Time-Travel + Neo4j
+
+⚠️ **CRITICAL DESIGN CONSIDERATION**: If we implement time-travel/append-only storage, using Neo4j as the primary backend becomes significantly complex:
+
+**Why Neo4j + Time-Travel = Complex:**
+- Graph databases don't naturally support temporal versioning
+- Every node/edge would need version metadata
+- Queries become complex: "Find relationships as of timestamp X"
+- Performance degrades with version accumulation
+- No native MVCC (Multi-Version Concurrency Control) like PostgreSQL
+
+**Recommended Architecture for Time-Travel:**
+```yaml
+# DON'T DO THIS for time-travel:
+storage:
+  backend: "neo4j"  # Complex temporal queries!
+  
+# DO THIS instead:
+storage:
+  backend: "postgres"  # Native MVCC, temporal support
+neo4j:
+  enabled: true  # Export current state for visualization
+  export_mode: "current"  # or "as_of_timestamp"
+```
+
+**PostgreSQL Advantages for Time-Travel:**
+- Native MVCC support
+- Efficient temporal queries with indexes
+- `SYSTEM TIME` temporal tables (SQL:2011)
+- Proven patterns for audit trails
+- Can export point-in-time snapshots to Neo4j
+
+**Proposed Solution:**
+1. Use PostgreSQL with append-only pattern for primary storage
+2. Export current state OR historical snapshots to Neo4j
+3. Neo4j remains a visualization/analysis layer
+4. Keep temporal complexity in PostgreSQL where it's native
+
+### Documentation Gap
+This dual-role architecture is NOT documented in README or other user-facing docs. Users may be confused about:
+- When to use Neo4j as storage vs export
+- Performance implications
+- Feature trade-offs
+- Compatibility with future features (time-travel)
+
+**Action Required:** Add clear documentation explaining these architectural choices.
+
 ## Notes
 
 - All features in this document are **aspirational** and not currently implemented
