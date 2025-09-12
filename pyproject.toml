@@ -45,6 +45,11 @@ dependencies = [
     "jsonpath-ng~=1.7.0",
     "python-dotenv~=1.1.0",
     "wcmatch~=10.0",
+    
+    # Settings UI dependencies
+    "pandas~=2.3.2",
+    "cryptography~=45.0.7",
+    "psutil~=7.0.0",
 ]
 
 [project.optional-dependencies]
@@ -272,9 +277,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 # Include vendor/libmagic and its contents
-"doculyzer" = ["vendor/libmagic/*"]
+"go-doc-go" = ["vendor/libmagic/*"]
 
 [tool.setuptools.exclude-package-data]
 # Exclude unnecessary files, if needed (e.g., tests or documentation)
-"doculyzer" = ["tests/*"]
+"go-doc-go" = ["tests/*"]
 
