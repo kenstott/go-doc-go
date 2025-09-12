@@ -6,16 +6,21 @@ import ConfigEditor from './components/ConfigEditor/ConfigEditor';
 import OntologyList from './components/OntologyEditor/OntologyList';
 import OntologyEditor from './components/OntologyEditor/OntologyEditor';
 import DomainManager from './components/DomainManager/DomainManager';
+import Settings from './components/Settings/Settings';
+import PipelineManager from './components/Pipeline/PipelineManager';
 
 const App: React.FC = () => {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <Layout>
         <Routes>
-          {/* Default redirect to config */}
-          <Route path="/" element={<Navigate to="/config" replace />} />
+          {/* Default redirect to pipelines */}
+          <Route path="/" element={<Navigate to="/pipelines" replace />} />
           
-          {/* Configuration Management */}
+          {/* Pipeline Management */}
+          <Route path="/pipelines" element={<PipelineManager />} />
+          
+          {/* Configuration Management (legacy) */}
           <Route path="/config" element={<ConfigEditor />} />
           
           {/* Ontology Management */}
@@ -25,8 +30,11 @@ const App: React.FC = () => {
           {/* Domain Management */}
           <Route path="/domains" element={<DomainManager />} />
           
+          {/* Settings Management */}
+          <Route path="/settings" element={<Settings />} />
+          
           {/* 404 fallback */}
-          <Route path="*" element={<Navigate to="/config" replace />} />
+          <Route path="*" element={<Navigate to="/pipelines" replace />} />
         </Routes>
       </Layout>
     </Box>
