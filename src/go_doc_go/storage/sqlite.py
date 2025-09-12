@@ -549,6 +549,34 @@ class SQLiteDocumentDatabase(DocumentDatabase):
 
         # Enable foreign key constraints
         self.conn.execute("PRAGMA foreign_keys = ON")
+        
+        # Enable WAL mode for better concurrency and performance
+        # WAL mode allows readers and writers to operate concurrently
+        # and provides better crash recovery
+        try:
+            self.conn.execute("PRAGMA journal_mode = WAL")
+            # Set WAL checkpoint interval (default is 1000 pages)
+            self.conn.execute("PRAGMA wal_autocheckpoint = 1000")
+            
+            # Additional optimizations for better performance
+            # Increase cache size (negative value = KB, positive = pages)
+            # Default is -2000 (2MB), we set to -8000 (8MB)
+            self.conn.execute("PRAGMA cache_size = -8000")
+            
+            # Use memory for temp storage (faster than disk)
+            self.conn.execute("PRAGMA temp_store = MEMORY")
+            
+            # Synchronous mode NORMAL is safe with WAL mode and faster than FULL
+            self.conn.execute("PRAGMA synchronous = NORMAL")
+            
+            # Increase mmap size for better performance with large databases
+            # 268435456 = 256MB
+            self.conn.execute("PRAGMA mmap_size = 268435456")
+            
+            logger.info("SQLite WAL mode and performance optimizations enabled")
+        except sqlite3.OperationalError as e:
+            # WAL mode might not be available in some environments (e.g., network filesystems)
+            logger.warning(f"Could not enable WAL mode: {e}. Using default journal mode.")
 
         # Check if extension loading is supported
         auto_discover = config.config.get("storage", {}).get("sqlite_extensions", {}).get("auto_discover",
