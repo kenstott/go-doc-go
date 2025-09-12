@@ -124,7 +124,7 @@ def docker_compose_up():
     Start Docker Compose services for testing.
     """
     compose_file = os.path.join(
-        os.path.dirname(__file__), '..', '..', 'docker-compose.test.yml'
+        os.path.dirname(__file__), '..', '..', 'test_containers', 'docker-compose.yml'
     )
     
     # Check if Docker is available
@@ -137,10 +137,10 @@ def docker_compose_up():
     if not os.path.exists(compose_file):
         pytest.skip(f"Docker Compose file not found: {compose_file}")
     
-    # Start services
+    # Start services (only MinIO and MongoDB for adapter tests)
     try:
         subprocess.run(
-            ["docker-compose", "-f", compose_file, "up", "-d"],
+            ["docker-compose", "-f", compose_file, "--profile", "s3", "--profile", "nosql", "up", "-d"],
             check=True,
             capture_output=True,
             text=True
@@ -420,15 +420,22 @@ def wait_for_mongodb(host: str = "localhost", port: int = 27017, timeout: int = 
 def mongodb_config() -> Dict[str, Any]:
     """
     Provide MongoDB configuration for tests.
+    Uses environment variables that match test_containers configuration.
     """
+    host = os.environ.get("TEST_MONGO_HOST", "localhost")
+    port = int(os.environ.get("TEST_MONGO_PORT", "27017"))
+    username = os.environ.get("TEST_MONGO_USER", "testuser")
+    password = os.environ.get("TEST_MONGO_PASSWORD", "testpass")
+    database = os.environ.get("TEST_MONGO_DB", "go_doc_go_test")
+    
     return {
-        "connection_string": "mongodb://admin:admin123@localhost:27017/",
-        "database_name": "test_db",
+        "connection_string": f"mongodb://{username}:{password}@{host}:{port}/",
+        "database_name": database,
         "collection_name": "test_collection",
-        "username": "admin",
-        "password": "admin123",
-        "host": "localhost",
-        "port": 27017
+        "username": username,
+        "password": password,
+        "host": host,
+        "port": port
     }
 
 

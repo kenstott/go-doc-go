@@ -42,9 +42,9 @@ domain:
 # Neo4j export configuration  
 neo4j:
   enabled: true
-  uri: "bolt://localhost:7687"
-  username: "neo4j"
-  password: "doculyzer123"
+  uri: "${TEST_NEO4J_URI:-bolt://localhost:7687}"
+  username: "${TEST_NEO4J_USER:-neo4j}"
+  password: "${TEST_NEO4J_PASSWORD:-testpass123}"
   database: "neo4j"
   clear_before_export: true
   

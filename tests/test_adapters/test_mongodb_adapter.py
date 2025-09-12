@@ -198,23 +198,23 @@ class TestMongoDBAdapterUnit:
 class TestMongoDBAdapterIntegration:
     """Integration tests for MongoDBAdapter with real MongoDB."""
     
-    def test_get_content_from_mongodb(self, mongodb_collection, insert_test_documents, sample_mongodb_documents):
+    def test_get_content_from_mongodb(self, mongodb_collection, mongodb_config, insert_test_documents, sample_mongodb_documents):
         """Test getting content from actual MongoDB instance."""
         # Insert test document
         doc = sample_mongodb_documents[0]
         doc_ids = insert_test_documents(doc)
         doc_id = doc_ids[0]
         
-        # Create adapter with correct connection string
+        # Create adapter with connection from fixture
         config = {
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         }
         adapter = MongoDBAdapter(config)
         
         # Get content
-        source = f"mongodb://localhost/test_db/test_collection/{str(doc_id)}"
+        source = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/{str(doc_id)}"
         result = adapter.get_content({"source": source})
         
         assert "content" in result
@@ -224,7 +224,7 @@ class TestMongoDBAdapterIntegration:
         assert result["content_type"] == "json"
         assert result["metadata"]["document_id"] == str(doc_id)
     
-    def test_get_field_from_document(self, mongodb_collection, insert_test_documents, sample_mongodb_documents):
+    def test_get_field_from_document(self, mongodb_collection, mongodb_config, insert_test_documents, sample_mongodb_documents):
         """Test getting specific field from MongoDB document."""
         # Insert test document
         doc = sample_mongodb_documents[1]  # Document with sections
@@ -232,20 +232,20 @@ class TestMongoDBAdapterIntegration:
         doc_id = doc_ids[0]
         
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
         # Get specific field
-        source = f"mongodb://localhost/test_db/test_collection/{str(doc_id)}/sections/0/title"
+        source = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/{str(doc_id)}/sections/0/title"
         result = adapter.get_content({"source": source})
         
         content = result["content"]
         assert content == "Introduction"
         assert result["metadata"]["field_path"] == "sections/0/title"
     
-    def test_get_nested_field(self, mongodb_collection, insert_test_documents, sample_mongodb_documents):
+    def test_get_nested_field(self, mongodb_collection, mongodb_config, insert_test_documents, sample_mongodb_documents):
         """Test getting deeply nested field."""
         # Insert document with nested structure
         doc = sample_mongodb_documents[2]
@@ -253,19 +253,19 @@ class TestMongoDBAdapterIntegration:
         doc_id = doc_ids[0]
         
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
         # Get deeply nested field
-        source = f"mongodb://localhost/test_db/test_collection/{str(doc_id)}/nested/level1/level2/level3"
+        source = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/{str(doc_id)}/nested/level1/level2/level3"
         result = adapter.get_content({"source": source})
         
         assert result["content"] == "deeply nested value"
         assert result["metadata"]["field_type"] == "str"
     
-    def test_get_metadata_without_content(self, mongodb_collection, insert_test_documents, sample_mongodb_documents):
+    def test_get_metadata_without_content(self, mongodb_collection, mongodb_config, insert_test_documents, sample_mongodb_documents):
         """Test getting metadata without retrieving full document content."""
         # Insert test document
         doc = sample_mongodb_documents[0]
@@ -273,21 +273,21 @@ class TestMongoDBAdapterIntegration:
         doc_id = doc_ids[0]
         
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
-        source = f"mongodb://localhost/test_db/test_collection/{str(doc_id)}"
+        source = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/{str(doc_id)}"
         metadata = adapter.get_metadata({"source": source})
         
-        assert metadata["database"] == "test_db"
-        assert metadata["collection"] == "test_collection"
+        assert metadata["database"] == mongodb_config["database_name"]
+        assert metadata["collection"] == mongodb_config["collection_name"]
         assert metadata["document_id"] == str(doc_id)
         assert "collection_size" in metadata
         assert "document_count" in metadata
     
-    def test_get_binary_content(self, mongodb_collection, insert_test_documents):
+    def test_get_binary_content(self, mongodb_collection, mongodb_config, insert_test_documents):
         """Test getting document as binary content."""
         # Insert document with binary data
         doc = {
@@ -299,12 +299,12 @@ class TestMongoDBAdapterIntegration:
         doc_id = doc_ids[0]
         
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
-        source = f"mongodb://localhost/test_db/test_collection/{str(doc_id)}"
+        source = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/{str(doc_id)}"
         binary_content = adapter.get_binary_content({"source": source})
         
         assert isinstance(binary_content, bytes)
@@ -312,56 +312,56 @@ class TestMongoDBAdapterIntegration:
         decoded = json.loads(binary_content.decode('utf-8'))
         assert decoded["name"] == "Binary Test"
     
-    def test_error_handling_nonexistent_document(self, mongodb_collection):
+    def test_error_handling_nonexistent_document(self, mongodb_collection, mongodb_config):
         """Test error handling for non-existent documents."""
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
         # Try to get non-existent document
         fake_id = str(ObjectId())
-        source = f"mongodb://localhost/test_db/test_collection/{fake_id}"
+        source = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/{fake_id}"
         
         with pytest.raises(ValueError, match="Document not found"):
             adapter.get_content({"source": source})
     
-    def test_resolve_uri(self, mongodb_collection):
+    def test_resolve_uri(self, mongodb_collection, mongodb_config):
         """Test URI resolution."""
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
         # Valid MongoDB URI
-        uri = "mongodb://localhost/test_db/test_collection/507f1f77bcf86cd799439011"
+        uri = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/507f1f77bcf86cd799439011"
         result = adapter.resolve_uri(uri)
         
         assert result["source"] == uri
-        assert result["connection_string"] == "mongodb://localhost"
-        assert result["database"] == "test_db"
-        assert result["collection"] == "test_collection"
+        assert result["connection_string"] == f"mongodb://{mongodb_config['host']}"
+        assert result["database"] == mongodb_config["database_name"]
+        assert result["collection"] == mongodb_config["collection_name"]
         assert result["document_id"] == "507f1f77bcf86cd799439011"
         
         # Invalid URI
         with pytest.raises(ValueError, match="Not a MongoDB URI"):
             adapter.resolve_uri("http://example.com")
     
-    def test_caching(self, mongodb_collection, insert_test_documents, sample_mongodb_documents):
+    def test_caching(self, mongodb_collection, mongodb_config, insert_test_documents, sample_mongodb_documents):
         """Test content caching mechanism."""
         doc = sample_mongodb_documents[0]
         doc_ids = insert_test_documents(doc)
         doc_id = doc_ids[0]
         
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
-        source = f"mongodb://localhost/test_db/test_collection/{str(doc_id)}"
+        source = f"mongodb://{mongodb_config['host']}/{mongodb_config['database_name']}/{mongodb_config['collection_name']}/{str(doc_id)}"
         
         # First call - should fetch from MongoDB
         result1 = adapter.get_content({"source": source})
@@ -380,12 +380,12 @@ class TestMongoDBAdapterIntegration:
         content = json.loads(result2["content"])
         assert content["name"] == "Document 1"  # Original name, not modified
     
-    def test_cleanup(self, mongodb_collection):
+    def test_cleanup(self, mongodb_collection, mongodb_config):
         """Test adapter cleanup."""
         adapter = MongoDBAdapter({
-            "connection_string": "mongodb://admin:admin123@localhost:27017/",
-            "database": "test_db",
-            "collection": "test_collection"
+            "connection_string": mongodb_config["connection_string"],
+            "database": mongodb_config["database_name"],
+            "collection": mongodb_config["collection_name"]
         })
         
         # Create some cached data

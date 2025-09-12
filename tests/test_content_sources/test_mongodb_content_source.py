@@ -166,7 +166,7 @@ class TestMongoDBContentSourceIntegration:
         
         return source
     
-    def test_fetch_document_from_mongodb(self, mongodb_source, insert_test_documents, sample_mongodb_documents):
+    def test_fetch_document_from_mongodb(self, mongodb_source, mongodb_config, insert_test_documents, sample_mongodb_documents):
         """Test fetching document from MongoDB."""
         # Insert test document
         doc = sample_mongodb_documents[0]
@@ -185,8 +185,8 @@ class TestMongoDBContentSourceIntegration:
         assert content["name"] == "Document 1"
         assert content["type"] == "article"
         
-        assert result["metadata"]["database"] == "test_db"
-        assert result["metadata"]["collection"] == "test_collection"
+        assert result["metadata"]["database"] == mongodb_config["database_name"]
+        assert result["metadata"]["collection"] == mongodb_config["collection_name"]
         assert result["metadata"]["id_value"] == str(doc_id)
     
     def test_fetch_document_with_content_field(self, mongodb_source, insert_test_documents):

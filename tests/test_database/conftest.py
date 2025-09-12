@@ -96,7 +96,7 @@ def docker_compose_up():
     Start Docker Compose services for database testing.
     """
     compose_file = os.path.join(
-        os.path.dirname(__file__), '..', '..', 'docker-compose.database.yml'
+        os.path.dirname(__file__), '..', '..', 'test_containers', 'postgres', 'compose.yaml'
     )
     
     # Check if Docker is available
