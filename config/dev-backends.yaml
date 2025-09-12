@@ -1,0 +1,109 @@
+# Development Backend Configurations
+# All backends are pre-configured with default settings for testing
+
+storage_backends:
+  file:
+    enabled: true
+    path: ./data/file_storage
+    description: "Simple file-based storage using JSON files"
+    
+  sqlite:
+    enabled: true
+    path: ./data/pipeline_data.db
+    description: "Local SQLite database - great for testing"
+    
+  postgresql:
+    enabled: true
+    host: localhost
+    port: 5432
+    database: godocgo_dev
+    username: postgres
+    password: postgres
+    description: "PostgreSQL - requires local postgres or Docker container"
+    docker_command: "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres --name godocgo-postgres postgres:15"
+    
+  mongodb:
+    enabled: true
+    host: localhost
+    port: 27017
+    database: godocgo_dev
+    description: "MongoDB - requires local mongod or Docker container"
+    docker_command: "docker run -d -p 27017:27017 --name godocgo-mongo mongo:6"
+    
+  elasticsearch:
+    enabled: true
+    hosts:
+      - http://localhost:9200
+    index_prefix: godocgo
+    description: "Elasticsearch - requires local ES or Docker container"
+    docker_command: "docker run -d -p 9200:9200 -p 9300:9300 -e 'discovery.type=single-node' --name godocgo-elastic elasticsearch:8.11.0"
+    
+  neo4j:
+    enabled: true
+    uri: bolt://localhost:7687
+    username: neo4j
+    password: password
+    database: neo4j
+    description: "Neo4j graph database - requires local Neo4j or Docker container"
+    docker_command: "docker run -d -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password --name godocgo-neo4j neo4j:5"
+    
+  solr:
+    enabled: true
+    host: localhost
+    port: 8983
+    core_prefix: godocgo
+    description: "Apache Solr - requires local Solr or Docker container"
+    docker_command: "docker run -d -p 8983:8983 --name godocgo-solr solr:9 solr-precreate godocgo"
+    
+  sqlalchemy:
+    enabled: true
+    connection_string: "sqlite:///./data/sqlalchemy.db"
+    description: "SQLAlchemy - flexible SQL abstraction, configured for SQLite by default"
+    alt_configs:
+      postgresql: "postgresql://postgres:postgres@localhost:5432/godocgo_dev"
+      mysql: "mysql://root:password@localhost:3306/godocgo_dev"
+
+# Neo4j Export Configuration (available when primary storage is not Neo4j)
+neo4j_export:
+  enabled: false
+  uri: bolt://localhost:7687
+  username: neo4j
+  password: password
+  database: neo4j
+  description: "Export processed data to Neo4j for graph visualization"
+
+# Default Content Sources for Testing
+test_content_sources:
+  - name: sample_documents
+    type: file
+    base_path: ./test_documents
+    file_pattern: "**/*.{pdf,docx,xlsx,csv,json,txt,md}"
+    description: "Sample documents for testing"
+    
+  - name: test_database
+    type: duckdb
+    database_path: ./test_data/sample.duckdb
+    query: "SELECT * FROM documents"
+    id_fields: "doc_id,version"
+    content_fields: "title,body,metadata"
+    description: "Sample DuckDB database"
+
+# Development Settings
+dev_settings:
+  auto_create_dirs: true
+  auto_init_databases: false  # Set to true to auto-create databases
+  show_backend_status: true
+  test_connections_on_start: true
+  
+# Quick Start Commands
+quick_start:
+  description: "Quick commands to start backend services"
+  all_docker: |
+    # Start all backends with Docker
+    docker-compose -f docker-compose.dev.yml up -d
+  individual:
+    postgresql: "docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres --name godocgo-postgres postgres:15"
+    mongodb: "docker run -d -p 27017:27017 --name godocgo-mongo mongo:6"
+    elasticsearch: "docker run -d -p 9200:9200 -e 'discovery.type=single-node' --name godocgo-elastic elasticsearch:8.11.0"
+    neo4j: "docker run -d -p 7474:7474 -p 7687:7687 -e NEO4J_AUTH=neo4j/password --name godocgo-neo4j neo4j:5"
+    solr: "docker run -d -p 8983:8983 --name godocgo-solr solr:9 solr-precreate godocgo"

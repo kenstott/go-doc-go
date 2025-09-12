@@ -113,7 +113,7 @@ case $ACTION in
             ATTEMPT=0
             
             while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-                if docker exec doculyzer-test-mongodb mongosh --quiet --eval "db.adminCommand('ping')" &> /dev/null; then
+                if docker exec go-doc-go-test-mongodb mongosh --quiet --eval "db.adminCommand('ping')" &> /dev/null; then
                     echo -e "${GREEN}✓ MongoDB is ready!${NC}"
                     echo ""
                     echo -e "${BLUE}MongoDB Connection Info:${NC}"
@@ -133,7 +133,7 @@ case $ACTION in
                         # Import sample documents if they exist
                         if [ -f "tests/test_data/mongodb/sample_documents.json" ]; then
                             echo -e "${YELLOW}Importing sample documents...${NC}"
-                            docker exec -i doculyzer-test-mongodb mongoimport \
+                            docker exec -i go-doc-go-test-mongodb mongoimport \
                                 --host localhost \
                                 --username admin \
                                 --password admin123 \
@@ -168,17 +168,17 @@ case $ACTION in
         ;;
         
     status)
-        if docker ps | grep -q doculyzer-test-mongodb; then
+        if docker ps | grep -q go-doc-go-test-mongodb; then
             echo -e "${GREEN}✓ MongoDB is running${NC}"
             echo ""
-            docker ps --filter name=doculyzer-test-mongodb --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            docker ps --filter name=go-doc-go-test-mongodb --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             echo ""
             echo -e "${BLUE}Connection String:${NC} mongodb://admin:admin123@localhost:27017/"
             
             # Show database stats
             echo ""
             echo -e "${BLUE}Database Statistics:${NC}"
-            docker exec doculyzer-test-mongodb mongosh --quiet \
+            docker exec go-doc-go-test-mongodb mongosh --quiet \
                 -u admin -p admin123 --authenticationDatabase admin \
                 --eval "use test_db; db.stats()" 2>/dev/null || echo "Unable to get stats"
         else
@@ -194,11 +194,11 @@ case $ACTION in
         ;;
         
     shell)
-        if docker ps | grep -q doculyzer-test-mongodb; then
+        if docker ps | grep -q go-doc-go-test-mongodb; then
             echo -e "${YELLOW}Opening MongoDB shell...${NC}"
             echo -e "${BLUE}Connecting as admin to test_db${NC}"
             echo ""
-            docker exec -it doculyzer-test-mongodb mongosh \
+            docker exec -it go-doc-go-test-mongodb mongosh \
                 -u admin -p admin123 --authenticationDatabase admin test_db
         else
             echo -e "${RED}Error: MongoDB is not running${NC}"

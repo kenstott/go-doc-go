@@ -137,10 +137,10 @@ case $ACTION in
         ;;
         
     status)
-        if docker ps | grep -q doculyzer-test-minio; then
+        if docker ps | grep -q go-doc-go-test-minio; then
             echo -e "${GREEN}✓ Minio is running${NC}"
             echo ""
-            docker ps --filter name=doculyzer-test-minio --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            docker ps --filter name=go-doc-go-test-minio --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
             echo ""
             echo -e "${BLUE}Web Console:${NC} http://localhost:9001"
             echo -e "${BLUE}S3 Endpoint:${NC} http://localhost:9000"
