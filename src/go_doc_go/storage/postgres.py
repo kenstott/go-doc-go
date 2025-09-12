@@ -75,7 +75,7 @@ except ImportError:
 try:
     from ..config import Config
 
-    config = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+    config = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
 except Exception as e:
     logger.warning(f"Error configuring PostgreSQL provider: {str(e)}")
     config = None
@@ -891,7 +891,7 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
                 config_obj = self.conn_params.get('config')
                 if not config_obj:
                     from ..config import Config
-                    config_obj = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+                    config_obj = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
                 self.embedding_generator = get_embedding_generator(config_obj)
 
             return self.embedding_generator.generate(search_text)
@@ -2201,7 +2201,7 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
                 config_obj = self.conn_params.get('config')
                 if not config_obj:
                     from ..config import Config
-                    config_obj = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+                    config_obj = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
 
                 self.embedding_generator = get_embedding_generator(config_obj)
 
@@ -2665,7 +2665,7 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
                 config_obj = self.conn_params.get('config')
                 if not config_obj:
                     from ..config import Config
-                    config_obj = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+                    config_obj = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
                 self.embedding_generator = get_embedding_generator(config_obj)
 
             query_embedding = self.embedding_generator.generate(search_text)
@@ -3621,7 +3621,7 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
                     config_obj = self.conn_params.get('config')
                     if not config_obj:
                         from ..config import Config
-                        config_obj = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+                        config_obj = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
                     self.embedding_generator = get_embedding_generator(config_obj)
 
                 query_embedding = self.embedding_generator.generate(search_text)

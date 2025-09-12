@@ -59,7 +59,7 @@ NUMPY_AVAILABLE = False
 # Try to import the config
 try:
     from ..config import Config
-    config = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+    config = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
 except Exception as e:
     logger.warning(f"Error configuring SQLite provider: {str(e)}. Using default settings.")
     config = None

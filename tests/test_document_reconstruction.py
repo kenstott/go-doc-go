@@ -179,7 +179,7 @@ def test_document_reconstruction():
     print("="*80 + "\n")
     
     # 1. Setup configuration
-    config = Config(os.environ.get('DOCULYZER_CONFIG_PATH', 'tests/config.yaml'))
+    config = Config(os.environ.get('GO_DOC_GO_CONFIG_PATH', 'tests/config.yaml'))
     db = config.get_document_database()
     
     # 2. Initialize database
