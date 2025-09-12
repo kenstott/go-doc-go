@@ -37,6 +37,14 @@ try:
 except ImportError:
     logger.warning("SQLAlchemy not available. Install with 'pip install sqlalchemy'.")
 
+# Try to import MySQL connector
+MYSQL_AVAILABLE = False
+try:
+    import mysql.connector
+    MYSQL_AVAILABLE = True
+except ImportError:
+    pass
+
 
 class DatabaseContentSource(ContentSource):
     """Content source for database blob columns or JSON-structured columns."""
@@ -63,12 +71,57 @@ class DatabaseContentSource(ContentSource):
         self.json_mode = config.get("json_mode", False)
         self.json_columns = config.get("json_columns", [])
         self.json_include_metadata = config.get("json_include_metadata", True)
+        
+        # Field mapping configuration
+        self.field_mapping = config.get("field_mapping", {})
+        
+        # Batch processing configuration
+        self.batch_size = config.get("batch_size", 1000)
+        self.max_workers = config.get("max_workers", 1)
+        
+        # Performance configuration
+        self.stream_results = config.get("stream_results", False)
+        self.max_content_length = config.get("max_content_length")
+        self.connection_pool_size = config.get("connection_pool_size", 5)
 
         # Initialize database connection
         self.engine: Optional[SQLAlchemyEngineType] = None
         if self.connection_string:
             try:
-                self.engine = sqlalchemy.create_engine(self.connection_string)
+                # Create engine with connection pooling
+                engine_kwargs = {}
+                
+                # Detect database type and apply specific configurations
+                if self.connection_string.startswith("mysql://") or self.connection_string.startswith("mysql+pymysql://"):
+                    # MySQL-specific configuration
+                    if not MYSQL_AVAILABLE and "pymysql" not in self.connection_string:
+                        logger.warning("MySQL connector not available, trying PyMySQL driver")
+                        # Try to use pymysql if mysql-connector is not available
+                        if not self.connection_string.startswith("mysql+pymysql://"):
+                            self.connection_string = self.connection_string.replace("mysql://", "mysql+pymysql://")
+                    
+                    if self.connection_pool_size:
+                        engine_kwargs["pool_size"] = self.connection_pool_size
+                        engine_kwargs["max_overflow"] = self.connection_pool_size * 2
+                        engine_kwargs["pool_recycle"] = 3600  # Recycle connections after 1 hour for MySQL
+                        
+                elif self.connection_string.startswith("postgresql://") or self.connection_string.startswith("postgres://"):
+                    # PostgreSQL-specific configuration
+                    if self.connection_pool_size:
+                        engine_kwargs["pool_size"] = self.connection_pool_size
+                        engine_kwargs["max_overflow"] = self.connection_pool_size * 2
+                        
+                elif self.connection_string.startswith("sqlite://"):
+                    # SQLite doesn't need connection pooling
+                    pass
+                    
+                else:
+                    # Generic configuration for other databases
+                    if self.connection_pool_size:
+                        engine_kwargs["pool_size"] = self.connection_pool_size
+                        engine_kwargs["max_overflow"] = self.connection_pool_size * 2
+                    
+                self.engine = sqlalchemy.create_engine(self.connection_string, **engine_kwargs)
                 logger.debug(f"Successfully created SQLAlchemy engine for {self.get_safe_connection_string()}")
             except Exception as e:
                 logger.error(f"Error creating SQLAlchemy engine: {str(e)}")
@@ -174,6 +227,11 @@ class DatabaseContentSource(ContentSource):
                 if not row:
                     raise ValueError(f"Document not found: {source_id}")
 
+                # Apply field mapping if configured
+                if self.field_mapping:
+                    return self._apply_field_mapping(row)
+                
+                # Default behavior without field mapping
                 # Extract content and metadata
                 # Use _mapping for SQLAlchemy 2.0 compatibility
                 content = row._mapping[self.content_column]
@@ -186,6 +244,11 @@ class DatabaseContentSource(ContentSource):
                         # If it's not valid UTF-8, encode as base64
                         content = f"<binary data: {len(content)} bytes>"
                         logger.warning(f"Could not decode binary content from {source_id} as UTF-8")
+
+                # Apply content truncation if configured
+                if self.max_content_length and len(content) > self.max_content_length:
+                    content = content[:self.max_content_length]
+                    logger.debug(f"Truncated content from {len(content)} to {self.max_content_length} characters")
 
                 # Extract metadata
                 metadata = {}
@@ -457,3 +520,176 @@ class DatabaseContentSource(ContentSource):
         except Exception as e:
             logger.error(f"Error checking changes for {source_id}: {str(e)}")
             return True  # Assume changed if there's an error
+    
+    def _apply_field_mapping(self, row: Any) -> Dict[str, Any]:
+        """
+        Apply field mapping configuration to database row.
+        
+        Args:
+            row: Database row result
+            
+        Returns:
+            Mapped document dictionary
+        """
+        # Get doc_id
+        doc_id_field = self.field_mapping.get("doc_id", self.id_column)
+        doc_id = row._mapping.get(doc_id_field, "")
+        
+        # Get title
+        title_field = self.field_mapping.get("title")
+        title = row._mapping.get(title_field, "") if title_field else ""
+        
+        # Get content - support concatenation of multiple fields
+        content_field = self.field_mapping.get("content", self.content_column)
+        if isinstance(content_field, list):
+            # Concatenate multiple fields
+            content_parts = []
+            for field in content_field:
+                if field in row._mapping:
+                    value = row._mapping[field]
+                    if value:
+                        content_parts.append(str(value))
+            content = "\n\n".join(content_parts)
+        else:
+            content = row._mapping.get(content_field, "")
+        
+        # Handle bytes content
+        if isinstance(content, bytes):
+            try:
+                content = content.decode('utf-8')
+            except UnicodeDecodeError:
+                content = f"<binary data: {len(content)} bytes>"
+                logger.warning(f"Could not decode binary content as UTF-8")
+        
+        # Apply content truncation if configured
+        if self.max_content_length and len(content) > self.max_content_length:
+            content = content[:self.max_content_length]
+            logger.debug(f"Truncated content to {self.max_content_length} characters")
+        
+        # Build metadata from mapped fields
+        metadata = {}
+        metadata_mapping = self.field_mapping.get("metadata", {})
+        
+        if isinstance(metadata_mapping, dict):
+            for meta_key, db_field in metadata_mapping.items():
+                # Support nested paths like "author.name"
+                if "." in meta_key:
+                    # Handle nested metadata
+                    keys = meta_key.split(".")
+                    current = metadata
+                    for key in keys[:-1]:
+                        if key not in current:
+                            current[key] = {}
+                        current = current[key]
+                    current[keys[-1]] = row._mapping.get(db_field)
+                else:
+                    if db_field in row._mapping:
+                        metadata[meta_key] = row._mapping[db_field]
+        
+        # Add timestamp if configured
+        if self.timestamp_column and self.timestamp_column in row._mapping:
+            metadata["last_modified"] = row._mapping[self.timestamp_column]
+        
+        # Add title to metadata if provided
+        if title:
+            metadata["title"] = title
+        
+        # Create a fully qualified source identifier
+        conn_str_safe = self.connection_string.split('://')[1] if '://' in self.connection_string else 'unknown'
+        db_source = f"db://{conn_str_safe}/{self.query}/{doc_id_field}/{doc_id}/{content_field}"
+        
+        return {
+            "id": db_source,
+            "content": content,
+            "metadata": metadata,
+            "content_hash": self.get_content_hash(content)
+        }
+    
+    def list_documents_batch(self, offset: int = 0, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        List documents with batch processing support.
+        
+        Args:
+            offset: Starting offset for pagination
+            limit: Maximum number of documents to return
+            
+        Returns:
+            List of document metadata dictionaries
+        """
+        if not self.engine:
+            raise ValueError("Database not configured")
+        
+        # Use configured batch_size if no limit specified
+        if limit is None:
+            limit = self.batch_size
+        
+        # Build query to list documents with pagination
+        columns = [self.id_column]
+        columns.extend([col for col in self.metadata_columns if col != self.id_column])
+        if self.timestamp_column and self.timestamp_column not in columns:
+            columns.append(self.timestamp_column)
+        
+        query = f"""
+        SELECT {', '.join(columns)}
+        FROM ({self.query}) as subquery
+        LIMIT {limit} OFFSET {offset}
+        """
+        
+        try:
+            results = []
+            
+            if self.stream_results and SQLALCHEMY_AVAILABLE:
+                # Use streaming for large result sets
+                with self.engine.connect() as conn:
+                    # Use stream_results for memory efficiency
+                    result = conn.execution_options(stream_results=True).execute(text(query))
+                    
+                    for row in result:
+                        metadata = self._extract_metadata_from_row(row)
+                        doc_id = self._create_document_id(row)
+                        
+                        results.append({
+                            "id": doc_id,
+                            "metadata": metadata
+                        })
+            else:
+                # Standard execution
+                with self.engine.connect() as conn:
+                    result = conn.execute(text(query))
+                    
+                    for row in result:
+                        metadata = self._extract_metadata_from_row(row)
+                        doc_id = self._create_document_id(row)
+                        
+                        results.append({
+                            "id": doc_id,
+                            "metadata": metadata
+                        })
+            
+            return results
+        except Exception as e:
+            logger.error(f"Error listing documents batch from database: {str(e)}")
+            raise
+    
+    def _extract_metadata_from_row(self, row: Any) -> Dict[str, Any]:
+        """Extract metadata from a database row."""
+        metadata = {}
+        for col in self.metadata_columns:
+            if col in row._mapping:
+                metadata[col] = row._mapping[col]
+        
+        if self.timestamp_column and self.timestamp_column in row._mapping:
+            metadata["last_modified"] = row._mapping[self.timestamp_column]
+        
+        return metadata
+    
+    def _create_document_id(self, row: Any) -> str:
+        """Create a fully qualified document ID from a database row."""
+        conn_str_safe = self.connection_string.split('://')[1] if '://' in self.connection_string else 'unknown'
+        
+        if self.json_mode:
+            columns_part = "_".join(self.json_columns[:3]) + (
+                f"_plus_{len(self.json_columns) - 3}_more" if len(self.json_columns) > 3 else "")
+            return f"db://{conn_str_safe}/{self.query}/{self.id_column}/{row._mapping[self.id_column]}/{columns_part}/json"
+        else:
+            return f"db://{conn_str_safe}/{self.query}/{self.id_column}/{row._mapping[self.id_column]}/{self.content_column}"

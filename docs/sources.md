@@ -140,6 +140,58 @@ content_sources:
         created: "created_at"
 ```
 
+### JSON Document Mode
+
+```yaml
+content_sources:
+  - name: "product_catalog"
+    type: "database"
+    connection_string: "postgresql://user:pass@host/ecommerce"
+    query: "products"
+    json_mode: true  # Export entire rows as JSON documents
+    
+    # Optional: specify which columns to include (default: all except ID)
+    json_columns: ["name", "description", "price", "category", "specs"]
+    
+    # Include metadata in the JSON content (default: true)
+    json_include_metadata: true
+    
+    # Standard options still apply
+    id_column: "product_id"
+    metadata_columns: ["category", "brand", "created_at"]
+    timestamp_column: "updated_at"
+    batch_size: 500
+```
+
+### Binary Content Handling
+
+```yaml
+content_sources:
+  - name: "document_blobs"
+    type: "database"
+    connection_string: "postgresql://user:pass@host/docstore"
+    query: |
+      SELECT 
+        doc_id,
+        file_name,
+        binary_content,
+        mime_type,
+        created_at
+      FROM documents
+      WHERE binary_content IS NOT NULL
+    
+    field_mapping:
+      doc_id: "doc_id"
+      title: "file_name"
+      content: "binary_content"  # Will be handled as binary data
+      metadata:
+        mime_type: "mime_type"
+        created: "created_at"
+    
+    # Truncate very large binary content for performance
+    max_content_length: 1048576  # 1MB limit
+```
+
 ## File System Sources
 
 ### Basic File Ingestion
@@ -357,6 +409,83 @@ content_sources:
       page_size: 100
 ```
 
+### JSON:API Standard Support
+
+```yaml
+content_sources:
+  - name: "jsonapi_content"
+    type: "web"
+    
+    # JSON:API endpoints
+    start_urls:
+      - "https://api.company.com/v1/articles"
+      - "https://api.company.com/v1/posts"
+    
+    # JSON:API specific configuration
+    api_format: "jsonapi"
+    
+    # Authentication for JSON:API
+    headers:
+      Authorization: "Bearer ${API_TOKEN}"
+      Content-Type: "application/vnd.api+json"
+      Accept: "application/vnd.api+json"
+    
+    # JSON:API response parsing
+    content_selectors:
+      title: "data[*].attributes.title"
+      body: "data[*].attributes.content"
+      id: "data[*].id"
+      type: "data[*].type"
+    
+    # Handle JSON:API relationships and included resources
+    include_relationships: true
+    follow_links: true
+    link_selector: "links.next"  # Follow pagination links
+    
+    max_pages: 100
+    delay: 0.5
+```
+
+### GraphQL API Support
+
+```yaml
+content_sources:
+  - name: "graphql_content" 
+    type: "web"
+    
+    # GraphQL endpoint
+    start_urls:
+      - "https://api.company.com/graphql"
+    
+    # GraphQL query configuration
+    method: "POST"
+    headers:
+      Authorization: "Bearer ${GRAPHQL_TOKEN}"
+      Content-Type: "application/json"
+    
+    # GraphQL query body
+    request_body: |
+      {
+        "query": "query GetArticles($first: Int!) { 
+          articles(first: $first) { 
+            nodes { 
+              id title content createdAt author { name email } 
+            } 
+            pageInfo { hasNextPage endCursor }
+          } 
+        }",
+        "variables": { "first": 100 }
+      }
+    
+    # Parse GraphQL response
+    content_selectors:
+      title: "data.articles.nodes[*].title"
+      body: "data.articles.nodes[*].content"
+      id: "data.articles.nodes[*].id"
+      author: "data.articles.nodes[*].author.name"
+      created: "data.articles.nodes[*].createdAt"
+```
+
 ### Web Scraping
 
 ```yaml
@@ -440,6 +569,80 @@ content_sources:
     max_records: 10000
 ```
 
+### Microsoft Exchange
+
+```yaml
+content_sources:
+  - name: "exchange_emails"
+    type: "exchange"
+    
+    # EWS (Exchange Web Services) Configuration
+    server_url: "https://mail.company.com/EWS/Exchange.asmx"
+    username: "${EXCHANGE_USER}"
+    password: "${EXCHANGE_PASS}"
+    
+    # Authentication method: 'basic', 'ntlm', or 'oauth2'
+    auth_method: "ntlm"
+    
+    # Folders to scan
+    folders:
+      - "Inbox"
+      - "Sent Items"
+      - "Public Folders/Knowledge Base"
+    
+    # Email filtering
+    filters:
+      - from_contains: ["@company.com"]
+      - subject_contains: ["Policy", "Documentation", "Manual"]
+      - date_range:
+          start: "2024-01-01"
+          end: "2024-12-31"
+    
+    # Content extraction
+    include_attachments: true
+    attachment_extensions: [".pdf", ".docx", ".xlsx", ".pptx"]
+    max_attachment_size: 10485760  # 10MB
+    
+    # Rate limiting
+    max_emails_per_folder: 1000
+    delay_between_requests: 0.1
+```
+
+### Microsoft Graph API (Exchange Online)
+
+```yaml
+content_sources:
+  - name: "graph_emails"
+    type: "exchange"
+    
+    # Microsoft Graph API Configuration
+    api_type: "graph"  # Use Graph API instead of EWS
+    tenant_id: "${AZURE_TENANT_ID}"
+    client_id: "${AZURE_CLIENT_ID}"
+    client_secret: "${AZURE_CLIENT_SECRET}"
+    
+    # User mailboxes to scan
+    mailboxes:
+      - "user1@company.com"
+      - "shared-docs@company.com"
+      - "support@company.com"
+    
+    # Graph API specific options
+    scopes: ["https://graph.microsoft.com/.default"]
+    
+    # Email filtering via Graph query
+    odata_filter: |
+      (from/emailAddress/address eq 'docs@company.com') and
+      (receivedDateTime ge 2024-01-01T00:00:00Z) and
+      (hasAttachments eq true)
+    
+    # Content options
+    include_body: true
+    body_type: "text"  # 'text' or 'html'
+    include_attachments: true
+    max_items: 1000
+```
+
 ## Configuration Tips
 
 ### Environment Variables
@@ -473,12 +676,65 @@ content_sources:
     
     # Batch processing
     batch_size: 1000        # Process in chunks
-    max_workers: 4          # Parallel workers
+    max_workers: 4          # Parallel workers (reserved for future use)
     connection_pool_size: 8 # DB connection pool
     
     # Memory management
-    stream_results: true    # Don't load all into memory
+    stream_results: true    # Stream results for large datasets
     max_content_length: 50000  # Truncate very long content
+    
+    # Advanced performance options
+    field_mapping:
+      doc_id: "id"
+      content: ["title", "content", "summary"]  # Concatenate multiple fields
+      metadata:
+        author.name: "author_name"              # Nested metadata paths
+        author.email: "author_email"
+        department.name: "dept_name"
+```
+
+### DuckDB Connection Testing
+
+```yaml
+content_sources:
+  - name: "sec-filings"
+    type: "duckdb"
+    database_path: "/data/sec-parquet"
+    enable_hive_partitioning: true
+    
+    connection_config:
+      threads: 8
+      memory_limit: "4GB"
+      max_expression_depth: 1000
+    
+    queries:
+      - name: "10k-filings"
+        sql: "SELECT * FROM read_parquet('cik=*/filing_type=10K/*/mda.parquet', hive_partitioning=true)"
+        id_columns: ["cik", "filing_type", "year"]
+        content_column: "paragraph_text"
+```
+
+**Testing DuckDB Connection:**
+
+```python
+from go_doc_go.content_source.duckdb import DuckDBContentSource
+
+config = {
+    "name": "test-duckdb",
+    "database_path": "/data/parquet",
+    "queries": [{"name": "test", "sql": "SELECT 1 as test", "id_columns": ["test"], "content_column": "test"}]
+}
+
+source = DuckDBContentSource(config)
+if source.test_connection():
+    print("✅ DuckDB connection successful")
+    
+    # Get query information
+    query_info = source.get_query_info()
+    for query in query_info:
+        print(f"Query '{query['name']}': {len(query['id_columns'])} ID columns")
+else:
+    print("❌ DuckDB connection failed")
 ```
 
 ### Content Filtering
@@ -545,6 +801,192 @@ for source_config in config.content_sources:
         print(f"✅ {source_config['name']}: {len(test_docs)} documents available")
     except Exception as e:
         print(f"❌ {source_config['name']}: {str(e)}")
+```
+
+## Troubleshooting and Common Issues
+
+### Database Connection Issues
+
+**Issue: "SQLAlchemy is required but not available"**
+```bash
+# Install SQLAlchemy
+pip install sqlalchemy
+
+# For specific database drivers:
+pip install psycopg2-binary  # PostgreSQL
+pip install mysql-connector-python  # MySQL
+pip install pymysql  # MySQL alternative
+```
+
+**Issue: "MySQL connector not available, trying PyMySQL driver"**
+- This is normal fallback behavior
+- Install MySQL connector for better performance: `pip install mysql-connector-python`
+
+**Issue: Database connection timeouts**
+```yaml
+content_sources:
+  - name: "database_with_timeouts"
+    connection_string: "postgresql://user:pass@host/db?connect_timeout=30"
+    connection_pool_size: 5  # Reduce pool size
+    stream_results: true     # Enable streaming for large results
+```
+
+**Issue: Binary content not displaying properly**
+- Binary data is automatically detected and handled
+- Content appears as `<binary data: N bytes>` when not UTF-8 decodable
+- Use `max_content_length` to limit binary data processing
+
+### DuckDB Issues
+
+**Issue: "DuckDB is required but not available"**
+```bash
+pip install duckdb
+```
+
+**Issue: Thread configuration warnings**
+```yaml
+# Explicitly configure threads to avoid warnings
+content_sources:
+  - name: "duckdb_optimized"
+    type: "duckdb"
+    connection_config:
+      threads: 4  # Match your CPU cores
+      memory_limit: "2GB"
+```
+
+**Issue: Parquet file not found errors**
+```yaml
+# Ensure hive partitioning is enabled for partitioned datasets
+content_sources:
+  - name: "hive_parquet"
+    type: "duckdb"
+    enable_hive_partitioning: true
+    queries:
+      - sql: "SELECT * FROM read_parquet('data/*/*/*.parquet', hive_partitioning=true)"
+```
+
+### Performance Issues
+
+**Issue: Memory usage too high**
+```yaml
+content_sources:
+  - name: "memory_optimized"
+    type: "database"
+    batch_size: 100          # Reduce batch size
+    stream_results: true     # Enable streaming
+    max_content_length: 10000  # Limit content size
+```
+
+**Issue: Slow database queries**
+```yaml
+content_sources:
+  - name: "optimized_queries"
+    type: "database"
+    query: |
+      SELECT id, content, created_at
+      FROM articles 
+      WHERE created_at >= '2024-01-01'  -- Add WHERE clauses
+      AND status = 'published'          -- Limit result set
+      ORDER BY created_at DESC
+      LIMIT 10000                       -- Limit total results
+    
+    # Use indexes on filtered columns
+    # CREATE INDEX idx_articles_created_status ON articles(created_at, status);
+```
+
+### Authentication Issues
+
+**Issue: SharePoint/Graph API authentication failures**
+```yaml
+# Ensure proper Azure app registration permissions
+content_sources:
+  - name: "sharepoint_auth"
+    type: "sharepoint"
+    # Use service principal authentication
+    client_id: "${AZURE_CLIENT_ID}"
+    client_secret: "${AZURE_CLIENT_SECRET}"
+    tenant_id: "${AZURE_TENANT_ID}"
+    
+    # Required permissions in Azure:
+    # - Sites.Read.All
+    # - Files.Read.All
+```
+
+**Issue: API rate limiting**
+```yaml
+content_sources:
+  - name: "rate_limited_api"
+    type: "web"
+    delay: 2.0  # Increase delay between requests
+    max_pages: 100  # Limit total requests
+    
+    # Use authentication to get higher rate limits
+    headers:
+      Authorization: "Bearer ${API_TOKEN}"
+```
+
+### Content Source Discovery
+
+**Test content source connections:**
+```python
+from go_doc_go.content_source.factory import get_content_source
+
+def test_content_sources(configs):
+    """Test all configured content sources."""
+    for config in configs:
+        try:
+            source = get_content_source(config)
+            
+            # Test connection if available
+            if hasattr(source, 'test_connection'):
+                if source.test_connection():
+                    print(f"✅ {config['name']}: Connection successful")
+                else:
+                    print(f"❌ {config['name']}: Connection failed")
+            else:
+                # Try to list a few documents
+                docs = source.list_documents()
+                print(f"✅ {config['name']}: Found {len(docs)} documents")
+                
+        except Exception as e:
+            print(f"❌ {config['name']}: Error - {str(e)}")
+```
+
+### Debugging Tips
+
+**Enable detailed logging:**
+```python
+import logging
+
+# Enable debug logging for content sources
+logging.getLogger('go_doc_go.content_source').setLevel(logging.DEBUG)
+
+# Enable SQL query logging
+logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
+```
+
+**Check configuration validity:**
+```python
+def validate_config(config):
+    """Validate content source configuration."""
+    required_fields = ['name', 'type']
+    for field in required_fields:
+        if field not in config:
+            raise ValueError(f"Missing required field: {field}")
+    
+    source_type = config['type']
+    type_specific_requirements = {
+        'database': ['connection_string'],
+        'duckdb': ['database_path', 'queries'],
+        'file': ['base_path'],
+        's3': ['bucket'],
+        'web': ['start_urls']
+    }
+    
+    if source_type in type_specific_requirements:
+        for field in type_specific_requirements[source_type]:
+            if field not in config:
+                raise ValueError(f"{source_type} source missing required field: {field}")
 ```
 
 ## Next Steps

@@ -593,6 +593,51 @@ def debug_element_structure(elements: List[Dict], max_depth: int = 3):
 8. **Work Queue Coordination**: Use config hash as run_id for automatic worker coordination
 9. **Atomic Operations**: Use PostgreSQL row-level locking for atomic document claiming
 10. **Distributed Processing**: Pull-based work queue pattern with identical workers
+11. **Design Integrity Over Backward Compatibility**: Prefer breaking changes to maintain clean design and correct implementation rather than accumulating technical debt through backward compatibility hacks. When the correct design requires breaking changes, make them cleanly and document migration paths.
+
+## Design Integrity Principle
+
+### Breaking Changes Are Preferred When Design Is Wrong
+
+**Philosophy**: Clean design and correct implementation take precedence over backward compatibility. Technical debt from compatibility hacks compounds over time and makes the codebase harder to maintain.
+
+**When to Break Compatibility**:
+- The current implementation violates design principles
+- Field names are misleading or incorrect
+- The API encourages incorrect usage
+- Maintaining compatibility would require ugly hacks
+- The correct fix is simpler than the compatibility layer
+
+**Examples of Good Breaking Changes**:
+```python
+# BAD: Maintaining compatibility with poor design
+def _validate_queries(self):
+    # Supporting both old and new field names
+    if "id_columns" not in query and "doc_id_columns" not in query:
+        raise ValueError("Missing id_columns or doc_id_columns")
+    # Normalize internally (adds complexity)
+    if "doc_id_columns" in query and "id_columns" not in query:
+        query["id_columns"] = query["doc_id_columns"]
+
+# GOOD: Fix the design properly
+def _validate_queries(self):
+    # Breaking change but cleaner
+    if "id_columns" not in query:
+        raise ValueError("Missing required 'id_columns' field")
+```
+
+**Migration Strategy**:
+1. Make the breaking change cleanly
+2. Document the change clearly in release notes
+3. Provide a migration script if needed
+4. Update all tests to use the new design
+5. Bump version number appropriately (major version for breaking changes)
+
+**Anti-Pattern to Avoid**:
+```python
+# DON'T DO THIS: Accumulating compatibility cruft
+field = config.get("new_name", config.get("old_name", config.get("legacy_name", config.get("ancient_name"))))
+```
 
 ## Common Issues and Solutions
 
