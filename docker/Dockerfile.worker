@@ -1,0 +1,144 @@
+# Go-Doc-Go Worker Container
+# Specialized container for pipeline processing workers
+
+FROM python:3.11-slim as builder
+
+# Set build arguments
+ARG FEATURES="embedding-all,db-all,source-all"
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install system build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        ca-certificates \
+        libmagic1 \
+        libmagic-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy Python package configuration and source code for editable install
+COPY ./pyproject.toml .
+COPY ./requirements.txt* .
+COPY ./src/ ./src/
+COPY ./README.md .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e .[$FEATURES]
+
+# Production stage
+FROM python:3.11-slim as production
+
+# Set runtime arguments and environment variables
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/home/goDocGo/.local/bin:$PATH" \
+    GO_DOC_GO_MODE=worker \
+    GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml \
+    PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+
+# Install runtime system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libmagic1 \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash goDocGo && \
+    mkdir -p /app/data /app/logs /app/config /app/cache /app/temp && \
+    chown -R goDocGo:goDocGo /app
+
+# Copy Python packages from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Switch to non-root user
+USER goDocGo
+WORKDIR /app
+
+# Copy application source code
+COPY --chown=goDocGo:goDocGo ./src/ /app/src/
+COPY --chown=goDocGo:goDocGo ./config.yaml /app/config/
+COPY --chown=goDocGo:goDocGo ./examples/ /app/examples/
+
+# Health check for worker processes
+HEALTHCHECK --interval=60s --timeout=10s --start-period=30s --retries=3 \
+    CMD python -c "import os, sys; sys.path.append('/app'); from src.go_doc_go.work_queue import WorkQueue; from src.go_doc_go.config_db import PipelineConfigDB; db = PipelineConfigDB(); print('Worker healthy')" || exit 1
+
+# Create worker startup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+echo "Starting Go-Doc-Go Worker..."\n\
+echo "Worker ID: $HOSTNAME"\n\
+echo "Config DB: $PIPELINE_CONFIG_DB"\n\
+echo "Mode: $GO_DOC_GO_MODE"\n\
+\n\
+# Wait for database to be ready\n\
+while ! python -c "from src.go_doc_go.config_db import PipelineConfigDB; PipelineConfigDB()"; do\n\
+    echo "Waiting for pipeline config database..."\n\
+    sleep 5\n\
+done\n\
+\n\
+# Start the worker\n\
+exec python -m src.go_doc_go.cli.worker\n\
+' > /app/start-worker.sh && chmod +x /app/start-worker.sh
+
+# Default command
+CMD ["/app/start-worker.sh"]
+
+# Development stage
+FROM production as development
+
+USER root
+
+# Install development dependencies and debugging tools
+RUN pip install --no-cache-dir -e .[development] && \
+    apt-get update && apt-get install -y --no-install-recommends \
+        vim \
+        htop \
+        strace \
+    && rm -rf /var/lib/apt/lists/*
+
+USER goDocGo
+
+# Override for development with more verbose logging
+ENV LOG_LEVEL=DEBUG
+
+CMD ["/app/start-worker.sh"]
+
+# Minimal worker stage - for resource-constrained environments
+FROM python:3.11-slim as minimal
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    GO_DOC_GO_MODE=worker
+
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libmagic1 \
+        curl \
+        gcc \
+        libc6-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash goDocGo
+
+# Install minimal Python dependencies
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e .[minimal,db-core]
+
+USER goDocGo
+WORKDIR /app
+
+# Copy only essential files
+COPY --chown=goDocGo:goDocGo ./src/go_doc_go/work_queue/ /app/src/go_doc_go/work_queue/
+COPY --chown=goDocGo:goDocGo ./src/go_doc_go/config_db/ /app/src/go_doc_go/config_db/
+COPY --chown=goDocGo:goDocGo ./src/go_doc_go/cli/ /app/src/go_doc_go/cli/
+
+# Simple startup for minimal worker
+CMD ["python", "-m", "src.go_doc_go.cli.worker"]

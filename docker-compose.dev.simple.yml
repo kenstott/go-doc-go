@@ -1,0 +1,50 @@
+# Simple Hot-Reload Development Environment
+# One command to start everything with hot reloading
+
+services:
+  # Backend with hot reloading
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.simple
+    ports:
+      - "8000:8000"
+    volumes:
+      # Hot reload - mount your source code
+      - ./src:/app/src
+      - ./config.yaml:/app/config/config.yaml
+      # Data persistence
+      - dev-data:/app/data
+      - dev-logs:/app/logs
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - PYTHONPATH=/app/src
+    # Override to use Flask dev server with hot reload
+    command: ["python", "-m", "flask", "--app", "go_doc_go.server", "run", "--host=0.0.0.0", "--port=8000", "--debug", "--reload"]
+
+  # Frontend with hot reloading (Vite dev server)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "3000:3000"
+    volumes:
+      # Hot reload - mount frontend source
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/index.html:/app/index.html
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+      - VITE_HOT=true
+    depends_on:
+      - backend
+
+volumes:
+  dev-data:
+  dev-logs:

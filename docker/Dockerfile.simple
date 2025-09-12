@@ -1,0 +1,49 @@
+# Simple Go-Doc-Go Container for Development
+# Uses pre-built wheels and minimal dependencies to avoid build issues
+
+FROM python:3.11-slim-bookworm
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install minimal runtime dependencies only
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+        && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash goDocGo
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements and install with pre-built wheels only
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir --only-binary=all -r requirements.txt || \
+    pip install --no-cache-dir flask pyyaml pydantic requests python-dateutil
+
+# Copy source code
+COPY ./src/ ./src/
+COPY ./config.yaml ./config/
+
+# Create required directories
+RUN mkdir -p /app/data /app/logs /app/config /app/cache && \
+    chown -R goDocGo:goDocGo /app
+
+USER goDocGo
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Simple startup command
+ENV PYTHONPATH=/app/src
+ENV GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml
+ENV PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+ENV FLASK_RUN_HOST=0.0.0.0
+ENV FLASK_RUN_PORT=8000
+
+CMD ["python", "-m", "flask", "--app", "go_doc_go.server", "run", "--host=0.0.0.0", "--port=8000"]

@@ -1,0 +1,61 @@
+# Go-Doc-Go Docker Ignore File
+# Minimal exclusions to allow proper backend builds
+
+# Git and version control
+.git/
+.gitignore
+
+# Python cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.env
+.venv
+
+# IDE files  
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development logs
+*.log
+logs/
+
+# Node.js (only exclude from backend builds)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+
+# Docker files (avoid recursion)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Large temp files
+*.tar.gz
+*.zip
+*.tar
+*.gz
+
+# Frontend build artifacts (but allow source)
+frontend/node_modules/
+frontend/dist/
+frontend/build/

@@ -1,0 +1,50 @@
+# Simple Go-Doc-Go Development Environment
+# Minimal setup to get containers running quickly
+
+services:
+  # Backend Development Server (Simplified)
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.simple
+    container_name: go-doc-go-simple-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - LOG_LEVEL=DEBUG
+      - PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+      - GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml
+    volumes:
+      # Hot reload for development
+      - ./src:/app/src:ro
+      - ./config.yaml:/app/config/config.yaml:ro
+      - go-doc-go-data:/app/data
+      - go-doc-go-logs:/app/logs
+    command: ["python", "-m", "flask", "--app", "go_doc_go.server", "run", "--host=0.0.0.0", "--port=8000", "--debug"]
+
+  # Frontend Development Server
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend
+      target: development
+    container_name: go-doc-go-simple-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+      - VITE_NODE_ENV=development
+    volumes:
+      - ./frontend/src:/app/src:ro
+      - ./frontend/package.json:/app/package.json:ro
+      - ./frontend/package-lock.json:/app/package-lock.json:ro
+      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
+      - ./frontend/vite.config.js:/app/vite.config.js:ro
+
+volumes:
+  go-doc-go-data:
+    driver: local
+  go-doc-go-logs:
+    driver: local

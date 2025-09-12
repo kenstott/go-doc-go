@@ -1,0 +1,304 @@
+# Go-Doc-Go Development Environment
+# Docker Compose configuration for local development with hot reloading
+
+version: '3.8'
+
+services:
+  # Backend Development Server
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+      target: development
+      args:
+        FEATURES: "embedding-all,db-all,source-all,development"
+    container_name: go-doc-go-dev-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Database connections
+      - DATABASE_URL=postgresql://go_doc_go:go_doc_go_dev@postgres:5432/go_doc_go_dev
+      - REDIS_URL=redis://redis:6379
+      
+      # Pipeline configuration
+      - PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+      - GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml
+      
+      # Development settings
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - LOG_LEVEL=DEBUG
+      
+      # CORS for development
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      
+      # Optional: Pre-configured API keys for development
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY:-}
+    volumes:
+      # Source code hot reloading
+      - ./src:/app/src:ro
+      - ./config.yaml:/app/config/config.yaml:ro
+      - ./examples:/app/examples:ro
+      
+      # Persistent data
+      - dev_data:/app/data
+      - dev_logs:/app/logs
+      - dev_cache:/app/cache
+      
+      # Development convenience
+      - ~/.bashrc:/home/goDocGo/.bashrc:ro
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - go-doc-go-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Frontend Development Server with Hot Reloading
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      target: development
+    container_name: go-doc-go-dev-frontend
+    ports:
+      - "3000:5173"  # Vite dev server
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+      - REACT_APP_VERSION=dev
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      # Source code hot reloading
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
+      - ./frontend/index.html:/app/index.html:ro
+      - ./frontend/vite.config.js:/app/vite.config.js:ro
+      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
+      
+      # Node modules persistence
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - go-doc-go-dev
+    restart: unless-stopped
+
+  # Development Pipeline Workers
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+      target: development
+      args:
+        FEATURES: "embedding-all,db-all,source-all,development"
+    deploy:
+      replicas: 2
+    environment:
+      # Database connections
+      - DATABASE_URL=postgresql://go_doc_go:go_doc_go_dev@postgres:5432/go_doc_go_dev
+      - REDIS_URL=redis://redis:6379
+      
+      # Pipeline configuration
+      - PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+      - GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml
+      - GO_DOC_GO_MODE=worker
+      
+      # Development settings
+      - LOG_LEVEL=DEBUG
+      - PYTHONPATH=/app
+      
+      # Optional: API keys
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      # Source code
+      - ./src:/app/src:ro
+      - ./config.yaml:/app/config/config.yaml:ro
+      - ./examples:/app/examples:ro
+      
+      # Shared data with backend
+      - dev_data:/app/data
+      - dev_logs:/app/logs
+      - dev_cache:/app/cache
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    networks:
+      - go-doc-go-dev
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: go-doc-go-dev-postgres
+    environment:
+      - POSTGRES_DB=go_doc_go_dev
+      - POSTGRES_USER=go_doc_go
+      - POSTGRES_PASSWORD=go_doc_go_dev
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./test_containers/postgres/init.sql:/docker-entrypoint-initdb.d/01_init.sql:ro
+    ports:
+      - "5432:5432"  # Exposed for external tools (pgAdmin, etc.)
+    networks:
+      - go-doc-go-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U go_doc_go -d go_doc_go_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Caching and Work Queues
+  redis:
+    image: redis:7-alpine
+    container_name: go-doc-go-dev-redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"  # Exposed for external tools
+    networks:
+      - go-doc-go-dev
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Optional: Elasticsearch for Advanced Search
+  elasticsearch:
+    extends:
+      file: ./test_containers/elasticsearch/compose.yaml
+      service: elasticsearch-test
+    container_name: go-doc-go-dev-elasticsearch
+    profiles: ["search", "full"]
+    networks:
+      - go-doc-go-dev
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+
+  # Optional: MongoDB for Document Storage
+  mongodb:
+    extends:
+      file: ./test_containers/mongodb/compose.yaml
+      service: mongodb-test
+    container_name: go-doc-go-dev-mongodb
+    profiles: ["nosql", "full"]
+    networks:
+      - go-doc-go-dev
+    volumes:
+      - mongodb_data:/data/db
+
+  # Optional: Neo4j for Graph Relationships
+  neo4j:
+    extends:
+      file: ./test_containers/neo4j/compose.yaml
+      service: neo4j-test
+    container_name: go-doc-go-dev-neo4j
+    profiles: ["graph", "full"]
+    networks:
+      - go-doc-go-dev
+    volumes:
+      - neo4j_data:/data
+
+  # Optional: MinIO for S3-Compatible Storage
+  minio:
+    extends:
+      file: ./test_containers/minio/compose.yaml
+      service: minio-test
+    container_name: go-doc-go-dev-minio
+    profiles: ["s3", "full"]
+    networks:
+      - go-doc-go-dev
+    volumes:
+      - minio_data:/data
+
+  # MinIO Setup (creates buckets)
+  minio-init:
+    extends:
+      file: ./test_containers/minio/compose.yaml
+      service: minio-init
+    container_name: go-doc-go-dev-minio-init
+    profiles: ["s3", "full"]
+    depends_on:
+      - minio
+    networks:
+      - go-doc-go-dev
+
+  # Optional: Solr for Search
+  solr:
+    extends:
+      file: ./test_containers/solr/compose.yaml
+      service: solr
+    container_name: go-doc-go-dev-solr
+    profiles: ["search", "full"]
+    networks:
+      - go-doc-go-dev
+    volumes:
+      - solr_data:/var/solr
+
+  # Development Tools Container
+  dev-tools:
+    image: postgres:15-alpine
+    container_name: go-doc-go-dev-tools
+    profiles: ["tools"]
+    environment:
+      - PGPASSWORD=go_doc_go_dev
+    volumes:
+      - ./scripts:/scripts:ro
+      - dev_data:/app/data
+    networks:
+      - go-doc-go-dev
+    command: sleep infinity
+    depends_on:
+      - postgres
+      - redis
+
+networks:
+  go-doc-go-dev:
+    name: go-doc-go-dev
+    driver: bridge
+
+volumes:
+  # Application data
+  dev_data:
+    name: go-doc-go-dev-data
+  dev_logs:
+    name: go-doc-go-dev-logs
+  dev_cache:
+    name: go-doc-go-dev-cache
+  
+  # Database volumes
+  postgres_data:
+    name: go-doc-go-dev-postgres
+  redis_data:
+    name: go-doc-go-dev-redis
+  
+  # Optional storage volumes
+  elasticsearch_data:
+    name: go-doc-go-dev-elasticsearch
+  mongodb_data:
+    name: go-doc-go-dev-mongodb
+  neo4j_data:
+    name: go-doc-go-dev-neo4j
+  minio_data:
+    name: go-doc-go-dev-minio
+  solr_data:
+    name: go-doc-go-dev-solr
+  
+  # Frontend dependencies
+  frontend_node_modules:
+    name: go-doc-go-dev-frontend-modules

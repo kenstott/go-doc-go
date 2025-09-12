@@ -1,0 +1,382 @@
+# Go-Doc-Go Production Environment
+# Docker Compose configuration for production deployment with scaling and monitoring
+
+version: '3.8'
+
+services:
+  # Production Backend Service
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+      target: production
+      args:
+        FEATURES: "embedding-all,db-all,source-all"
+    image: go-doc-go/backend:${TAG:-latest}
+    container_name: go-doc-go-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Database connections
+      - DATABASE_URL=${DATABASE_URL:-postgresql://go_doc_go:changeme@postgres:5432/go_doc_go}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      
+      # Pipeline configuration
+      - PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+      - GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml
+      
+      # Production settings
+      - FLASK_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONPATH=/app
+      
+      # Security
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://yourdomain.com}
+      
+      # API Keys (from Docker secrets or environment)
+      - OPENAI_API_KEY_FILE=/run/secrets/openai_api_key
+      - ANTHROPIC_API_KEY_FILE=/run/secrets/anthropic_api_key
+    volumes:
+      # Persistent data
+      - app_data:/app/data
+      - app_logs:/app/logs
+      - app_cache:/app/cache
+      
+      # Configuration
+      - ./config:/app/config:ro
+    secrets:
+      - openai_api_key
+      - anthropic_api_key
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - go-doc-go-internal
+      - go-doc-go-external
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Production Frontend with Nginx
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      target: production
+      args:
+        REACT_APP_API_URL: ${FRONTEND_API_URL:-/api}
+        REACT_APP_VERSION: ${TAG:-latest}
+    image: go-doc-go/frontend:${TAG:-latest}
+    container_name: go-doc-go-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - NGINX_HOST=${NGINX_HOST:-localhost}
+    volumes:
+      # SSL certificates (if using HTTPS)
+      - ./ssl:/etc/ssl/certs:ro
+      - ./docker/nginx-prod.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+    networks:
+      - go-doc-go-external
+      - go-doc-go-internal
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Scalable Pipeline Workers
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+      target: production
+      args:
+        FEATURES: "embedding-all,db-all,source-all"
+    image: go-doc-go/worker:${TAG:-latest}
+    environment:
+      # Database connections
+      - DATABASE_URL=${DATABASE_URL:-postgresql://go_doc_go:changeme@postgres:5432/go_doc_go}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      
+      # Pipeline configuration
+      - PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+      - GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml
+      - GO_DOC_GO_MODE=worker
+      
+      # Production settings
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONPATH=/app
+      - WORKER_TIMEOUT=${WORKER_TIMEOUT:-300}
+      
+      # Resource limits per worker
+      - MAX_MEMORY_MB=${WORKER_MAX_MEMORY_MB:-4096}
+      - MAX_CPU_PERCENT=${WORKER_MAX_CPU_PERCENT:-80}
+      
+      # API Keys (from Docker secrets)
+      - OPENAI_API_KEY_FILE=/run/secrets/openai_api_key
+      - ANTHROPIC_API_KEY_FILE=/run/secrets/anthropic_api_key
+    volumes:
+      # Shared data with backend
+      - app_data:/app/data
+      - app_logs:/app/logs
+      - app_cache:/app/cache
+      - worker_temp:/app/temp
+      
+      # Configuration
+      - ./config:/app/config:ro
+    secrets:
+      - openai_api_key
+      - anthropic_api_key
+    depends_on:
+      - postgres
+      - redis
+      - backend
+    networks:
+      - go-doc-go-internal
+    restart: unless-stopped
+    deploy:
+      replicas: ${WORKER_REPLICAS:-3}
+      resources:
+        limits:
+          memory: ${WORKER_MEMORY_LIMIT:-4G}
+          cpus: ${WORKER_CPU_LIMIT:-2.0}
+        reservations:
+          memory: ${WORKER_MEMORY_RESERVATION:-2G}
+          cpus: ${WORKER_CPU_RESERVATION:-1.0}
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+        max_attempts: 5
+      update_config:
+        parallelism: 1
+        delay: 60s
+        order: stop-first
+    healthcheck:
+      test: ["CMD", "python", "-c", "from src.go_doc_go.config_db import PipelineConfigDB; PipelineConfigDB()"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 60s
+
+  # PostgreSQL Database with Persistence
+  postgres:
+    image: postgres:15-alpine
+    container_name: go-doc-go-postgres
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-go_doc_go}
+      - POSTGRES_USER=${POSTGRES_USER:-go_doc_go}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+    secrets:
+      - postgres_password
+    networks:
+      - go-doc-go-internal
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-go_doc_go} -d ${POSTGRES_DB:-go_doc_go}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Caching and Job Queues
+  redis:
+    image: redis:7-alpine
+    container_name: go-doc-go-redis
+    command: redis-server /etc/redis/redis.conf
+    volumes:
+      - redis_data:/data
+      - ./config/redis.conf:/etc/redis/redis.conf:ro
+    networks:
+      - go-doc-go-internal
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Monitoring and Observability
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: go-doc-go-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - go-doc-go-internal
+    profiles: ["monitoring"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: go-doc-go-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana_password
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    secrets:
+      - grafana_password
+    ports:
+      - "3001:3000"
+    networks:
+      - go-doc-go-internal
+    profiles: ["monitoring"]
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # Log Aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: go-doc-go-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./monitoring/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/tmp/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - go-doc-go-internal
+    profiles: ["monitoring"]
+    restart: unless-stopped
+
+  # Backup Service
+  backup:
+    image: postgres:15-alpine
+    container_name: go-doc-go-backup
+    environment:
+      - PGPASSWORD_FILE=/run/secrets/postgres_password
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=${POSTGRES_DB:-go_doc_go}
+      - POSTGRES_USER=${POSTGRES_USER:-go_doc_go}
+      - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}  # Daily at 2 AM
+    volumes:
+      - backups:/backups
+      - ./scripts/backup.sh:/backup.sh:ro
+    secrets:
+      - postgres_password
+    networks:
+      - go-doc-go-internal
+    profiles: ["backup"]
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    command: |
+      sh -c "
+      echo '${BACKUP_SCHEDULE} /backup.sh' | crontab -
+      crond -f
+      "
+
+networks:
+  go-doc-go-internal:
+    name: go-doc-go-internal
+    driver: bridge
+    internal: true
+  go-doc-go-external:
+    name: go-doc-go-external
+    driver: bridge
+
+volumes:
+  # Application data
+  app_data:
+    name: go-doc-go-app-data
+    driver: local
+  app_logs:
+    name: go-doc-go-app-logs
+    driver: local
+  app_cache:
+    name: go-doc-go-app-cache
+    driver: local
+  worker_temp:
+    name: go-doc-go-worker-temp
+    driver: local
+  
+  # Database volumes
+  postgres_data:
+    name: go-doc-go-postgres-data
+    driver: local
+  redis_data:
+    name: go-doc-go-redis-data
+    driver: local
+  
+  # Monitoring volumes
+  prometheus_data:
+    name: go-doc-go-prometheus-data
+  grafana_data:
+    name: go-doc-go-grafana-data
+  loki_data:
+    name: go-doc-go-loki-data
+  
+  # Backup volume
+  backups:
+    name: go-doc-go-backups
+    driver: local
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  openai_api_key:
+    file: ./secrets/openai_api_key.txt
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key.txt
+  grafana_password:
+    file: ./secrets/grafana_password.txt
