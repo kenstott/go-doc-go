@@ -407,7 +407,7 @@ def test_document_search_execution():
                     return
 
                 logger.error("🚨 CRITICAL: Structured search is not working")
-                logger.info("💡 Run: pytest test_doculyzer.py::test_pydantic_search_module_availability -v -s")
+                logger.info("💡 Run: pytest test_go-doc-go.py::test_pydantic_search_module_availability -v -s")
                 return
 
         structured_count = len(structured_results.results)
@@ -1081,8 +1081,8 @@ def test_quick_pydantic_search_fix():
     flush_logs()
 
     logger.info("💡 POTENTIAL FIXES:")
-    logger.info("   1. Create doculyzer/pydantic_search.py file")
-    logger.info("   2. Or update doculyzer/search.py line:")
+    logger.info("   1. Create go-doc-go/pydantic_search.py file")
+    logger.info("   2. Or update go-doc-go/search.py line:")
     logger.info("      from .pydantic_search import execute_search")
     logger.info("      TO:")
     logger.info("      from .storage.search import execute_search")
@@ -1168,6 +1168,6 @@ if __name__ == "__main__":
     logger.info("This test uses your real search_by_text() and search_structured() functions")
 
     logger.info("💡 To run these tests with real-time logging:")
-    logger.info("1. pytest test_doculyzer.py -s --log-cli-level=INFO")
-    logger.info("2. Individual test: pytest test_doculyzer.py::test_json_serialization_critical -v -s")
-    logger.info("3. Full suite: pytest test_doculyzer.py::run_comprehensive_search_tests -v -s")
+    logger.info("1. pytest test_go-doc-go.py -s --log-cli-level=INFO")
+    logger.info("2. Individual test: pytest test_go-doc-go.py::test_json_serialization_critical -v -s")
+    logger.info("3. Full suite: pytest test_go-doc-go.py::run_comprehensive_search_tests -v -s")

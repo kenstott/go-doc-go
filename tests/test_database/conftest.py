@@ -113,12 +113,12 @@ def docker_compose_up():
     already_running = False
     try:
         result = subprocess.run(
-            ["docker", "ps", "--filter", "name=doculyzer-database-tests-postgres", "--format", "{{.Names}}"],
+            ["docker", "ps", "--filter", "name=go-doc-go-database-tests-postgres", "--format", "{{.Names}}"],
             capture_output=True,
             text=True,
             check=True
         )
-        if "doculyzer-database-tests-postgres" in result.stdout:
+        if "go-doc-go-database-tests-postgres" in result.stdout:
             already_running = True
             print("PostgreSQL container already running, using existing container")
     except subprocess.CalledProcessError:

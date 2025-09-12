@@ -250,10 +250,10 @@ If tests can't connect to MongoDB:
 docker ps | grep mongodb
 
 # Test connection manually
-docker exec doculyzer-test-mongodb mongosh --eval "db.adminCommand('ping')"
+docker exec go-doc-go-test-mongodb mongosh --eval "db.adminCommand('ping')"
 
 # Check MongoDB logs
-docker logs doculyzer-test-mongodb
+docker logs go-doc-go-test-mongodb
 ```
 
 ### Authentication Issues
@@ -261,11 +261,11 @@ docker logs doculyzer-test-mongodb
 If authentication fails:
 ```bash
 # Verify credentials
-docker exec doculyzer-test-mongodb mongosh \
+docker exec go-doc-go-test-mongodb mongosh \
   -u admin -p admin123 --authenticationDatabase admin
 
 # Check user exists
-docker exec doculyzer-test-mongodb mongosh \
+docker exec go-doc-go-test-mongodb mongosh \
   -u admin -p admin123 --authenticationDatabase admin \
   --eval "db.getUsers()"
 ```
@@ -296,7 +296,7 @@ To run MongoDB tests in CI/CD pipelines:
   
 - name: Wait for MongoDB
   run: |
-    timeout 60 bash -c 'until docker exec doculyzer-test-mongodb mongosh --quiet --eval "db.adminCommand(\"ping\")"; do sleep 2; done'
+    timeout 60 bash -c 'until docker exec go-doc-go-test-mongodb mongosh --quiet --eval "db.adminCommand(\"ping\")"; do sleep 2; done'
 
 - name: Run MongoDB Tests
   run: |

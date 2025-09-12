@@ -384,7 +384,7 @@ def main():
     neo4j_config = Neo4jConfig(
         uri="bolt://localhost:7687",
         username="neo4j",
-        password="doculyzer123"
+        password="go-doc-go123"
     )
     
     try:
@@ -468,7 +468,7 @@ def main():
             print("\n✅ Successfully created financial knowledge graph in Neo4j!")
             print("\n   To visualize the graph:")
             print("   1. Open Neo4j Browser at http://localhost:7474")
-            print("   2. Login with neo4j/doculyzer123")
+            print("   2. Login with neo4j/go-doc-go123")
             print("   3. Run queries like:")
             print("      - MATCH (n) RETURN n LIMIT 100")
             print("      - MATCH (c:Term {label:'Company'})-[r]-(e:Element) RETURN c, r, e LIMIT 50")

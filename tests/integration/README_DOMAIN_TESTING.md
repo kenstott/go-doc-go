@@ -83,7 +83,7 @@ docker-compose logs -f neo4j
 
 2. **Verify Neo4j is Running**:
 - Open http://localhost:7474 in your browser
-- Login with username: `neo4j`, password: `doculyzer123`
+- Login with username: `neo4j`, password: `go-doc-go123`
 
 ## Running the Tests
 
@@ -261,7 +261,7 @@ for i in range(0, len(documents), batch_size):
 docker ps | grep neo4j
 
 # View Neo4j logs
-docker logs doculyzer-neo4j
+docker logs go-doc-go-neo4j
 
 # Restart Neo4j
 cd tests/docker

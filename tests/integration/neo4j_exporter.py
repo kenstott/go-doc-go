@@ -22,7 +22,7 @@ class Neo4jConfig:
     """Configuration for Neo4j connection."""
     uri: str = "bolt://localhost:7687"
     username: str = "neo4j"
-    password: str = "doculyzer123"
+    password: str = "go-doc-go123"
     database: str = "neo4j"
     max_connection_lifetime: int = 3600
     max_connection_pool_size: int = 50

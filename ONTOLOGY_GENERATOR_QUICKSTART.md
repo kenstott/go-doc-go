@@ -6,13 +6,13 @@ The ontology generator CLI is now ready to use! It will automatically use Anthro
 
 ### Method 1: Direct Python Module (Recommended)
 ```bash
-cd /Users/kennethstott/PycharmProjects/doculyzer
+cd /Users/kennethstott/PycharmProjects/go-doc-go
 PYTHONPATH=src python -m go_doc_go.cli.ontology_generator
 ```
 
 ### Method 2: Using the Shell Script
 ```bash
-cd /Users/kennethstott/PycharmProjects/doculyzer
+cd /Users/kennethstott/PycharmProjects/go-doc-go
 ./scripts/generate-ontology.sh
 ```
 

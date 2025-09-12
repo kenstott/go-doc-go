@@ -31,10 +31,10 @@ Apply **business rules** to automatically extract domain entities and relationsh
 
 ### 🎯 GraphRAG-lite Embeddings
 Smart **contextual embeddings** that use document structure to improve semantic search:
-- Elements know about their neighbors, parents, and children
+- Elements know about their neighbors, parents, and children through "graph-lets"
 - Vector search considers document hierarchy and context
 - Better results than flat text embeddings
-- Foundation for full GraphRAG implementations
+- Foundation for full GraphRAG implementations using graph-lets
 
 ## Mental Model
 
