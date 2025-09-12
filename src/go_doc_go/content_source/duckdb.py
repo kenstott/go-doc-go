@@ -81,15 +81,8 @@ class DuckDBContentSource(ContentSource):
                 raise ValueError(f"Query {i} missing required 'name' field")
             if "sql" not in query:
                 raise ValueError(f"Query '{query['name']}' missing required 'sql' field")
-            
-            # Support both id_columns and doc_id_columns for backward compatibility
-            if "id_columns" not in query and "doc_id_columns" not in query:
-                raise ValueError(f"Query '{query['name']}' missing required 'id_columns' or 'doc_id_columns' field")
-            
-            # Normalize to id_columns internally
-            if "doc_id_columns" in query and "id_columns" not in query:
-                query["id_columns"] = query["doc_id_columns"]
-            
+            if "id_columns" not in query:
+                raise ValueError(f"Query '{query['name']}' missing required 'id_columns' field")
             if "content_column" not in query:
                 raise ValueError(f"Query '{query['name']}' missing required 'content_column' field")
 
@@ -106,10 +99,14 @@ class DuckDBContentSource(ContentSource):
         # Configure connection
         if self.enable_hive_partitioning:
             conn.execute("SET enable_object_cache=true")
-            conn.execute("SET threads=4")  # Reasonable default for parquet reading
+        
+        # Set default thread count if not specified in connection_config
+        config_to_apply = self.connection_config.copy()
+        if 'threads' not in config_to_apply:
+            config_to_apply['threads'] = 4  # Reasonable default for parquet reading
             
-        # Apply any additional connection config
-        for key, value in self.connection_config.items():
+        # Apply all connection config settings
+        for key, value in config_to_apply.items():
             conn.execute(f"SET {key}={value}")
             
         return conn
@@ -149,8 +146,7 @@ class DuckDBContentSource(ContentSource):
             Unique document identifier
         """
         query_config = next(q for q in self.queries if q["name"] == query_name)
-        # Use id_columns (normalized in validation)
-        id_columns = query_config.get("id_columns", query_config.get("doc_id_columns", []))
+        id_columns = query_config["id_columns"]
         
         # Collect ID components from row data and partitions
         id_components = [query_name]
@@ -429,7 +425,7 @@ class DuckDBContentSource(ContentSource):
             {
                 "name": q["name"],
                 "sql": q["sql"],
-                "doc_id_columns": q["doc_id_columns"],
+                "id_columns": q["id_columns"],
                 "content_column": q["content_column"],
                 "doc_type": q.get("doc_type", "text"),
                 "description": q.get("description", "")

@@ -90,11 +90,11 @@ class TestDuckDBContentSource:
         with pytest.raises(ValueError, match="missing required 'sql' field"):
             DuckDBContentSource({
                 "database_path": "/tmp",
-                "queries": [{"name": "test", "doc_id_columns": ["id"], "content_column": "content"}]
+                "queries": [{"name": "test", "id_columns": ["id"], "content_column": "content"}]
             })
 
         # Missing 'id_columns'
-        with pytest.raises(ValueError, match="missing required 'id_columns' or 'doc_id_columns' field"):
+        with pytest.raises(ValueError, match="missing required 'id_columns' field"):
             DuckDBContentSource({
                 "database_path": "/tmp",
                 "queries": [{"name": "test", "sql": "SELECT 1", "content_column": "content"}]
@@ -163,8 +163,8 @@ class TestDuckDBContentSource:
         assert query_info[0]["name"] == "test-query"
         assert "sql" in query_info[0]
         # The source now normalizes to id_columns internally
-        assert "id_columns" in query_info[0] or "doc_id_columns" in query_info[0]
-        columns = query_info[0].get("id_columns", query_info[0].get("doc_id_columns", []))
+        assert "id_columns" in query_info[0]
+        columns = query_info[0]["id_columns"]
         assert columns == ["ticker", "filing_type", "year"]
 
 
@@ -227,29 +227,6 @@ class TestDuckDBContentSourceIntegration:
         assert source.has_changed("test-query/ticker=AAPL/filing_type=10K/year=2023", last_modified) is False
 
 
-    def test_backward_compatibility_doc_id_columns(self):
-        """Test that doc_id_columns still works for backward compatibility."""
-        config = {
-            "name": "test-duckdb",
-            "type": "duckdb",
-            "database_path": tempfile.mkdtemp(),
-            "queries": [
-                {
-                    "name": "test-query",
-                    "sql": "SELECT 'Test' as content, 1 as id",
-                    "doc_id_columns": ["id"],  # Using old field name
-                    "content_column": "content",
-                    "doc_type": "text"
-                }
-            ]
-        }
-        
-        # Should work without errors
-        source = DuckDBContentSource(config)
-        assert source.queries[0]["id_columns"] == ["id"]
-        
-        documents = source.list_documents()
-        assert len(documents) == 1
 
 
 class TestDuckDBContentSourceErrors:
