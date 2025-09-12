@@ -210,7 +210,7 @@ docker ps | grep minio
 curl http://localhost:9000/minio/health/live
 
 # Check Minio logs
-docker logs doculyzer-test-minio
+docker logs go-doc-go-test-minio
 ```
 
 ### Test Failures

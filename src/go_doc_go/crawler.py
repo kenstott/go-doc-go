@@ -9,7 +9,7 @@ from .main import ingest_documents
 
 
 def _setup_logger():
-    logger = logging.getLogger("doculyzer_crawler")
+    logger = logging.getLogger("go_doc_go_crawler")
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -41,7 +41,7 @@ def _ingest(config_path, logger):
 
 
 def crawl(config_path: str = None, interval: int = None):
-    config = Config(config_path if config_path else os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+    config = Config(config_path if config_path else os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
     interval = interval if interval is not None else int(os.environ.get("CRAWLER_INTERVAL", "86400"))
 
     logger = _setup_logger()

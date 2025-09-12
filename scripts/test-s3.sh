@@ -39,7 +39,7 @@ case "${1:-start}" in
         
         echo "Waiting for Minio to be ready..."
         for i in {1..30}; do
-            if docker exec doculyzer-test-minio mc alias set minio http://localhost:9000 minioadmin minioadmin &> /dev/null; then
+            if docker exec go-doc-go-test-minio mc alias set minio http://localhost:9000 minioadmin minioadmin &> /dev/null; then
                 echo "Minio is ready!"
                 break
             else
@@ -86,7 +86,7 @@ case "${1:-start}" in
         
         echo "Waiting for Minio to be ready..."
         sleep 5
-        if docker exec doculyzer-test-minio mc alias set minio http://localhost:9000 minioadmin minioadmin &> /dev/null; then
+        if docker exec go-doc-go-test-minio mc alias set minio http://localhost:9000 minioadmin minioadmin &> /dev/null; then
             echo "Minio is ready!"
         else
             echo "Warning: Minio might not be fully ready"

@@ -39,7 +39,7 @@ case "${1:-start}" in
         
         echo "Waiting for MongoDB to be ready..."
         for i in {1..30}; do
-            if docker exec doculyzer-test-mongodb mongosh --quiet --eval "db.adminCommand('ping')" &> /dev/null; then
+            if docker exec go-doc-go-test-mongodb mongosh --quiet --eval "db.adminCommand('ping')" &> /dev/null; then
                 echo "MongoDB is ready!"
                 
                 echo "Initializing test data..."
@@ -92,7 +92,7 @@ case "${1:-start}" in
         
         echo "Waiting for MongoDB to be ready..."
         sleep 5
-        if docker exec doculyzer-test-mongodb mongosh --quiet --eval "db.adminCommand('ping')" &> /dev/null; then
+        if docker exec go-doc-go-test-mongodb mongosh --quiet --eval "db.adminCommand('ping')" &> /dev/null; then
             echo "MongoDB is ready!"
             echo "Initializing test data..."
             $DOCKER_COMPOSE -f docker-compose.test.yml up -d mongodb-init

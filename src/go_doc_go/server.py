@@ -13,6 +13,8 @@ from go_doc_go.adapter import create_content_resolver
 from go_doc_go.config import Config
 from go_doc_go.search import search_with_content, search_by_text, get_document_sources, SearchResult, search_structured, \
     search_simple_structured
+from go_doc_go.api.flask_settings_routes import settings_bp
+from go_doc_go.api.pipeline_routes import pipeline_bp
 
 # Configure logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO')
@@ -40,6 +42,10 @@ app = Flask(__name__)
 # Configure CORS
 cors_origins = os.environ.get('CORS_ORIGINS', '*').split(',')
 CORS(app, origins=cors_origins)
+
+# Register blueprints
+app.register_blueprint(settings_bp)
+app.register_blueprint(pipeline_bp)
 
 # Get the directory where server.py is located
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))

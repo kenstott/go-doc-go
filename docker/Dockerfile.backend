@@ -1,0 +1,110 @@
+# Go-Doc-Go Backend Container
+# Multi-stage build for production-ready Python backend with pipeline support
+
+FROM python:3.11-slim as builder
+
+# Set build arguments
+ARG FEATURES="embedding-all,db-all,source-all"
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install system build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        curl \
+        ca-certificates \
+        libmagic1 \
+        libmagic-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy Python package configuration and source code for editable install
+COPY ./pyproject.toml .
+COPY ./requirements.txt* .
+COPY ./src/ ./src/
+COPY ./README.md .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e .[$FEATURES]
+
+# Production stage
+FROM python:3.11-slim as production
+
+# Set runtime arguments and environment variables
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PATH="/home/goDocGo/.local/bin:$PATH" \
+    GO_DOC_GO_CONFIG_PATH=/app/config/config.yaml \
+    PIPELINE_CONFIG_DB=/app/data/pipeline_config.db
+
+# Install runtime system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libmagic1 \
+        curl \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
+RUN useradd --create-home --shell /bin/bash goDocGo && \
+    mkdir -p /app/data /app/logs /app/config /app/cache && \
+    chown -R goDocGo:goDocGo /app
+
+# Copy Python packages from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Switch to non-root user
+USER goDocGo
+WORKDIR /app
+
+# Copy application source code
+COPY --chown=goDocGo:goDocGo ./src/ /app/src/
+COPY --chown=goDocGo:goDocGo ./config.yaml /app/config/
+COPY --chown=goDocGo:goDocGo ./example_ontology_config.yaml /app/config/
+
+# Copy examples and templates
+COPY --chown=goDocGo:goDocGo ./examples/ /app/examples/
+
+# Health check endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Initialize pipeline configuration database\n\
+python -c "from src.go_doc_go.config_db import PipelineConfigDB; PipelineConfigDB()";\n\
+\n\
+# Start the Flask server\n\
+exec python -m src.go_doc_go.server\n\
+' > /app/start-backend.sh && chmod +x /app/start-backend.sh
+
+# Expose Flask server port
+EXPOSE 8000
+
+# Default command
+CMD ["/app/start-backend.sh"]
+
+# Development stage - includes dev dependencies
+FROM production as development
+
+USER root
+
+# Install development dependencies
+RUN pip install --no-cache-dir -e .[development]
+
+# Install additional dev tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        vim \
+        htop \
+    && rm -rf /var/lib/apt/lists/*
+
+USER goDocGo
+
+# Override CMD for development mode with hot reloading
+CMD ["python", "-m", "flask", "--app", "src.go_doc_go.server", "run", "--host=0.0.0.0", "--port=8000", "--debug"]

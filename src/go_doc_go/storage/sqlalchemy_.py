@@ -107,7 +107,7 @@ except ImportError:
 # Try to import the config
 try:
     from ..config import Config
-    config = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+    config = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
 except Exception as e:
     logger.warning(f"Error configuring SQLAlchemy provider: {str(e)}")
     config = None
@@ -947,7 +947,7 @@ class SQLAlchemyDocumentDatabase(DocumentDatabase):
                 config_obj = self.config
                 if not config_obj:
                     from ..config import Config
-                    config_obj = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+                    config_obj = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
                 self.embedding_generator = get_embedding_generator(config_obj)
 
             return self.embedding_generator.generate(search_text)
@@ -2509,7 +2509,7 @@ class SQLAlchemyDocumentDatabase(DocumentDatabase):
                     if not config_obj:
                         try:
                             from ..config import Config
-                            config_obj = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+                            config_obj = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
                         except Exception as e:
                             logger.warning(f"Error loading config: {str(e)}. Using default config.")
                             config_obj = Config()
@@ -3552,7 +3552,7 @@ class SQLAlchemyDocumentDatabase(DocumentDatabase):
 
 if __name__ == "__main__":
     # Example demonstrating structured search with SQLAlchemy
-    db_uri = 'sqlite:///test_doculyzer.db'
+    db_uri = 'sqlite:///test_go-doc-go.db'
 
     db = SQLAlchemyDocumentDatabase(db_uri)
     db.initialize()

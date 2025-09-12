@@ -131,3 +131,8 @@ pymongo~=4.13.0
 SQLAlchemy~=2.0.41
 Flask-Limiter~=3.12
 datefinder~=0.7.3
+
+# Settings UI dependencies
+pandas~=2.3.2
+cryptography~=45.0.7
+psutil~=7.0.0

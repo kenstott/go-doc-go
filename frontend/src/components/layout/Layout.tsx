@@ -18,12 +18,20 @@ import {
   Schema as OntologyIcon,
   Category as DomainIcon,
   Description as DocsIcon,
+  Tune as SettingsIcon,
+  AccountTree as PipelineIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
 const drawerWidth = 240;
 
 const navigationItems = [
+  {
+    text: 'Pipeline Manager',
+    icon: <PipelineIcon />,
+    path: '/pipelines',
+    description: 'Create and manage document processing pipelines'
+  },
   {
     text: 'Configuration',
     icon: <ConfigIcon />,
@@ -41,6 +49,12 @@ const navigationItems = [
     icon: <DomainIcon />,
     path: '/domains',
     description: 'Activate/deactivate domains'
+  },
+  {
+    text: 'Settings',
+    icon: <SettingsIcon />,
+    path: '/settings',
+    description: 'System settings & API keys'
   }
 ];
 

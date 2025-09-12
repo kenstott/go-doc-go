@@ -3,12 +3,12 @@ version: '3.8'
 services:
   neo4j:
     image: neo4j:5.13-community
-    container_name: doculyzer-neo4j
+    container_name: go-doc-go-neo4j
     ports:
       - "7474:7474"  # HTTP
       - "7687:7687"  # Bolt
     environment:
-      - NEO4J_AUTH=neo4j/doculyzer123
+      - NEO4J_AUTH=neo4j/godocgo123
       - NEO4J_PLUGINS=["apoc", "graph-data-science"]
       - NEO4J_dbms_memory_pagecache_size=1G
       - NEO4J_dbms_memory_heap_initial__size=1G
@@ -31,7 +31,7 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - doculyzer-network
+      - go-doc-go-network
 
 volumes:
   neo4j_data:
@@ -40,5 +40,5 @@ volumes:
   neo4j_plugins:
 
 networks:
-  doculyzer-network:
+  go-doc-go-network:
     driver: bridge

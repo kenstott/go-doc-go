@@ -50,7 +50,7 @@ except ImportError:
 try:
     from ..config import Config
 
-    config = Config(os.environ.get("DOCULYZER_CONFIG_PATH", "./config.yaml"))
+    config = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
 except Exception as e:
     logger.warning(f"Error configuring File provider: {str(e)}")
     config = None

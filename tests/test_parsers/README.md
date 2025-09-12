@@ -102,7 +102,7 @@ PYTHONPATH=src pytest tests/test_parsers/test_base_parser.py::TestDocumentParser
 
 2. **Database Connection**: Some imports trigger database connection attempts. You may need to set environment variables or mock these connections for tests to run.
 
-3. **Module Structure**: The project uses the old name "go_doc_go" internally while the project directory is "doculyzer".
+3. **Module Structure**: The project uses the old name "go_doc_go" internally while the project directory is "go-doc-go".
 
 ## Test Design Principles
 
