@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import List
 
 import yaml
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, send_from_directory, send_file
 from flask_cors import CORS
 from werkzeug.exceptions import BadRequest, InternalServerError
 
@@ -139,9 +139,28 @@ def internal_error(error):
 
 
 # Root endpoint with API documentation links
-@app.route('/', methods=['GET'])
-def root():
-    """Root endpoint with links to documentation."""
+# Commented out to allow React app to be served at root
+# @app.route('/', methods=['GET'])
+# def root():
+#     """Root endpoint with links to documentation."""
+#     response_data = {
+#         'name': 'Document Search API',
+#         'version': '1.0.0',
+#         'status': 'running',
+#         'links': {
+#             'api_documentation': CONFIG['SWAGGER_UI_PATH'] if CONFIG['SWAGGER_UI_ENABLED'] else None,
+#             'openapi_spec': CONFIG['API_SPEC_PATH'],
+#             'health': '/health',
+#             'api_info': '/api/info'
+#         }
+#     }
+#
+#     return jsonify({k: v for k, v in response_data.items() if v is not None})
+
+# API info endpoint (moved from root)
+@app.route('/api/info', methods=['GET'])
+def api_info():
+    """API information endpoint."""
     response_data = {
         'name': 'Document Search API',
         'version': '1.0.0',
@@ -149,8 +168,7 @@ def root():
         'links': {
             'api_documentation': CONFIG['SWAGGER_UI_PATH'] if CONFIG['SWAGGER_UI_ENABLED'] else None,
             'openapi_spec': CONFIG['API_SPEC_PATH'],
-            'health': '/health',
-            'api_info': '/api/info'
+            'health': '/health'
         }
     }
 
@@ -237,34 +255,34 @@ def health_check():
     })
 
 
-# API Info endpoint
-@app.route('/api/info', methods=['GET'])
-def api_info():
-    """Get API information and available endpoints."""
-    info_data = {
-        'name': 'Document Search API',
-        'version': '1.0.0',
-        'endpoints': {
-            '/health': 'Health check',
-            '/api/info': 'API information',
-            '/api/search': 'Search for elements',
-            '/api/search/advanced': 'Advanced search with full results',
-            '/api/search/structured': 'Structured search with complex criteria',
-            '/api/search/sources': 'Get document sources'
-        },
-        'configuration': {
-            'max_results': CONFIG['MAX_RESULTS'],
-            'default_results': CONFIG['DEFAULT_RESULTS'],
-            'min_score_threshold': CONFIG['MIN_SCORE_THRESHOLD'],
-            'timeout': CONFIG['TIMEOUT']
-        }
-    }
-
-    if CONFIG['SWAGGER_UI_ENABLED']:
-        info_data['documentation'] = CONFIG['SWAGGER_UI_PATH']
-        info_data['openapi_spec'] = CONFIG['API_SPEC_PATH']
-
-    return jsonify(info_data)
+# API Info endpoint - commented out to avoid duplicate
+# @app.route('/api/info', methods=['GET'])
+# def api_info_old():
+#     """Get API information and available endpoints."""
+#     info_data = {
+#         'name': 'Document Search API',
+#         'version': '1.0.0',
+#         'endpoints': {
+#             '/health': 'Health check',
+#             '/api/info': 'API information',
+#             '/api/search': 'Search for elements',
+#             '/api/search/advanced': 'Advanced search with full results',
+#             '/api/search/structured': 'Structured search with complex criteria',
+#             '/api/search/sources': 'Get document sources'
+#         },
+#         'configuration': {
+#             'max_results': CONFIG['MAX_RESULTS'],
+#             'default_results': CONFIG['DEFAULT_RESULTS'],
+#             'min_score_threshold': CONFIG['MIN_SCORE_THRESHOLD'],
+#             'timeout': CONFIG['TIMEOUT']
+#         }
+#     }
+# 
+#     if CONFIG['SWAGGER_UI_ENABLED']:
+#         info_data['documentation'] = CONFIG['SWAGGER_UI_PATH']
+#         info_data['openapi_spec'] = CONFIG['API_SPEC_PATH']
+# 
+#     return jsonify(info_data)
 
 
 # Helper function to extract topic parameters
@@ -771,6 +789,551 @@ def document_sources_endpoint():
         raise InternalServerError(f"Document sources operation failed: {str(e)}")
 
 
+# =============================================================================
+# CONFIGURATION AND ONTOLOGY MANAGEMENT API ENDPOINTS
+# =============================================================================
+
+@app.route('/api/config', methods=['GET'])
+def get_config_endpoint():
+    """
+    Get current configuration.
+    
+    Returns the current configuration as JSON.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+    
+    try:
+        _ensure_initialized()
+        
+        # Get configuration, removing sensitive information
+        config_dict = _config.config.copy()
+        
+        # Remove any sensitive fields if needed
+        # (API keys, passwords, etc. - currently none in our config)
+        
+        return jsonify({
+            'config': config_dict,
+            'status': 'success'
+        })
+        
+    except Exception as e:
+        logger.error(f"Get config error: {str(e)}")
+        raise InternalServerError(f"Failed to get configuration: {str(e)}")
+
+
+@app.route('/api/config', methods=['PUT'])
+def update_config_endpoint():
+    """
+    Update configuration.
+    
+    Request body should contain the new configuration.
+    """
+    # Check API key if required  
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+        
+    try:
+        # Parse request JSON
+        data = request.get_json()
+        if not data or 'config' not in data:
+            raise BadRequest("Request body must contain 'config' field")
+        
+        new_config = data['config']
+        
+        # Validate the new configuration by creating a temporary Config object
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(new_config, f)
+            temp_config_path = f.name
+        
+        try:
+            # Try to create a Config object with the new configuration
+            from go_doc_go.config import Config
+            test_config = Config(temp_config_path)
+            
+            # If successful, save to the actual config file
+            config_path = os.environ.get('GO_DOC_GO_CONFIG_PATH', 'config.yaml')
+            with open(config_path, 'w') as f:
+                yaml.dump(new_config, f, default_flow_style=False)
+            
+            # Reload the global configuration
+            global _config, db, resolver
+            _config = None  # Force re-initialization
+            db = None
+            resolver = None
+            _ensure_initialized()
+            
+            logger.info("Configuration updated successfully")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Configuration updated successfully'
+            })
+            
+        finally:
+            # Clean up temp file
+            os.unlink(temp_config_path)
+            
+    except Exception as e:
+        logger.error(f"Update config error: {str(e)}")
+        raise InternalServerError(f"Failed to update configuration: {str(e)}")
+
+
+@app.route('/api/config/validate', methods=['POST'])
+def validate_config_endpoint():
+    """
+    Validate configuration without saving.
+    
+    Request body should contain the configuration to validate.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+        
+    try:
+        # Parse request JSON
+        data = request.get_json()
+        if not data or 'config' not in data:
+            raise BadRequest("Request body must contain 'config' field")
+        
+        new_config = data['config']
+        
+        # Validate by creating a temporary Config object
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(new_config, f)
+            temp_config_path = f.name
+        
+        validation_errors = []
+        try:
+            from go_doc_go.config import Config
+            test_config = Config(temp_config_path)
+            
+        except Exception as e:
+            validation_errors.append(str(e))
+        finally:
+            os.unlink(temp_config_path)
+        
+        if validation_errors:
+            return jsonify({
+                'valid': False,
+                'errors': validation_errors
+            })
+        else:
+            return jsonify({
+                'valid': True,
+                'message': 'Configuration is valid'
+            })
+            
+    except Exception as e:
+        logger.error(f"Validate config error: {str(e)}")
+        raise InternalServerError(f"Failed to validate configuration: {str(e)}")
+
+
+@app.route('/api/ontologies', methods=['GET'])
+def list_ontologies_endpoint():
+    """
+    List all available ontologies.
+    
+    Returns a list of ontologies with basic information.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+    
+    try:
+        _ensure_initialized()
+        
+        ontology_manager = _config.get_ontology_manager()
+        if not ontology_manager:
+            return jsonify({
+                'ontologies': [],
+                'message': 'Domain detection not enabled'
+            })
+        
+        ontologies = []
+        for name in ontology_manager.loader.list_ontologies():
+            ontology = ontology_manager.loader.get_ontology(name)
+            if ontology:
+                ontologies.append({
+                    'name': ontology.name,
+                    'version': ontology.version,
+                    'domain': ontology.domain,
+                    'description': ontology.description,
+                    'active': name in ontology_manager.active_domains,
+                    'terms_count': len(ontology.terms),
+                    'entity_mappings_count': len(ontology.element_entity_mappings),
+                    'relationship_rules_count': len(ontology.entity_relationship_rules)
+                })
+        
+        return jsonify({
+            'ontologies': ontologies,
+            'total': len(ontologies),
+            'active_domains': ontology_manager.active_domains
+        })
+        
+    except Exception as e:
+        logger.error(f"List ontologies error: {str(e)}")
+        raise InternalServerError(f"Failed to list ontologies: {str(e)}")
+
+
+@app.route('/api/ontologies/<string:name>', methods=['GET'])
+def get_ontology_endpoint(name):
+    """
+    Get a specific ontology by name.
+    
+    Returns the full ontology configuration.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+    
+    try:
+        _ensure_initialized()
+        
+        ontology_manager = _config.get_ontology_manager()
+        if not ontology_manager:
+            return jsonify({
+                'error': 'Domain detection not enabled'
+            }), 404
+        
+        ontology = ontology_manager.loader.get_ontology(name)
+        if not ontology:
+            return jsonify({
+                'error': f'Ontology "{name}" not found'
+            }), 404
+        
+        # Convert ontology to dictionary for JSON serialization
+        ontology_dict = {
+            'name': ontology.name,
+            'version': ontology.version,
+            'domain': ontology.domain,
+            'description': ontology.description,
+            'document_types': ontology.document_types,
+            'terms': [
+                {
+                    'id': term.id,
+                    'name': term.name,
+                    'description': term.description,
+                    'synonyms': term.synonyms,
+                    'category': term.category,
+                    'attributes': term.attributes
+                }
+                for term in ontology.terms
+            ],
+            'element_entity_mappings': [
+                {
+                    'entity_type': mapping.entity_type,
+                    'description': mapping.description,
+                    'document_types': mapping.document_types,
+                    'element_types': mapping.element_types,
+                    'extraction_rules': [
+                        {
+                            'type': rule.type,
+                            'pattern': rule.pattern,
+                            'field_path': rule.field_path,
+                            'confidence': rule.confidence,
+                            'required': rule.required,
+                            'description': rule.description
+                        }
+                        for rule in mapping.extraction_rules
+                    ]
+                }
+                for mapping in ontology.element_entity_mappings
+            ],
+            'entity_relationship_rules': [
+                {
+                    'name': rule.name,
+                    'description': rule.description,
+                    'source_entity_type': rule.source_entity_type,
+                    'relationship_type': rule.relationship_type,
+                    'target_entity_type': rule.target_entity_type,
+                    'confidence': rule.confidence,
+                    'matching_criteria': {
+                        'same_source_element': rule.matching_criteria.same_source_element,
+                        'metadata_match': rule.matching_criteria.metadata_match,
+                        'content_proximity': rule.matching_criteria.content_proximity
+                    }
+                }
+                for rule in ontology.entity_relationship_rules
+            ]
+        }
+        
+        return jsonify({
+            'ontology': ontology_dict,
+            'active': name in ontology_manager.active_domains
+        })
+        
+    except Exception as e:
+        logger.error(f"Get ontology error: {str(e)}")
+        raise InternalServerError(f"Failed to get ontology: {str(e)}")
+
+
+@app.route('/api/ontologies/<string:name>', methods=['PUT'])
+def update_ontology_endpoint(name):
+    """
+    Update a specific ontology.
+    
+    Request body should contain the ontology configuration.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+    
+    try:
+        # Parse request JSON
+        data = request.get_json()
+        if not data or 'ontology' not in data:
+            raise BadRequest("Request body must contain 'ontology' field")
+        
+        ontology_data = data['ontology']
+        
+        # Validate ontology name matches URL parameter
+        if ontology_data.get('name') != name:
+            raise BadRequest("Ontology name in body must match URL parameter")
+        
+        # Find the ontology file path (this is a simplification)
+        import os
+        from pathlib import Path
+        
+        # Look in common ontology directories
+        possible_paths = [
+            Path('examples/ontologies') / f'{name}.yaml',
+            Path('ontologies') / f'{name}.yaml',
+            Path('.') / f'{name}.yaml'
+        ]
+        
+        ontology_path = None
+        for path in possible_paths:
+            if path.exists():
+                ontology_path = str(path)
+                break
+        
+        if not ontology_path:
+            # Create new ontology file in examples/ontologies
+            ontology_path = f'examples/ontologies/{name}.yaml'
+            os.makedirs(os.path.dirname(ontology_path), exist_ok=True)
+        
+        # Validate the ontology by loading it
+        try:
+            from go_doc_go.domain import OntologyLoader
+            loader = OntologyLoader()
+            test_ontology = loader.load_from_dict(ontology_data)
+            
+            # If validation passes, save the file
+            with open(ontology_path, 'w') as f:
+                yaml.dump(ontology_data, f, default_flow_style=False)
+            
+            # Reload in the ontology manager
+            _ensure_initialized()
+            ontology_manager = _config.get_ontology_manager()
+            if ontology_manager:
+                # Clear and reload
+                ontology_manager.loader.clear()
+                ontology_manager.active_domains.clear()
+                
+                # Reload all ontologies from config
+                domain_config = _config.config.get("relationship_detection", {}).get("domain", {})
+                ontologies = domain_config.get("ontologies", [])
+                for ontology_config in ontologies:
+                    if isinstance(ontology_config, dict):
+                        path = ontology_config.get("path")
+                        active = ontology_config.get("active", True)
+                        
+                        if path and os.path.exists(path):
+                            try:
+                                loaded_name = ontology_manager.load_ontology(path)
+                                if active:
+                                    ontology_manager.activate_domain(loaded_name)
+                            except Exception as e:
+                                logger.error(f"Failed to reload ontology from {path}: {e}")
+            
+            logger.info(f"Ontology '{name}' updated successfully")
+            
+            return jsonify({
+                'status': 'success',
+                'message': f'Ontology "{name}" updated successfully'
+            })
+            
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': f'Invalid ontology: {str(e)}'
+            }), 400
+            
+    except Exception as e:
+        logger.error(f"Update ontology error: {str(e)}")
+        raise InternalServerError(f"Failed to update ontology: {str(e)}")
+
+
+@app.route('/api/domain/active', methods=['GET'])
+def get_active_domains_endpoint():
+    """
+    Get active domains.
+    
+    Returns list of currently active domains.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+    
+    try:
+        _ensure_initialized()
+        
+        ontology_manager = _config.get_ontology_manager()
+        if not ontology_manager:
+            return jsonify({
+                'active_domains': [],
+                'message': 'Domain detection not enabled'
+            })
+        
+        return jsonify({
+            'active_domains': ontology_manager.active_domains
+        })
+        
+    except Exception as e:
+        logger.error(f"Get active domains error: {str(e)}")
+        raise InternalServerError(f"Failed to get active domains: {str(e)}")
+
+
+@app.route('/api/domain/<string:name>/activate', methods=['POST'])
+def activate_domain_endpoint(name):
+    """
+    Activate a domain.
+    
+    Makes the specified domain active.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+    
+    try:
+        _ensure_initialized()
+        
+        ontology_manager = _config.get_ontology_manager()
+        if not ontology_manager:
+            return jsonify({
+                'error': 'Domain detection not enabled'
+            }), 400
+        
+        # Check if domain exists
+        if name not in ontology_manager.loader.ontologies:
+            return jsonify({
+                'error': f'Domain "{name}" not found'
+            }), 404
+        
+        ontology_manager.activate_domain(name)
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Domain "{name}" activated',
+            'active_domains': ontology_manager.active_domains
+        })
+        
+    except Exception as e:
+        logger.error(f"Activate domain error: {str(e)}")
+        raise InternalServerError(f"Failed to activate domain: {str(e)}")
+
+
+@app.route('/api/domain/<string:name>/deactivate', methods=['POST'])
+def deactivate_domain_endpoint(name):
+    """
+    Deactivate a domain.
+    
+    Makes the specified domain inactive.
+    """
+    # Check API key if required
+    auth_response = check_api_key()
+    if auth_response:
+        return auth_response
+    
+    try:
+        _ensure_initialized()
+        
+        ontology_manager = _config.get_ontology_manager()
+        if not ontology_manager:
+            return jsonify({
+                'error': 'Domain detection not enabled'
+            }), 400
+        
+        ontology_manager.deactivate_domain(name)
+        
+        return jsonify({
+            'status': 'success', 
+            'message': f'Domain "{name}" deactivated',
+            'active_domains': ontology_manager.active_domains
+        })
+        
+    except Exception as e:
+        logger.error(f"Deactivate domain error: {str(e)}")
+        raise InternalServerError(f"Failed to deactivate domain: {str(e)}")
+
+
+# Static file serving for React frontend
+# Get the path to the frontend build directory
+FRONTEND_BUILD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'frontend', 'dist')
+
+@app.route('/')
+def serve_index():
+    """Serve the React app index.html for the root route."""
+    if os.path.exists(os.path.join(FRONTEND_BUILD_DIR, 'index.html')):
+        return send_file(os.path.join(FRONTEND_BUILD_DIR, 'index.html'))
+    else:
+        return jsonify({
+            "message": "React frontend not built. Run 'npm run build' in the frontend directory.",
+            "api_docs": f"http://{CONFIG['HOST']}:{CONFIG['PORT']}{CONFIG['SWAGGER_UI_PATH']}"
+        }), 404
+
+@app.route('/static/<path:filename>')
+def serve_static(filename):
+    """Serve static files from the React build."""
+    return send_from_directory(os.path.join(FRONTEND_BUILD_DIR, 'static'), filename)
+
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    """Serve asset files from the React build."""
+    return send_from_directory(os.path.join(FRONTEND_BUILD_DIR, 'assets'), filename)
+
+# Catch-all route for React Router (must be after API routes)
+@app.route('/<path:path>')
+def serve_react_app(path):
+    """
+    Catch-all route to serve the React app for client-side routing.
+    This should handle all frontend routes like /config, /ontologies, etc.
+    """
+    # Don't intercept API routes
+    if path.startswith('api/'):
+        return jsonify({"error": "API endpoint not found"}), 404
+    
+    # Serve index.html for all other routes (React Router will handle them)
+    if os.path.exists(os.path.join(FRONTEND_BUILD_DIR, 'index.html')):
+        return send_file(os.path.join(FRONTEND_BUILD_DIR, 'index.html'))
+    else:
+        return jsonify({
+            "message": "React frontend not built. Run 'npm run build' in the frontend directory.",
+            "available_apis": {
+                "search": f"/api/search",
+                "config": f"/api/config", 
+                "ontologies": f"/api/ontologies",
+                "domains": f"/api/domain"
+            }
+        }), 404
+
+
 # Optional: Rate limiting if using Flask-Limiter
 try:
     from flask_limiter import Limiter
@@ -791,6 +1354,14 @@ try:
     limiter.limit(CONFIG['RATE_LIMIT'])(structured_search_endpoint)
     limiter.limit(CONFIG['RATE_LIMIT'])(simple_structured_search_endpoint)
     limiter.limit(CONFIG['RATE_LIMIT'])(document_sources_endpoint)
+    
+    # Apply rate limiting to config/ontology endpoints
+    limiter.limit(CONFIG['RATE_LIMIT'])(get_config_endpoint)
+    limiter.limit(CONFIG['RATE_LIMIT'])(update_config_endpoint)
+    limiter.limit(CONFIG['RATE_LIMIT'])(validate_config_endpoint)
+    limiter.limit(CONFIG['RATE_LIMIT'])(list_ontologies_endpoint)
+    limiter.limit(CONFIG['RATE_LIMIT'])(get_ontology_endpoint)
+    limiter.limit(CONFIG['RATE_LIMIT'])(update_ontology_endpoint)
 
     logger.info(f"Rate limiting enabled: {CONFIG['RATE_LIMIT']}")
 except ImportError:
@@ -810,11 +1381,24 @@ def print_startup_info():
     logger.info(f"Authentication: {'Enabled' if CONFIG['API_KEY'] else 'Disabled'}")
     logger.info(f"Rate Limiting: {CONFIG['RATE_LIMIT']}")
     logger.info("Available Endpoints:")
-    logger.info("  /api/search - Basic search")
-    logger.info("  /api/search/advanced - Advanced search with relationships")
-    logger.info("  /api/search/structured - Structured search with complex criteria")
-    logger.info("  /api/search/structured/simple - Simple structured search")
-    logger.info("  /api/search/sources - Document sources")
+    logger.info("  Search Endpoints:")
+    logger.info("    /api/search - Basic search")
+    logger.info("    /api/search/advanced - Advanced search with relationships")
+    logger.info("    /api/search/structured - Structured search with complex criteria")
+    logger.info("    /api/search/structured/simple - Simple structured search")
+    logger.info("    /api/search/sources - Document sources")
+    logger.info("  Configuration Management:")
+    logger.info("    GET /api/config - Get current configuration")
+    logger.info("    PUT /api/config - Update configuration")
+    logger.info("    POST /api/config/validate - Validate configuration")
+    logger.info("  Ontology Management:")
+    logger.info("    GET /api/ontologies - List all ontologies")
+    logger.info("    GET /api/ontologies/<name> - Get specific ontology")
+    logger.info("    PUT /api/ontologies/<name> - Update ontology")
+    logger.info("  Domain Management:")
+    logger.info("    GET /api/domain/active - Get active domains")
+    logger.info("    POST /api/domain/<name>/activate - Activate domain")
+    logger.info("    POST /api/domain/<name>/deactivate - Deactivate domain")
     logger.info("=" * 50)
 
 
