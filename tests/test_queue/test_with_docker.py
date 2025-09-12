@@ -17,12 +17,13 @@ sys.path.insert(0, str(src_path))
 
 def wait_for_postgres(max_attempts=30):
     """Wait for PostgreSQL to be ready."""
+    compose_path = Path(__file__).parent.parent.parent / "test_containers" / "postgres"
     for i in range(max_attempts):
         try:
             result = subprocess.run([
-                "docker-compose", "-f", "docker-compose.yml", "exec", "-T", "postgres-test",
+                "docker-compose", "-f", "compose.yaml", "exec", "-T", "postgres-test",
                 "pg_isready", "-U", "testuser", "-d", "go_doc_go_test"
-            ], capture_output=True, cwd=Path(__file__).parent)
+            ], capture_output=True, cwd=compose_path)
             
             if result.returncode == 0:
                 print(f"✅ PostgreSQL ready after {i+1} attempts")
@@ -40,13 +41,14 @@ def wait_for_postgres(max_attempts=30):
 def main():
     """Run PostgreSQL queue tests with Docker."""
     test_dir = Path(__file__).parent
+    compose_path = Path(__file__).parent.parent.parent / "test_containers" / "postgres"
     
     print("🐳 Starting Docker PostgreSQL for testing...")
     
     # Start PostgreSQL
     subprocess.run([
-        "docker-compose", "-f", "docker-compose.yml", "up", "-d"
-    ], cwd=test_dir, check=True)
+        "docker-compose", "-f", "compose.yaml", "up", "-d"
+    ], cwd=compose_path, check=True)
     
     try:
         # Wait for PostgreSQL to be ready
@@ -107,8 +109,8 @@ def main():
         # Cleanup
         print("🧹 Cleaning up Docker PostgreSQL...")
         subprocess.run([
-            "docker-compose", "-f", "docker-compose.yml", "down", "-v"
-        ], cwd=test_dir)
+            "docker-compose", "-f", "compose.yaml", "down", "-v"
+        ], cwd=compose_path)
 
 
 if __name__ == "__main__":

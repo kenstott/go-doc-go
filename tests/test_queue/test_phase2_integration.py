@@ -14,9 +14,9 @@ import pytest
 
 from go_doc_go import Config
 from go_doc_go.main import ingest_documents
-from go_doc_go.queue.coordinator import ProcessingCoordinator
-from go_doc_go.queue.worker import DocumentWorker, WorkerManager
-from go_doc_go.queue.work_queue import WorkQueue, RunCoordinator
+from go_doc_go.work_queue.coordinator import ProcessingCoordinator
+from go_doc_go.work_queue.worker import DocumentWorker, WorkerManager
+from go_doc_go.work_queue.work_queue import WorkQueue, RunCoordinator
 from go_doc_go.content_source.factory import register_content_source, clear_content_source_registry
 from go_doc_go.content_source.base import ContentSource
 

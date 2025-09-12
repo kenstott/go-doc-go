@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 def create_relationship_detector(config: Dict[str, Any], 
                                 embedding_generator=None, 
                                 db=None,
-                                ontology_manager=None) -> RelationshipDetector:
+                                ontology_manager=None,
+                                extractor_registry=None) -> RelationshipDetector:
     """
     Factory function to create a relationship detector from configuration.
 
@@ -31,6 +32,7 @@ def create_relationship_detector(config: Dict[str, Any],
         embedding_generator: Optional embedding generator for semantic relationships
         db: Optional database instance for domain detector
         ontology_manager: Optional ontology manager for domain detector
+        extractor_registry: Optional registry of entity extractors
 
     Returns:
         RelationshipDetector instance
@@ -56,7 +58,8 @@ def create_relationship_detector(config: Dict[str, Any],
             db=db,
             ontology_manager=ontology_manager,
             embedding_generator=embedding_generator,
-            config=domain_config
+            config=domain_config,
+            extractor_registry=extractor_registry
         ))
         logger.info("Domain relationship detector enabled")
 

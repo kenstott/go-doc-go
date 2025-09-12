@@ -5,6 +5,8 @@ from dotenv import load_dotenv
 
 from go_doc_go.config import Config
 from go_doc_go.embeddings import EmbeddingGenerator
+from go_doc_go.relationships import create_relationship_detector
+from go_doc_go.content_source.factory import get_content_source
 
 # Load environment variables from .env file
 load_dotenv()
@@ -96,11 +98,20 @@ def _ingest_documents_single(config: Config, source_configs=None, max_link_depth
             active_domains = ontology_manager.active_domains
             logger.info(f"Domain entity extraction enabled with {len(active_domains)} active domains: {active_domains}")
     
+    # Get entity extractor registry if entity extraction is enabled
+    extractor_registry = None
+    if config.is_entity_extraction_enabled():
+        extractor_registry = config.get_extractor_registry()
+        if extractor_registry:
+            all_extractors = extractor_registry.get_all()
+            logger.info(f"Entity extraction enabled with {len(all_extractors)} extractors")
+    
     relationship_detector = create_relationship_detector(
         config.get_relationship_detection_config(),
         embedding_generator,
         db=db,
-        ontology_manager=ontology_manager
+        ontology_manager=ontology_manager,
+        extractor_registry=extractor_registry
     )
     logger.info("Initialized relationship detector")
     logger.debug(f"Relationship detector: {relationship_detector}")
@@ -518,7 +529,7 @@ def _ingest_documents_distributed(config: Config, source_configs=None, max_link_
     """
     logger.info("Using distributed document ingestion with work queue coordination")
     
-    from .queue.coordinator import ProcessingCoordinator
+    from .work_queue.coordinator import ProcessingCoordinator
     from .content_source.factory import register_content_source, get_content_source
     
     try:
@@ -550,7 +561,7 @@ def _ingest_documents_worker(config: Config):
     """
     logger.info("Using worker-mode document ingestion")
     
-    from .queue.worker import DocumentWorker
+    from .work_queue.worker import DocumentWorker
     from .content_source.factory import register_content_source, get_content_source
     
     try:

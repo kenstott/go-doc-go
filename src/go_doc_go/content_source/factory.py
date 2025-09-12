@@ -3,6 +3,7 @@ Content Source Module for the document pointer system.
 This module contains adapters for different content sources such as:
 - Markdown files
 - Database blobs
+- DuckDB parquet datasets
 - Web URLs
 - Confluence
 - JIRA
@@ -18,6 +19,7 @@ from typing import Dict, Any
 from .base import ContentSource
 from .confluence import ConfluenceContentSource
 from .database import DatabaseContentSource
+from .duckdb import DuckDBContentSource
 from .file import FileContentSource
 from .google_drive import GoogleDriveContentSource
 from .jira import JiraContentSource
@@ -51,6 +53,8 @@ def get_content_source(source_config: Dict[str, Any]) -> ContentSource:
         return FileContentSource(source_config)
     elif source_type == "database":
         return DatabaseContentSource(source_config)
+    elif source_type == "duckdb":
+        return DuckDBContentSource(source_config)
     elif source_type == "web":
         return WebContentSource(source_config)
     elif source_type == "confluence":

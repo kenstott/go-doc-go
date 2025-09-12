@@ -44,7 +44,7 @@ from .server import load_openapi_spec
 from .server import not_found
 from .server import openapi_spec
 from .server import print_startup_info
-from .server import root
+# from .server import root  # Commented out - root route handled differently
 from .server import search_endpoint
 from .server import simple_structured_search_endpoint
 from .server import structured_search_endpoint

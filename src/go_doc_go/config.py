@@ -352,6 +352,39 @@ class Config:
     def is_domain_detection_enabled(self) -> bool:
         """Check if domain entity extraction and relationship detection is enabled."""
         return self.config.get("relationship_detection", {}).get("domain", {}).get("enabled", False)
+    
+    def get_entity_extraction_config(self) -> Dict[str, Any]:
+        """Get entity extraction configuration."""
+        return self.config.get("entity_extraction", {})
+    
+    def is_entity_extraction_enabled(self) -> bool:
+        """Check if entity extraction is enabled."""
+        return self.config.get("entity_extraction", {}).get("enabled", False)
+    
+    def get_extractor_registry(self):
+        """
+        Get the entity extractor registry.
+        
+        Returns:
+            ExtractorRegistry instance or None if entity extraction is disabled
+        """
+        if not self.is_entity_extraction_enabled():
+            return None
+        
+        from .extractors.config_loader import ExtractorConfigLoader
+        
+        loader = ExtractorConfigLoader()
+        extraction_config = self.get_entity_extraction_config()
+        
+        # Load configuration
+        loader.load_config(extraction_config)
+        
+        # Load from external file if specified
+        config_file = extraction_config.get('config_file')
+        if config_file and os.path.exists(config_file):
+            loader.load_config_file(config_file)
+        
+        return loader.get_registry()
 
     def add_content_source(self, source_config: Dict[str, Any]) -> None:
         """

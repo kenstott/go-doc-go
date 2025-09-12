@@ -12,11 +12,11 @@ from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
 from go_doc_go.config import Config
-from go_doc_go.queue.monitoring import MetricsCollector, AlertManager, WorkerMetrics, RunMetrics
-from go_doc_go.queue.dead_letter import DeadLetterQueue, DeadLetterProcessor, FailurePattern
-from go_doc_go.queue.work_queue import WorkQueue, RunCoordinator
-from go_doc_go.queue.coordinator import ProcessingCoordinator
-from go_doc_go.queue.document_processor import QueuedDocumentProcessor
+from go_doc_go.work_queue.monitoring import MetricsCollector, AlertManager, WorkerMetrics, RunMetrics
+from go_doc_go.work_queue.dead_letter import DeadLetterQueue, DeadLetterProcessor, FailurePattern
+from go_doc_go.work_queue.work_queue import WorkQueue, RunCoordinator
+from go_doc_go.work_queue.coordinator import ProcessingCoordinator
+from go_doc_go.work_queue.document_processor import QueuedDocumentProcessor
 
 from .test_db_adapter import QueueDatabaseAdapter
 
@@ -59,7 +59,7 @@ def setup_phase3_components(temp_config):
     db = QueueDatabaseAdapter(db_raw)
     
     # Create schema
-    from go_doc_go.queue.migrations import create_schema
+    from go_doc_go.work_queue.migrations import create_schema
     create_schema(db, force=True)
     
     # Initialize components

@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from go_doc_go import Config
-from go_doc_go.queue.worker import DocumentWorker, WorkerManager
+from go_doc_go.work_queue.worker import DocumentWorker, WorkerManager
 
 
 def main():

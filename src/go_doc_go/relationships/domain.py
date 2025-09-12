@@ -32,7 +32,8 @@ class DomainRelationshipDetector(RelationshipDetector):
                  db: DocumentDatabase,
                  ontology_manager: OntologyManager,
                  embedding_generator: Optional[EmbeddingGenerator] = None,
-                 config: Optional[Dict[str, Any]] = None):
+                 config: Optional[Dict[str, Any]] = None,
+                 extractor_registry: Optional['ExtractorRegistry'] = None):
         """
         Initialize the domain relationship detector.
         
@@ -41,11 +42,13 @@ class DomainRelationshipDetector(RelationshipDetector):
             ontology_manager: Manager for domain ontologies
             embedding_generator: Optional embedding generator for semantic matching
             config: Optional configuration dictionary
+            extractor_registry: Optional registry of entity extractors
         """
         self.db = db
         self.config = config or {}
         self.ontology_manager = ontology_manager
         self.embedding_generator = embedding_generator
+        self.extractor_registry = extractor_registry
         
         # Configuration
         self.batch_size = self.config.get('batch_size', 100)
@@ -385,7 +388,7 @@ class DomainRelationshipDetector(RelationshipDetector):
     
     def _extract_entities(self, elements: List[Dict[str, Any]], ontology) -> List[Dict[str, Any]]:
         """
-        Extract entities from elements based on ontology derived entity rules.
+        Extract entities from elements based on ontology derived entity rules and extractors.
         
         Args:
             elements: List of element dictionaries
@@ -394,30 +397,66 @@ class DomainRelationshipDetector(RelationshipDetector):
         Returns:
             List of extracted entities
         """
-        if not ontology.derived_entity_rules:
-            return []
-        
         entities = {}  # For deduplication
         
-        for rule in ontology.derived_entity_rules:
+        # First, extract entities using the extractor registry if available
+        if self.extractor_registry:
+            from ..extractors.normalizers import normalize
+            
             for element in elements:
-                # Check if element type matches rule
-                if not self._element_matches_rule(element, rule):
+                text = element.get('content_preview', '')
+                if not text:
                     continue
                 
-                # Extract entity from element metadata
-                entity_data = self._extract_entity_from_element(element, rule)
-                if entity_data:
-                    # Add doc_id to entity for same_document matching
-                    entity_data['doc_id'] = element.get('doc_id')
+                # Extract entities using all registered extractors
+                extracted = self.extractor_registry.extract_all(text)
+                
+                for entity in extracted:
+                    # Create entity data from extracted entity
+                    entity_data = {
+                        'entity_id': f"{entity.entity_type}_{entity.normalized_value.replace(' ', '_')}",
+                        'entity_type': entity.entity_type,
+                        'name': entity.display_value,
+                        'attributes': {
+                            'raw_value': entity.raw_value,
+                            'normalized_value': entity.normalized_value,
+                            'confidence': entity.confidence,
+                            **entity.metadata
+                        },
+                        'doc_id': element.get('doc_id'),
+                        'source_elements': [element['element_id']]
+                    }
                     
-                    # Use deduplication key to identify unique entities
-                    dedup_key = self._get_deduplication_key(entity_data, rule)
+                    # Use normalized value as deduplication key
+                    dedup_key = f"{entity.entity_type}:{entity.normalized_value}"
                     if dedup_key not in entities:
                         entities[dedup_key] = entity_data
-                        entities[dedup_key]['source_elements'] = []
+                    else:
+                        # Add element to existing entity's source elements
+                        if element['element_id'] not in entities[dedup_key]['source_elements']:
+                            entities[dedup_key]['source_elements'].append(element['element_id'])
+        
+        # Then, extract entities using ontology rules if available
+        if ontology.derived_entity_rules:
+            for rule in ontology.derived_entity_rules:
+                for element in elements:
+                    # Check if element type matches rule
+                    if not self._element_matches_rule(element, rule):
+                        continue
                     
-                    entities[dedup_key]['source_elements'].append(element['element_id'])
+                    # Extract entity from element metadata
+                    entity_data = self._extract_entity_from_element(element, rule)
+                    if entity_data:
+                        # Add doc_id to entity for same_document matching
+                        entity_data['doc_id'] = element.get('doc_id')
+                        
+                        # Use deduplication key to identify unique entities
+                        dedup_key = self._get_deduplication_key(entity_data, rule)
+                        if dedup_key not in entities:
+                            entities[dedup_key] = entity_data
+                            entities[dedup_key]['source_elements'] = []
+                        
+                        entities[dedup_key]['source_elements'].append(element['element_id'])
         
         return list(entities.values())
     

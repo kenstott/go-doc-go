@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 from go_doc_go.config import Config
-from go_doc_go.queue.migrations import create_schema, check_schema_exists, validate_schema
-from go_doc_go.queue.work_queue import WorkQueue, RunCoordinator
+from go_doc_go.work_queue.migrations import create_schema, check_schema_exists, validate_schema
+from go_doc_go.work_queue.work_queue import WorkQueue, RunCoordinator
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
