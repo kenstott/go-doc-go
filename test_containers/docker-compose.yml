@@ -1,0 +1,67 @@
+version: '3.8'
+
+# Master docker-compose file for all test containers
+# Usage:
+#   Start all: docker-compose up -d
+#   Start specific: docker-compose up -d postgres-test minio-test
+#   With profiles: docker-compose --profile storage up -d
+
+services:
+  # PostgreSQL - Primary relational database
+  postgres-test:
+    extends:
+      file: ./postgres/compose.yaml
+      service: postgres-test
+    profiles: ["all", "storage", "sql"]
+
+  # Elasticsearch - Full-text search and analytics
+  elasticsearch-test:
+    extends:
+      file: ./elasticsearch/compose.yaml
+      service: elasticsearch-test
+    profiles: ["all", "storage", "search"]
+
+  # MongoDB - Document database
+  mongodb-test:
+    extends:
+      file: ./mongodb/compose.yaml
+      service: mongodb-test
+    profiles: ["all", "storage", "nosql"]
+
+  # MinIO - S3-compatible object storage
+  minio-test:
+    extends:
+      file: ./minio/compose.yaml
+      service: minio-test
+    profiles: ["all", "storage", "s3"]
+
+  minio-init:
+    extends:
+      file: ./minio/compose.yaml
+      service: minio-init
+    profiles: ["all", "storage", "s3"]
+
+  # Solr - Search platform
+  solr-test:
+    extends:
+      file: ./solr/compose.yaml
+      service: solr
+    container_name: go-doc-go-test-solr
+    profiles: ["all", "storage", "search"]
+
+  # Neo4j - Graph database
+  neo4j-test:
+    extends:
+      file: ./neo4j/compose.yaml
+      service: neo4j-test
+    profiles: ["all", "storage", "graph"]
+
+networks:
+  go-doc-go-test-network:
+    name: go-doc-go-test-network
+    driver: bridge
+
+volumes:
+  # Shared volumes if needed
+  test-data:
+    driver: local

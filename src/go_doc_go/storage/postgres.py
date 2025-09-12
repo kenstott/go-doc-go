@@ -4160,22 +4160,46 @@ class PostgreSQLDocumentDatabase(DocumentDatabase):
     # ========================================
     
     def store_entity(self, entity: Dict[str, Any]) -> int:
-        """Store a domain entity and return its primary key."""
+        """
+        Store a domain entity with proper UPSERT logic.
+        
+        This method implements normalization to prevent duplicates:
+        - Normalizes entity_id to lowercase
+        - Uses ON CONFLICT to handle existing entities
+        - Merges attributes instead of replacing them
+        
+        Returns:
+            entity_pk: Primary key of stored/updated entity
+        """
         if not self.conn:
             raise ValueError("Database not initialized")
         
         cursor = self.conn.cursor()
         now = time.time()
         
+        # Normalize entity_id and name
+        entity_id = entity['entity_id'].strip().lower()
+        entity_name = entity.get('name', '').strip() if entity.get('name') else entity_id
+        
+        # Use PostgreSQL's ON CONFLICT for proper UPSERT
         cursor.execute("""
             INSERT INTO entities 
             (entity_id, entity_type, name, domain, attributes, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (entity_id) DO UPDATE SET
+                entity_type = EXCLUDED.entity_type,
+                name = EXCLUDED.name,
+                domain = COALESCE(EXCLUDED.domain, entities.domain),
+                attributes = CASE 
+                    WHEN entities.attributes IS NULL THEN EXCLUDED.attributes
+                    ELSE jsonb_strip_nulls(entities.attributes::jsonb || EXCLUDED.attributes::jsonb)::text
+                END,
+                updated_at = EXCLUDED.updated_at
             RETURNING entity_pk
         """, (
-            entity['entity_id'],
+            entity_id,
             entity['entity_type'],
-            entity['name'],
+            entity_name,
             entity.get('domain'),
             json.dumps(entity.get('attributes', {})),
             now,

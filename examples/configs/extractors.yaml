@@ -1,0 +1,199 @@
+# Entity Extractor Configuration
+# This file configures entity extraction and normalization
+
+# Enable/disable entity extraction globally
+enabled: true
+
+# Load built-in extractors by domain
+load_builtin: true
+builtin:
+  financial:
+    enabled: true
+    config:
+      # Additional configuration for financial extractors
+      currency_symbols: ['$', '€', '£', '¥', '₹']
+      
+  temporal:
+    enabled: true
+    config:
+      # Date formats to recognize
+      default_year: 2024
+      
+  legal:
+    enabled: true
+    config:
+      # Jurisdictions to recognize
+      jurisdictions: ['US', 'UK', 'EU']
+      
+  medical:
+    enabled: true
+    config:
+      # Medical code systems to extract
+      code_systems: ['ICD10', 'CPT', 'SNOMED']
+
+# Custom extractors for specific domains
+custom_extractors:
+  # Product codes and SKUs
+  - name: product_code
+    entity_type: product_code
+    description: Extract product codes and SKUs
+    patterns:
+      - regex: '[A-Z]{2,4}-\d{3,6}-[A-Z0-9]{2,4}'
+        word_boundaries: true
+      - regex: 'SKU\s*[:=]\s*\w+'
+      - regex: 'P/N\s*[:=]\s*[\w-]+'
+    normalizer: upper
+    formatter: upper
+    confidence: 0.95
+    enabled: true
+
+  # Email addresses
+  - name: email_address
+    entity_type: email
+    description: Extract email addresses
+    patterns:
+      - '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+    normalizer:
+      steps:
+        - lower
+        - strip
+    formatter: lower
+    enabled: true
+
+  # Phone numbers
+  - name: phone_number
+    entity_type: phone
+    description: Extract phone numbers
+    patterns:
+      - '\+?1?\s*\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}'  # US format
+      - '\+\d{1,3}\s*\d{2,4}\s*\d{4,10}'  # International
+    normalizer:
+      steps:
+        - remove_spaces
+        - remove_punctuation
+    enabled: true
+
+  # URLs and websites
+  - name: url
+    entity_type: url
+    description: Extract URLs and website addresses
+    patterns:
+      - 'https?://[^\s<>"{}|\\^`\[\]]+'
+      - 'www\.[a-zA-Z0-9][a-zA-Z0-9-]+[a-zA-Z0-9]\.[^\s<>"{}|\\^`\[\]]+'
+    normalizer: lower
+    enabled: true
+
+  # Social Security Numbers (masked for privacy)
+  - name: ssn_masked
+    entity_type: ssn
+    description: Extract masked SSNs
+    patterns:
+      - 'XXX-XX-\d{4}'  # Partially masked
+      - '\*{3}-\*{2}-\d{4}'
+    normalizer: none
+    enabled: true
+
+  # Credit card numbers (masked)
+  - name: credit_card_masked
+    entity_type: credit_card
+    description: Extract masked credit card numbers
+    patterns:
+      - '\*{4}\s*\*{4}\s*\*{4}\s*\d{4}'  # **** **** **** 1234
+      - 'X{4}\s*X{4}\s*X{4}\s*\d{4}'
+    normalizer: remove_spaces
+    enabled: true
+
+# Simple regex-based extractors
+regex_extractors:
+  # Vehicle Identification Numbers
+  - name: vin
+    entity_type: vehicle_identification_number
+    patterns:
+      - '[A-HJ-NPR-Z0-9]{17}'
+    normalizer: upper
+    description: Vehicle Identification Numbers (VIN)
+
+  # ISBN book identifiers
+  - name: isbn
+    entity_type: isbn
+    patterns:
+      - 'ISBN(?:-13)?:\s*978-\d{1,5}-\d{1,7}-\d{1,7}-\d'
+      - 'ISBN(?:-10)?:\s*\d{1,5}-\d{1,7}-\d{1,7}-[\dX]'
+    normalizer: upper
+    description: ISBN book identifiers
+
+  # IP addresses
+  - name: ip_address
+    entity_type: ip_address
+    patterns:
+      - '\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'  # IPv4
+      - '\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\b'  # IPv6 (simplified)
+    normalizer: lower
+    description: IP addresses (v4 and v6)
+
+  # MAC addresses
+  - name: mac_address
+    entity_type: mac_address
+    patterns:
+      - '(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}'
+    normalizer: upper
+    description: MAC addresses
+
+  # Hashtags
+  - name: hashtag
+    entity_type: hashtag
+    patterns:
+      - '#[a-zA-Z][a-zA-Z0-9_]*'
+    normalizer: lower
+    description: Social media hashtags
+
+  # Mentions
+  - name: mention
+    entity_type: mention
+    patterns:
+      - '@[a-zA-Z][a-zA-Z0-9_]*'
+    normalizer: lower
+    description: Social media mentions
+
+  # File paths
+  - name: file_path
+    entity_type: file_path
+    patterns:
+      - '[A-Za-z]:\\\\[^<>:"|?*\n]+'  # Windows paths
+      - '/(?:[^/\0]+/)*[^/\0]+'  # Unix paths
+    normalizer: none
+    description: File system paths
+
+  # Version numbers
+  - name: version_number
+    entity_type: version
+    patterns:
+      - 'v?\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9]+)?'  # v1.2.3-beta
+    normalizer: lower
+    description: Software version numbers
+
+# Normalization settings
+normalization:
+  # Fuzzy matching threshold for entity comparison
+  fuzzy_match_threshold: 0.85
+  
+  # Entity types that should use fuzzy matching
+  fuzzy_match_types:
+    - company_name
+    - person_name
+    - address
+    - medical_condition
+    
+  # Custom normalizers for specific entity types
+  custom_normalizers:
+    company_name:
+      remove_suffixes: true
+      remove_stop_words: true
+      
+    person_name:
+      remove_titles: true
+      handle_initials: true
+      
+    monetary_value:
+      convert_to_base: true
+      currency: USD

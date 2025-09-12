@@ -1,0 +1,162 @@
+# Example configuration for SEC filings using DuckDB content source
+# This configuration demonstrates how to access hive-partitioned SEC parquet data
+
+storage:
+  backend: sqlite
+  path: ./sec_filings.db
+
+embedding:
+  enabled: true
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  dimensions: 384
+
+content_sources:
+  - name: "sec-filings-duckdb"
+    type: "duckdb"
+    database_path: "/Volumes/T9/sec-test-aapl-msft-cache/sec-parquet"
+    enable_hive_partitioning: true
+    connection_config:
+      threads: 4
+      memory_limit: "2GB"
+    queries:
+      # Apple 10-K MDA sections from 2022 onwards
+      - name: "apple-10k-mda"
+        description: "Management Discussion and Analysis sections from Apple 10-K filings"
+        sql: >
+          SELECT 
+            cik,
+            filing_type,
+            year,
+            accession_number,
+            period_end_date,
+            text_content,
+            section_type,
+            word_count,
+            filename
+          FROM read_parquet('cik=0000320193/filing_type=10K/*/mda.parquet', hive_partitioning=true)
+          WHERE year >= 2022 
+            AND text_content IS NOT NULL 
+            AND LENGTH(text_content) > 100
+        id_columns: ["cik", "filing_type", "year", "accession_number"]
+        content_column: "text_content"
+        metadata_columns: ["period_end_date", "section_type", "word_count"]
+        doc_type: "sec_mda"
+
+      # Microsoft earnings call transcripts  
+      - name: "microsoft-earnings"
+        description: "Microsoft earnings call transcripts"
+        sql: >
+          SELECT 
+            cik,
+            filing_type,
+            year,
+            quarter,
+            speaker_name,
+            speaker_role,
+            paragraph_text,
+            paragraph_number,
+            section_type,
+            filename
+          FROM read_parquet('cik=0000789019/*/earnings.parquet', hive_partitioning=true)
+          WHERE paragraph_text IS NOT NULL
+            AND LENGTH(paragraph_text) > 50
+            AND speaker_role IN ('CEO', 'CFO', 'Analyst')
+        id_columns: ["cik", "year", "quarter", "speaker_name", "paragraph_number"]
+        content_column: "paragraph_text"
+        metadata_columns: ["speaker_role", "section_type"]
+        doc_type: "earnings_transcript"
+
+      # Recent 10-Q filings from both companies
+      - name: "recent-10q-all"
+        description: "Recent 10-Q MDA sections from Apple and Microsoft"
+        sql: >
+          SELECT 
+            cik,
+            filing_type,
+            year,
+            quarter,
+            accession_number,
+            text_content,
+            section_type,
+            word_count,
+            filename
+          FROM read_parquet('cik={0000320193,0000789019}/filing_type=10Q/*/mda.parquet', hive_partitioning=true)
+          WHERE year >= 2023
+            AND text_content IS NOT NULL
+            AND word_count > 100
+        id_columns: ["cik", "filing_type", "year", "quarter", "accession_number"]
+        content_column: "text_content"
+        metadata_columns: ["section_type", "word_count"]
+        doc_type: "sec_10q_mda"
+
+      # All earnings call CEO comments (cross-company analysis)
+      - name: "ceo-earnings-comments"
+        description: "CEO comments from earnings calls across companies"
+        sql: >
+          SELECT 
+            cik,
+            year,
+            quarter,
+            speaker_name,
+            paragraph_text,
+            paragraph_number,
+            section_type,
+            filename
+          FROM read_parquet('*/*/earnings.parquet', hive_partitioning=true)
+          WHERE speaker_role = 'CEO'
+            AND paragraph_text IS NOT NULL
+            AND LENGTH(paragraph_text) > 100
+            AND year >= 2022
+        id_columns: ["cik", "year", "quarter", "speaker_name", "paragraph_number"]
+        content_column: "paragraph_text"
+        metadata_columns: ["section_type"]
+        doc_type: "ceo_transcript"
+
+      # Financial facts for relationship analysis
+      - name: "financial-facts"
+        description: "Key financial facts and metrics"
+        sql: >
+          SELECT 
+            cik,
+            filing_type,
+            year,
+            fact_name,
+            fact_value,
+            unit_ref,
+            context_ref,
+            period_start,
+            period_end,
+            filename
+          FROM read_parquet('*/*/facts.parquet', hive_partitioning=true)  
+          WHERE fact_name IN (
+            'Revenues', 'Revenue', 'NetIncomeLoss', 'TotalAssets', 
+            'Cash', 'CashAndCashEquivalents', 'RetainedEarnings'
+          )
+          AND fact_value IS NOT NULL
+          AND year >= 2021
+        id_columns: ["cik", "filing_type", "year", "fact_name", "context_ref"]
+        content_column: "fact_value"
+        metadata_columns: ["unit_ref", "period_start", "period_end"]
+        doc_type: "financial_fact"
+
+# Optional: Domain-specific ontology for SEC filings
+domain_ontologies:
+  - name: "sec_filings"
+    path: "./examples/ontologies/sec_xbrl.yaml"
+
+# Optional: Relationship detection for cross-document analysis
+relationship_detection:
+  enabled: true
+  similarity_threshold: 0.8
+  max_relationships_per_element: 10
+  cross_document_semantic:
+    similarity_threshold: 0.75
+    max_cross_doc_relationships: 50
+
+# Logging configuration
+logging:
+  level: INFO
+  handlers:
+    - type: console
+    - type: file
+      filename: sec_processing.log

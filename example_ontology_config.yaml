@@ -1,0 +1,18 @@
+name: sec_filings_ontology
+version: 1.0.0
+description: Ontology for SEC filings analysis
+domain: financial_regulatory
+document_types:
+  - 10-K
+  - 10-Q
+  - 8-K
+  - DEF-14A
+  - S-1
+key_concepts:
+  - revenue
+  - earnings
+  - risk_factors
+  - management_discussion
+  - financial_statements
+  - corporate_governance
+  - executive_compensation

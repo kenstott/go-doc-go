@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  elasticsearch-test:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: go-doc-go-test-elasticsearch
+    environment:
+      # Single node setup for testing
+      - discovery.type=single-node
+      # Disable security for testing
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      # Memory settings
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      # Cluster name
+      - cluster.name=go-doc-go-test
+      - node.name=test-node
+      # Disable ML features to save memory
+      - xpack.ml.enabled=false
+      # Performance settings for testing
+      - action.destructive_requires_name=false
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - ./elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=30s"]
+      interval: 10s
+      timeout: 30s
+      retries: 10
+      start_period: 40s
+    networks:
+      - go-doc-go-test-network
+
+networks:
+  go-doc-go-test-network:
+    name: go-doc-go-test-network
+    driver: bridge

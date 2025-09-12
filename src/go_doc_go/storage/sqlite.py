@@ -690,7 +690,12 @@ class SQLiteDocumentDatabase(DocumentDatabase):
     
     def store_entity(self, entity: Dict[str, Any]) -> int:
         """
-        Store a domain entity.
+        Store a domain entity with proper UPSERT logic.
+        
+        This method implements normalization to prevent duplicates:
+        - Check if entity exists by entity_id
+        - If exists, merge attributes and update
+        - If new, insert with normalized data
         
         Args:
             entity: Entity dictionary with keys:
@@ -709,23 +714,69 @@ class SQLiteDocumentDatabase(DocumentDatabase):
         
         cursor = self.conn.cursor()
         try:
+            # Normalize entity_id and name
+            entity_id = entity['entity_id'].strip().lower()
+            entity_name = entity.get('name', '').strip() if entity.get('name') else entity_id
+            
+            # Check if entity already exists
             cursor.execute("""
-                INSERT OR REPLACE INTO entities 
-                (entity_id, entity_type, name, domain, attributes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                entity['entity_id'],
-                entity['entity_type'],
-                entity.get('name'),
-                entity.get('domain'),
-                json.dumps(entity.get('attributes', {})),
-                time.time(),
-                time.time()
-            ))
+                SELECT entity_pk, attributes, created_at 
+                FROM entities 
+                WHERE entity_id = ?
+            """, (entity_id,))
             
-            entity_pk = cursor.lastrowid
+            existing = cursor.fetchone()
+            current_time = time.time()
             
-            # Store embedding if provided
+            if existing:
+                # Entity exists - merge attributes
+                entity_pk = existing[0]
+                existing_attrs = json.loads(existing[1]) if existing[1] else {}
+                new_attrs = entity.get('attributes', {})
+                
+                # Merge attributes (new values override old ones)
+                merged_attrs = {**existing_attrs, **new_attrs}
+                
+                # Update existing entity
+                cursor.execute("""
+                    UPDATE entities 
+                    SET entity_type = ?,
+                        name = ?,
+                        domain = COALESCE(?, domain),
+                        attributes = ?,
+                        updated_at = ?
+                    WHERE entity_pk = ?
+                """, (
+                    entity['entity_type'],
+                    entity_name,
+                    entity.get('domain'),
+                    json.dumps(merged_attrs),
+                    current_time,
+                    entity_pk
+                ))
+                
+                logger.debug(f"Updated existing entity {entity_id} (pk={entity_pk})")
+                
+            else:
+                # New entity - insert with normalized data
+                cursor.execute("""
+                    INSERT INTO entities 
+                    (entity_id, entity_type, name, domain, attributes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    entity_id,
+                    entity['entity_type'],
+                    entity_name,
+                    entity.get('domain'),
+                    json.dumps(entity.get('attributes', {})),
+                    current_time,
+                    current_time
+                ))
+                
+                entity_pk = cursor.lastrowid
+                logger.debug(f"Created new entity {entity_id} (pk={entity_pk})")
+            
+            # Store or update embedding if provided
             if 'embedding' in entity and entity['embedding']:
                 self.store_entity_embedding(entity_pk, entity['embedding'], 
                                           entity.get('embedding_model', 'unknown'))

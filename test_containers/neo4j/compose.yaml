@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  neo4j-test:
+    image: neo4j:5.13-community
+    container_name: go-doc-go-test-neo4j
+    environment:
+      # Authentication
+      NEO4J_AUTH: neo4j/testpass123
+      # Accept license
+      NEO4J_ACCEPT_LICENSE_AGREEMENT: "yes"
+      # Memory configuration
+      NEO4J_server_memory_heap_initial__size: 512M
+      NEO4J_server_memory_heap_max__size: 512M
+      NEO4J_server_memory_pagecache_size: 256M
+      # APOC plugin (optional, useful for advanced operations)
+      NEO4J_PLUGINS: '["apoc"]'
+      # Disable authentication for testing (optional, uncomment if needed)
+      # NEO4J_AUTH: none
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    volumes:
+      - ./init.cypher:/var/lib/neo4j/import/init.cypher:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474/"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    networks:
+      - go-doc-go-test-network
+
+networks:
+  go-doc-go-test-network:
+    name: go-doc-go-test-network
+    driver: bridge

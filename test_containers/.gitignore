@@ -1,0 +1,15 @@
+# Ignore data directories created by containers
+*/data/
+**/data/
+
+# Ignore any persisted volumes
+*.db
+*.sqlite
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# But keep the structure
+!*/.gitkeep

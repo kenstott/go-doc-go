@@ -1,0 +1,146 @@
+# Complete Configuration with Entity Extraction
+# This example shows how to configure the full document processing pipeline
+# including entity extraction, normalization, and domain relationship detection
+
+# Storage configuration
+storage:
+  backend: "postgresql"  # or sqlite, neo4j
+  host: "${DB_HOST:-localhost}"
+  port: ${DB_PORT:-5432}
+  database: "${DB_NAME:-go_doc_go}"
+  user: "${DB_USER:-postgres}"
+  password: "${DB_PASSWORD}"
+
+# Embedding configuration
+embedding:
+  enabled: true
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  dimensions: 384
+  chunk_size: 512
+  overlap: 128
+  max_tokens: 16384
+
+# Entity extraction configuration
+entity_extraction:
+  enabled: true
+  
+  # Load all built-in extractors
+  load_builtin: true
+  builtin:
+    financial:
+      enabled: true
+    temporal:
+      enabled: true
+    legal:
+      enabled: true
+    medical:
+      enabled: true
+  
+  # Custom extractors for your domain
+  custom_extractors:
+    - name: project_code
+      entity_type: project_code
+      description: Extract project codes
+      patterns:
+        - regex: 'PROJ-\d{4}-[A-Z]{2}'
+        - regex: 'P\d{6}'
+      normalizer: upper
+      enabled: true
+    
+    - name: employee_id
+      entity_type: employee_id
+      description: Extract employee IDs
+      patterns:
+        - regex: 'EMP\d{6}'
+        - regex: 'E-\d{4}-\d{4}'
+      normalizer: upper
+      enabled: true
+  
+  # Simple regex extractors
+  regex_extractors:
+    - name: email
+      entity_type: email
+      patterns:
+        - '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
+      normalizer: lower
+    
+    - name: phone
+      entity_type: phone_number
+      patterns:
+        - '\+?1?\s*\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}'
+      normalizer:
+        steps:
+          - remove_spaces
+          - remove_punctuation
+
+# Relationship detection configuration
+relationship_detection:
+  enabled: true
+  
+  # Structural relationships (parent-child, siblings)
+  structural: true
+  
+  # Semantic relationships (based on embeddings)
+  semantic: true
+  semantic_config:
+    similarity_threshold: 0.7
+    max_relationships_per_element: 10
+  
+  # Domain relationships (based on ontologies)
+  domain:
+    enabled: true
+    ontologies:
+      - path: "examples/ontologies/financial_markets.yaml"
+        active: true
+      - path: "examples/ontologies/sec_xbrl.yaml"
+        active: false
+    
+    # Configuration for domain relationship detection
+    domain_config:
+      min_mapping_confidence: 0.6
+      min_relationship_confidence: 0.7
+      batch_size: 100
+  
+  # Cross-document semantic relationships
+  cross_document_semantic:
+    enabled: true
+    similarity_threshold: 0.75
+    max_relationships_per_element: 5
+
+# Content sources
+content_sources:
+  - name: "financial_documents"
+    type: "s3"
+    bucket: "${S3_BUCKET}"
+    prefix: "financial/"
+    file_pattern: "*.pdf"
+    
+  - name: "legal_documents"
+    type: "sharepoint"
+    site_url: "${SHAREPOINT_URL}"
+    libraries: ["Legal Documents"]
+    file_pattern: "*.docx"
+    
+  - name: "medical_records"
+    type: "file"
+    base_path: "/data/medical"
+    file_pattern: "**/*.pdf"
+
+# Processing configuration
+processing:
+  mode: "distributed"  # or "single"
+  batch_size: 10
+  max_workers: 4
+
+# Work queue configuration (for distributed processing)
+work_queue:
+  claim_timeout: 300
+  heartbeat_interval: 30
+  max_retries: 3
+  stale_threshold: 600
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "./logs/go_doc_go.log"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

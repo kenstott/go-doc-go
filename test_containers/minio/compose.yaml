@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  minio-test:
+    image: minio/minio:latest
+    container_name: go-doc-go-test-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_DEFAULT_BUCKETS: test-bucket,test-private,test-public
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web Console
+    volumes:
+      - ./data:/data
+      - ./init-buckets.sh:/init-buckets.sh:ro
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - go-doc-go-test-network
+
+  # Initialize buckets and sample data
+  minio-init:
+    image: minio/mc:latest
+    container_name: go-doc-go-test-minio-init
+    depends_on:
+      minio-test:
+        condition: service_healthy
+    entrypoint: /bin/sh /init-buckets.sh
+    volumes:
+      - ./init-buckets.sh:/init-buckets.sh:ro
+      - ../../tests/test_data/s3:/sample-data:ro
+    networks:
+      - go-doc-go-test-network
+
+networks:
+  go-doc-go-test-network:
+    name: go-doc-go-test-network
+    driver: bridge

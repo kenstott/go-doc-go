@@ -1,0 +1,36 @@
+# Elasticsearch configuration for testing
+cluster.name: go-doc-go-test
+node.name: test-node
+
+# Network settings
+network.host: 0.0.0.0
+http.port: 9200
+
+# Discovery settings (single node)
+discovery.type: single-node
+
+# Disable security for testing
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+xpack.security.http.ssl.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# Performance settings for testing
+indices.query.bool.max_clause_count: 10000
+index.max_result_window: 50000
+
+# Disable unused features to save memory
+xpack.ml.enabled: false
+xpack.watcher.enabled: false
+xpack.monitoring.enabled: false
+
+# Index settings
+index.number_of_shards: 1
+index.number_of_replicas: 0
+
+# Memory settings
+indices.memory.index_buffer_size: 30%
+indices.fielddata.cache.size: 30%
+
+# Logging
+logger.level: INFO

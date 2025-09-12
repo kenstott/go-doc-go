@@ -1,0 +1,26 @@
+# Test configuration for ontology generation with real data sources
+storage:
+  backend: sqlite
+  path: ./test_ontology_db.db
+
+# Sample data source for ontology generation
+content_sources:
+  - name: sample_documents
+    type: file
+    base_path: ./examples/sample_docs
+    file_pattern: "*.{pdf,txt,md,json}"
+    description: "Sample documents for ontology analysis"
+    
+  # Alternative: Use existing documents if available
+  # - name: financial_docs
+  #   type: s3
+  #   bucket: my-documents
+  #   prefix: financial/
+  #   region: us-east-1
+
+# Basic configuration
+embedding:
+  enabled: false  # Not needed for ontology generation
+
+logging:
+  level: INFO

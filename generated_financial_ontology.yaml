@@ -1,0 +1,92 @@
+name: test_financial
+version: 1.0.0
+description: Test financial ontology from config
+terms:
+- term: revenue
+  synonyms:
+  - income
+  - sales
+  - turnover
+  - receipts
+  description: Money generated from business operations
+- term: profit
+  synonyms:
+  - earnings
+  - net income
+  - bottom line
+  description: Revenue minus expenses
+- term: expense
+  synonyms:
+  - cost
+  - expenditure
+  - outlay
+  description: Money spent on business operations
+- term: asset
+  synonyms:
+  - property
+  - resource
+  - holding
+  description: Resources owned by the company
+- term: liability
+  synonyms:
+  - debt
+  - obligation
+  - payable
+  description: Financial obligations
+element_entity_mappings:
+- entity_type: company
+  description: Business organization
+  element_types:
+  - paragraph
+  - heading
+  - table_cell
+  extraction_rules:
+  - type: regex_pattern
+    pattern: \b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\s+(?:Inc|Corp|LLC|Ltd|Company|Co)\b
+    confidence: 0.8
+- entity_type: person
+  description: Individual person
+  element_types:
+  - paragraph
+  - heading
+  extraction_rules:
+  - type: metadata_field
+    field_path: metadata.speaker
+    confidence: 0.95
+- entity_type: monetary_amount
+  description: Currency amount
+  element_types:
+  - paragraph
+  - table_cell
+  extraction_rules:
+  - type: regex_pattern
+    pattern: \$[\d,]+(?:\.\d{2})?(?:\s*(?:billion|million|thousand|B|M|K))?
+    confidence: 0.9
+- entity_type: date
+  description: Date reference
+  element_types:
+  - paragraph
+  - heading
+  extraction_rules:
+  - type: regex_pattern
+    pattern: \b(?:Q[1-4]|FY)?\s*\d{4}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b
+    confidence: 0.85
+entity_relationship_rules:
+- name: company_revenue
+  source_entity_type: company
+  target_entity_type: monetary_amount
+  relationship_type: HAS_REVENUE
+  confidence_threshold: 0.7
+- name: person_company
+  source_entity_type: person
+  target_entity_type: company
+  relationship_type: WORKS_FOR
+  confidence_threshold: 0.75
+domain: financial
+document_types:
+- earnings_call
+- 10-K
+key_concepts:
+- revenue
+- profit
+- growth

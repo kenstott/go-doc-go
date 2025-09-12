@@ -1,0 +1,11 @@
+name: test_financial
+version: 1.0.0
+description: Test financial ontology from config
+domain: financial
+document_types:
+  - earnings_call
+  - 10-K
+key_concepts:
+  - revenue
+  - profit
+  - growth
