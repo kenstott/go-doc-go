@@ -290,8 +290,8 @@ class TextParser(DocumentParser):
         if content is None:
             raise ValueError("No content provided for text parsing")
 
-        # Generate document ID if not present
-        doc_id = metadata.get("doc_id", self._generate_id("doc_"))
+        # Generate document ID: prefer doc_content['id'] (compound ID), fallback to metadata, then UUID
+        doc_id = doc_content.get("id") or metadata.get("doc_id") or self._generate_id("doc_")
 
         # Create document record with metadata
         document = {

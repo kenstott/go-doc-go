@@ -272,13 +272,13 @@ def create_semantic_time_expression(time_obj):
         return str(time_obj)
 
 
-@ttl_cache(maxsize=128, ttl=3600)
-def create_semantic_date_expression(date_str: str) -> str:
+def create_semantic_date_expression(date_str: str, from_datetime: bool = False) -> str:
     """
     Convert a date string into a balanced semantic expression with practical business terms.
 
     Args:
         date_str: A string representing a date in various possible formats
+        from_datetime: If True, skip datetime handling to prevent recursion
 
     Returns:
         A balanced expansion with practical business terms for real-world search scenarios
@@ -297,7 +297,8 @@ def create_semantic_date_expression(date_str: str) -> str:
                 has_time = True
 
         # If this has a significant time component, use the datetime formatter
-        if has_time:
+        # BUT only if we're not being called from datetime formatter (prevent recursion)
+        if has_time and not from_datetime:
             return create_semantic_date_time_expression(date_str)
 
         # Get basic date components
@@ -415,7 +416,6 @@ def create_semantic_date_expression(date_str: str) -> str:
         return date_str  # Return original on any error
 
 
-@ttl_cache(maxsize=128, ttl=3600)
 def create_semantic_date_time_expression(dt_str):
     """
     Convert a datetime string into a rich semantic natural language expression
@@ -434,8 +434,8 @@ def create_semantic_date_time_expression(dt_str):
         # Parse the datetime string
         parsed_dt = parser.parse(dt_str)
 
-        # Generate date part
-        date_part = create_semantic_date_expression(dt_str)
+        # Generate date part - pass from_datetime=True to prevent recursion
+        date_part = create_semantic_date_expression(dt_str, from_datetime=True)
 
         # Generate time part
         time_part = create_semantic_time_expression(parsed_dt)

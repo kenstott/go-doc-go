@@ -617,7 +617,7 @@ class MarkdownParser(DocumentParser):
             source_id = os.path.abspath(source_id)
 
         # Generate document ID if not present
-        doc_id = metadata.get("doc_id", self._generate_id("doc_"))
+        doc_id = doc_content.get("id") or metadata.get("doc_id") or self._generate_id("doc_")
 
         # Extract front matter if enabled
         if self.extract_front_matter:

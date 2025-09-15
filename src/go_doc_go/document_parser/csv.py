@@ -260,8 +260,8 @@ class CsvParser(DocumentParser):
         source_id = doc_content["id"]  # Should already be a fully qualified path
         metadata = doc_content.get("metadata", {}).copy()  # Make a copy to avoid modifying original
 
-        # Generate document ID if not present
-        doc_id = metadata.get("doc_id", self._generate_id("doc_"))
+        # Generate document ID: prefer doc_content['id'] (compound ID), fallback to metadata, then UUID
+        doc_id = doc_content.get("id") or metadata.get("doc_id") or self._generate_id("doc_")
 
         # Parse the CSV content
         csv_data, dialect = self._parse_csv_content(content)

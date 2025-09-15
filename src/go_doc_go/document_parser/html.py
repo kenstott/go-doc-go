@@ -601,7 +601,7 @@ class HtmlParser(DocumentParser):
                 return cached_doc
 
         # Generate document ID if not present
-        doc_id = metadata.get("doc_id", self._generate_id("doc_"))
+        doc_id = doc_content.get("id") or metadata.get("doc_id") or self._generate_id("doc_")
 
         # Create document record
         document = {

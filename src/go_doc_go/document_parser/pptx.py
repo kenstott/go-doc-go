@@ -666,7 +666,7 @@ class PptxParser(DocumentParser):
             raise ValueError("PPTX parser requires either binary_path or content to process the presentation")
 
         # Generate document ID if not present
-        doc_id = metadata.get("doc_id", self._generate_id("doc_"))
+        doc_id = doc_content.get("id") or metadata.get("doc_id") or self._generate_id("doc_")
 
         # Load PPTX document
         try:
