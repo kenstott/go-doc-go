@@ -41,6 +41,10 @@ class FileAdapter(ContentSourceAdapter):
             ValueError: If file cannot be read
         """
         source = location_data.get("source", "")
+        
+        # Strip timestamp suffix if present (format: path::timestamp)
+        if "::" in source:
+            source = source.split("::")[0]
 
         # Ensure file exists
         if not os.path.exists(source):
@@ -124,6 +128,10 @@ class FileAdapter(ContentSourceAdapter):
             True if supported, False otherwise
         """
         source = location_data.get("source", "")
+        
+        # Strip timestamp suffix if present (format: path::timestamp)
+        if "::" in source:
+            source = source.split("::")[0]
 
         # Check if source is a valid file path
         if not source:
@@ -165,6 +173,10 @@ class FileAdapter(ContentSourceAdapter):
             ValueError: If file cannot be read
         """
         source = location_data.get("source", "")
+        
+        # Strip timestamp suffix if present (format: path::timestamp)
+        if "::" in source:
+            source = source.split("::")[0]
 
         # Ensure file exists
         if not os.path.exists(source):
@@ -194,6 +206,10 @@ class FileAdapter(ContentSourceAdapter):
             ValueError: If file metadata cannot be retrieved
         """
         source = location_data.get("source", "")
+        
+        # Strip timestamp suffix if present (format: path::timestamp)
+        if "::" in source:
+            source = source.split("::")[0]
 
         # Ensure file exists
         if not os.path.exists(source):
