@@ -57,6 +57,10 @@ logs/
 *.db-wal
 data/
 
+# Data Lake - Analytics parquet files
+data-lake/
+*.parquet
+
 # Environment variables
 .env
 .env.local
