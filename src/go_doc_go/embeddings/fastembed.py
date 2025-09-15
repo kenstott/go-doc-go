@@ -238,23 +238,13 @@ class FastEmbedGenerator(EmbeddingGenerator):
         return providers
 
     def generate_from_elements(self, elements: List[Dict[str, Any]], db=None) -> Dict[str, List[float]]:
-        """Generate embeddings for document elements."""
-        embeddings = {}
-
-        for element in elements:
-            element_pk = element["element_pk"]
-
-            # Skip root element
-            if element["element_type"] == "root":
-                continue
-
-            # Get content from preview
-            content = element.get("content_preview", "")
-            if not content:
-                continue
-
-            # Generate embedding directly from content
-            embedding = self.generate(content)
-            embeddings[element_pk] = embedding
-
-        return embeddings
+        """
+        Generate embeddings for document elements.
+        
+        Note: This base implementation should not be used directly.
+        Use ContextualEmbeddingGenerator for proper contextual embeddings.
+        """
+        raise NotImplementedError(
+            "Direct element embedding is deprecated. "
+            "Use ContextualEmbeddingGenerator for contextual embeddings with simple text structure."
+        )
