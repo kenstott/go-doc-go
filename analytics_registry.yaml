@@ -7,7 +7,7 @@ analytics_registry:
     type: parquet
     description: "High-performance analytics using Parquet files with DuckDB"
     enabled: true
-    base_path: "./data-lake/analytics"
+    base_path: "./data-lake"
     format: parquet
     compression: snappy
     search_capabilities:
@@ -176,30 +176,30 @@ agent_selection_rules:
         query_type: "real_time"
         response_time: "<100ms"
       backend: "elasticsearch"
-      
+
     - name: "large_scale_analytics"
       condition:
         data_size: ">1GB"
         query_type: "analytical"
       backend: "parquet_duckdb"
-      
+
     - name: "graph_traversal"
       condition:
         query_type: "relationship"
         depth: ">2"
       backend: "neo4j"
-      
+
     - name: "document_search"
       condition:
         query_type: "full_text"
         faceting: true
       backend: "solr"
-      
+
     - name: "flexible_schema"
       condition:
         schema_variability: "high"
         query_type: "document"
       backend: "mongodb"
-  
+
   # Default fallback
   default: "parquet_duckdb"

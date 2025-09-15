@@ -103,10 +103,11 @@ print(f"Found {result['relationships']} relationships")
 
 ### Search with Context
 ```python
-from go_doc_go import search_with_documents
+from go_doc_go import SearchEngine, SearchRequest
 
-# Contextual search with document reconstruction
-results = search_with_documents(
+# Unified search interface with contextual XML embeddings
+engine = SearchEngine()
+results = engine.search(SearchRequest(
     query_text="quarterly revenue analysis",
     limit=10,
     document_format="markdown"  # Get full documents as markdown

@@ -18,7 +18,8 @@ sys.path.insert(0, os.path.join(parent_dir, 'src'))
 
 from go_doc_go.config import Config
 from go_doc_go.document_parser.markdown import MarkdownParser
-from go_doc_go.search import search_by_text
+# Legacy search import removed - using unified search module
+from go_doc_go.search_module import SearchEngine, SearchRequest
 from go_doc_go.storage import flatten_hierarchy
 
 # Configure logging

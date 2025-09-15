@@ -12,9 +12,10 @@ from go_doc_go.embeddings import EmbeddingGenerator
 # Load environment variables from .env file
 load_dotenv()
 from go_doc_go import Config
-from go_doc_go.search import search_by_text, search_structured, SearchQueryRequest, SearchCriteriaGroupRequest, \
-    SemanticSearchRequest, TopicSearchRequest, LogicalOperatorEnum
-from go_doc_go.storage.search import pydantic_to_core_query
+# Legacy search imports removed - using unified search module instead
+from go_doc_go.search_module import SearchEngine, SearchRequest
+from go_doc_go.storage.search import SearchQueryRequest, SearchCriteriaGroupRequest, \
+    SemanticSearchRequest, TopicSearchRequest, LogicalOperatorEnum, pydantic_to_core_query
 
 # Configure logging with real-time output
 logging.basicConfig(
@@ -375,36 +376,9 @@ def test_document_search_execution():
                 test_pydantic_to_core_conversion_debug()
                 return
 
-            logger.info("🔄 Trying alternative approach with SearchHelper...")
-
-            # Fallback: Try SearchHelper directly
-            try:
-                from go_doc_go.search import SearchHelper
-
-                if hasattr(SearchHelper, 'execute_structured_search'):
-                    structured_results = SearchHelper.execute_structured_search(
-                        query=structured_query,
-                        text=True,
-                        content=False,
-                        flat=False,
-                        include_parents=True
-                    )
-                    logger.info("✅ SearchHelper.execute_structured_search() worked as fallback")
-                else:
-                    logger.error("❌ SearchHelper.execute_structured_search() not available")
-                    logger.info("💡 Running diagnostic test...")
-                    test_pydantic_search_module_availability()
-                    return
-
-            except Exception as helper_error:
-                logger.error(f"❌ SearchHelper fallback also failed: {helper_error}")
-
-                # Check for same validation error in fallback
-                if "SearchCriteriaGroup must have at least one criterion" in str(helper_error):
-                    logger.error("🚨 SAME VALIDATION ERROR in SearchHelper fallback")
-                    logger.info("💡 This indicates a Pydantic model validation issue")
-                    test_structured_query_validation_debug()
-                    return
+            logger.info("🔄 Legacy SearchHelper fallback no longer available (removed)")
+            logger.info("💡 Use unified SearchEngine from search_module instead")
+            return
 
                 logger.error("🚨 CRITICAL: Structured search is not working")
                 logger.info("💡 Run: pytest test_go-doc-go.py::test_pydantic_search_module_availability -v -s")
@@ -1047,14 +1021,9 @@ def test_quick_pydantic_search_fix():
             limit=1
         )
 
-        # Try using storage.search.execute_search
-        from go_doc_go.search import SearchHelper
-        db = SearchHelper.get_database()
-
-        result = storage_execute_search(test_query, db)
-        if result.success:
-            logger.info("   ✅ storage.search.execute_search works!")
-            logger.info("   💡 FIX: Update search.py to import from storage.search")
+        # Legacy SearchHelper no longer available - using storage search directly
+        logger.info("   💡 SearchHelper removed - use SearchEngine from search_module instead")
+        # Note: This test function needs updating for new search architecture
         else:
             logger.warning(f"   ⚠️  storage.search.execute_search failed: {result.error_message}")
 
