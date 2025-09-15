@@ -9,7 +9,7 @@ analytics_registry:
     enabled: true
     base_path: "./data-lake"
     format: parquet
-    compression: snappy
+    compression: snappy3
     search_capabilities:
       full_text: true
       semantic: true
