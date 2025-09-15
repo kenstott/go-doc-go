@@ -1,9 +1,10 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, Typography, Button, IconButton, Card, CardContent, CardActions, Chip } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, PlayArrow as RunIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, PlayArrow as RunIcon, History as HistoryIcon } from '@mui/icons-material';
 import PipelineConfigEditor from './components/Pipeline/PipelineConfigEditor';
 import SimpleGettingStarted from './components/Pipeline/SimpleGettingStarted';
+import ExecutionMonitor from './components/Pipeline/ExecutionMonitor';
 // import GettingStartedOverlay from './components/Pipeline/GettingStartedOverlay';
 // Temporarily comment out PipelineManager to debug
 // import PipelineManager from './components/Pipeline/PipelineManager';
@@ -14,6 +15,9 @@ const SimplePipelineView = () => {
   const [configOpen, setConfigOpen] = React.useState(false);
   const [editMode, setEditMode] = React.useState<'create' | 'edit'>('create');
   const [selectedPipeline, setSelectedPipeline] = React.useState<any>(null);
+  const [monitorOpen, setMonitorOpen] = React.useState(false);
+  const [monitorPipelineId, setMonitorPipelineId] = React.useState<number | undefined>();
+  const [monitorExecutionId, setMonitorExecutionId] = React.useState<string | undefined>();
 
   const loadPipelines = () => {
     fetch('/api/pipelines')
@@ -40,21 +44,38 @@ const SimplePipelineView = () => {
 
   const handleEdit = (pipeline: any) => {
     // Parse the config YAML to get the configuration
-    let config = {};
+    let parsedConfig = {};
     try {
       if (pipeline.config_yaml) {
-        // We need to parse the YAML but we're in the browser, so we'll use the config as is
-        config = JSON.parse(JSON.stringify(pipeline));
+        // Import js-yaml dynamically to parse the YAML
+        import('js-yaml').then(({ load }) => {
+          try {
+            parsedConfig = load(pipeline.config_yaml) || {};
+            console.log('Parsed pipeline config from YAML:', parsedConfig);
+            
+            setEditMode('edit');
+            setSelectedPipeline({
+              ...pipeline,
+              ...parsedConfig  // Merge the parsed config with pipeline metadata
+            });
+            setConfigOpen(true);
+          } catch (yamlError) {
+            console.error('Error parsing YAML config:', yamlError);
+            // Still open editor with just metadata if YAML parsing fails
+            setEditMode('edit');
+            setSelectedPipeline(pipeline);
+            setConfigOpen(true);
+          }
+        });
+        return; // Exit early since we're doing async import
       }
     } catch (e) {
-      console.error('Error parsing config:', e);
+      console.error('Error in handleEdit:', e);
     }
     
+    // Fallback if no config_yaml
     setEditMode('edit');
-    setSelectedPipeline({
-      ...pipeline,
-      ...config
-    });
+    setSelectedPipeline(pipeline);
     setConfigOpen(true);
   };
 
@@ -77,6 +98,11 @@ const SimplePipelineView = () => {
   };
 
   const handleSavePipeline = async (config: any) => {
+    console.log('🔥🔥🔥 SAVE PIPELINE STARTED - FIXED VERSION');
+    console.log('🔥🔥🔥 Config received:', config);
+    console.log('🔥🔥🔥 Edit mode:', editMode);
+    console.log('🔥🔥🔥 Selected pipeline:', selectedPipeline);
+    
     try {
       const url = editMode === 'create' 
         ? '/api/pipelines' 
@@ -84,12 +110,24 @@ const SimplePipelineView = () => {
       
       const method = editMode === 'create' ? 'POST' : 'PUT';
       
+      // For updates, we need to add expected_version field
+      let requestPayload = config;
+      if (editMode === 'edit' && selectedPipeline) {
+        // Remove version field and add expected_version
+        const { version, ...configWithoutVersion } = config;
+        requestPayload = {
+          ...configWithoutVersion,
+          expected_version: selectedPipeline.version || version || 1
+        };
+        console.log('🔥🔥🔥 Update payload with expected_version:', requestPayload);
+      }
+      
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(config)
+        body: JSON.stringify(requestPayload)
       });
 
       if (response.ok) {
@@ -121,14 +159,28 @@ const SimplePipelineView = () => {
             {pipelines.length} pipeline{pipelines.length !== 1 ? 's' : ''} configured
           </Typography>
         </Box>
-        <Button 
-          variant="contained" 
-          startIcon={<EditIcon />}
-          onClick={handleCreateNew}
-          size="large"
-        >
-          Create New Pipeline
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button 
+            variant="outlined"
+            startIcon={<HistoryIcon />}
+            onClick={() => {
+              setMonitorPipelineId(undefined);
+              setMonitorExecutionId(undefined);
+              setMonitorOpen(true);
+            }}
+            size="large"
+          >
+            All Executions
+          </Button>
+          <Button 
+            variant="contained" 
+            startIcon={<EditIcon />}
+            onClick={handleCreateNew}
+            size="large"
+          >
+            Create New Pipeline
+          </Button>
+        </Box>
       </Box>
       
       {/* Pipeline Cards */}
@@ -170,10 +222,43 @@ const SimplePipelineView = () => {
             <CardActions sx={{ justifyContent: 'flex-end' }}>
               <Button 
                 startIcon={<RunIcon />}
-                onClick={() => alert('Pipeline execution not yet implemented')}
+                onClick={async () => {
+                  try {
+                    const response = await fetch(`/api/pipelines/${pipeline.id}/execute`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({})
+                    });
+                    
+                    if (response.ok) {
+                      const result = await response.json();
+                      // Open monitor with this execution
+                      setMonitorPipelineId(pipeline.id);
+                      setMonitorExecutionId(result.execution.run_id);
+                      setMonitorOpen(true);
+                    } else {
+                      const error = await response.json();
+                      alert(`Failed to execute pipeline: ${error.message || 'Unknown error'}`);
+                    }
+                  } catch (err) {
+                    console.error('Error executing pipeline:', err);
+                    alert('Error executing pipeline');
+                  }
+                }}
                 color="primary"
               >
                 Run
+              </Button>
+              <Button
+                startIcon={<HistoryIcon />}
+                onClick={() => {
+                  setMonitorPipelineId(pipeline.id);
+                  setMonitorExecutionId(undefined);
+                  setMonitorOpen(true);
+                }}
+                color="secondary"
+              >
+                History
               </Button>
               <IconButton 
                 onClick={() => handleEdit(pipeline)}
@@ -219,12 +304,20 @@ const SimplePipelineView = () => {
         onClose={() => setConfigOpen(false)}
         onSave={handleSavePipeline}
         pipelineId={selectedPipeline?.id}
-        initialConfig={editMode === 'edit' ? {
+        initialConfig={editMode === 'edit' && selectedPipeline ? {
           name: selectedPipeline?.name || '',
           description: selectedPipeline?.description || '',
           version: selectedPipeline?.version || '1.0.0',
           tags: selectedPipeline?.tags || [],
-          is_active: selectedPipeline?.is_active ?? true
+          is_active: selectedPipeline?.is_active ?? true,
+          // Include all parsed configuration fields
+          content_sources: selectedPipeline?.content_sources || [],
+          storage: selectedPipeline?.storage || {},
+          processing: selectedPipeline?.processing || {},
+          embedding: selectedPipeline?.embedding || {},
+          relationship_detection: selectedPipeline?.relationship_detection || {},
+          output: selectedPipeline?.output || {},
+          logging: selectedPipeline?.logging || {}
         } : {
           name: '',
           description: '',
@@ -232,6 +325,18 @@ const SimplePipelineView = () => {
           tags: [],
           is_active: true
         }}
+      />
+      
+      {/* Execution Monitor */}
+      <ExecutionMonitor
+        open={monitorOpen}
+        onClose={() => {
+          setMonitorOpen(false);
+          setMonitorPipelineId(undefined);
+          setMonitorExecutionId(undefined);
+        }}
+        pipelineId={monitorPipelineId}
+        executionId={monitorExecutionId}
       />
     </Box>
   );

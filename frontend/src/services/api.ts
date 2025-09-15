@@ -3,7 +3,7 @@ import { Config, Ontology, Domain, OntologyListItem, ApiResponse } from '../type
 
 // Create axios instance with default config
 const api: AxiosInstance = axios.create({
-  baseURL: 'http://localhost:5002/api',
+  baseURL: '/api',  // Use relative URL to go through Vite proxy
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
@@ -18,6 +18,24 @@ api.interceptors.request.use(
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    // Debug logging for pipeline updates
+    if (config.url?.includes('/pipelines/') && config.method === 'put') {
+      console.log('=== AXIOS INTERCEPTOR DEBUG ===');
+      console.log('URL:', config.url);
+      console.log('Method:', config.method);
+      console.log('Data being sent:', config.data);
+      if (typeof config.data === 'string') {
+        try {
+          const parsed = JSON.parse(config.data);
+          console.log('Parsed data:', parsed);
+          console.log('expected_version in parsed data:', parsed.expected_version);
+        } catch (e) {
+          console.log('Could not parse data as JSON');
+        }
+      }
+    }
+    
     return config;
   },
   (error: AxiosError) => {
@@ -104,6 +122,127 @@ export const domainApi = {
     const response = await api.post<ApiResponse>(`/domain/${name}/deactivate`);
     return response.data;
   },
+};
+
+// Pipeline endpoints
+export const pipelineApi = {
+  list: async () => {
+    const response = await api.get('/pipelines');
+    return response.data;
+  },
+  
+  get: async (id: number) => {
+    const response = await api.get(`/pipelines/${id}`);
+    return response.data;
+  },
+  
+  create: async (pipeline: {
+    name: string;
+    description: string;
+    config_yaml: string;
+    tags?: string[];
+  }) => {
+    const response = await api.post('/pipelines', pipeline);
+    return response.data;
+  },
+  
+  update: async (id: number, pipeline: {
+    name?: string;
+    description?: string;
+    config_yaml?: string;
+    tags?: string[];
+    is_active?: boolean;
+    expected_version: number;  // Required for optimistic locking
+  }) => {
+    console.log('=== API.TS UPDATE DEBUG ===');
+    console.log('1. Full pipeline object received:', pipeline);
+    console.log('2. expected_version value:', pipeline.expected_version);
+    console.log('3. expected_version type:', typeof pipeline.expected_version);
+    console.log('4. Keys in pipeline object:', Object.keys(pipeline));
+    
+    // Ensure expected_version is included in the request
+    const requestPayload = {
+      ...pipeline,
+      expected_version: pipeline.expected_version
+    };
+    
+    console.log('5. Request payload being sent:', JSON.stringify(requestPayload, null, 2));
+    
+    const response = await api.put(`/pipelines/${id}`, requestPayload);
+    console.log('6. Response from server:', response.data);
+    return response.data;
+  },
+  
+  delete: async (id: number) => {
+    const response = await api.delete(`/pipelines/${id}`);
+    return response.data;
+  },
+  
+  execute: async (id: number, params?: {
+    worker_count?: number;
+    documents_total?: number;
+  }) => {
+    const response = await api.post(`/pipelines/${id}/execute`, params || {});
+    return response.data;
+  },
+  
+  getExecutions: async (pipelineId?: number) => {
+    const url = pipelineId ? `/pipelines/${pipelineId}/executions` : '/pipelines/executions';
+    const response = await api.get(url);
+    return response.data;
+  },
+  
+  getExecution: async (runId: string) => {
+    const response = await api.get(`/pipelines/executions/${runId}`);
+    return response.data;
+  },
+  
+  cancelExecution: async (runId: string) => {
+    const response = await api.post(`/pipelines/executions/${runId}/cancel`);
+    return response.data;
+  },
+  
+  getActiveExecutions: async () => {
+    const response = await api.get('/pipelines/executions/active');
+    return response.data;
+  },
+  
+  getTemplates: async () => {
+    const response = await api.get('/pipelines/templates');
+    return response.data;
+  },
+  
+  createFromTemplate: async (templateId: number, name: string, description?: string) => {
+    const response = await api.post('/pipelines/from-template', {
+      template_id: templateId,
+      name,
+      description
+    });
+    return response.data;
+  },
+  
+  clone: async (id: number, newName: string) => {
+    const response = await api.post(`/pipelines/${id}/clone`, { name: newName });
+    return response.data;
+  },
+  
+  export: async (id: number) => {
+    const response = await api.get(`/pipelines/${id}/export`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+  
+  import: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post('/pipelines/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  }
 };
 
 export default api;

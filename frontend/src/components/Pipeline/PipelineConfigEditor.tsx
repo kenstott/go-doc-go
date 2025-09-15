@@ -62,6 +62,7 @@ import {
   Database as DatabaseIcon,
 } from '@mui/icons-material';
 import yaml from 'js-yaml';
+import DualStorageConfig from './DualStorageConfig';
 
 // Go-Doc-Go Pipeline Configuration Interface
 interface PipelineConfig {
@@ -71,8 +72,65 @@ interface PipelineConfig {
   tags: string[];
   is_active: boolean;
   storage: {
-    backend: string;
-    path?: string;
+    // Dual storage architecture (REQUIRED - no backward compatibility)
+    job: {
+      type: string;  // postgresql, redis, sqlite
+      // PostgreSQL settings
+      host?: string;
+      port?: number;
+      database?: string;
+      username?: string;
+      password?: string;
+      uri?: string;
+      pool_size?: number;
+      max_overflow?: number;
+      // Redis settings
+      db?: number;
+      max_connections?: number;
+      // SQLite settings
+      path?: string;
+    };
+    analytics: {
+      type: string;  // parquet, mongodb, elasticsearch, solr, neo4j, sqlalchemy
+      // Parquet settings
+      base_path?: string;
+      partitioning?: string[];
+      s3?: {
+        region?: string;
+        access_key?: string;
+        secret_key?: string;
+        endpoint_url?: string;
+      };
+      // MongoDB settings
+      uri?: string;
+      database?: string;
+      // Elasticsearch settings
+      hosts?: string[];
+      index_prefix?: string;
+      cloud_id?: string;
+      api_key?: string;
+      username?: string;
+      password?: string;
+      shards?: number;
+      replicas?: number;
+      // Solr settings
+      url?: string;
+      documents_collection?: string;
+      elements_collection?: string;
+      // Neo4j settings
+      neo4j_uri?: string;
+      neo4j_username?: string;
+      neo4j_password?: string;
+      neo4j_database?: string;
+      // SQLAlchemy settings
+      dialect?: string;
+      driver?: string;
+      host?: string;
+      port?: number;
+      table_prefix?: string;
+    };
+    
+    // Legacy backend-specific settings (backward compatibility)
     postgresql?: {
       uri?: string;
       host?: string;
@@ -220,6 +278,17 @@ interface PipelineConfig {
     }>;
   };
   path_mappings?: Record<string, string>;
+  processing?: {
+    mode?: string;  // two_pass (default), single
+    parser_threads?: number;
+    embedder_threads?: number;
+    embedding_batch_size?: number;
+    use_gpu?: boolean;
+    worker_role?: string;  // parser, embedder, both
+    max_gpu_workers?: number;
+    queue_poll_interval?: number;
+    claim_timeout?: number;
+  };
 }
 
 interface ValidationError {
@@ -247,6 +316,16 @@ const defaultConfig: PipelineConfig = {
   tags: [],
   is_active: true,
   storage: {
+    // Dual storage architecture (new format - preferred)
+    job: {
+      type: 'sqlite',
+      path: isDevelopment ? './data/job_queue.db' : './job_queue.db'
+    },
+    analytics: {
+      type: 'parquet',  // Changed from 'sqlite' to 'parquet' - sqlite not valid for analytics
+      base_path: isDevelopment ? './data/analytics' : './analytics'
+    },
+    // Legacy single storage (kept for backward compatibility)
     backend: 'sqlite',
     path: './data',
     sqlite: {
@@ -305,7 +384,7 @@ const defaultConfig: PipelineConfig = {
       name: 'file-docs',
       type: 'file',
       base_path: './documents',
-      file_pattern: '**/*.{pdf,docx,xlsx,csv,json,xml,html,md,txt}',
+      file_pattern: '**/*.{pdf,docx,xlsx,csv,json,xml,html,htm,md,txt}',
       watch_for_changes: false,
       max_link_depth: 2
     }
@@ -404,6 +483,19 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
   const [newTag, setNewTag] = useState('');
   const [expandedSections, setExpandedSections] = useState<string[]>(['basic', 'storage']);
 
+  // Update config when initialConfig changes (for edit mode)
+  useEffect(() => {
+    if (initialConfig && open) {
+      setConfig(prevConfig => ({
+        ...defaultConfig,
+        ...initialConfig
+      }));
+    } else if (!initialConfig && open && mode === 'create') {
+      // Reset to defaults for create mode
+      setConfig(defaultConfig);
+    }
+  }, [initialConfig, open, mode]);
+
   useEffect(() => {
     if (open) {
       updateYamlFromConfig();
@@ -419,8 +511,8 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
       delete (configForYaml as any).version;
       delete (configForYaml as any).tags;
       delete (configForYaml as any).is_active;
-      
-      const yamlStr = yaml.dump(configForYaml, { 
+
+      const yamlStr = yaml.dump(configForYaml, {
         indent: 2,
         lineWidth: 100,
         noRefs: true
@@ -448,7 +540,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
         is_active: config.is_active,
         ...parsed
       } as PipelineConfig;
-      
+
       validateConfig(updatedConfig);
       setConfig(updatedConfig);
       return true;
@@ -470,8 +562,35 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
       errors.push({ path: 'name', message: 'Pipeline name is required', severity: 'error' });
     }
 
-    if (!configToValidate.storage?.backend) {
-      errors.push({ path: 'storage.backend', message: 'Storage backend is required', severity: 'error' });
+    // Validate storage configuration - support both new dual storage and legacy format
+    if (!configToValidate.storage) {
+      errors.push({ path: 'storage', message: 'Storage configuration is required', severity: 'error' });
+    } else {
+      // Check for new dual storage format
+      const hasDualStorage = configToValidate.storage.job && configToValidate.storage.analytics;
+      // Check for legacy format
+      const hasLegacyStorage = configToValidate.storage.backend;
+      
+      if (!hasDualStorage && !hasLegacyStorage) {
+        errors.push({ 
+          path: 'storage', 
+          message: 'Storage must specify either job + analytics (recommended) or backend (legacy)', 
+          severity: 'error' 
+        });
+      }
+      
+      // Validate dual storage if present
+      if (configToValidate.storage.job && !configToValidate.storage.job.type) {
+        errors.push({ path: 'storage.job.type', message: 'Job storage type is required', severity: 'error' });
+      }
+      // Analytics can be either a string (registry name) or an object with type
+      if (configToValidate.storage.analytics) {
+        if (typeof configToValidate.storage.analytics === 'object' && !configToValidate.storage.analytics.type) {
+          errors.push({ path: 'storage.analytics.type', message: 'Analytics storage type is required', severity: 'error' });
+        } else if (typeof configToValidate.storage.analytics !== 'string' && typeof configToValidate.storage.analytics !== 'object') {
+          errors.push({ path: 'storage.analytics', message: 'Analytics storage must be a registry name or configuration object', severity: 'error' });
+        }
+      }
     }
 
     if (!configToValidate.content_sources?.length) {
@@ -499,7 +618,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
     setIsSaving(true);
     try {
       let configToSave = config;
-      
+
       if (isYamlMode) {
         if (!updateConfigFromYaml()) {
           setIsSaving(false);
@@ -510,7 +629,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
 
       const errors = validateConfig(configToSave);
       const hasErrors = errors.some(e => e.severity === 'error');
-      
+
       if (hasErrors) {
         alert('Please fix validation errors before saving');
         setIsSaving(false);
@@ -518,15 +637,12 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
       }
 
       // Convert config to YAML for backend storage
-      const configForBackend = { ...configToSave };
-      delete (configForBackend as any).name;
-      delete (configForBackend as any).description;
-      delete (configForBackend as any).version;
-      delete (configForBackend as any).tags;
-      delete (configForBackend as any).is_active;
+      // Extract metadata fields that go in the database columns
+      const { name, description, version, tags, is_active, ...pipelineConfig } = configToSave;
       
-      const configYaml = yaml.dump(configForBackend, { indent: 2, lineWidth: 100, noRefs: true });
-      
+      // The config_yaml should contain all the actual pipeline configuration
+      const configYaml = yaml.dump(pipelineConfig, { indent: 2, lineWidth: 100, noRefs: true });
+
       // Create the payload in the format expected by the API
       const pipelinePayload = {
         name: configToSave.name,
@@ -537,7 +653,9 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
         version: configToSave.version
       };
 
+      console.log('Calling onSave with payload:', pipelinePayload);
       await onSave(pipelinePayload as any);
+      console.log('onSave completed successfully');
     } catch (error) {
       console.error('Failed to save pipeline configuration:', error);
       alert('Failed to save configuration');
@@ -587,7 +705,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
   const handleContentSourceChange = (index: number, field: string, value: any) => {
     setConfig(prev => ({
       ...prev,
-      content_sources: prev.content_sources.map((source, i) => 
+      content_sources: prev.content_sources.map((source, i) =>
         i === index ? { ...source, [field]: value } : source
       )
     }));
@@ -664,503 +782,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
   );
 
   const renderStorageSettings = () => (
-    <Grid container spacing={3}>
-      <Grid item xs={12}>
-        <Alert severity="info" sx={{ mb: 2 }}>
-          <Typography variant="body2">
-            <strong>Storage Configuration:</strong> This defines where the processed documents and their 
-            relationships are stored. This is the backend database for your pipeline's processed content, 
-            not where the pipeline configuration itself is stored.
-          </Typography>
-        </Alert>
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <FormControl fullWidth>
-          <InputLabel>Storage Backend</InputLabel>
-          <Select
-            value={config.storage.backend}
-            onChange={(e) => setConfig(prev => ({
-              ...prev,
-              storage: { ...prev.storage, backend: e.target.value }
-            }))}
-            label="Storage Backend"
-          >
-            {storageBackends.map((backend) => (
-              <MenuItem key={backend.value} value={backend.value}>
-                <Box>
-                  <Typography variant="body1">{backend.label}</Typography>
-                  <Typography variant="caption" color="textSecondary">
-                    {backend.description}
-                  </Typography>
-                </Box>
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Grid>
-      <Grid item xs={12} md={6}>
-        <TextField
-          fullWidth
-          label="Data Path"
-          value={config.storage.path || ''}
-          onChange={(e) => setConfig(prev => ({
-            ...prev,
-            storage: { ...prev.storage, path: e.target.value }
-          }))}
-          helperText="Base path for storing processed data"
-        />
-      </Grid>
-      
-      {config.storage.backend === 'sqlite' && (
-        <Grid item xs={12}>
-          <TextField
-            fullWidth
-            label="SQLite Database Path"
-            value={config.storage.sqlite?.path || ''}
-            onChange={(e) => setConfig(prev => ({
-              ...prev,
-              storage: { 
-                ...prev.storage, 
-                sqlite: { path: e.target.value }
-              }
-            }))}
-            helperText="Path to SQLite database file"
-          />
-        </Grid>
-      )}
-      
-      {config.storage.backend === 'postgresql' && (
-        <Grid item xs={12}>
-          <TextField
-            fullWidth
-            label="PostgreSQL Connection URI"
-            value={config.storage.postgresql?.uri || ''}
-            onChange={(e) => setConfig(prev => ({
-              ...prev,
-              storage: { 
-                ...prev.storage, 
-                postgresql: { uri: e.target.value }
-              }
-            }))}
-            helperText="Example: postgresql://user:password@localhost:5432/database or use ${DOCUMENTS_URI} environment variable"
-          />
-        </Grid>
-      )}
-      
-      {config.storage.backend === 'mongodb' && (
-        <>
-          <Grid item xs={12} md={4}>
-            <TextField
-              fullWidth
-              label="MongoDB Host"
-              value={config.storage.mongodb?.host || 'localhost'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  mongodb: { ...prev.storage.mongodb, host: e.target.value }
-                }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <TextField
-              fullWidth
-              type="number"
-              label="MongoDB Port"
-              value={config.storage.mongodb?.port || 27017}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  mongodb: { ...prev.storage.mongodb, port: parseInt(e.target.value) }
-                }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <TextField
-              fullWidth
-              label="Database Name"
-              value={config.storage.mongodb?.db_name || 'go-doc-go'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  mongodb: { ...prev.storage.mongodb, db_name: e.target.value }
-                }
-              }))}
-            />
-          </Grid>
-        </>
-      )}
-      
-      {config.storage.backend === 'elasticsearch' && (
-        <>
-          <Grid item xs={12} md={8}>
-            <TextField
-              fullWidth
-              label="Elasticsearch Hosts (comma-separated)"
-              value={(config.storage.elasticsearch?.hosts || ['localhost:9200']).join(', ')}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  elasticsearch: { 
-                    ...prev.storage.elasticsearch, 
-                    hosts: e.target.value.split(',').map(h => h.trim())
-                  }
-                }
-              }))}
-              helperText="Example: localhost:9200, es-node1:9200, es-node2:9200"
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <TextField
-              fullWidth
-              label="Index Prefix"
-              value={config.storage.elasticsearch?.index_prefix || 'go-doc-go'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  elasticsearch: { ...prev.storage.elasticsearch, index_prefix: e.target.value }
-                }
-              }))}
-            />
-          </Grid>
-        </>
-      )}
-      
-      {config.storage.backend === 'neo4j' && (
-        <>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Neo4j URI"
-              value={config.storage.neo4j?.uri || 'bolt://localhost:7687'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  neo4j: { ...prev.storage.neo4j, uri: e.target.value }
-                }
-              }))}
-              helperText="Example: bolt://localhost:7687 or neo4j://localhost:7687"
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              label="Username"
-              value={config.storage.neo4j?.username || 'neo4j'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  neo4j: { ...prev.storage.neo4j, username: e.target.value }
-                }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              type="password"
-              label="Password"
-              value={config.storage.neo4j?.password || ''}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  neo4j: { ...prev.storage.neo4j, password: e.target.value }
-                }
-              }))}
-            />
-          </Grid>
-        </>
-      )}
-      
-      {config.storage.backend === 'solr' && (
-        <>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              label="Solr Host"
-              value={config.storage.solr?.host || 'localhost'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  solr: { ...prev.storage.solr, host: e.target.value }
-                }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              type="number"
-              label="Solr Port"
-              value={config.storage.solr?.port || 8983}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  solr: { ...prev.storage.solr, port: parseInt(e.target.value) }
-                }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              label="Core Prefix"
-              value={config.storage.solr?.core_prefix || 'go-doc-go'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  solr: { ...prev.storage.solr, core_prefix: e.target.value }
-                }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              type="number"
-              label="Vector Dimension"
-              value={config.storage.solr?.vector_dimension || 384}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                storage: { 
-                  ...prev.storage, 
-                  solr: { ...prev.storage.solr, vector_dimension: parseInt(e.target.value) }
-                }
-              }))}
-              helperText="Must match embedding dimensions"
-            />
-          </Grid>
-        </>
-      )}
-      
-      {config.storage.backend === 'sqlalchemy' && (
-        <Grid item xs={12}>
-          <TextField
-            fullWidth
-            label="SQLAlchemy Connection String"
-            value={config.storage.sqlalchemy?.connection_string || ''}
-            onChange={(e) => setConfig(prev => ({
-              ...prev,
-              storage: { 
-                ...prev.storage, 
-                sqlalchemy: { connection_string: e.target.value }
-              }
-            }))}
-            helperText="Example: mysql://user:pass@localhost/db or sqlite:///path/to/db.sqlite"
-          />
-        </Grid>
-      )}
-      
-      {/* Neo4j Knowledge Graph Export - Only show if Neo4j is NOT the primary backend */}
-      {config.storage.backend === 'neo4j' && (
-        <Grid item xs={12}>
-          <Divider sx={{ my: 3 }} />
-          <Alert severity="success" sx={{ mt: 2 }}>
-            <Typography variant="body2">
-              <strong>Neo4j as Primary Storage:</strong> Since you've selected Neo4j as your primary storage backend, 
-              your data will be stored directly in the graph database with full knowledge graph capabilities. 
-              No additional export configuration is needed.
-            </Typography>
-          </Alert>
-        </Grid>
-      )}
-      
-      {config.storage.backend !== 'neo4j' && (
-        <>
-          <Grid item xs={12}>
-            <Divider sx={{ my: 3 }} />
-            <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>
-              Neo4j Knowledge Graph Export (Optional)
-            </Typography>
-            <Alert severity="info" sx={{ mb: 2 }}>
-              <Typography variant="body2">
-                Export your processed documents and relationships to Neo4j for advanced graph visualization and analysis.
-                This works alongside your primary storage backend - data is stored in your chosen backend and can be exported to Neo4j.
-              </Typography>
-            </Alert>
-          </Grid>
-          
-          <Grid item xs={12}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={config.neo4j_export?.enabled || false}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    neo4j_export: { 
-                  ...prev.neo4j_export,
-                  enabled: e.target.checked,
-                  uri: prev.neo4j_export?.uri || 'bolt://localhost:7687',
-                  username: prev.neo4j_export?.username || 'neo4j',
-                  password: prev.neo4j_export?.password || '',
-                  database: prev.neo4j_export?.database || 'neo4j',
-                  export_documents: prev.neo4j_export?.export_documents ?? true,
-                  export_elements: prev.neo4j_export?.export_elements ?? true,
-                  export_relationships: prev.neo4j_export?.export_relationships ?? true,
-                  export_entities: prev.neo4j_export?.export_entities ?? true,
-                  clear_graph: prev.neo4j_export?.clear_graph ?? false,
-                  batch_size: prev.neo4j_export?.batch_size || 1000
-                }
-              }))}
-            />
-          }
-          label="Enable Neo4j Knowledge Graph Export"
-        />
-      </Grid>
-      
-      {config.neo4j_export?.enabled && (
-        <>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Neo4j URI"
-              value={config.neo4j_export?.uri || 'bolt://localhost:7687'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                neo4j_export: { ...prev.neo4j_export!, uri: e.target.value }
-              }))}
-              helperText="Neo4j connection URI (bolt:// or neo4j://)"
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              label="Username"
-              value={config.neo4j_export?.username || 'neo4j'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                neo4j_export: { ...prev.neo4j_export!, username: e.target.value }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              type="password"
-              label="Password"
-              value={config.neo4j_export?.password || ''}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                neo4j_export: { ...prev.neo4j_export!, password: e.target.value }
-              }))}
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              label="Database"
-              value={config.neo4j_export?.database || 'neo4j'}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                neo4j_export: { ...prev.neo4j_export!, database: e.target.value }
-              }))}
-              helperText="Neo4j database name"
-            />
-          </Grid>
-          <Grid item xs={12} md={6}>
-            <TextField
-              fullWidth
-              type="number"
-              label="Batch Size"
-              value={config.neo4j_export?.batch_size || 1000}
-              onChange={(e) => setConfig(prev => ({
-                ...prev,
-                neo4j_export: { ...prev.neo4j_export!, batch_size: parseInt(e.target.value) }
-              }))}
-              helperText="Number of records to export per batch"
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <Typography variant="subtitle2" gutterBottom>Export Options</Typography>
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={config.neo4j_export?.export_documents ?? true}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    neo4j_export: { ...prev.neo4j_export!, export_documents: e.target.checked }
-                  }))}
-                />
-              }
-              label="Export Documents"
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={config.neo4j_export?.export_elements ?? true}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    neo4j_export: { ...prev.neo4j_export!, export_elements: e.target.checked }
-                  }))}
-                />
-              }
-              label="Export Elements"
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={config.neo4j_export?.export_relationships ?? true}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    neo4j_export: { ...prev.neo4j_export!, export_relationships: e.target.checked }
-                  }))}
-                />
-              }
-              label="Export Relationships"
-            />
-          </Grid>
-          <Grid item xs={12} md={3}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={config.neo4j_export?.export_entities ?? true}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    neo4j_export: { ...prev.neo4j_export!, export_entities: e.target.checked }
-                  }))}
-                />
-              }
-              label="Export Entities"
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={config.neo4j_export?.clear_graph || false}
-                  onChange={(e) => setConfig(prev => ({
-                    ...prev,
-                    neo4j_export: { ...prev.neo4j_export!, clear_graph: e.target.checked }
-                  }))}
-                  color="warning"
-                />
-              }
-              label="Clear Graph Before Export (Warning: Deletes existing Neo4j data)"
-            />
-          </Grid>
-        </>
-      )}
-        </>
-      )}
-    </Grid>
+    <DualStorageConfig config={config} setConfig={setConfig} />
   );
 
   const renderContentSourceSettings = () => (
@@ -1172,10 +794,10 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
         </Button>
       </Box>
       <Alert severity="info" sx={{ mb: 2 }}>
-        Content sources define where documents are retrieved from for processing. 
+        Content sources define where documents are retrieved from for processing.
         Configure file systems, web sources, databases, or APIs to fetch content.
       </Alert>
-      
+
       {config.content_sources.map((source, index) => (
         <Card key={index} sx={{ mb: 2 }}>
           <CardContent>
@@ -1209,7 +831,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               <Grid item xs={12} sm={2}>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', height: '100%', alignItems: 'center' }}>
                   <Tooltip title="Remove Content Source">
-                    <IconButton 
+                    <IconButton
                       onClick={() => handleRemoveContentSource(index)}
                       disabled={config.content_sources.length === 1}
                       color="error"
@@ -1219,7 +841,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Tooltip>
                 </Box>
               </Grid>
-              
+
               {/* Source-specific configuration */}
               {source.type === 'file' && (
                 <>
@@ -1254,7 +876,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 'web' && (
                 <>
                   <Grid item xs={12} md={6}>
@@ -1285,8 +907,8 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                       label="URL List (one per line)"
                       value={(source.url_list || []).join('\n')}
                       onChange={(e) => handleContentSourceChange(
-                        index, 
-                        'url_list', 
+                        index,
+                        'url_list',
                         e.target.value.split('\n').filter(url => url.trim())
                       )}
                       helperText="Specific URLs to process"
@@ -1294,7 +916,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 's3' && (
                 <>
                   <Grid item xs={12} md={6}>
@@ -1335,7 +957,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 'google_drive' && (
                 <>
                   <Grid item xs={12} md={6}>
@@ -1367,7 +989,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 'sharepoint' && (
                 <>
                   <Grid item xs={12} md={6}>
@@ -1418,7 +1040,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 'confluence' && (
                 <>
                   <Grid item xs={12} md={6}>
@@ -1460,7 +1082,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 'exchange' && (
                 <>
                   <Grid item xs={12} md={6}>
@@ -1502,7 +1124,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {(source.type === 'postgres' || source.type === 'mysql') && (
                 <>
                   <Grid item xs={12}>
@@ -1561,7 +1183,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 'duckdb' && (
                 <>
                   <Grid item xs={12} md={6}>
@@ -1631,7 +1253,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   </Grid>
                 </>
               )}
-              
+
               {source.type === 'api' && (
                 <>
                   <Grid item xs={12}>
@@ -1716,7 +1338,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
           label="Enable Embeddings"
         />
       </Grid>
-      
+
       {config.embedding.enabled && (
         <>
           <Grid item xs={12} md={4}>
@@ -1876,7 +1498,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
     <Grid container spacing={3}>
       <Grid item xs={12}>
         <Alert severity="info" sx={{ mb: 2 }}>
-          Relationship detection finds connections between documents and content elements 
+          Relationship detection finds connections between documents and content elements
           based on structural hierarchy and semantic similarity.
         </Alert>
       </Grid>
@@ -1894,7 +1516,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
           label="Enable Relationship Detection"
         />
       </Grid>
-      
+
       {config.relationship_detection.enabled && (
         <>
           <Grid item xs={12} md={6}>
@@ -1931,7 +1553,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               Find content similarity using embeddings
             </Typography>
           </Grid>
-          
+
           {config.relationship_detection.semantic && (
             <>
               <Grid item xs={12} md={6}>
@@ -1940,9 +1562,9 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   value={config.relationship_detection.similarity_threshold || 0.75}
                   onChange={(_, value) => setConfig(prev => ({
                     ...prev,
-                    relationship_detection: { 
-                      ...prev.relationship_detection, 
-                      similarity_threshold: value as number 
+                    relationship_detection: {
+                      ...prev.relationship_detection,
+                      similarity_threshold: value as number
                     }
                   }))}
                   min={0.1}
@@ -2002,7 +1624,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
           </Typography>
         </Alert>
       </Grid>
-      
+
       <Grid item xs={12}>
         <FormControlLabel
           control={
@@ -2017,7 +1639,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
           label="Enable Ontology Definition"
         />
       </Grid>
-      
+
       {config.ontology?.enabled && (
         <>
           <Grid item xs={12}>
@@ -2033,7 +1655,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               </Typography>
             </Alert>
           </Grid>
-          
+
           <Grid item xs={12}>
             <FormControlLabel
               control={
@@ -2051,7 +1673,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               After processing documents, the system can analyze their structure to suggest entity and relationship types
             </Typography>
           </Grid>
-          
+
           {config.ontology?.auto_generate && (
             <>
               <Grid item xs={12}>
@@ -2076,8 +1698,8 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   value={config.ontology?.domain_keywords?.join(', ') || ''}
                   onChange={(e) => setConfig(prev => ({
                     ...prev,
-                    ontology: { 
-                      ...prev.ontology, 
+                    ontology: {
+                      ...prev.ontology,
                       domain_keywords: e.target.value.split(',').map(k => k.trim()).filter(k => k)
                     }
                   }))}
@@ -2116,7 +1738,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               </Grid>
             </>
           )}
-          
+
           <Grid item xs={12}>
             <Divider sx={{ my: 2 }} />
             <Typography variant="h6" gutterBottom>
@@ -2136,7 +1758,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               </Typography>
             </Box>
           </Grid>
-          
+
           <Grid item xs={12}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
               <Typography variant="subtitle2">Defined Entity Types</Typography>
@@ -2217,7 +1839,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               </Card>
             ))}
           </Grid>
-          
+
           <Grid item xs={12}>
             <Divider sx={{ my: 2 }} />
             <Typography variant="h6" gutterBottom>
@@ -2238,7 +1860,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               </Typography>
             </Box>
           </Grid>
-          
+
           <Grid item xs={12}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
               <Typography variant="subtitle2">Defined Relationship Types</Typography>
@@ -2307,9 +1929,9 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                         value={relType.source_types?.join(', ') || ''}
                         onChange={(e) => {
                           const updated = [...(config.ontology?.relationship_types || [])];
-                          updated[index] = { 
-                            ...updated[index], 
-                            source_types: e.target.value.split(',').map(s => s.trim()).filter(s => s) 
+                          updated[index] = {
+                            ...updated[index],
+                            source_types: e.target.value.split(',').map(s => s.trim()).filter(s => s)
                           };
                           setConfig(prev => ({
                             ...prev,
@@ -2327,9 +1949,9 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                         value={relType.target_types?.join(', ') || ''}
                         onChange={(e) => {
                           const updated = [...(config.ontology?.relationship_types || [])];
-                          updated[index] = { 
-                            ...updated[index], 
-                            target_types: e.target.value.split(',').map(s => s.trim()).filter(s => s) 
+                          updated[index] = {
+                            ...updated[index],
+                            target_types: e.target.value.split(',').map(s => s.trim()).filter(s => s)
                           };
                           setConfig(prev => ({
                             ...prev,
@@ -2360,7 +1982,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               </Card>
             ))}
           </Grid>
-          
+
           {!config.ontology?.auto_generate && (
             <Grid item xs={12}>
               <Alert severity="warning">
@@ -2454,7 +2076,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
           </Box>
         </Box>
       </DialogTitle>
-      
+
       <DialogContent sx={{ minHeight: 700 }}>
         {/* Getting Started Guide for Create Mode */}
         {mode === 'create' && activeTab === 0 && !isYamlMode && (
@@ -2474,7 +2096,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
             </Typography>
           </Alert>
         )}
-        
+
         {/* Validation Errors */}
         {yamlErrors.length > 0 && (
           <Alert severity="warning" sx={{ mb: 2 }}>
@@ -2499,7 +2121,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
           <Box>
             <Alert severity="info" sx={{ mb: 2 }}>
               <Typography variant="body2">
-                This YAML represents the Go-Doc-Go pipeline configuration that will be saved. 
+                This YAML represents the Go-Doc-Go pipeline configuration that will be saved.
                 Pipeline metadata (name, description, tags, etc.) are managed separately by the UI.
               </Typography>
             </Alert>
@@ -2511,8 +2133,8 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               value={yamlContent}
               onChange={(e) => setYamlContent(e.target.value)}
               variant="outlined"
-              sx={{ 
-                '& .MuiInputBase-input': { 
+              sx={{
+                '& .MuiInputBase-input': {
                   fontFamily: 'Monaco, Consolas, "Lucida Console", monospace',
                   fontSize: '0.875rem'
                 }
@@ -2522,23 +2144,23 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
           </Box>
         ) : (
           <Box>
-            <Tabs 
-              value={activeTab} 
+            <Tabs
+              value={activeTab}
               onChange={(_, newValue) => setActiveTab(newValue)}
               sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}
               variant="scrollable"
               scrollButtons="auto"
             >
               {tabsContent.map((tab, index) => (
-                <Tab 
+                <Tab
                   key={index}
-                  label={tab.label} 
-                  icon={tab.icon} 
+                  label={tab.label}
+                  icon={tab.icon}
                   iconPosition="start"
                 />
               ))}
             </Tabs>
-            
+
             <Box sx={{ mt: 2 }}>
               {tabsContent[activeTab]?.content}
             </Box>
@@ -2550,7 +2172,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
         <Button onClick={onClose} disabled={isSaving}>
           Cancel
         </Button>
-        <Button 
+        <Button
           onClick={handleSave}
           variant="contained"
           startIcon={<SaveIcon />}

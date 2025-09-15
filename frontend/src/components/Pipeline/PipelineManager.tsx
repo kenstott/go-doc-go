@@ -48,7 +48,9 @@ import {
 } from '@mui/icons-material';
 
 import PipelineConfigEditor from './PipelineConfigEditor';
+import { pipelineApi } from '../../services/api';
 // import GettingStartedOverlay from './GettingStartedOverlay';
+import * as yaml from 'js-yaml';
 
 interface Pipeline {
   id: number;
@@ -123,9 +125,8 @@ const PipelineManager: React.FC = () => {
 
   const loadPipelines = async () => {
     try {
-      const response = await fetch('/api/pipelines');
-      const data = await response.json();
-      setPipelines(data.pipelines);
+      const data = await pipelineApi.list();
+      setPipelines(data.pipelines || []);
     } catch (error) {
       console.error('Failed to load pipelines:', error);
     } finally {
@@ -135,9 +136,8 @@ const PipelineManager: React.FC = () => {
 
   const loadTemplates = async () => {
     try {
-      const response = await fetch('/api/pipelines/templates');
-      const data = await response.json();
-      setTemplates(data.templates);
+      const data = await pipelineApi.getTemplates();
+      setTemplates(data.templates || []);
     } catch (error) {
       console.error('Failed to load templates:', error);
     }
@@ -186,23 +186,12 @@ const PipelineManager: React.FC = () => {
     if (!selectedTemplate || !newPipelineName) return;
 
     try {
-      const response = await fetch(`/api/pipelines/templates/${selectedTemplate}/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newPipelineName,
-          created_by: 'current_user' // This would come from auth context
-        })
-      });
-
-      if (response.ok) {
-        await loadPipelines();
-        setCreateDialogOpen(false);
-        setNewPipelineName('');
-        setSelectedTemplate('');
-      } else {
-        console.error('Failed to create pipeline');
-      }
+      const templateId = parseInt(selectedTemplate);
+      await pipelineApi.createFromTemplate(templateId, newPipelineName);
+      await loadPipelines();
+      setCreateDialogOpen(false);
+      setNewPipelineName('');
+      setSelectedTemplate('');
     } catch (error) {
       console.error('Error creating pipeline:', error);
     }
@@ -212,21 +201,11 @@ const PipelineManager: React.FC = () => {
     if (!selectedPipeline || !cloneName) return;
 
     try {
-      const response = await fetch(`/api/pipelines/${selectedPipeline.id}/clone`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: cloneName,
-          created_by: 'current_user'
-        })
-      });
-
-      if (response.ok) {
-        await loadPipelines();
-        setCloneDialogOpen(false);
-        setCloneName('');
-        setSelectedPipeline(null);
-      }
+      await pipelineApi.clone(selectedPipeline.id, cloneName);
+      await loadPipelines();
+      setCloneDialogOpen(false);
+      setCloneName('');
+      setSelectedPipeline(null);
     } catch (error) {
       console.error('Error cloning pipeline:', error);
     }
@@ -236,21 +215,14 @@ const PipelineManager: React.FC = () => {
     if (!selectedPipeline) return;
 
     try {
-      const response = await fetch(`/api/pipelines/${selectedPipeline.id}/execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          worker_count: workerCount,
-          documents_total: 0, // This would be determined by the pipeline
-        })
+      await pipelineApi.execute(selectedPipeline.id, {
+        worker_count: workerCount,
+        documents_total: 0, // This would be determined by the pipeline
       });
-
-      if (response.ok) {
-        await loadRecentExecutions();
-        setRunDialogOpen(false);
-        setSelectedPipeline(null);
-        setWorkerCount(1);
-      }
+      await loadRecentExecutions();
+      setRunDialogOpen(false);
+      setSelectedPipeline(null);
+      setWorkerCount(1);
     } catch (error) {
       console.error('Error running pipeline:', error);
     }
@@ -260,15 +232,10 @@ const PipelineManager: React.FC = () => {
     if (!selectedPipeline) return;
 
     try {
-      const response = await fetch(`/api/pipelines/${selectedPipeline.id}`, {
-        method: 'DELETE'
-      });
-
-      if (response.ok) {
-        await loadPipelines();
-        setDeleteDialogOpen(false);
-        setSelectedPipeline(null);
-      }
+      await pipelineApi.delete(selectedPipeline.id);
+      await loadPipelines();
+      setDeleteDialogOpen(false);
+      setSelectedPipeline(null);
     } catch (error) {
       console.error('Error deleting pipeline:', error);
     }
@@ -276,16 +243,13 @@ const PipelineManager: React.FC = () => {
 
   const exportPipeline = async (pipeline: Pipeline) => {
     try {
-      const response = await fetch(`/api/pipelines/${pipeline.id}/export`);
-      if (response.ok) {
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${pipeline.name.replace(/\s+/g, '_')}_v${pipeline.version}.yaml`;
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
+      const blob = await pipelineApi.export(pipeline.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${pipeline.name.replace(/\s+/g, '_')}_v${pipeline.version}.yaml`;
+      a.click();
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error exporting pipeline:', error);
     }
@@ -299,65 +263,90 @@ const PipelineManager: React.FC = () => {
 
   const handleEditPipelineConfig = async (pipeline: Pipeline) => {
     setConfigEditorMode('edit');
-    setEditingPipeline(pipeline);
     
-    // Fetch the full pipeline configuration including YAML
+    // Fetch the full pipeline configuration including YAML before opening dialog
     try {
       const response = await fetch(`/api/pipelines/${pipeline.id}`);
       if (response.ok) {
         const fullPipeline = await response.json();
+        console.log('Full pipeline fetched:', fullPipeline);
+        console.log('Pipeline object:', fullPipeline.pipeline);
+        console.log('Pipeline version:', fullPipeline.pipeline?.version);
+        
+        // Set the editing pipeline with full data including version
         setEditingPipeline(fullPipeline.pipeline);
+        
+        // Only open the dialog after we have the full data
+        setConfigEditorOpen(true);
+      } else {
+        console.error('Failed to fetch pipeline:', response.status, response.statusText);
+        alert('Failed to load pipeline configuration');
       }
     } catch (error) {
       console.error('Error fetching pipeline details:', error);
+      alert('Error loading pipeline configuration');
     }
-    
-    setConfigEditorOpen(true);
   };
 
   const handleSavePipelineConfig = async (config: any) => {
+    console.log('🔥🔥🔥 PIPELINE SAVE STARTED - TIMESTAMP: ' + new Date().toISOString());
+    console.log('🔥🔥🔥 This should show if code is updated!');
+    console.log('🚨 Config received:', config);
+    console.log('🚨 configEditorMode:', configEditorMode);
+    console.log('🚨 editingPipeline exists:', !!editingPipeline);
+    console.log('🚨 editingPipeline id:', editingPipeline?.id);
+    
     try {
-      let response;
+      console.log('Saving pipeline config:', config);
       if (configEditorMode === 'create') {
-        response = await fetch('/api/pipelines', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: config.name,
-            description: config.description,
-            config_yaml: config.config_yaml,
-            tags: config.tags,
-            is_active: config.is_active,
-            created_by: 'current_user' // This would come from auth context
-          })
+        const result = await pipelineApi.create({
+          name: config.name,
+          description: config.description,
+          config_yaml: config.config_yaml,
+          tags: config.tags || []
         });
-      } else {
-        response = await fetch(`/api/pipelines/${editingPipeline?.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: config.name,
-            description: config.description,
-            config_yaml: config.config_yaml,
-            tags: config.tags,
-            is_active: config.is_active,
-            expected_version: editingPipeline?.version
-          })
-        });
+        console.log('Create result:', result);
+      } else if (editingPipeline) {
+        console.log('=== PIPELINE UPDATE DEBUG ===');
+        console.log('1. Editing pipeline object:', editingPipeline);
+        console.log('2. editingPipeline.version:', editingPipeline.version);
+        console.log('3. Config passed from editor:', config);
+        console.log('4. config.version:', config.version);
+        
+        // Get version - prioritize editingPipeline.version, fallback to config.version
+        const version = editingPipeline.version !== undefined ? editingPipeline.version : config.version;
+        console.log('5. Selected version:', version, 'type:', typeof version);
+        
+        if (version === undefined || version === null) {
+          console.error('No version found for pipeline update');
+          console.error('editingPipeline:', editingPipeline);
+          console.error('config:', config);
+          alert('Error: Pipeline version not found. Please refresh and try again.');
+          return;
+        }
+        
+        // Create payload without the version field from config (which conflicts)
+        const { version: configVersion, ...configWithoutVersion } = config;
+        const updatePayload = {
+          ...configWithoutVersion,
+          expected_version: version  // Use the version we found, not from config
+        };
+        console.log('6. Final update payload:', JSON.stringify(updatePayload, null, 2));
+        console.log('7. expected_version field present?', 'expected_version' in updatePayload);
+        console.log('8. expected_version value:', updatePayload.expected_version);
+        
+        const result = await pipelineApi.update(editingPipeline.id, updatePayload);
+        console.log('9. Update result:', result);
       }
 
-      if (response.ok) {
-        await loadPipelines();
-        setConfigEditorOpen(false);
-        setEditingPipeline(null);
-      } else {
-        const error = await response.json();
-        console.error('Failed to save pipeline:', error);
-        alert(`Failed to save pipeline: ${error.message || 'Unknown error'}`);
-      }
-    } catch (error) {
+      await loadPipelines();
+      setConfigEditorOpen(false);
+      setEditingPipeline(null);
+    } catch (error: any) {
       console.error('Error saving pipeline configuration:', error);
-      alert('Failed to save pipeline configuration');
+      console.error('Error response:', error.response);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to save pipeline configuration';
+      alert(`Failed to save pipeline: ${errorMessage}`);
     }
   };
 
@@ -799,14 +788,26 @@ const PipelineManager: React.FC = () => {
       {/* Pipeline Configuration Editor */}
       <PipelineConfigEditor
         pipelineId={editingPipeline?.id}
-        initialConfig={editingPipeline ? {
-          name: editingPipeline.name,
-          description: editingPipeline.description,
-          version: editingPipeline.version.toString(),
-          tags: editingPipeline.tags || [],
-          is_active: editingPipeline.is_active
-          // TODO: Parse config_yaml from editingPipeline to populate actual configuration
-        } : undefined}
+        initialConfig={editingPipeline ? (() => {
+          // Parse the YAML configuration if available
+          let parsedConfig = {};
+          if (editingPipeline.config_yaml) {
+            try {
+              parsedConfig = yaml.load(editingPipeline.config_yaml);
+            } catch (error) {
+              console.error('Error parsing pipeline YAML:', error);
+            }
+          }
+          
+          return {
+            name: editingPipeline.name,
+            description: editingPipeline.description,
+            version: editingPipeline.version || 1,  // Keep as number, not string
+            tags: editingPipeline.tags || [],
+            is_active: editingPipeline.is_active !== undefined ? editingPipeline.is_active : true,
+            ...parsedConfig  // Spread the parsed YAML config
+          };
+        })() : undefined}
         mode={configEditorMode}
         open={configEditorOpen}
         onClose={handleCloseConfigEditor}
