@@ -610,7 +610,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         start_time = time.time()
         
         # Batch processing arrays
-        batch_element_pks = []
+        batch_element_ids = []
         batch_combined_texts = []
 
         for element in elements:
@@ -625,7 +625,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             if element.get("element_type") in {'table_cell', 'json_item', 'json_field'}:
                 skipped_elements += 1
                 continue
-            element_pk = element["element_pk"]
+            element_id = element["element_id"]
 
             # Get full text content for all elements using the resolver
             t0 = time.time()
@@ -705,11 +705,11 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             time_text_combining += (time.time() - t_combine_start)
             
             # Add to batch
-            batch_element_pks.append(element_pk)
+            batch_element_ids.append(element_id)
             batch_combined_texts.append(combined_text)
             
             # Process batch when full or at end
-            if len(batch_element_pks) >= BATCH_SIZE or element == elements[-1]:
+            if len(batch_element_ids) >= BATCH_SIZE or element == elements[-1]:
                 if batch_combined_texts:
                     # Generate embeddings for batch
                     t_batch_start = time.time()
@@ -724,12 +724,12 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                     time_embedding_gen += (time.time() - t_batch_start)
                     
                     # Store results
-                    for pk, embedding in zip(batch_element_pks, batch_embeddings):
-                        embeddings[pk] = embedding
+                    for element_id, embedding in zip(batch_element_ids, batch_embeddings):
+                        embeddings[element_id] = embedding
                         processed += 1
                     
                     # Clear batch
-                    batch_element_pks = []
+                    batch_element_ids = []
                     batch_combined_texts = []
             
             # Log progress every 100 elements
@@ -755,7 +755,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 batch_embeddings = [self.base_generator.generate(text) for text in batch_combined_texts]
             time_embedding_gen += (time.time() - t_batch_start)
             
-            for pk, embedding in zip(batch_element_pks, batch_embeddings):
+            for pk, embedding in zip(batch_element_ids, batch_embeddings):
                 embeddings[pk] = embedding
                 processed += 1
 
@@ -931,7 +931,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 context_elements.append(id_to_element[context_id])
 
         # Add cross-document relationships if database is available
-        if db and hasattr(element, 'get') and element.get('element_pk'):
+        if db and hasattr(element, 'get') and element.get('element_id'):
             try:
                 cross_doc_elements = self._get_cross_document_context(element, db)
                 context_elements.extend(cross_doc_elements)
@@ -956,13 +956,13 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             List of cross-document context elements
         """
         cross_doc_elements = []
-        element_pk = element.get('element_pk')
-        if not element_pk:
+        element_id = element.get('element_id')
+        if not element_id:
             return cross_doc_elements
             
         try:
             # Get outgoing relationships (where this element is the source)
-            relationships = db.get_outgoing_relationships(element_pk)
+            relationships = db.get_outgoing_relationships(element_id)
             
             # Filter for cross-document semantic relationships
             cross_doc_relationships = []

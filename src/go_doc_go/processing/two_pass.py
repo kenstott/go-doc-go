@@ -534,41 +534,55 @@ class TwoPassProcessor:
     
     def _process_embedding_batch(self, elements: List[Dict[str, Any]]):
         """
-        Process a batch of elements to generate embeddings.
+        Process a batch of elements to generate embeddings using contextual embedding generation.
+        
+        This method now uses the proper generate_from_elements() method which:
+        - Filters to only leaf elements (skips containers)
+        - Builds contextual graphlets with parent hierarchy  
+        - Generates embeddings from enriched content
         """
         try:
-            # Extract texts from elements
-            texts = []
-            element_data = []
-            
-            for element in elements:
-                content = element.get('full_content') or element.get('content_preview', '')
-                if content and len(content) > 10:
-                    texts.append(content)
-                    element_data.append({
-                        'element_pk': element.get('element_pk'),
-                        'element_id': element.get('element_id')
-                    })
-            
-            if not texts:
+            if not elements:
                 return
             
-            # Generate embeddings in batch
-            embeddings = self.embedding_generator.generate_batch(texts)
+            # Use the contextual embedding generator's generate_from_elements method
+            # This automatically handles:
+            # 1. Leaf element filtering (skips containers)
+            # 2. Contextual graphlet building (parent hierarchy + siblings + children)
+            # 3. Cross-document relationships (if database provided)
+            # 4. Token-aware context management
+            embeddings_dict = self.embedding_generator.generate_from_elements(
+                elements, 
+                db=self.analytics_storage  # Provide database for cross-document context
+            )
+            
+            if not embeddings_dict:
+                logger.debug("No embeddings generated for this batch")
+                return
             
             # Prepare embeddings for analytics storage (dual storage is mandatory)
             embedding_docs = []
-            for elem_data, embedding in zip(element_data, embeddings):
-                embedding_docs.append({
-                    'element_pk': elem_data['element_pk'],
-                    'element_id': elem_data['element_id'],
-                    'embedding': embedding.tolist() if hasattr(embedding, 'tolist') else embedding,
-                    'model': self.embedding_generator.model_name if hasattr(self.embedding_generator, 'model_name') else 'unknown'
-                })
+            for element_id, embedding in embeddings_dict.items():
+                # Find the element data for this element_id
+                element_data = None
+                for element in elements:
+                    if element.get('element_id') == element_id:
+                        element_data = element
+                        break
+                
+                if element_data:
+                    embedding_docs.append({
+                        'element_id': element_id,
+                        'embedding': embedding.tolist() if hasattr(embedding, 'tolist') else embedding,
+                        'model': getattr(self.embedding_generator, 'model_name', 'unknown')
+                    })
             
             # Append to analytics storage
             written = self.analytics_storage.append_embeddings(embedding_docs, self.run_id)
             self.stats['embeddings'] += written
+            
+            logger.debug(f"Generated {len(embeddings_dict)} contextual embeddings "
+                        f"(filtered from {len(elements)} elements, wrote {written} to storage)")
                     
             # Call progress callback for embedding progress
             if hasattr(self, 'progress_callback') and self.progress_callback:
@@ -817,35 +831,36 @@ class TwoPassWorker:
     
     def _process_embedding_batch(self, elements: List[Dict[str, Any]]):
         """
-        Process a batch of elements to generate embeddings.
+        Process a batch of elements to generate embeddings using contextual embedding generation.
+        
+        This method uses the proper generate_from_elements() method which:
+        - Filters to only leaf elements (skips containers)
+        - Builds contextual graphlets with parent hierarchy  
+        - Generates embeddings from enriched content
         """
         if not self.embedding_generator:
             return
         
         try:
-            # Extract texts
-            texts = []
-            element_pks = []
-            
-            for element in elements:
-                content = element.get('full_content') or element.get('content_preview', '')
-                if content and len(content) > 10:
-                    texts.append(content)
-                    element_pks.append(element['element_pk'])
-            
-            if not texts:
+            if not elements:
                 return
             
-            # Generate embeddings in batch
-            embeddings = self.embedding_generator.generate_batch(texts)
+            # Use the contextual embedding generator's generate_from_elements method
+            # This automatically handles leaf element filtering and contextual graphlet building
+            embeddings_dict = self.embedding_generator.generate_from_elements(
+                elements, 
+                db=self.analytics_storage  # Provide database for cross-document context
+            )
             
-            # Store embeddings in analytics storage (dual storage is mandatory)
+            logger.debug(f"Worker {self.worker_id} generated {len(embeddings_dict)} contextual embeddings")
+            
+            # Convert to list format for storage
             embedding_docs = []
-            for element_pk, embedding in zip(element_pks, embeddings):
+            for element_id, embedding in embeddings_dict.items():
                 embedding_docs.append({
-                    'element_pk': element_pk,
+                    'element_id': element_id,
                     'embedding': embedding.tolist() if hasattr(embedding, 'tolist') else embedding,
-                    'model': self.embedding_generator.model_name if hasattr(self.embedding_generator, 'model_name') else 'unknown'
+                    'model': getattr(self.embedding_generator, 'model_name', 'unknown')
                 })
             
             # Append to analytics storage

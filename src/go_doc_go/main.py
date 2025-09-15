@@ -51,30 +51,28 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None,
         else:
             raise ValueError("config must be a Config instance, dictionary, or path string")
     
-    # Handle backward compatibility for processing_mode
+    # Get worker mode from processing_mode parameter or config
     if processing_mode:
-        # Map old processing modes to new worker modes
-        mode_mapping = {
-            'single': 'auto',
-            'distributed': 'coordinator',
-            'worker': 'worker'
-        }
-        worker_mode = mode_mapping.get(processing_mode, processing_mode)
-        logger.info(f"Mapped legacy processing_mode '{processing_mode}' to worker_mode '{worker_mode}'")
+        # Direct specification of mode
+        if processing_mode not in ['auto', 'coordinator', 'worker']:
+            raise ValueError(f"Invalid processing_mode '{processing_mode}'. Must be 'auto', 'coordinator', or 'worker'")
+        worker_mode = processing_mode
     else:
-        # Get worker mode from config (default to 'auto' for local processing)
+        # Get from config - default to 'auto' which intelligently selects
         worker_mode = config.config.get('processing', {}).get('worker_mode', 'auto')
-        
-        # Check for legacy 'mode' config for backward compatibility
-        if 'mode' in config.config.get('processing', {}):
-            legacy_mode = config.config['processing']['mode']
-            mode_mapping = {
-                'single': 'auto',
-                'distributed': 'coordinator', 
-                'worker': 'worker'
-            }
-            worker_mode = mode_mapping.get(legacy_mode, worker_mode)
-            logger.info(f"Using legacy mode config: '{legacy_mode}' -> '{worker_mode}'")
+        if worker_mode not in ['auto', 'coordinator', 'worker']:
+            raise ValueError(f"Invalid worker_mode '{worker_mode}' in config. Must be 'auto', 'coordinator', or 'worker'")
+    
+    # Auto mode: intelligently choose coordinator or worker based on context
+    if worker_mode == 'auto':
+        # If source_configs provided, we need to coordinate (enqueue work)
+        if source_configs:
+            logger.info("Auto mode: Source configs provided, using coordinator mode")
+            worker_mode = 'coordinator'
+        else:
+            # No source configs means we're a worker pulling from queue
+            logger.info("Auto mode: No source configs, using worker mode")
+            worker_mode = 'worker'
     
     logger.info(f"Using worker mode: {worker_mode}")
     
@@ -83,13 +81,12 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None,
         # Coordinator mode: enqueue work for distributed workers
         return _coordinate_two_pass_processing(config, source_configs, max_link_depth, progress_callback)
     elif worker_mode == 'worker':
-        # Worker mode: process from queue
+        # Worker mode: process from queue (no leader election)
         worker = TwoPassWorker(config)
         return worker.run(progress_callback)
     else:
-        # Auto mode: local processing (single machine)
-        processor = TwoPassProcessor(config)
-        return processor.process_local(source_configs, max_link_depth, progress_callback)
+        # This should never happen due to validation above
+        raise ValueError(f"Unexpected worker_mode: {worker_mode}")
 
 
 def _compute_cross_document_container_relationships(db, processed_doc_ids, config):
