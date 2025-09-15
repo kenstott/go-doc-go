@@ -3,16 +3,28 @@ storage:
   path: ":memory:"  # Use in-memory SQLite for tests
   
 embedding:
-  enabled: false
+  enabled: true
+  provider: fastembed
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  dimensions: 384
+  contextual: true
+  window_size: 3
+  overlap_size: 1
+  predecessor_count: 1
+  successor_count: 1
+  ancestor_depth: 2
   
 content_sources:
   - name: "test-files"
     type: "file"
-    base_path: "./test_data"
-    file_pattern: "**/*"
+    base_path: "./assets"
+    file_pattern: "**/*.{md,txt}"
+    include_extensions: ["md", "txt"]
     
 relationship_detection:
-  enabled: false
+  enabled: true
+  structural: true
+  semantic: false
   
 logging:
   level: "WARNING"

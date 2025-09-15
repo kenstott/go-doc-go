@@ -419,13 +419,13 @@ class PipelineConfigDB:
             if 'type' not in job_storage:
                 raise ValidationError("Job storage type is required")
         
-        # Check for legacy single storage format (backward compatibility)
-        elif 'backend' in storage:
-            # Legacy format validation
-            pass
+        # # Check for legacy single storage format (backward compatibility)
+        # elif 'backend' in storage:
+        #     # Legacy format validation
+        #     pass
         
         else:
-            raise ValidationError("Storage configuration must specify either dual storage (job + analytics) or legacy backend")
+            raise ValidationError("Storage configuration must specify dual storage (job + analytics)")
         
         return config
 
