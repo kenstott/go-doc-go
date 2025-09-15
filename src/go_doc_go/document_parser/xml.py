@@ -94,27 +94,30 @@ class XmlParser(DocumentParser):
         Load content from a source file with proper error handling.
 
         Args:
-            source_path: Path to the source file
+            source_path: Path to the source file (may include ::timestamp suffix)
 
         Returns:
             Tuple of (content, error_message)
             - content: The file content as string or bytes
             - error_message: Error message if loading failed, None otherwise
         """
-        if not os.path.exists(source_path):
+        # Strip timestamp suffix if present (format: path::timestamp)
+        actual_path = source_path.split('::')[0] if '::' in source_path else source_path
+        
+        if not os.path.exists(actual_path):
             error_msg = f"Error: Source file not found: {source_path}"
             logger.error(error_msg)
             return None, error_msg
 
         try:
             # First try to read as text
-            with open(source_path, 'r', encoding='utf-8') as f:
+            with open(actual_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 return content, None
         except UnicodeDecodeError:
             # If that fails, try to read as binary
             try:
-                with open(source_path, 'rb') as f:
+                with open(actual_path, 'rb') as f:
                     content = f.read()
                     return content, None
             except Exception as e:

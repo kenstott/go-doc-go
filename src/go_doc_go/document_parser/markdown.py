@@ -176,14 +176,17 @@ class MarkdownParser(DocumentParser):
         Load content from a source file with proper error handling.
 
         Args:
-            source_path: Path to the source file
+            source_path: Path to the source file (may include ::timestamp suffix)
 
         Returns:
             Tuple of (content, error_message)
             - content: The file content as string or bytes
             - error_message: Error message if loading failed, None otherwise
         """
-        if not os.path.exists(source_path):
+        # Strip timestamp suffix if present (format: path::timestamp)
+        actual_path = source_path.split('::')[0] if '::' in source_path else source_path
+        
+        if not os.path.exists(actual_path):
             error_msg = f"Error: Source file not found: {source_path}"
             logger.error(error_msg)
             return None, error_msg
@@ -192,7 +195,7 @@ class MarkdownParser(DocumentParser):
             # Try different encodings
             for encoding in ['utf-8', 'latin1', 'cp1252']:
                 try:
-                    with open(source_path, 'r', encoding=encoding) as f:
+                    with open(actual_path, 'r', encoding=encoding) as f:
                         content = f.read()
                         return content, None
                 except UnicodeDecodeError:
