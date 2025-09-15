@@ -17,16 +17,8 @@ from .servicenow import ServiceNowAdapter
 from .sharepoint import SharePointAdapter
 from .web import WebAdapter
 from ..config import Config
-from ..document_parser.csv import CsvParser
-from ..document_parser.docx import DocxParser
-from ..document_parser.html import HtmlParser
-from ..document_parser.json import JSONParser
-from ..document_parser.markdown import MarkdownParser
-from ..document_parser.pdf import PdfParser
-from ..document_parser.pptx import PptxParser
-from ..document_parser.text import TextParser
-from ..document_parser.xlsx import XlsxParser
-from ..document_parser.xml import XmlParser
+# Delay parser imports to avoid circular dependencies
+# These will be imported inside methods when needed
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +92,18 @@ class ContentResolverFactory:
         Returns:
             Dictionary of parsers by type
         """
+        # Import parsers locally to avoid circular dependencies
+        from ..document_parser.csv import CsvParser
+        from ..document_parser.docx import DocxParser
+        from ..document_parser.html import HtmlParser
+        from ..document_parser.json import JSONParser
+        from ..document_parser.markdown import MarkdownParser
+        from ..document_parser.pdf import PdfParser
+        from ..document_parser.pptx import PptxParser
+        from ..document_parser.text import TextParser
+        from ..document_parser.xlsx import XlsxParser
+        from ..document_parser.xml import XmlParser
+        
         parser_config = content_sources.get('parser_config', {})
 
         parsers = {

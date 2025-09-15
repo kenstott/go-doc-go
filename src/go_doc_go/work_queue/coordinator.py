@@ -132,6 +132,37 @@ class ElectedLeaderWorker:
         
         logger.debug("Coordinator components initialized")
     
+    def _document_already_processed(self, compound_doc_id: str, run_id: str) -> bool:
+        """
+        Check if a document (with compound ID) has already been processed.
+        
+        Args:
+            compound_doc_id: Document ID in format "filename::timestamp"  
+            run_id: Processing run ID
+            
+        Returns:
+            True if document has already been processed, False otherwise
+        """
+        try:
+            # Get analytics storage using StorageFactory (same as TwoPassProcessor)
+            from ..storage_adapters.factory import StorageFactory
+            _, analytics_storage = StorageFactory.create_from_pipeline_config(self.config.config)
+            
+            # Check if any elements exist for this document
+            elements = analytics_storage.get_document_elements(compound_doc_id)
+            
+            # If elements exist, document has been processed
+            is_processed = len(elements) > 0
+            if is_processed:
+                logger.debug(f"Document {compound_doc_id} already processed ({len(elements)} elements found)")
+            
+            return is_processed
+            
+        except Exception as e:
+            logger.warning(f"Error checking if document {compound_doc_id} already processed: {e}")
+            # If we can't check, assume it needs processing (safer)
+            return False
+    
     def _discover_and_queue_documents(self, source_configs: List[Dict], run_id: str,
                                      max_link_depth: Optional[int] = None) -> Dict[str, Any]:
         """
@@ -170,24 +201,47 @@ class ElectedLeaderWorker:
                 documents = source.list_documents()
                 logger.info(f"Found {len(documents)} documents in source {source_name}")
                 
-                # Add each document to queue
+                # Add each document to queue (only if not already processed)
                 queued_count = 0
+                skipped_count = 0
+                
                 for doc in documents:
                     try:
+                        # Generate compound document key: filename::timestamp
+                        doc_metadata = doc.get('metadata', {})
+                        last_modified = doc_metadata.get('last_modified')
+                        
+                        if last_modified is not None:
+                            # Create compound key with timestamp
+                            compound_doc_id = f"{doc['id']}::{int(last_modified)}"
+                        else:
+                            # Fallback to original doc_id if no timestamp available
+                            compound_doc_id = doc['id']
+                            logger.warning(f"No last_modified timestamp for {doc['id']}, using basic doc_id")
+                        
+                        # Check if this exact document version already exists in analytics storage
+                        if self._document_already_processed(compound_doc_id, run_id):
+                            logger.debug(f"Skipping already processed document: {compound_doc_id}")
+                            skipped_count += 1
+                            continue
+                        
+                        # Queue document with compound ID
                         queue_id = self.work_queue.add_document(
-                            doc_id=doc['id'],
+                            doc_id=compound_doc_id,
                             source_name=source_name,
                             run_id=run_id,
                             source_type='configured',
                             metadata={
                                 'max_link_depth': source_config.get('max_link_depth', 1),
-                                'source_config': source_config
+                                'source_config': source_config,
+                                'original_doc_id': doc['id'],  # Preserve original for reference
+                                'last_modified': last_modified
                             }
                         )
                         queued_count += 1
                         total_queued += 1
                         
-                        logger.debug(f"Queued document {doc['id']} with queue_id {queue_id}")
+                        logger.debug(f"Queued new/modified document {compound_doc_id} with queue_id {queue_id}")
                         
                     except Exception as e:
                         logger.error(f"Failed to queue document {doc['id']}: {str(e)}")
@@ -195,10 +249,11 @@ class ElectedLeaderWorker:
                 source_stats.append({
                     "source_name": source_name,
                     "documents_found": len(documents),
-                    "documents_queued": queued_count
+                    "documents_queued": queued_count,
+                    "documents_skipped": skipped_count
                 })
                 
-                logger.info(f"Completed source {source_name}: {queued_count}/{len(documents)} queued")
+                logger.info(f"Completed source {source_name}: {queued_count}/{len(documents)} queued, {skipped_count} skipped (already processed)")
                 
             except Exception as e:
                 logger.error(f"Error processing source {source_name}: {str(e)}")

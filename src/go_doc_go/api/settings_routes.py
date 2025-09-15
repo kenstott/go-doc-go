@@ -139,7 +139,7 @@ async def get_configuration():
             },
             "environment_variables": {
                 k: v for k, v in os.environ.items() 
-                if k.startswith(("GO_DOC_GO_", "DOCULYZER_"))
+                if k.startswith(("GO_DOC_GO_",))
             },
             "system": {
                 "version": "1.0.0",
@@ -371,7 +371,7 @@ async def get_environment_variables():
     """Get environment variables (filtered for security)."""
     try:
         # Only return non-sensitive environment variables
-        safe_prefixes = ("GO_DOC_GO_", "DOCULYZER_", "NODE_", "PYTHON")
+        safe_prefixes = ("GO_DOC_GO_", "NODE_", "PYTHON")
         env_vars = {}
         
         for key, value in os.environ.items():

@@ -159,9 +159,17 @@ class QueuedDocumentProcessor:
         except Exception as e:
             raise RuntimeError(f"Failed to get content source '{source_name}': {str(e)}")
         
-        # Fetch document content
+        # Extract original doc_id for content source operations
+        # Compound doc_id format: "original_path::timestamp"
+        if '::' in doc_id:
+            original_doc_id = doc_id.split('::')[0]
+            logger.debug(f"Extracted original doc_id: {original_doc_id} from compound: {doc_id}")
+        else:
+            original_doc_id = doc_id
+        
+        # Fetch document content using original doc_id
         try:
-            doc_content = content_source.fetch_document(doc_id)
+            doc_content = content_source.fetch_document(original_doc_id)
         except Exception as e:
             raise RuntimeError(f"Failed to fetch document content: {str(e)}")
         
@@ -169,8 +177,8 @@ class QueuedDocumentProcessor:
         last_processed_info = self.db.get_last_processed_info(doc_id)
         if last_processed_info:
             try:
-                # Check modification time
-                if not content_source.has_changed(doc_id, last_processed_info.get("last_modified")):
+                # Check modification time (use original doc_id for content source)
+                if not content_source.has_changed(original_doc_id, last_processed_info.get("last_modified")):
                     logger.info(f"Document unchanged since last processing: {doc_id}")
                     return {
                         "elements_created": 0,
@@ -239,7 +247,7 @@ class QueuedDocumentProcessor:
         
         # Discover and queue linked documents
         links_added = self._discover_and_queue_links(
-            content_source, doc_content, doc_id, run_id, claimed_doc
+            content_source, doc_content, doc_id, original_doc_id, run_id, claimed_doc
         )
         
         return {
@@ -252,7 +260,7 @@ class QueuedDocumentProcessor:
         }
     
     def _discover_and_queue_links(self, content_source, doc_content: Dict[str, Any], 
-                                 doc_id: str, run_id: str, claimed_doc: Dict[str, Any]) -> int:
+                                 doc_id: str, original_doc_id: str, run_id: str, claimed_doc: Dict[str, Any]) -> int:
         """
         Discover linked documents and add them to the queue.
         
@@ -274,10 +282,10 @@ class QueuedDocumentProcessor:
             return 0
         
         try:
-            # Use content source's follow_links method
+            # Use content source's follow_links method (with original doc_id)
             linked_docs = content_source.follow_links(
                 doc_content.get('content', ''),
-                doc_id,
+                original_doc_id,
                 current_depth,
                 set()  # Global visited tracking handled by queue
             )

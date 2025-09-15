@@ -58,12 +58,16 @@ class FastEmbedGenerator(EmbeddingGenerator):
     def _load_model(self) -> None:
         """Load the FastEmbed model."""
         try:
-            # Initialize the TextEmbedding model
+            # Detect available execution providers for ONNX Runtime
+            providers = self._get_optimal_providers()
+            
+            # Initialize the TextEmbedding model with GPU support if available
             self.model = TextEmbedding(
                 model_name=self.model_name,
-                cache_dir=self.cache_dir
+                cache_dir=self.cache_dir,
+                providers=providers
             )
-            logger.info(f"Loaded FastEmbed model: {self.model_name}")
+            logger.info(f"Loaded FastEmbed model: {self.model_name} with providers: {providers}")
         except Exception as e:
             logger.error(f"Error loading FastEmbed model {self.model_name}: {str(e)}")
             raise
@@ -181,6 +185,57 @@ class FastEmbedGenerator(EmbeddingGenerator):
             Cache key string
         """
         return hashlib.md5(text.encode('utf-8')).hexdigest()
+    
+    def _get_optimal_providers(self) -> List[str]:
+        """
+        Detect and return optimal execution providers for ONNX Runtime.
+        
+        Returns:
+            List of provider names in priority order
+        """
+        providers = []
+        
+        try:
+            import onnxruntime as ort
+            available_providers = ort.get_available_providers()
+            
+            # Priority order for providers (best performance first)
+            provider_priority = [
+                'CUDAExecutionProvider',      # NVIDIA GPU
+                'CoreMLExecutionProvider',     # Apple Silicon GPU
+                'DmlExecutionProvider',        # DirectML (Windows)
+                'OpenVINOExecutionProvider',   # Intel
+                'CPUExecutionProvider'         # Fallback to CPU
+            ]
+            
+            # Add available providers in priority order
+            for provider in provider_priority:
+                if provider in available_providers:
+                    providers.append(provider)
+                    # Log which accelerator we're using
+                    if provider == 'CoreMLExecutionProvider':
+                        logger.info("Using Apple Silicon GPU acceleration (CoreML)")
+                    elif provider == 'CUDAExecutionProvider':
+                        logger.info("Using NVIDIA GPU acceleration (CUDA)")
+                    elif provider == 'DmlExecutionProvider':
+                        logger.info("Using DirectML GPU acceleration")
+                    
+                    # For GPU providers, also add CPU as fallback
+                    if provider != 'CPUExecutionProvider' and 'CPUExecutionProvider' in available_providers:
+                        providers.append('CPUExecutionProvider')
+                    break
+            
+            # If no providers found, default to CPU
+            if not providers:
+                providers = ['CPUExecutionProvider']
+                logger.info("Using CPU for embeddings (no GPU acceleration available)")
+                
+        except ImportError:
+            # If onnxruntime not available, use default
+            providers = ['CPUExecutionProvider']
+            logger.warning("Could not import onnxruntime to detect providers")
+            
+        return providers
 
     def generate_from_elements(self, elements: List[Dict[str, Any]], db=None) -> Dict[str, List[float]]:
         """Generate embeddings for document elements."""

@@ -1738,6 +1738,266 @@ def supports_topics() -> bool:
     return db.supports_topics()
 
 
+    @classmethod
+    def search_with_related_elements(cls,
+                                    query_text: str,
+                                    limit: int = 10,
+                                    min_score: float = 0.0,
+                                    include_relationships: bool = True,
+                                    relationship_depth: int = 1,
+                                    relationship_types: Optional[List[str]] = None,
+                                    build_hierarchy: bool = True,
+                                    include_full_text: bool = False,
+                                    exclude_element_types: Optional[List[str]] = None,
+                                    include_element_types: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        Search for elements semantically and retrieve their related elements via relationships.
+        
+        This method performs semantic search and then expands results by following relationships
+        from the matched elements, organizing them into a hierarchical structure.
+        
+        Args:
+            query_text: The text to search for semantically
+            limit: Maximum number of initial results to return
+            min_score: Minimum similarity score threshold
+            include_relationships: Whether to traverse relationships
+            relationship_depth: How many levels of relationships to follow (1 = direct only)
+            relationship_types: Types of relationships to follow (None = all types)
+            build_hierarchy: Whether to build hierarchical structure from results
+            include_full_text: Whether to include full text content for elements
+            exclude_element_types: List of element types to exclude from results (e.g., ['list_item', 'heading'])
+            include_element_types: List of element types to include (if set, only these types are returned)
+            
+        Returns:
+            Dictionary containing:
+                - matches: List of matching elements with scores
+                - related_elements: Dictionary of related elements organized by source
+                - hierarchy: Hierarchical structure if build_hierarchy is True
+                - document_info: Information about documents containing the results
+                - statistics: Search statistics
+        """
+        import duckdb
+        from pathlib import Path
+        
+        db = cls.get_database()
+        start_time = time.time()
+        
+        # First, perform semantic search
+        search_results = cls.search_by_text(
+            query_text=query_text,
+            limit=limit,
+            min_score=min_score,
+            flat=False,
+            include_parents=True
+        )
+        
+        result = {
+            'query': query_text,
+            'matches': [],
+            'related_elements': {},
+            'hierarchy': None,
+            'document_info': {},
+            'statistics': {
+                'total_matches': search_results.total_results,
+                'total_related': 0,
+                'unique_documents': len(search_results.documents),
+                'search_time_ms': 0,
+                'relationship_time_ms': 0
+            }
+        }
+        
+        # Extract matched elements and apply element type filtering
+        for item in search_results.results:
+            element = db.get_element(item.element_pk)
+            if element:
+                element_type = element.get('element_type')
+                
+                # Apply element type filtering
+                if exclude_element_types and element_type in exclude_element_types:
+                    continue  # Skip excluded types
+                if include_element_types and element_type not in include_element_types:
+                    continue  # Skip types not in include list
+                
+                match_info = {
+                    'element_pk': item.element_pk,
+                    'element_id': element.get('element_id'),
+                    'element_type': element_type,
+                    'doc_id': element.get('doc_id'),
+                    'content_preview': element.get('content_preview'),
+                    'similarity_score': item.similarity,
+                    'metadata': element.get('metadata', {})
+                }
+                
+                if include_full_text:
+                    # Resolve full text if requested
+                    resolver = cls.get_content_resolver()
+                    content_location = element.get('content_location')
+                    if content_location:
+                        try:
+                            match_info['full_text'] = resolver.resolve_content(content_location, text=True)
+                        except Exception as e:
+                            logger.warning(f"Could not resolve content for element {item.element_pk}: {e}")
+                
+                result['matches'].append(match_info)
+        
+        search_time = (time.time() - start_time) * 1000
+        result['statistics']['search_time_ms'] = search_time
+        
+        # Now get related elements if requested
+        if include_relationships and result['matches']:
+            relationship_start = time.time()
+            
+            try:
+                # Get data lake path from config
+                config = _config.get('analytics', {})
+                data_lake_path = config.get('parquet', {}).get('path', './data-lake')
+                
+                # Use DuckDB to query relationships from parquet files
+                conn = duckdb.connect(':memory:')
+                
+                # Register relationship parquet files
+                relationships_path = os.path.join(data_lake_path, 'relationships/**/*.parquet')
+                elements_path = os.path.join(data_lake_path, 'elements/**/*.parquet')
+                
+                # Create views for relationships and elements
+                conn.execute(f"CREATE VIEW relationships AS SELECT * FROM read_parquet('{relationships_path}')")
+                conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}')")
+                
+                # Get element IDs from matches
+                match_element_ids = [m['element_id'] for m in result['matches'] if m.get('element_id')]
+                
+                if match_element_ids:
+                    # Build SQL query for relationships
+                    element_ids_str = ','.join([f"'{eid}'" for eid in match_element_ids])
+                    
+                    # Build relationship type filter if specified
+                    type_filter = ""
+                    if relationship_types:
+                        types_str = ','.join([f"'{rt}'" for rt in relationship_types])
+                        type_filter = f"AND relationship_type IN ({types_str})"
+                    
+                    # Query for related elements via relationships
+                    relationship_query = f"""
+                    WITH RECURSIVE related AS (
+                        -- Direct relationships from matched elements
+                        SELECT 
+                            r.source_id,
+                            r.target_id,
+                            r.relationship_type,
+                            r.metadata,
+                            1 as depth
+                        FROM relationships r
+                        WHERE r.source_id IN ({element_ids_str})
+                        {type_filter}
+                        
+                        UNION ALL
+                        
+                        -- Recursive relationships up to specified depth
+                        SELECT
+                            r.source_id,
+                            r.target_id,
+                            r.relationship_type,
+                            r.metadata,
+                            rel.depth + 1
+                        FROM relationships r
+                        JOIN related rel ON r.source_id = rel.target_id
+                        WHERE rel.depth < {relationship_depth}
+                        {type_filter}
+                    )
+                    SELECT DISTINCT
+                        rel.source_id,
+                        rel.target_id,
+                        rel.relationship_type,
+                        rel.depth,
+                        e.element_type,
+                        e.doc_id,
+                        e.content_preview,
+                        e.metadata as element_metadata
+                    FROM related rel
+                    LEFT JOIN elements e ON e.element_id = rel.target_id
+                    ORDER BY rel.depth, rel.source_id, rel.relationship_type
+                    """
+                    
+                    # Execute query
+                    related_results = conn.execute(relationship_query).fetchall()
+                    column_names = [desc[0] for desc in conn.description]
+                    
+                    # Organize related elements by source element and apply element type filtering
+                    for row in related_results:
+                        related = dict(zip(column_names, row))
+                        source_id = related['source_id']
+                        element_type = related.get('element_type')
+                        
+                        # Apply element type filtering to related elements
+                        if exclude_element_types and element_type in exclude_element_types:
+                            continue  # Skip excluded types
+                        if include_element_types and element_type not in include_element_types:
+                            continue  # Skip types not in include list
+                        
+                        if source_id not in result['related_elements']:
+                            result['related_elements'][source_id] = []
+                        
+                        result['related_elements'][source_id].append({
+                            'target_id': related['target_id'],
+                            'relationship_type': related['relationship_type'],
+                            'depth': related['depth'],
+                            'element_type': element_type,
+                            'doc_id': related.get('doc_id'),
+                            'content_preview': related.get('content_preview'),
+                            'metadata': related.get('element_metadata', {})
+                        })
+                        
+                        result['statistics']['total_related'] += 1
+                
+                conn.close()
+                
+            except Exception as e:
+                logger.error(f"Error getting related elements via relationships: {e}")
+                result['error'] = str(e)
+            
+            relationship_time = (time.time() - relationship_start) * 1000
+            result['statistics']['relationship_time_ms'] = relationship_time
+        
+        # Build hierarchical structure if requested
+        if build_hierarchy and result['matches']:
+            try:
+                # Collect all unique doc_ids
+                doc_ids = set()
+                for match in result['matches']:
+                    if match.get('doc_id'):
+                        doc_ids.add(match['doc_id'])
+                
+                # Get document info
+                for doc_id in doc_ids:
+                    doc = db.get_document(doc_id)
+                    if doc:
+                        result['document_info'][doc_id] = {
+                            'doc_type': doc.get('doc_type'),
+                            'source': doc.get('source'),
+                            'metadata': doc.get('metadata', {})
+                        }
+                
+                # Build hierarchy from search tree if available
+                if search_results.search_tree:
+                    result['hierarchy'] = []
+                    for tree_elem in search_results.search_tree:
+                        # Convert to dict for JSON serialization
+                        if hasattr(tree_elem, 'dict'):
+                            result['hierarchy'].append(tree_elem.dict())
+                        elif hasattr(tree_elem, 'model_dump'):
+                            result['hierarchy'].append(tree_elem.model_dump())
+                        else:
+                            result['hierarchy'].append(dict(tree_elem))
+                            
+            except Exception as e:
+                logger.error(f"Error building hierarchy: {e}")
+                result['hierarchy_error'] = str(e)
+        
+        result['statistics']['total_time_ms'] = (time.time() - start_time) * 1000
+        
+        return result
+
+
 # EXAMPLE USAGE:
 """
 # Example 1: Search with document materialization as markdown

@@ -99,10 +99,17 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             return self.base_generator.generate(text)
 
         # Combine text with context
+        import time
+        t1 = time.time()
         combined_text = self._combine_text_with_context(text, context)
-
+        self._time_text_combining = getattr(self, '_time_text_combining', 0) + (time.time() - t1)
+        
         # Generate embedding for combined text
-        return self.base_generator.generate(combined_text)
+        t2 = time.time()
+        result = self.base_generator.generate(combined_text)
+        self._time_actual_embedding = getattr(self, '_time_actual_embedding', 0) + (time.time() - t2)
+        
+        return result
     
     def count_tokens(self, text: str) -> int:
         """
@@ -513,6 +520,93 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         except ValueError:
             return False
 
+    def _aggregate_table_cells(self, table_row_element: Dict[str, Any], 
+                              all_elements: List[Dict[str, Any]], 
+                              hierarchy: Dict[str, List[str]],
+                              resolver) -> str:
+        """
+        Aggregate table cell contents for a table row into a space-delimited string.
+        
+        Args:
+            table_row_element: The table row element
+            all_elements: All document elements
+            hierarchy: Element hierarchy mapping
+            resolver: Content resolver
+            
+        Returns:
+            Space-delimited string of cell contents
+        """
+        import re
+        
+        # Get child cell IDs
+        row_id = table_row_element["element_id"]
+        cell_ids = hierarchy.get(row_id, [])
+        
+        # Find cell elements
+        id_to_element = {e["element_id"]: e for e in all_elements}
+        cell_contents = []
+        
+        for cell_id in cell_ids:
+            cell_element = id_to_element.get(cell_id)
+            if cell_element and cell_element.get("element_type") in ("table_cell", "table_header"):
+                # Get cell content
+                cell_content = resolver.resolve_content(cell_element.get('content_location'), text=True)
+                if cell_content:
+                    # Strip HTML/XML tags
+                    clean_content = re.sub(r'<[^>]+>', '', cell_content).strip()
+                    if clean_content:
+                        cell_contents.append(clean_content)
+        
+        return " ".join(cell_contents)
+    
+    def _is_pure_numeric(self, content: str) -> bool:
+        """
+        Check if content is pure numeric (numbers, currencies, percentages) without dates.
+        
+        Args:
+            content: Content to check
+            
+        Returns:
+            True if content is pure numeric and should be skipped
+        """
+        import re
+        
+        if not content:
+            return False
+            
+        # Remove whitespace for checking
+        clean = content.strip()
+        
+        # Common date patterns - if it looks like a date, keep it
+        date_patterns = [
+            r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}',  # MM-DD-YYYY or similar
+            r'\d{4}[-/]\d{1,2}[-/]\d{1,2}',    # YYYY-MM-DD
+            r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)',  # Month names
+            r'(january|february|march|april|may|june|july|august|september|october|november|december)',
+            r'(q1|q2|q3|q4)',  # Quarters
+            r'\d{4}',  # Years (keep standalone years as they're often important)
+        ]
+        
+        for pattern in date_patterns:
+            if re.search(pattern, clean.lower()):
+                return False  # It's a date, keep it
+        
+        # Pure numeric patterns to skip
+        numeric_patterns = [
+            r'^[\d,]+$',                    # Pure numbers with commas
+            r'^[\d,]+\.\d+$',               # Decimals
+            r'^\$?[\d,]+\.?\d*$',           # Currency
+            r'^[\d,]+\.?\d*%$',             # Percentages
+            r'^\([\d,]+\.?\d*\)$',          # Negative numbers in parentheses
+            r'^-?[\d,]+\.?\d*$',            # Negative numbers
+        ]
+        
+        for pattern in numeric_patterns:
+            if re.match(pattern, clean):
+                return True
+                
+        return False
+
     def generate_from_elements(self, elements: List[Dict[str, Any]], db=None) -> Dict[str, List[float]]:
         """
         Generate contextual embeddings for document elements, with size handling:
@@ -523,24 +617,74 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             elements: List of document elements to generate embeddings for
             db: Optional database connection for cross-document relationships
         """
+        import time
+        
+        # Element types to skip - use their parent elements instead
+        SKIP_ELEMENT_TYPES = {
+            'table_cell',   # Use table_row instead (3x reduction)
+            'json_item',    # Use parent array/object instead
+            'json_field',   # Use parent object instead
+            'root',         # No meaningful content
+            'body'          # Container element
+        }
+        
         # Build element hierarchy
         hierarchy = self._build_element_hierarchy(elements)
         resolver = create_content_resolver(self._config)
 
         # Define maximum content size for effective embedding (approximate word count)
         max_words_for_embedding = 500
+        
+        # Batch processing settings
+        BATCH_SIZE = 32  # Process 32 elements at a time
 
         # Generate embeddings with context
         embeddings = {}
+        
+        # Timing stats
+        total_elements = len(elements)
+        skipped_elements = 0
+        processed = 0
+        time_context_building = 0
+        time_text_combining = 0
+        time_embedding_gen = 0
+        time_content_resolution = 0
+        content_resolutions = 0
+        start_time = time.time()
+        
+        # Batch processing arrays
+        batch_element_pks = []
+        batch_combined_texts = []
 
         for element in elements:
+            # Skip elements that should use their parent
+            if element.get("element_type") in SKIP_ELEMENT_TYPES:
+                skipped_elements += 1
+                continue
             element_pk = element["element_pk"]
 
             # Get full text content for all elements using the resolver
+            t0 = time.time()
             content = resolver.resolve_content(element.get('content_location'), text=True)
+            
+            # Special handling for table rows - aggregate their cells
+            if element.get("element_type") == "table_row":
+                aggregated_cells = self._aggregate_table_cells(element, elements, hierarchy, resolver)
+                if aggregated_cells:
+                    # Combine row content with aggregated cells
+                    content = f"{content} {aggregated_cells}" if content else aggregated_cells
+            
+            time_content_resolution += (time.time() - t0)
+            content_resolutions += 1
 
             # Skip if no meaningful content
-            if not content and not self.is_number(content):
+            if not content:
+                continue
+                
+            # Skip pure numeric values (but keep dates)
+            if self._is_pure_numeric(content):
+                skipped_elements += 1
+                logger.debug(f"Skipping pure numeric element: {element.get('element_type')} - {content[:50]}")
                 continue
 
             # Check content length
@@ -553,23 +697,104 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 # For non-root elements, truncate to threshold
                 content = " ".join(content.split()[:max_words_for_embedding])
 
+            # TIMING: Context building phase
+            t1 = time.time()
+            
             # Get context elements
             context_elements = self._get_context_elements(element, elements, hierarchy, db)
 
             # Get context contents using the resolver for text
             context_contents = []
             for ctx_element in context_elements:
+                t_ctx = time.time()
                 ctx_content = resolver.resolve_content(ctx_element.get('content_location'), text=True)
+                time_content_resolution += (time.time() - t_ctx)
+                content_resolutions += 1
+                
                 if ctx_content and not self.is_number(ctx_content):
                     # Also check size of context elements and truncate if needed
                     ctx_words = len(ctx_content.split())
                     if ctx_words > max_words_for_embedding:
                         ctx_content = " ".join(ctx_content.split()[:max_words_for_embedding])
                     context_contents.append(ctx_content)
+            
+            t2 = time.time()
+            time_context_building += (t2 - t1)
+            
+            # TIMING: Text combination phase
+            t_combine_start = time.time()
+            combined_text = self._combine_text_with_context(content, context_contents)
+            time_text_combining += (time.time() - t_combine_start)
+            
+            # Add to batch
+            batch_element_pks.append(element_pk)
+            batch_combined_texts.append(combined_text)
+            
+            # Process batch when full or at end
+            if len(batch_element_pks) >= BATCH_SIZE or element == elements[-1]:
+                if batch_combined_texts:
+                    # Generate embeddings for batch
+                    t_batch_start = time.time()
+                    
+                    # Check if base generator has batch support
+                    if hasattr(self.base_generator, 'generate_batch'):
+                        batch_embeddings = self.base_generator.generate_batch(batch_combined_texts)
+                    else:
+                        # Fallback to individual generation
+                        batch_embeddings = [self.base_generator.generate(text) for text in batch_combined_texts]
+                    
+                    time_embedding_gen += (time.time() - t_batch_start)
+                    
+                    # Store results
+                    for pk, embedding in zip(batch_element_pks, batch_embeddings):
+                        embeddings[pk] = embedding
+                        processed += 1
+                    
+                    # Clear batch
+                    batch_element_pks = []
+                    batch_combined_texts = []
+            
+            # Log progress every 100 elements
+            if processed > 0 and processed % 100 == 0:
+                elapsed = time.time() - start_time
+                rate = processed / elapsed if elapsed > 0 else 0
+                avg_resolutions_per_elem = content_resolutions / processed if processed > 0 else 0
+                effective_total = total_elements - skipped_elements
+                logger.info(f"Embedding progress: {processed}/{effective_total} ({processed*100/effective_total:.1f}%) - "
+                          f"Skipped: {skipped_elements} - "
+                          f"Rate: {rate:.1f} elem/s - "
+                          f"Content resolution: {time_content_resolution:.1f}s ({time_content_resolution*100/elapsed:.1f}%) - "
+                          f"Context: {time_context_building:.1f}s ({time_context_building*100/elapsed:.1f}%) - "
+                          f"Embed: {time_embedding_gen:.1f}s ({time_embedding_gen*100/elapsed:.1f}%) - "
+                          f"Resolutions: {content_resolutions} ({avg_resolutions_per_elem:.1f}/elem)")
 
-            # Generate embedding with context
-            embedding = self.generate(content, context_contents)
-            embeddings[element_pk] = embedding
+        # Process any remaining batch
+        if batch_combined_texts:
+            t_batch_start = time.time()
+            if hasattr(self.base_generator, 'generate_batch'):
+                batch_embeddings = self.base_generator.generate_batch(batch_combined_texts)
+            else:
+                batch_embeddings = [self.base_generator.generate(text) for text in batch_combined_texts]
+            time_embedding_gen += (time.time() - t_batch_start)
+            
+            for pk, embedding in zip(batch_element_pks, batch_embeddings):
+                embeddings[pk] = embedding
+                processed += 1
+
+        # Final timing report
+        total_time = time.time() - start_time
+        if processed > 0:
+            avg_resolutions_per_elem = content_resolutions / processed if processed > 0 else 0
+            
+            logger.info(f"Embedding generation complete: {processed} elements processed, {skipped_elements} skipped in {total_time:.1f}s")
+            logger.info(f"  Skipped: table_cell, json_item, json_field, root, body, pure numerics")
+            logger.info(f"  Table rows enhanced with aggregated cell content")
+            logger.info(f"  Batch processing: {BATCH_SIZE} elements per batch")
+            logger.info(f"  Content resolution: {time_content_resolution:.1f}s ({time_content_resolution*100/total_time:.1f}%) - {content_resolutions} total, {avg_resolutions_per_elem:.1f}/elem")
+            logger.info(f"  Context building: {time_context_building:.1f}s ({time_context_building*100/total_time:.1f}%)")
+            logger.info(f"  Text combining: {time_text_combining:.1f}s ({time_text_combining*100/total_time:.1f}%)")
+            logger.info(f"  Actual embedding: {time_embedding_gen:.1f}s ({time_embedding_gen*100/total_time:.1f}%)")
+            logger.info(f"  Average per element: {total_time/processed:.3f}s")
 
         return embeddings
 
