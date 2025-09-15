@@ -1,8 +1,6 @@
 storage:
-  path: "./data"
-  backend: "postgresql"
-  postgresql:
-    uri: ${DOCUMENTS_URI}
+  backend: "sqlite"
+  path: "/Users/kennethstott/PycharmProjects/doculyzer/sequential_test.db"
 
 embedding:
   enabled: true

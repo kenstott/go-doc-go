@@ -1,6 +1,7 @@
 # Go-Doc-Go Production Environment
 # Docker Compose configuration for production deployment with scaling and monitoring
 
+name: go-doc-go-prod
 version: '3.8'
 
 services:

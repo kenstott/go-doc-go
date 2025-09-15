@@ -159,6 +159,59 @@ for company in companies:
     print(f"{company.name}: {len(executives)} execs, {len(metrics)} metrics")
 ```
 
+## Web Interface
+
+Go-Doc-Go includes a comprehensive **React-based web interface** for managing your document processing pipelines:
+
+### 🎯 **Pipeline Management**
+- **Visual pipeline configuration** with drag-and-drop interface
+- **Real-time processing monitoring** with progress tracking
+- **Queue status and worker coordination** - see distributed processing in action
+- **One-click pipeline execution** with detailed logging
+
+### ⚙️ **Configuration Management** 
+- **Interactive settings editor** for all Go-Doc-Go configuration options
+- **Live validation** with immediate feedback on configuration changes
+- **Storage backend configuration** (PostgreSQL, SQLite, Elasticsearch, etc.)
+- **Embedding and AI provider setup** (OpenAI, HuggingFace, FastEmbed)
+
+### 🧠 **Ontology & Domain Management**
+- **Visual ontology editor** for defining domain entities and relationships
+- **Entity mapping rules** with pattern matching and semantic definitions
+- **Domain activation/deactivation** for different document types
+- **Knowledge graph visualization** of extracted entities
+
+### 📊 **Processing Results**
+- **Real-time results viewing** as documents are processed
+- **Element relationship explorer** to navigate document structure
+- **Search interface** with semantic, structured, and topic-based search
+- **Document reconstruction** - convert parsed elements back to readable formats
+
+### 🚀 **Getting Started with the UI**
+
+```bash
+# Start the web interface
+cd frontend && npm install && npm run build
+GO_DOC_GO_CONFIG_PATH=config.yaml python -m go_doc_go.server
+
+# Access the UI
+open http://localhost:5000
+```
+
+**Key Features:**
+- 📱 **Responsive design** - works on desktop, tablet, and mobile
+- 🔒 **Configuration validation** - prevents invalid setups
+- 🎨 **Modern Material-UI design** - intuitive and professional
+- ⚡ **Real-time updates** - see processing progress live
+- 📋 **YAML editor** with syntax highlighting for advanced users
+
+The UI is perfect for:
+- **Setting up new projects** - guided configuration wizard
+- **Monitoring large processing jobs** - real-time progress and logs  
+- **Managing complex ontologies** - visual relationship modeling
+- **Exploring results** - interactive search and document navigation
+- **Team collaboration** - shared configuration and domain management
+
 ## Core Capabilities
 
 - **📄 Universal Parsing**: PDF, DOCX, PPTX, XLSX, HTML, Markdown, JSON, CSV, XML, plain text
@@ -168,10 +221,12 @@ for company in companies:
 - **📊 Document Reconstruction**: Convert parsed elements back to readable formats (MD, HTML, JSON)
 - **🧠 Knowledge Extraction**: Domain entity recognition and relationship discovery
 - **⚡ Performance**: FastEmbed integration, bulk processing, optimized for large datasets
+- **🎛️ Web UI**: Modern React interface for pipeline management, configuration, and monitoring
 
 ## Documentation
 
 - **[Installation Guide](docs/installation.md)** - All installation options and dependencies
+- **[Web Interface Guide](docs/web-ui.md)** - Complete UI setup, features, and usage
 - **[Data Sources](docs/sources.md)** - Comprehensive source support (databases, files, APIs, cloud)
 - **[Storage Backends](docs/storage.md)** - All storage options and trade-offs
 - **[Scaling Guide](docs/scaling.md)** - Horizontal pipeline architecture and performance

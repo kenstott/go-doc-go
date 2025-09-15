@@ -1,6 +1,7 @@
 # Go-Doc-Go Development Environment
 # Docker Compose configuration for local development with hot reloading
 
+name: go-doc-go-dev
 version: '3.8'
 
 services:
