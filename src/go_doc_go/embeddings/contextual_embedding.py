@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any, Tuple
 import logging
 
 from .base import EmbeddingGenerator
-from .semantic_tagger import SemanticTagger, ContextRole
+# Semantic tagging removed - using simple text curation
 from ..adapter import create_content_resolver
 from ..config import Config
 
@@ -35,7 +35,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                  child_count: int = 1,
                  max_tokens: int = 16384,
                  tokenizer_model: str = "cl100k_base",
-                 use_semantic_tags: bool = True):
+                 use_semantic_tags: bool = False):
         """
         Initialize the contextual embedding generator.
 
@@ -68,9 +68,8 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             "children": 0.15
         }
         
-        # Semantic tagging
-        self.use_semantic_tags = use_semantic_tags
-        self.semantic_tagger = SemanticTagger(include_metadata=True) if use_semantic_tags else None
+        # Simple text approach - no semantic tagging
+        self.use_semantic_tags = False  # Always disabled
         
         # Initialize tokenizer
         self.tokenizer = None
@@ -247,53 +246,26 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         
         # Add parent context
         if parent_texts and parent_budget > 0:
-            if self.use_semantic_tags and parent_metadata:
-                parent_context = self._select_tagged_texts_within_budget(
-                    parent_texts, parent_metadata, parent_budget, ContextRole.PARENT
-                )
-            else:
-                parent_context = self._select_texts_within_budget(parent_texts, parent_budget, "Parent")
-                if parent_context:
-                    parent_context = f"=== Parent Context ===\n{parent_context}"
+            parent_context = self._select_texts_within_budget(parent_texts, parent_budget, "Parent")
             if parent_context:
                 contexts.append(parent_context)
         
         # Add sibling context
         if sibling_texts and sibling_budget > 0:
-            if self.use_semantic_tags and sibling_metadata:
-                sibling_context = self._select_tagged_texts_within_budget(
-                    sibling_texts, sibling_metadata, sibling_budget, ContextRole.SIBLING
-                )
-            else:
-                sibling_context = self._select_texts_within_budget(sibling_texts, sibling_budget, "Sibling")
-                if sibling_context:
-                    sibling_context = f"=== Sibling Context ===\n{sibling_context}"
+            sibling_context = self._select_texts_within_budget(sibling_texts, sibling_budget, "Sibling")
             if sibling_context:
                 contexts.append(sibling_context)
         
         # Add child context
         if child_texts and child_budget > 0:
-            if self.use_semantic_tags and child_metadata:
-                child_context = self._select_tagged_texts_within_budget(
-                    child_texts, child_metadata, child_budget, ContextRole.CHILD
-                )
-            else:
-                child_context = self._select_texts_within_budget(child_texts, child_budget, "Child")
-                if child_context:
-                    child_context = f"=== Child Context ===\n{child_context}"
+            child_context = self._select_texts_within_budget(child_texts, child_budget, "Child")
             if child_context:
                 contexts.append(child_context)
         
-        # Combine all parts - MAIN element first
-        if self.use_semantic_tags and element_metadata:
-            element_tag = self.semantic_tagger.generate_tag(element_metadata, context_role=ContextRole.MAIN)
-            main_content = f"{element_tag} {element_processed}"
-        else:
-            main_content = f"=== Main Content ===\n{element_processed}"
-        
-        # Main element goes first, then context
-        all_parts = [main_content] + contexts
-        combined = "\n\n".join(all_parts)
+        # Combine all parts - MAIN element first, then context in priority order
+        # Add punctuation separators for semantic boundaries while maintaining token density
+        all_parts = [element_processed] + contexts
+        combined = ". ".join(part.rstrip('.') for part in all_parts if part.strip()) + "."
         
         # Final safety check
         total_tokens = self.count_tokens(combined)
@@ -336,64 +308,11 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             else:
                 break
         
-        result = "\n---\n".join(selected)
+        result = ". ".join(text.rstrip('.') for text in selected if text.strip())
         logger.debug(f"{context_type} context: {len(selected)}/{len(texts)} texts, {used_tokens}/{budget} tokens")
         
         return result
     
-    def _select_tagged_texts_within_budget(self,
-                                          texts: List[str],
-                                          metadata_list: List[Dict[str, Any]],
-                                          budget: int,
-                                          context_role: ContextRole) -> str:
-        """
-        Select and tag texts within token budget.
-        
-        Args:
-            texts: List of context texts
-            metadata_list: List of metadata dicts for each text
-            budget: Token budget
-            context_role: Role of this context
-            
-        Returns:
-            Tagged and combined text within budget
-        """
-        if not texts or budget <= 0:
-            return ""
-        
-        selected = []
-        used_tokens = 0
-        
-        for i, text in enumerate(texts):
-            # Get metadata for this text
-            metadata = metadata_list[i] if i < len(metadata_list) else {}
-            
-            # Generate semantic tag
-            tag = self.semantic_tagger.generate_tag(metadata, context_role=context_role)
-            tagged_text = f"{tag} {text}"
-            
-            text_tokens = self.count_tokens(tagged_text)
-            
-            if used_tokens + text_tokens <= budget:
-                selected.append(tagged_text)
-                used_tokens += text_tokens
-            elif used_tokens < budget and budget - used_tokens > 50:
-                # Partial fit with meaningful remaining space
-                remaining = budget - used_tokens
-                # Ensure tag is included even in truncation
-                tag_tokens = self.count_tokens(tag + " ")
-                if tag_tokens < remaining:
-                    text_budget = remaining - tag_tokens
-                    truncated = self.truncate_to_tokens(text, text_budget)
-                    selected.append(f"{tag} {truncated} [...]")
-                break
-            else:
-                break
-        
-        result = "\n".join(selected)
-        logger.debug(f"{context_role.value} context: {len(selected)}/{len(texts)} texts, {used_tokens}/{budget} tokens")
-        
-        return result
 
     def generate_batch(self, texts: List[str], contexts: Optional[List[List[str]]] = None) -> List[List[float]]:
         """
@@ -523,9 +442,9 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
     def _aggregate_table_cells(self, table_row_element: Dict[str, Any], 
                               all_elements: List[Dict[str, Any]], 
                               hierarchy: Dict[str, List[str]],
-                              resolver) -> str:
+                              resolver) -> Dict[str, str]:
         """
-        Aggregate table cell contents for a table row into a space-delimited string.
+        Aggregate table cell contents AND header contents for a table row.
         
         Args:
             table_row_element: The table row element
@@ -534,7 +453,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             resolver: Content resolver
             
         Returns:
-            Space-delimited string of cell contents
+            Dictionary with 'cells' and 'headers' content
         """
         import re
         
@@ -554,10 +473,54 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 if cell_content:
                     # Strip HTML/XML tags
                     clean_content = re.sub(r'<[^>]+>', '', cell_content).strip()
-                    if clean_content:
+                    # Skip pure numeric cells for token density
+                    if clean_content and not self._is_pure_numeric(clean_content):
                         cell_contents.append(clean_content)
         
-        return " ".join(cell_contents)
+        # Find table headers
+        header_contents = []
+        
+        # Find parent table element
+        parent_table_id = None
+        current_element = table_row_element
+        max_depth = 5  # Prevent infinite loops
+        depth = 0
+        
+        while current_element and depth < max_depth:
+            parent_id = current_element.get("parent_id")
+            if not parent_id:
+                break
+            parent_element = id_to_element.get(parent_id)
+            if parent_element:
+                if parent_element.get("element_type") == "table":
+                    parent_table_id = parent_id
+                    break
+                current_element = parent_element
+            depth += 1
+        
+        # If we found the table, get all header rows
+        if parent_table_id:
+            table_children = hierarchy.get(parent_table_id, [])
+            for child_id in table_children:
+                child_element = id_to_element.get(child_id)
+                if child_element and child_element.get("element_type") == "table_header_row":
+                    # Get all cells in this header row
+                    header_row_children = hierarchy.get(child_id, [])
+                    for header_cell_id in header_row_children:
+                        header_cell = id_to_element.get(header_cell_id)
+                        if header_cell and header_cell.get("element_type") in ("table_header", "table_cell"):
+                            header_text = resolver.resolve_content(header_cell.get('content_location'), text=True)
+                            if header_text:
+                                # Strip HTML/XML tags
+                                clean_header = re.sub(r'<[^>]+>', '', header_text).strip()
+                                # Skip numeric headers (rare but possible)
+                                if clean_header and not self._is_pure_numeric(clean_header):
+                                    header_contents.append(clean_header)
+        
+        return {
+            "cells": " ".join(cell_contents),
+            "headers": " ".join(header_contents)
+        }
     
     def _is_pure_numeric(self, content: str) -> bool:
         """
@@ -619,14 +582,8 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         """
         import time
         
-        # Element types to skip - use their parent elements instead
-        SKIP_ELEMENT_TYPES = {
-            'table_cell',   # Use table_row instead (3x reduction)
-            'json_item',    # Use parent array/object instead
-            'json_field',   # Use parent object instead
-            'root',         # No meaningful content
-            'body'          # Container element
-        }
+        # Skip container elements - they have no meaningful content to embed
+        # Their context is preserved through relationships when embedding content elements
         
         # Build element hierarchy
         hierarchy = self._build_element_hierarchy(elements)
@@ -657,8 +614,15 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         batch_combined_texts = []
 
         for element in elements:
-            # Skip elements that should use their parent
-            if element.get("element_type") in SKIP_ELEMENT_TYPES:
+            # Skip container elements - they have no searchable content
+            # Content elements will still get container context via relationships
+            if self._is_container_element(element):
+                skipped_elements += 1
+                logger.debug(f"Skipping container element: {element.get('element_type')}")
+                continue
+            
+            # Also skip certain granular elements that should use their parent
+            if element.get("element_type") in {'table_cell', 'json_item', 'json_field'}:
                 skipped_elements += 1
                 continue
             element_pk = element["element_pk"]
@@ -667,12 +631,26 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             t0 = time.time()
             content = resolver.resolve_content(element.get('content_location'), text=True)
             
-            # Special handling for table rows - aggregate their cells
+            # Special handling for table rows - aggregate their cells AND headers
             if element.get("element_type") == "table_row":
-                aggregated_cells = self._aggregate_table_cells(element, elements, hierarchy, resolver)
-                if aggregated_cells:
-                    # Combine row content with aggregated cells
-                    content = f"{content} {aggregated_cells}" if content else aggregated_cells
+                table_data = self._aggregate_table_cells(element, elements, hierarchy, resolver)
+                if table_data:
+                    cells_text = table_data.get("cells", "")
+                    headers_text = table_data.get("headers", "")
+                    
+                    # Combine cells and headers with punctuation separator for token density
+                    if cells_text and headers_text:
+                        # Format: "row_content. header_content."
+                        aggregated_content = f"{cells_text}. {headers_text}."
+                    elif cells_text:
+                        aggregated_content = cells_text
+                    elif headers_text:
+                        aggregated_content = headers_text
+                    else:
+                        aggregated_content = ""
+                    
+                    # Combine with any existing content
+                    content = f"{content} {aggregated_content}" if content else aggregated_content
             
             time_content_resolution += (time.time() - t0)
             content_resolutions += 1
@@ -852,35 +830,40 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         # Build a mapping from element_id to element for quicker lookups
         id_to_element = {e["element_id"]: e for e in all_elements}
 
-        # Add ancestors up to configured depth
+        # Collect ALL meaningful ancestors up to root (not limited by depth)
+        # This ensures we never lose important topic context regardless of nesting
         current_element = element
-        current_depth = 0
-        ancestors_added = 0
+        traversal_depth = 0
+        ancestors_collected = []
 
-        while ancestors_added < self.ancestor_depth:
+        while current_element:
             parent_id = current_element.get("parent_id")
             if not parent_id:
-                break  # No more ancestors
+                break  # Reached the top of the hierarchy
 
             # Find parent element to continue up the hierarchy
             parent_element = id_to_element.get(parent_id)
             if not parent_element:
-                break  # Parent not found
+                break  # Parent not found in elements
 
-            # Only include parent if it has content and is not an empty container
+            # Collect parent if it has meaningful content (skip empty containers)
+            # Headers, sections with titles, etc. are crucial for context
             if (parent_element.get("content_preview") and
                     parent_element["element_type"] != "root" and
-                    not self._is_empty_container(parent_element)):
-                context_ids.add(parent_id)
-                ancestors_added += 1
+                    not self._is_structural_only_container(parent_element)):
+                ancestors_collected.append(parent_id)
 
             # Move up to the next level, even if we skipped this parent
             current_element = parent_element
-            current_depth += 1
+            traversal_depth += 1
 
-            # Safety check - don't go too far up (avoid infinite loops)
-            if current_depth > 10:  # Arbitrary depth limit
+            # Safety check - prevent infinite loops in malformed hierarchies
+            if traversal_depth > 20:  # Very deep but reasonable limit
+                logger.warning(f"Very deep hierarchy detected (>20 levels) for element {element_id}")
                 break
+        
+        # Add ancestors to context (they'll be prioritized by token budget)
+        context_ids.update(ancestors_collected)
 
         # Find meaningful predecessors and successors
         current_index = -1
@@ -903,7 +886,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 # 3. Are just container elements
                 if (pred_element["element_type"] != "root" and
                         pred_element.get("content_preview") and
-                        not self._is_empty_container(pred_element)):
+                        not self._is_structural_only_container(pred_element)):
                     context_ids.add(pred_element["element_id"])
                     pred_count += 1
 
@@ -919,7 +902,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 # Same filtering as for predecessors
                 if (succ_element["element_type"] != "root" and
                         succ_element.get("content_preview") and
-                        not self._is_empty_container(succ_element)):
+                        not self._is_structural_only_container(succ_element)):
                     context_ids.add(succ_element["element_id"])
                     succ_count += 1
 
@@ -935,7 +918,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 if (child_element and
                         child_element["element_type"] != "root" and
                         child_element.get("content_preview") and
-                        not self._is_empty_container(child_element)):
+                        not self._is_structural_only_container(child_element)):
                     context_ids.add(child_id)
                     children_added += 1
                     if children_added >= self.child_count:
@@ -1020,23 +1003,50 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         return cross_doc_elements
 
     @staticmethod
-    def _is_empty_container(element: Dict[str, Any]) -> bool:
+    def _is_structural_only_container(element: Dict[str, Any]) -> bool:
         """
-        Check if an element is just an empty container (like a div with no text).
+        Check if an element is a structural container without its own text content.
+        These containers provide document structure but don't have searchable content.
 
         Args:
             element: The element to check
 
         Returns:
-            True if the element is an empty container, False otherwise
+            True if the element is a structural-only container, False otherwise
         """
-        # Consider these element types as potential empty containers
-        container_types = ["div", "span", "article", "section", "nav", "aside"]
+        # Consider these element types as structural-only containers
+        # They organize content but typically have no text of their own
+        structural_types = ["div", "span", "article", "section", "nav", "aside", "tbody", "thead"]
 
-        # Check if it's a container type
-        if element["element_type"] in container_types:
-            # Check if it has no meaningful content
+        # Check if it's a structural type
+        if element["element_type"] in structural_types:
+            # Check if it has no meaningful content of its own
             content = element.get("content_preview", "").strip()
-            return not content or content in ["", "..."]
+            return not content or content in ["", "..."] or len(content) < 10
 
         return False
+    
+    @staticmethod
+    def _is_container_element(element: Dict[str, Any]) -> bool:
+        """
+        Check if an element is a container type that should not get its own embedding.
+        Containers provide structure but no searchable content.
+        
+        Args:
+            element: The element to check
+            
+        Returns:
+            True if element is a container that should be skipped for embedding
+        """
+        # Comprehensive list of container types from ElementBase.is_container()
+        container_types = {
+            "root", "div", "article", "section",
+            "list", "table", "page", "xml_list", "xml_object",
+            "table_header", "table_header_row", "presentation_body",
+            "slide", "comments_container", "comments", "json_array",
+            "json_object", "slide_masters", "slide_templates",
+            "headers", "footers", "page_header", "page_footer", "body",
+            # Excel containers
+            "workbook", "sheet", "merged_cells", "data_tables"
+        }
+        return element.get("element_type", "").lower() in container_types

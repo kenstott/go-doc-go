@@ -1,7 +1,7 @@
 """
 Embedding Generator Module for the document pointer system.
 This module generates vector embeddings for document elements,
-with support for different embedding models and contextual embeddings.
+with support for different embedding models and simple contextual embeddings.
 """
 import logging
 from .base import EmbeddingGenerator
@@ -91,7 +91,7 @@ def get_embedding_generator(config: Config) -> EmbeddingGenerator:
         base_generator = HuggingFaceEmbeddingGenerator(config, model)
         logger.info(f"Created Hugging Face embedding generator with model {model}")
 
-    # Add contextual embedding if configured
+    # Add simple contextual embedding if configured
     if embeddings.get("contextual", False):
         window_size = embeddings.get("window_size", 3)
         overlap_size = embeddings.get("overlap_size", 1)
@@ -102,17 +102,18 @@ def get_embedding_generator(config: Config) -> EmbeddingGenerator:
         max_tokens = config.get_embedding_max_tokens()
 
         contextual_generator = ContextualEmbeddingGenerator(
-            config,
-            base_generator,
-            window_size,
-            overlap_size,
-            predecessor_count,
-            successor_count,
-            ancestor_depth,
-            child_count,
-            max_tokens
+            _config=config,
+            base_generator=base_generator,
+            window_size=window_size,
+            overlap_size=overlap_size,
+            predecessor_count=predecessor_count,
+            successor_count=successor_count,
+            ancestor_depth=ancestor_depth,
+            child_count=child_count,
+            max_tokens=max_tokens,
+            use_semantic_tags=False  # Simple text approach
         )
-        logger.info("Added contextual embedding wrapper")
+        logger.info("Added simple contextual embedding wrapper")
         return contextual_generator
 
     return base_generator

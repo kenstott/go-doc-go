@@ -1,5 +1,5 @@
-"""Automatically generated __init__.py"""
-__all__ = ['ContextualEmbeddingGenerator', 'EmbeddingGenerator', 'FastEmbedGenerator', 'HuggingFaceEmbeddingGenerator',
+"""Embedding generation module."""
+__all__ = ['EmbeddingGenerator', 'ContextualEmbeddingGenerator', 'FastEmbedGenerator', 'HuggingFaceEmbeddingGenerator',
            'OpenAIEmbeddingGenerator', 'base', 'contextual_embedding', 'factory', 'fastembed',
            'get_embedding_generator', 'hugging_face', 'openai']
 
