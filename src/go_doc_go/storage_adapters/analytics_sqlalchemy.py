@@ -156,7 +156,6 @@ class SQLAlchemyAnalyticsStorage(AnalyticsStorage):
             f'{self.table_prefix}_embeddings',
             self.metadata,
             Column('id', Integer, primary_key=True, autoincrement=True),
-            Column('element_pk', Integer),
             Column('element_id', String(255), index=True),
             Column('embedding', Text),  # JSON array or base64 encoded
             Column('embedding_model', String(100)),

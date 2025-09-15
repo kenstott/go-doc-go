@@ -143,7 +143,6 @@ class ElasticsearchAnalyticsStorage(AnalyticsStorage):
                     "settings": base_settings,
                     "mappings": {
                         "properties": {
-                            "element_pk": {"type": "keyword"},
                             "element_id": {"type": "keyword"},
                             "embedding": {
                                 "type": "dense_vector",

@@ -4,6 +4,7 @@ Simplified search module with a single, unified search function.
 
 from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass, field
+import json
 import logging
 from abc import ABC, abstractmethod
 
@@ -236,6 +237,20 @@ class SearchEngine:
             SearchHit object or None if invalid
         """
         try:
+            # Build metadata from result
+            metadata = result.get('metadata', {})
+            
+            # Parse metadata if it's a JSON string
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = {}
+            
+            # Add content_location to metadata if available
+            if 'content_location' in result and result['content_location']:
+                metadata['content_location'] = result['content_location']
+            
             # Analytics backends should return results in a standard format
             hit = SearchHit(
                 element_id=result.get('element_id', ''),
@@ -243,7 +258,7 @@ class SearchEngine:
                 score=float(result.get('score', 0.0)),
                 content_preview=result.get('content_preview', '')[:200],
                 element_type=result.get('element_type', 'unknown'),
-                metadata=result.get('metadata', {})
+                metadata=metadata
             )
             
             # Add full content if requested and available

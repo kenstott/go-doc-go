@@ -469,22 +469,31 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             
             # Semantic similarity search with cosine similarity
             # DuckDB doesn't have built-in cosine similarity, so we calculate it manually
+            # FIXED: Filter out zero-magnitude embeddings to prevent division by zero and NaN results
             search_query = f"""
-            WITH search_results AS (
+            WITH valid_embeddings AS (
                 SELECT 
                     e.*,
                     emb.embedding,
-                    (
-                        list_dot_product(emb.embedding::DOUBLE[], {query_vec_str}::DOUBLE[]) / 
-                        (sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) * 
-                         sqrt(list_dot_product({query_vec_str}::DOUBLE[], {query_vec_str}::DOUBLE[])))
-                    ) as similarity
+                    sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) as emb_magnitude
                 FROM elements e
                 JOIN embeddings emb ON e.element_id = emb.element_id
+                WHERE sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) > 0.0
                 {filter_clause}
+            ),
+            search_results AS (
+                SELECT 
+                    *,
+                    (
+                        list_dot_product(embedding::DOUBLE[], {query_vec_str}::DOUBLE[]) / 
+                        (emb_magnitude * sqrt(list_dot_product({query_vec_str}::DOUBLE[], {query_vec_str}::DOUBLE[])))
+                    ) as similarity
+                FROM valid_embeddings
             )
             SELECT * FROM search_results
             WHERE similarity >= {min_similarity}
+            AND similarity IS NOT NULL
+            AND NOT isnan(similarity)
             ORDER BY similarity DESC
             LIMIT {limit}
             """
