@@ -26,6 +26,7 @@ class Config:
         self.config = self._get_default_config()
         self._db_instance = None  # Add a database instance cache
         self._ontology_manager = None  # Cache for ontology manager
+        self._analytics_registry = None  # Cache for analytics registry
 
         logger.debug(f"Initializing config, working directory: {os.getcwd()}")
 
@@ -34,6 +35,9 @@ class Config:
             self._load_config(config_path)
         else:
             logger.debug("No config path provided or file not found, using defaults")
+
+        # Load analytics registry if it exists
+        self._load_analytics_registry()
 
         self._validate_config()
 
@@ -306,6 +310,120 @@ class Config:
             self._db_instance = None
         else:
             logger.debug("No database instance to close")
+    
+    def _load_analytics_registry(self):
+        """
+        Load the analytics registry configuration.
+        
+        Looks for analytics_registry.yaml in the current directory or 
+        from the ANALYTICS_REGISTRY_PATH environment variable.
+        """
+        registry_paths = [
+            os.environ.get('ANALYTICS_REGISTRY_PATH', ''),
+            'analytics_registry.yaml',
+            'analytics_registry.yml',
+            os.path.join(os.path.dirname(__file__), '../../analytics_registry.yaml')
+        ]
+        
+        for path in registry_paths:
+            if path and os.path.exists(path):
+                logger.debug(f"Loading analytics registry from: {path}")
+                try:
+                    with open(path, 'r') as f:
+                        registry_data = yaml.safe_load(f)
+                        # Replace environment variables
+                        registry_data = self._replace_env_vars(registry_data)
+                        
+                        if 'analytics_registry' in registry_data:
+                            self._analytics_registry = registry_data['analytics_registry']
+                            logger.info(f"Loaded {len(self._analytics_registry)} analytics backends from registry")
+                            
+                            # Merge search config if present
+                            if 'search' in registry_data:
+                                if 'search' not in self.config:
+                                    self.config['search'] = {}
+                                self.config['search'].update(registry_data['search'])
+                                logger.debug(f"Updated search config from registry")
+                            
+                            # Merge processing defaults if present
+                            if 'processing' in registry_data:
+                                if 'processing' not in self.config:
+                                    self.config['processing'] = {}
+                                self.config['processing'].update(registry_data['processing'])
+                                logger.debug(f"Updated processing config from registry")
+                            
+                            # Merge agent selection rules if present
+                            if 'agent_selection_rules' in registry_data:
+                                self.config['agent_selection_rules'] = registry_data['agent_selection_rules']
+                                logger.debug(f"Loaded agent selection rules from registry")
+                        else:
+                            logger.warning(f"Analytics registry file found but no 'analytics_registry' section")
+                    return
+                except Exception as e:
+                    logger.error(f"Error loading analytics registry from {path}: {e}")
+        
+        logger.debug("No analytics registry file found, analytics registry features disabled")
+    
+    def get_analytics_backend(self, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Get analytics backend configuration by name.
+        
+        Args:
+            name: Name of the backend in the registry
+            
+        Returns:
+            Backend configuration dict or None if not found
+        """
+        if not self._analytics_registry:
+            logger.warning("Analytics registry not loaded")
+            return None
+        
+        if name not in self._analytics_registry:
+            logger.warning(f"Analytics backend '{name}' not found in registry")
+            return None
+        
+        return self._analytics_registry[name]
+    
+    def list_analytics_backends(self) -> Dict[str, Dict[str, Any]]:
+        """
+        List all available analytics backends.
+        
+        Returns:
+            Dictionary of backend names to their configurations
+        """
+        if not self._analytics_registry:
+            return {}
+        
+        return self._analytics_registry.copy()
+    
+    def get_search_backend(self) -> Optional[str]:
+        """
+        Get the default search backend name.
+        
+        Returns:
+            Name of the default search backend or None
+        """
+        search_config = self.config.get('search', {})
+        return search_config.get('default_backend')
+    
+    def get_search_backend_config(self, backend_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Get search backend configuration.
+        
+        Args:
+            backend_name: Optional backend name, uses default if not specified
+            
+        Returns:
+            Backend configuration dict or None if not found
+        """
+        if not backend_name:
+            backend_name = self.get_search_backend()
+        
+        if not backend_name:
+            # Fall back to old storage.backend for compatibility
+            return self.config.get('storage', {})
+        
+        return self.get_analytics_backend(backend_name)
     
     def get_ontology_manager(self):
         """

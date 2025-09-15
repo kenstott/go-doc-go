@@ -7,6 +7,7 @@ import logging
 import os
 import tempfile
 import yaml
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, send_file
 from typing import Dict, Any, List
 from werkzeug.exceptions import BadRequest, NotFound, Conflict, UnprocessableEntity
@@ -16,6 +17,8 @@ from ..config_db import (
     Pipeline, PipelineExecution, PipelineTemplate,
     ConcurrencyError, PipelineNotFoundError, ValidationError
 )
+from ..pipeline import PipelineExecutionEngine
+from ..config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,7 @@ pipeline_bp = Blueprint('pipeline', __name__, url_prefix='/api/pipelines')
 # TODO: Make this configurable or use dependency injection
 _db = None
 _execution_tracker = None
+_execution_engine = None
 
 def get_db() -> PipelineConfigDB:
     """Get or create database connection."""
@@ -41,6 +45,17 @@ def get_execution_tracker() -> PipelineExecutionTracker:
     if _execution_tracker is None:
         _execution_tracker = PipelineExecutionTracker(get_db())
     return _execution_tracker
+
+
+def get_execution_engine() -> PipelineExecutionEngine:
+    """Get or create the execution engine."""
+    global _execution_engine
+    if _execution_engine is None:
+        from ..config import Config
+        # Get the base config from Flask app context
+        config = Config()  # Will use default config path or environment variable
+        _execution_engine = PipelineExecutionEngine(config)
+    return _execution_engine
 
 
 # Error handlers
@@ -358,15 +373,15 @@ def execute_pipeline(pipeline_id: int):
         # Get pipeline to ensure it exists
         pipeline = db.get_pipeline(pipeline_id)
         
-        execution = execution_tracker.start_execution(
+        # Start execution using the execution engine
+        engine = get_execution_engine()
+        execution = engine.execute_pipeline(
             pipeline_id=pipeline_id,
-            config_snapshot=pipeline.config_yaml,
-            worker_count=data.get('worker_count', 1),
-            documents_total=data.get('documents_total', 0)
+            execution_params={
+                'worker_count': data.get('worker_count', 1),
+                'documents_total': data.get('documents_total', 0)
+            }
         )
-        
-        # TODO: Actually start the processing job
-        # This would integrate with the existing work queue system
         
         return jsonify({
             'message': 'Pipeline execution started',
@@ -459,6 +474,279 @@ def update_execution_progress(run_id: str):
         return jsonify({'error': 'Bad Request', 'message': str(e)}), 400
     except Exception as e:
         logger.error(f"Error updating execution progress {run_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/executions/<string:run_id>/status', methods=['GET'])
+def get_execution_status(run_id: str):
+    """
+    Get real-time execution status including progress monitor data.
+    """
+    try:
+        engine = get_execution_engine()
+        
+        # Get execution status from the engine (includes real-time info)
+        status = engine.get_execution_status(run_id)
+        if not status:
+            return jsonify({'error': 'Not Found', 'message': f'Execution {run_id} not found'}), 404
+        
+        # Get progress monitor data
+        progress_status = engine.progress_monitor.get_current_status(run_id)
+        recent_events = engine.progress_monitor.get_recent_events(run_id, limit=10)
+        
+        return jsonify({
+            'execution': status,
+            'progress': progress_status,
+            'recent_events': recent_events
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting execution status {run_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/executions/<string:run_id>/cancel', methods=['POST'])
+def cancel_execution(run_id: str):
+    """
+    Cancel an active execution.
+    """
+    try:
+        engine = get_execution_engine()
+        cancelled = engine.cancel_execution(run_id)
+        
+        if not cancelled:
+            return jsonify({'error': 'Not Found', 'message': f'Execution {run_id} not found or not active'}), 404
+        
+        return jsonify({'message': 'Execution cancellation requested'})
+        
+    except Exception as e:
+        logger.error(f"Error cancelling execution {run_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/executions/<string:run_id>/logs', methods=['GET'])
+def get_execution_logs(run_id: str):
+    """
+    Get execution logs with optional pagination.
+    
+    Query Parameters:
+    - start_index: Starting index for logs (default: 0)
+    
+    Response:
+    {
+        "run_id": "run_20241124_123456_abc123",
+        "logs": [
+            {
+                "timestamp": "2024-11-24T12:34:56",
+                "level": "INFO",
+                "message": "Starting pipeline execution",
+                "module": "go_doc_go.pipeline"
+            }
+        ],
+        "total_count": 100,
+        "start_index": 0,
+        "has_more": true
+    }
+    """
+    try:
+        start_index = request.args.get('start_index', 0, type=int)
+        
+        engine = get_execution_engine()
+        logs_data = engine.get_execution_logs(run_id, start_index=start_index)
+        
+        return jsonify(logs_data)
+        
+    except Exception as e:
+        logger.error(f"Error getting execution logs {run_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/executions/active', methods=['GET'])
+def list_active_executions():
+    """
+    List all currently active executions across all pipelines.
+    """
+    try:
+        engine = get_execution_engine()
+        active_executions = engine.list_active_executions()
+        
+        # Also get progress monitor data
+        monitor_data = engine.progress_monitor.get_all_active_executions()
+        
+        return jsonify({
+            'active_executions': active_executions,
+            'progress_data': monitor_data,
+            'total': len(active_executions)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error listing active executions: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+# Progress Monitoring Routes
+
+@pipeline_bp.route('/progress/websocket-handler', methods=['GET'])
+def get_websocket_handler():
+    """
+    Get WebSocket handler function for progress monitoring.
+    This endpoint returns information about how to connect to WebSocket for real-time updates.
+    """
+    try:
+        return jsonify({
+            'message': 'WebSocket progress monitoring available',
+            'endpoints': {
+                'all_progress': '/ws/progress',
+                'execution_progress': '/ws/progress/<run_id>',
+                'pipeline_progress': '/ws/pipelines/<pipeline_id>/progress'
+            },
+            'usage': {
+                'description': 'Connect to WebSocket endpoints for real-time progress updates',
+                'message_types': ['progress_event', 'current_status', 'historical_event', 'ping']
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting WebSocket info: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/progress/events/<string:run_id>', methods=['GET'])
+def get_progress_events(run_id: str):
+    """
+    Get progress events for an execution (REST fallback for WebSocket).
+    
+    Query Parameters:
+    - limit: integer (default: 50)
+    - since: timestamp to get events since
+    """
+    try:
+        limit = int(request.args.get('limit', 50))
+        
+        engine = get_execution_engine()
+        events = engine.progress_monitor.get_recent_events(run_id, limit)
+        
+        return jsonify({
+            'run_id': run_id,
+            'events': events,
+            'total': len(events)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting progress events for {run_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+# Dashboard Routes
+
+@pipeline_bp.route('/dashboard', methods=['GET'])
+def get_pipeline_dashboard():
+    """
+    Get comprehensive dashboard data for all pipelines and executions.
+    """
+    try:
+        db = get_db()
+        execution_tracker = get_execution_tracker()
+        engine = get_execution_engine()
+        
+        # Get pipeline summary
+        all_pipelines = db.list_pipelines(active_only=False)
+        active_pipelines = db.list_pipelines(active_only=True)
+        
+        # Get execution summary
+        recent_executions = execution_tracker.list_executions(limit=50)
+        active_executions = engine.list_active_executions()
+        
+        # Get progress monitor data
+        progress_data = engine.progress_monitor.get_all_active_executions()
+        
+        # Calculate statistics
+        execution_stats = {
+            'total_executions': len(recent_executions),
+            'active_executions': len(active_executions),
+            'completed_executions': len([e for e in recent_executions if e.status == 'completed']),
+            'failed_executions': len([e for e in recent_executions if e.status == 'failed']),
+            'cancelled_executions': len([e for e in recent_executions if e.status == 'cancelled'])
+        }
+        
+        pipeline_stats = {
+            'total_pipelines': len(all_pipelines),
+            'active_pipelines': len(active_pipelines),
+            'inactive_pipelines': len(all_pipelines) - len(active_pipelines),
+            'templates_count': len(db.list_templates())
+        }
+        
+        # Get recent activity (last 10 executions)
+        recent_activity = []
+        for execution in recent_executions[:10]:
+            pipeline = next((p for p in all_pipelines if p.id == execution.pipeline_id), None)
+            activity_item = {
+                'type': 'execution',
+                'timestamp': execution.created_at,
+                'pipeline_name': pipeline.name if pipeline else f"Pipeline {execution.pipeline_id}",
+                'pipeline_id': execution.pipeline_id,
+                'run_id': execution.run_id,
+                'status': execution.status,
+                'documents_processed': execution.documents_processed,
+                'documents_total': execution.documents_total
+            }
+            recent_activity.append(activity_item)
+        
+        return jsonify({
+            'pipeline_stats': pipeline_stats,
+            'execution_stats': execution_stats,
+            'active_executions': [exec.to_dict() for exec in active_executions],
+            'recent_activity': recent_activity,
+            'progress_data': progress_data,
+            'system_info': {
+                'total_active_monitors': len(engine.progress_monitor._listeners),
+                'database_path': os.environ.get('PIPELINE_CONFIG_DB', 'pipeline_config.db')
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard data: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/dashboard/summary', methods=['GET'])
+def get_dashboard_summary():
+    """
+    Get lightweight dashboard summary for frequent polling.
+    """
+    try:
+        db = get_db()
+        execution_tracker = get_execution_tracker()
+        engine = get_execution_engine()
+        
+        # Get active executions count
+        active_executions = engine.list_active_executions()
+        
+        # Get pipeline counts
+        active_pipelines = db.list_pipelines(active_only=True)
+        
+        # Get recent execution stats (last 24 hours)
+        recent_executions = execution_tracker.list_executions(limit=100)
+        now = datetime.now()
+        day_ago = now - timedelta(days=1)
+        
+        recent_24h = [
+            e for e in recent_executions 
+            if datetime.fromisoformat(e.created_at) > day_ago
+        ]
+        
+        return jsonify({
+            'active_executions_count': len(active_executions),
+            'active_pipelines_count': len(active_pipelines),
+            'executions_last_24h': len(recent_24h),
+            'completed_last_24h': len([e for e in recent_24h if e.status == 'completed']),
+            'failed_last_24h': len([e for e in recent_24h if e.status == 'failed']),
+            'system_healthy': len([e for e in recent_24h if e.status == 'failed']) < 5,  # Simple health check
+            'last_updated': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard summary: {e}")
         return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
 
 

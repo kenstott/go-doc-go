@@ -1,0 +1,205 @@
+# Analytics Backend Registry
+# This file defines available analytics storage backends for search and analysis
+
+analytics_registry:
+  # Parquet-based analytics using DuckDB
+  parquet_duckdb:
+    type: parquet
+    description: "High-performance analytics using Parquet files with DuckDB"
+    enabled: true
+    base_path: "./data-lake/analytics"
+    format: parquet
+    compression: snappy
+    search_capabilities:
+      full_text: true
+      semantic: true
+      structured: true
+      aggregations: true
+      joins: true
+    best_for:
+      - "Large-scale batch analytics"
+      - "Historical data analysis"
+      - "Complex aggregations"
+    optimal_queries:
+      - "Time-series analysis"
+      - "Statistical aggregations"
+      - "Cross-document analytics"
+    performance:
+      query_speed: "fast"
+      ingestion_speed: "medium"
+      storage_efficiency: "high"
+    data_profile:
+      optimal_size: "1GB-1TB"
+      max_documents: 10000000
+
+  # Elasticsearch for real-time search
+  elasticsearch:
+    type: elasticsearch
+    description: "Real-time full-text search and analytics with Elasticsearch"
+    enabled: false  # Enable when Elasticsearch is available
+    hosts:
+      - "http://localhost:9200"
+    index_prefix: "godocgo"
+    search_capabilities:
+      full_text: true
+      semantic: true
+      structured: true
+      aggregations: true
+      real_time: true
+    best_for:
+      - "Real-time search"
+      - "Log analytics"
+      - "Full-text search"
+    optimal_queries:
+      - "Keyword search"
+      - "Faceted search"
+      - "Real-time analytics"
+    performance:
+      query_speed: "very_fast"
+      ingestion_speed: "fast"
+      storage_efficiency: "medium"
+    data_profile:
+      optimal_size: "100MB-100GB"
+      max_documents: 1000000
+
+  # MongoDB for document-oriented storage
+  mongodb:
+    type: mongodb
+    description: "Document-oriented database for flexible schema analytics"
+    enabled: false  # Enable when MongoDB is available
+    connection_string: "mongodb://localhost:27017"
+    database: "godocgo"
+    collection: "documents"
+    search_capabilities:
+      full_text: true
+      semantic: false
+      structured: true
+      aggregations: true
+      flexible_schema: true
+    best_for:
+      - "Hierarchical data"
+      - "Variable schema documents"
+      - "JSON-heavy workloads"
+    optimal_queries:
+      - "Document retrieval"
+      - "Nested queries"
+      - "Schema-flexible search"
+    performance:
+      query_speed: "fast"
+      ingestion_speed: "fast"
+      storage_efficiency: "medium"
+    data_profile:
+      optimal_size: "100MB-10GB"
+      max_documents: 5000000
+
+  # Neo4j for graph analytics
+  neo4j:
+    type: neo4j
+    description: "Graph database for relationship-focused analytics"
+    enabled: false  # Enable when Neo4j is available
+    uri: "bolt://localhost:7687"
+    auth:
+      user: "neo4j"
+      password: "${NEO4J_PASSWORD}"
+    search_capabilities:
+      full_text: false
+      semantic: false
+      structured: true
+      graph_traversal: true
+      relationship_analysis: true
+    best_for:
+      - "Relationship analysis"
+      - "Network analysis"
+      - "Knowledge graphs"
+    optimal_queries:
+      - "Path finding"
+      - "Relationship traversal"
+      - "Network analysis"
+    performance:
+      query_speed: "fast"
+      ingestion_speed: "medium"
+      storage_efficiency: "low"
+    data_profile:
+      optimal_size: "10MB-10GB"
+      max_documents: 1000000
+
+  # Solr for enterprise search
+  solr:
+    type: solr
+    description: "Enterprise search platform with advanced text analysis"
+    enabled: false  # Enable when Solr is available
+    url: "http://localhost:8983/solr"
+    collection: "godocgo"
+    search_capabilities:
+      full_text: true
+      semantic: false
+      structured: true
+      faceting: true
+      highlighting: true
+    best_for:
+      - "Enterprise search"
+      - "E-commerce search"
+      - "Document search"
+    optimal_queries:
+      - "Full-text search"
+      - "Faceted navigation"
+      - "Spell correction"
+    performance:
+      query_speed: "fast"
+      ingestion_speed: "medium"
+      storage_efficiency: "medium"
+    data_profile:
+      optimal_size: "100MB-50GB"
+      max_documents: 5000000
+
+# Search configuration
+search:
+  default_backend: "parquet_duckdb"
+  available_backends:
+    - "parquet_duckdb"
+    # Add others when their services are running
+    # - "elasticsearch"
+    # - "mongodb"
+
+# Processing configuration
+processing:
+  batch_size: 100
+  max_workers: 4
+  timeout: 300
+
+# AI Agent selection rules for automatic backend selection
+agent_selection_rules:
+  # Rules for selecting the best backend based on query characteristics
+  rules:
+    - name: "real_time_search"
+      condition:
+        query_type: "real_time"
+        response_time: "<100ms"
+      backend: "elasticsearch"
+      
+    - name: "large_scale_analytics"
+      condition:
+        data_size: ">1GB"
+        query_type: "analytical"
+      backend: "parquet_duckdb"
+      
+    - name: "graph_traversal"
+      condition:
+        query_type: "relationship"
+        depth: ">2"
+      backend: "neo4j"
+      
+    - name: "document_search"
+      condition:
+        query_type: "full_text"
+        faceting: true
+      backend: "solr"
+      
+    - name: "flexible_schema"
+      condition:
+        schema_variability: "high"
+        query_type: "document"
+      backend: "mongodb"
+  
+  # Default fallback
+  default: "parquet_duckdb"

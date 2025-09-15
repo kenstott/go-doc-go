@@ -396,8 +396,36 @@ class PipelineConfigDB:
         if not isinstance(storage, dict):
             raise ValidationError("Storage section must be an object")
         
-        if 'backend' not in storage:
-            raise ValidationError("Storage backend is required")
+        # Check for dual storage architecture (new format)
+        if 'job' in storage and 'analytics' in storage:
+            # Validate dual storage format
+            job_storage = storage['job']
+            analytics_storage = storage['analytics']
+            
+            if not isinstance(job_storage, dict):
+                raise ValidationError("Storage job section must be an object")
+                
+            # Analytics can be either a string (registry name) or a dict (full config)
+            if isinstance(analytics_storage, str):
+                # Registry backend name - this is valid
+                pass
+            elif isinstance(analytics_storage, dict):
+                # Full configuration object
+                if 'type' not in analytics_storage:
+                    raise ValidationError("Analytics storage type is required")
+            else:
+                raise ValidationError("Storage analytics must be either a registry name (string) or configuration object")
+                
+            if 'type' not in job_storage:
+                raise ValidationError("Job storage type is required")
+        
+        # Check for legacy single storage format (backward compatibility)
+        elif 'backend' in storage:
+            # Legacy format validation
+            pass
+        
+        else:
+            raise ValidationError("Storage configuration must specify either dual storage (job + analytics) or legacy backend")
         
         return config
 
