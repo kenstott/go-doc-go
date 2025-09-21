@@ -161,13 +161,11 @@ class TokenAwareContextualEmbedding:
         combined_parts = []
         
         if parent_context:
-            if not self.use_semantic_tags:
-                combined_parts.append("=== Parent Context ===")
+            # Add parent context without headers
             combined_parts.append(parent_context)
-        
+
         if sibling_context:
-            if not self.use_semantic_tags:
-                combined_parts.append("=== Sibling Context ===")
+            # Add sibling context without headers
             combined_parts.append(sibling_context)
         
         # Add main content FIRST with tag if using semantic tags
@@ -176,15 +174,13 @@ class TokenAwareContextualEmbedding:
             element_tag = self.semantic_tagger.generate_tag(element_metadata, context_role=ContextRole.MAIN)
             main_parts.append(f"{element_tag} {element_processed}")
         else:
-            main_parts.append("=== Main Content ===")
+            # Just add the main element text without headers
             main_parts.append(element_processed)
         
         # Combine with main element first
         combined_parts = main_parts + combined_parts
         
         if child_context:
-            if not self.use_semantic_tags:
-                combined_parts.append("=== Child Context ===")
             combined_parts.append(child_context)
         
         combined = "\n\n".join(combined_parts)

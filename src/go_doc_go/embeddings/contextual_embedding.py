@@ -27,34 +27,38 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
     def __init__(self,
                  _config: Config,
                  base_generator: EmbeddingGenerator,
-                 window_size: int = 3,
-                 overlap_size: int = 1,
                  predecessor_count: int = 1,
                  successor_count: int = 1,
-                 ancestor_depth: int = 1,
-                 child_count: int = 1,
                  max_tokens: int = 16384,
                  tokenizer_model: str = "cl100k_base",
-                 use_semantic_tags: bool = False):
+                 # Legacy parameters - kept for backward compatibility but NOT USED
+                 window_size: int = 3,  # LEGACY: Not used
+                 overlap_size: int = 1,  # LEGACY: Not used
+                 ancestor_depth: int = 1,  # LEGACY: Not used - always traverses to root
+                 use_semantic_tags: bool = False):  # LEGACY: Always False
         """
         Initialize the contextual embedding generator.
 
         Args:
+            _config: Configuration object
             base_generator: Base embedding generator
-            window_size: Number of elements in context window
-            overlap_size: Number of elements to overlap between windows
             predecessor_count: Number of preceding elements to include
             successor_count: Number of following elements to include
-            ancestor_depth: Number of ancestral levels to include
+            max_tokens: Maximum tokens for context
+            tokenizer_model: Tokenizer model to use
+            window_size: LEGACY - NOT USED
+            overlap_size: LEGACY - NOT USED
+            ancestor_depth: LEGACY - NOT USED (always traverses to root)
         """
         super().__init__(_config)
         self.base_generator = base_generator
-        self.window_size = window_size
-        self.overlap_size = overlap_size
         self.predecessor_count = predecessor_count
         self.successor_count = successor_count
-        self.ancestor_depth = ancestor_depth
-        self.child_count = child_count
+        
+        # Legacy parameters - stored for compatibility but NOT USED
+        self.window_size = window_size  # LEGACY: Not used
+        self.overlap_size = overlap_size  # LEGACY: Not used
+        self.ancestor_depth = ancestor_depth  # LEGACY: Not used
         
         # Token management
         self.max_tokens = max_tokens
@@ -266,13 +270,19 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         # Add punctuation separators for semantic boundaries while maintaining token density
         all_parts = [element_processed] + contexts
         combined = ". ".join(part.rstrip('.') for part in all_parts if part.strip()) + "."
-        
+
         # Final safety check
         total_tokens = self.count_tokens(combined)
         if total_tokens > self.safe_max_tokens:
             logger.error(f"Emergency: Combined context {total_tokens} still exceeds limit after budgeting")
             combined = self.truncate_to_tokens(combined, self.safe_max_tokens)
-        
+
+        # Debug logging to verify no headers are present
+        if "=== Context ===" in combined or "=== Main Content ===" in combined:
+            logger.error(f"WARNING: Found header markers in embedding text! First 200 chars: {combined[:200]}")
+        else:
+            logger.debug(f"Clean embedding text generated, {total_tokens} tokens, first 100 chars: {combined[:100]}")
+
         return combined
     
     def _select_texts_within_budget(self, texts: List[str], budget: int, context_type: str) -> str:
@@ -407,20 +417,25 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 # No more room
                 break
         
-        # Combine with separators
+        # Combine with main content first, then context in priority order
         if selected_context:
-            combined = f"=== Context ===\n{chr(10).join(selected_context)}\n\n=== Main Content ===\n{text}"
+            # Put main content first, then context elements separated by space/newline
+            combined = f"{text}\n{chr(10).join(selected_context)}"
         else:
             combined = text
-        
+
         # Final safety check
         total_tokens = self.count_tokens(combined)
         if total_tokens > self.safe_max_tokens:
             logger.warning(f"Final combined text {total_tokens} exceeds limit, applying emergency truncation")
             combined = self.truncate_to_tokens(combined, self.safe_max_tokens)
-        
+
+        # Debug logging to verify no headers are present
+        if "=== Context ===" in combined or "=== Main Content ===" in combined:
+            logger.error(f"WARNING: Found header markers in combined text! First 200 chars: {combined[:200]}")
+
         logger.debug(f"Combined context: {total_tokens}/{self.max_tokens} tokens, {len(selected_context)}/{len(context)} contexts used")
-        
+
         return combined
 
     @staticmethod
@@ -572,10 +587,19 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
 
     def generate_from_elements(self, elements: List[Dict[str, Any]], db=None) -> Dict[str, List[float]]:
         """
-        Generate contextual embeddings for document elements, with size handling:
-        - Skip root elements that exceed the size threshold
-        - Truncate non-root elements that exceed the size threshold
-        
+        Generate contextual embeddings for LEAF elements only.
+
+        Only leaf elements (elements with no children) get embeddings, with full context including:
+        - Full parent lineage to root
+        - Predecessor and successor siblings
+        - Cross-document relationships (if db provided)
+
+        Skips:
+        - Non-leaf elements (have children)
+        - Pure numeric content
+        - Elements without meaningful text content
+        - Certain granular elements (table_cell, json_item, json_field)
+
         Args:
             elements: List of document elements to generate embeddings for
             db: Optional database connection for cross-document relationships
@@ -614,18 +638,44 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         batch_combined_texts = []
 
         for element in elements:
-            # Skip container elements - they have no searchable content
-            # Content elements will still get container context via relationships
-            if self._is_container_element(element):
+            # Safety check: ensure element is a dictionary
+            if not isinstance(element, dict):
                 skipped_elements += 1
-                logger.debug(f"Skipping container element: {element.get('element_type')}")
+                logger.warning(f"Skipping invalid element (not a dict): {type(element)} - {element}")
                 continue
-            
+
+            # Only process leaf elements (elements with no children)
+            # Container elements get their representation through their leaf children
+            element_id = element.get("element_id")
+            if not element_id:
+                skipped_elements += 1
+                logger.warning(f"Skipping element without element_id: {element}")
+                continue
+
+            # Check if this element has any children (with safety check)
+            has_children = any(
+                isinstance(e, dict) and e.get("parent_id") == element_id
+                for e in elements
+            )
+            if has_children:
+                skipped_elements += 1
+                logger.debug(f"Skipping non-leaf element: {element.get('element_type')} (has children)")
+                continue
+
+            # Skip inherently container element types (even if they appear to have no children)
+            container_types = {
+                'xml_list', 'table', 'document', 'section', 'header', 'footer',
+                'nav', 'aside', 'article', 'main', 'div', 'form', 'fieldset'
+            }
+            if element.get("element_type") in container_types:
+                skipped_elements += 1
+                logger.debug(f"Skipping container element type: {element.get('element_type')}")
+                continue
+
             # Also skip certain granular elements that should use their parent
             if element.get("element_type") in {'table_cell', 'json_item', 'json_field'}:
                 skipped_elements += 1
                 continue
-            element_id = element["element_id"]
 
             # Get full text content for all elements using the resolver
             t0 = time.time()
@@ -658,8 +708,21 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             # Skip if no meaningful content
             if not content:
                 continue
-                
+
+            # Skip empty table rows (content is just "Row N")
+            if element.get("element_type") == "table_row" and content.strip().startswith("Row ") and content.strip()[4:].isdigit():
+                skipped_elements += 1
+                logger.debug(f"Skipping empty table row: {content}")
+                continue
+
+            # Skip single-character elements (likely labels, bullets, or structural markers)
+            if len(content.strip()) <= 1:
+                skipped_elements += 1
+                logger.debug(f"Skipping single-character element: {element.get('element_type')} - '{content}'")
+                continue
+
             # Skip pure numeric values (but keep dates)
+            # This especially applies to XML elements that are purely numeric
             if self._is_pure_numeric(content):
                 skipped_elements += 1
                 logger.debug(f"Skipping pure numeric element: {element.get('element_type')} - {content[:50]}")
@@ -723,9 +786,12 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                     
                     time_embedding_gen += (time.time() - t_batch_start)
                     
-                    # Store results
-                    for element_id, embedding in zip(batch_element_ids, batch_embeddings):
-                        embeddings[element_id] = embedding
+                    # Store results with both embedding and text
+                    for element_id, embedding, combined_text in zip(batch_element_ids, batch_embeddings, batch_combined_texts):
+                        embeddings[element_id] = {
+                            'embedding': embedding,
+                            'embedding_text': combined_text
+                        }
                         processed += 1
                     
                     # Clear batch
@@ -755,8 +821,11 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 batch_embeddings = [self.base_generator.generate(text) for text in batch_combined_texts]
             time_embedding_gen += (time.time() - t_batch_start)
             
-            for pk, embedding in zip(batch_element_ids, batch_embeddings):
-                embeddings[pk] = embedding
+            for element_id, embedding, combined_text in zip(batch_element_ids, batch_embeddings, batch_combined_texts):
+                embeddings[element_id] = {
+                    'embedding': embedding,
+                    'embedding_text': combined_text
+                }
                 processed += 1
 
         # Final timing report
@@ -908,21 +977,8 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
 
                 i += 1
 
-        # Add a limited number of meaningful children
-        if element_id in hierarchy and self.child_count > 0:
-            children_added = 0
-
-            for child_id in hierarchy[element_id]:
-                # Apply same filtering as for predecessors/successors
-                child_element = id_to_element.get(child_id)
-                if (child_element and
-                        child_element["element_type"] != "root" and
-                        child_element.get("content_preview") and
-                        not self._is_structural_only_container(child_element)):
-                    context_ids.add(child_id)
-                    children_added += 1
-                    if children_added >= self.child_count:
-                        break
+        # Skip children context since we only process leaf elements
+        # (Leaf elements by definition have no children)
 
         # Convert IDs to elements
         context_elements = []
