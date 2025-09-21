@@ -229,8 +229,31 @@ class AnalyticsStorage(ABC):
         """
         pass
     
+    def has_run(self, run_id: str) -> bool:
+        """
+        Check if storage has data for the given run_id.
+
+        Args:
+            run_id: Run ID to check
+
+        Returns:
+            True if storage has data for this run, False otherwise
+        """
+        # Default implementation checks if we can list any data for this run
+        try:
+            # Try to get elements for this run
+            results = self.search_text(
+                query="",  # Empty query
+                filters={'_run_id': run_id},
+                limit=1
+            )
+            return len(results) > 0
+        except Exception:
+            # If search fails, assume no data
+            return False
+
     @abstractmethod
-    def append_metrics(self, metrics: Dict[str, Any], 
+    def append_metrics(self, metrics: Dict[str, Any],
                       run_id: str) -> bool:
         """
         Append processing metrics.

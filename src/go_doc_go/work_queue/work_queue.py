@@ -36,29 +36,165 @@ class RunCoordinator:
     def get_run_id_from_config(config: Dict[str, Any]) -> str:
         """
         Generate deterministic run ID from configuration.
-        
+
         Args:
             config: Configuration dictionary
-            
+
         Returns:
             16-character run ID (first 16 chars of SHA256 hash)
         """
+        import os
+
         # Extract only the parts that affect processing
         processing_config = {
+            'pipeline_name': config.get('name', ''),  # Add pipeline name for easy reprocessing
             'content_sources': config.get('content_sources', []),
             'storage': config.get('storage', {}),
             'embedding': config.get('embedding', {}),
             'relationship_detection': config.get('relationship_detection', {}),
             # Don't include worker-specific settings like ports, log levels
         }
-        
+
+        # Add storage existence state to force reprocessing if storage is deleted
+        storage_state = {}
+
+        # Check main analytics storage (if directly configured)
+        if 'storage' in config and 'analytics' in config['storage']:
+            analytics = config['storage']['analytics']
+
+            # Analytics can be a string (registry reference) or dict (direct config)
+            if isinstance(analytics, str):
+                # Analytics is a registry backend name - skip, will be checked below
+                logger.debug(f"Analytics storage references registry: {analytics}")
+            elif isinstance(analytics, dict):
+                storage_type = analytics.get('type')
+
+                if storage_type == 'parquet':
+                    # Check if parquet base path exists and has actual data
+                    base_path = analytics.get('base_path', './data-lake')
+                    elements_path = os.path.join(base_path, 'elements')
+
+                    # Normalized check: data exists only if directory has files
+                    has_data = False
+                    if os.path.exists(elements_path):
+                        try:
+                            has_data = bool(os.listdir(elements_path))
+                        except OSError:
+                            has_data = False
+
+                    # Single state representing "analytics data exists"
+                    storage_state['has_analytics_data'] = has_data
+                    logger.debug(f"Analytics storage check - type: parquet, base_path: {base_path}, has_data: {has_data}")
+
+                elif storage_type in ['postgresql', 'mongodb', 'elasticsearch', 'neo4j']:
+                    # For databases, we track the type - actual data check would require connections
+                    # Assume data exists if backend is configured (databases persist)
+                    storage_state['has_analytics_data'] = True
+                    storage_state['db_type'] = storage_type
+                    logger.debug(f"Analytics storage check - type: {storage_type}, assumed has_data: True")
+
+        # Check configured search backend (which determines analytics backend)
+        if 'search' in config and 'default_backend' in config['search']:
+            configured_backend = config['search']['default_backend']
+
+            # If backend is parquet_duckdb, check if its storage has data
+            if configured_backend == 'parquet_duckdb':
+                # parquet_duckdb uses data-lake directory per analytics_registry.yaml
+                base_path = './data-lake'
+                elements_path = os.path.join(base_path, 'elements')
+
+                # Normalized check: data exists only if directory has files
+                has_data = False
+                if os.path.exists(elements_path):
+                    try:
+                        has_data = bool(os.listdir(elements_path))
+                    except OSError:
+                        has_data = False
+
+                # Override any previous state - this is the actual analytics backend being used
+                storage_state['has_analytics_data'] = has_data
+                logger.debug(f"Search backend check - backend: {configured_backend}, base_path: {base_path}, has_data: {has_data}")
+
+        # Also check analytics registry backends
+        if 'analytics_registry' in config:
+            # Check each enabled analytics backend
+            for backend_name, backend_config in config.get('analytics_registry', {}).items():
+                if backend_config.get('enabled', False):
+                    backend_type = backend_config.get('type')
+
+                    if backend_type == 'parquet':
+                        base_path = backend_config.get('base_path', './data-lake')
+                        elements_path = os.path.join(base_path, 'elements')
+
+                        # Normalized check: same logic as main storage
+                        has_data = False
+                        if os.path.exists(elements_path):
+                            try:
+                                has_data = bool(os.listdir(elements_path))
+                            except OSError:
+                                has_data = False
+
+                        # If any enabled backend has data, set the flag
+                        if has_data:
+                            storage_state['has_analytics_data'] = True
+
+                        logger.debug(f"Analytics registry '{backend_name}' check - type: parquet, base_path: {base_path}, has_data: {has_data}")
+
+                    elif backend_type in ['postgresql', 'mongodb', 'elasticsearch', 'neo4j']:
+                        # For database backends, assume data exists if configured
+                        storage_state['has_analytics_data'] = True
+                        logger.debug(f"Analytics registry '{backend_name}' check - type: {backend_type}, assumed has_data: True")
+
+        processing_config['storage_state'] = storage_state
+
         # Sort keys for deterministic hashing
         config_str = json.dumps(processing_config, sort_keys=True)
-        
+
         # Create hash - use first 16 chars for readability
         full_hash = hashlib.sha256(config_str.encode()).hexdigest()
-        return full_hash[:16]
+        run_id = full_hash[:16]
+
+        # Log run_id generation details
+        logger.info(f"Generated run_id: {run_id}")
+        logger.debug(f"Run ID generation - storage_state: {storage_state}")
+        logger.debug(f"Run ID generation - config hash input: {config_str[:200]}...")
+
+        return run_id
     
+    def _check_analytics_storage_has_run(self, run_id: str, config: Dict[str, Any]) -> bool:
+        """
+        Check if the analytics storage has data for the given run_id.
+
+        Args:
+            run_id: Run ID to check
+            config: Configuration to determine storage type
+
+        Returns:
+            True if analytics storage has data for this run, False otherwise
+        """
+        try:
+            from ..storage_adapters.factory import StorageFactory
+
+            # Get analytics storage configuration
+            storage_config = config.get('storage', {})
+            analytics_config = storage_config.get('analytics', {})
+
+            # Create analytics storage instance
+            analytics_storage = StorageFactory.create_analytics_storage(analytics_config)
+
+            # Use the storage's has_run method to check if data exists
+            if hasattr(analytics_storage, 'has_run'):
+                return analytics_storage.has_run(run_id)
+            else:
+                # If storage doesn't implement has_run, assume data exists
+                logger.debug(f"Analytics storage doesn't implement has_run method - assuming data exists")
+                return True
+
+        except Exception as e:
+            logger.warning(f"Error checking analytics storage for run {run_id}: {e}")
+            # On error, assume data exists to maintain backward compatibility
+            return True
+
     def ensure_run_exists(self, run_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
         """
         Ensure a processing run exists, creating if necessary.
@@ -74,38 +210,84 @@ class RunCoordinator:
         full_hash = hashlib.sha256(config_str.encode()).hexdigest()
         
         with self.db.transaction():
-            # Try to get existing run
+            # Try to get existing run by config_hash first
             existing = self.db.execute("""
                 SELECT run_id, status, created_at, worker_count
                 FROM processing_runs
-                WHERE run_id = %s
-            """, (run_id,))
-            
+                WHERE config_hash = %s
+            """, (full_hash,))
+
             if existing:
-                # Update last activity
-                self.db.execute("""
-                    UPDATE processing_runs
-                    SET last_activity_at = CURRENT_TIMESTAMP
-                    WHERE run_id = %s
-                """, (run_id,))
-                return existing
-            
-            # Create new run
+                # Check if analytics storage actually has data for this run
+                run_has_data = self._check_analytics_storage_has_run(existing['run_id'], config)
+
+                if run_has_data:
+                    # Update last activity
+                    self.db.execute("""
+                        UPDATE processing_runs
+                        SET last_activity_at = CURRENT_TIMESTAMP
+                        WHERE config_hash = %s
+                    """, (full_hash,))
+                    return existing
+                else:
+                    # Analytics storage missing - delete old run and all related data
+                    logger.warning(f"Run {existing['run_id']} exists in DB but analytics storage is missing. Cleaning up and creating new run.")
+
+                    # Delete in correct order to respect foreign key constraints
+                    # First delete document dependencies
+                    deleted_deps = self.db.execute("""
+                        DELETE FROM document_dependencies WHERE run_id = %s
+                    """, (existing['run_id'],))
+                    if deleted_deps:
+                        logger.debug(f"Deleted {deleted_deps} document dependencies for run {existing['run_id']}")
+
+                    # Then delete queued documents
+                    deleted_docs = self.db.execute("""
+                        DELETE FROM document_queue WHERE run_id = %s
+                    """, (existing['run_id'],))
+                    if deleted_docs:
+                        logger.debug(f"Deleted {deleted_docs} queued documents for run {existing['run_id']}")
+
+                    # Delete worker registrations
+                    deleted_workers = self.db.execute("""
+                        DELETE FROM run_workers WHERE run_id = %s
+                    """, (existing['run_id'],))
+                    if deleted_workers:
+                        logger.debug(f"Deleted {deleted_workers} worker registrations for run {existing['run_id']}")
+
+                    # Finally delete the run itself
+                    self.db.execute("""
+                        DELETE FROM processing_runs WHERE config_hash = %s
+                    """, (full_hash,))
+                    logger.info(f"Cleaned up stale run {existing['run_id']} and all related data")
+
+            # Create new run - ON CONFLICT handles both run_id and config_hash conflicts
             self.db.execute("""
                 INSERT INTO processing_runs (
                     run_id, config_hash, config_snapshot, status
                 ) VALUES (%s, %s, %s, 'active')
-                ON CONFLICT (run_id) DO NOTHING
+                ON CONFLICT (config_hash) DO UPDATE SET
+                    last_activity_at = CURRENT_TIMESTAMP
             """, (run_id, full_hash, json.dumps(config)))
-            
-            logger.info(f"Created new processing run: {run_id}")
-            
-            return {
-                'run_id': run_id,
-                'status': 'active',
-                'created_at': datetime.now(),
-                'worker_count': 0
-            }
+
+            # Query back the run (in case of conflict, we need the actual run_id)
+            result = self.db.execute("""
+                SELECT run_id, status, created_at, worker_count
+                FROM processing_runs
+                WHERE config_hash = %s
+            """, (full_hash,))
+
+            if result:
+                logger.info(f"Processing run ensured: {result['run_id']}")
+                return result
+            else:
+                logger.info(f"Created new processing run: {run_id}")
+                return {
+                    'run_id': run_id,
+                    'status': 'active',
+                    'created_at': datetime.now(),
+                    'worker_count': 0
+                }
     
     def register_worker(self, run_id: str, worker_id: str, 
                        metadata: Optional[Dict] = None) -> None:
@@ -249,7 +431,7 @@ class WorkQueue:
     def __init__(self, db, worker_id: str):
         """
         Initialize work queue.
-        
+
         Args:
             db: Database connection
             worker_id: Unique worker identifier
@@ -258,6 +440,7 @@ class WorkQueue:
         self.worker_id = worker_id
         self.heartbeat_interval = 30  # seconds
         self.claim_timeout = 300  # 5 minutes
+        self.max_retries = 3  # Default max retries for failed documents
     
     def add_document(self, doc_id: str, source_name: str, run_id: str,
                     source_type: str = 'configured',
@@ -309,18 +492,21 @@ class WorkQueue:
     def claim_next_document(self, run_id: str) -> Optional[Dict[str, Any]]:
         """
         Atomically claim the next available document for processing.
-        
+
         Uses PostgreSQL's FOR UPDATE SKIP LOCKED to ensure only one
         worker can claim each document.
-        
+
         Args:
             run_id: Processing run ID
-            
+
         Returns:
             Document information or None if no work available
         """
+        logger.debug(f"Worker {self.worker_id} attempting to claim document for run {run_id}")
+
         with self.db.transaction():
             # First, try to claim a new document
+            logger.debug(f"Looking for pending documents in run {run_id}")
             doc = self.db.execute("""
                 SELECT queue_id, doc_id, source_name, source_type,
                        parent_doc_id, link_depth, metadata
@@ -332,8 +518,24 @@ class WorkQueue:
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             """, (run_id,))
-            
+
             if not doc:
+                logger.debug(f"No pending documents found for run {run_id}")
+                # Check for retry documents that are ready to be processed
+                doc = self.db.execute("""
+                    SELECT queue_id, doc_id, source_name, source_type,
+                           parent_doc_id, link_depth, metadata
+                    FROM document_queue
+                    WHERE run_id = %s
+                      AND status = 'retry'
+                      AND scheduled_for <= CURRENT_TIMESTAMP
+                    ORDER BY priority DESC, link_depth ASC, created_at ASC
+                    LIMIT 1
+                    FOR UPDATE SKIP LOCKED
+                """, (run_id,))
+
+            if not doc:
+                logger.debug(f"No retry documents ready for run {run_id}")
                 # Check for stale claims (worker died)
                 doc = self.db.execute("""
                     SELECT queue_id, doc_id, source_name, source_type,

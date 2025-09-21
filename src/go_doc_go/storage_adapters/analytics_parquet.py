@@ -11,6 +11,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 from .base import AnalyticsStorage
+from ..storage.element_relationship import ElementRelationship
 
 logger = logging.getLogger(__name__)
 
@@ -210,26 +211,48 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} documents to {path}")
         return total_written
     
-    def append_elements(self, elements: List[Dict[str, Any]], 
+    def append_elements(self, elements: List[Dict[str, Any]],
                        run_id: str) -> int:
         """Append elements to Parquet storage."""
         if not elements:
             return 0
-        
+
         path = self.get_partition_path(run_id, 'elements')
-        
+
+        # Define consistent schema for elements
+        # All elements MUST have these columns for consistent parquet schema
+        required_columns = {
+            'element_id': None,
+            'doc_id': None,
+            'element_type': None,
+            'parent_id': None,
+            'content': None,  # Full content (optional, based on store_full_content flag)
+            'content_preview': '',
+            'content_location': None,
+            'content_hash': None,
+            'metadata': None,
+            'element_order': None,  # Ensure element_order is always present
+            'document_position': None  # Ensure document_position is always present
+        }
+
         # Process in batches
         total_written = 0
         for i in range(0, len(elements), self.batch_size):
             batch = elements[i:i + self.batch_size]
-            
-            # Prepare DataFrame
-            df = pd.DataFrame(batch)
-            
+
+            # Ensure all elements have required columns
+            normalized_batch = []
+            for element in batch:
+                normalized = {**required_columns, **element}  # Defaults then actual values
+                normalized_batch.append(normalized)
+
+            # Prepare DataFrame with consistent columns
+            df = pd.DataFrame(normalized_batch)
+
             # Add processing metadata
             df['_run_id'] = run_id
             df['_written_at'] = datetime.now().isoformat()
-            
+
             # Handle nested JSON fields
             for col in df.columns:
                 if df[col].dtype == 'object':
@@ -238,10 +261,10 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
                             df[col] = df[col].apply(json.dumps)
                     except (IndexError, TypeError):
                         pass
-            
+
             written = self._write_parquet_batch(df, path, 'elements')
             total_written += written
-        
+
         logger.info(f"Appended {total_written} elements to {path}")
         return total_written
     
@@ -371,6 +394,34 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         written = self._write_parquet_batch(df, path, 'metrics')
         return written > 0
     
+    def has_run(self, run_id: str) -> bool:
+        """
+        Check if storage has data for the given run_id.
+
+        Args:
+            run_id: Run ID to check
+
+        Returns:
+            True if storage has data for this run, False otherwise
+        """
+        from pathlib import Path
+
+        # Check for elements data (most fundamental)
+        elements_path = Path(self.base_path) / 'elements'
+
+        if elements_path.exists():
+            # Look for this run_id in the directory structure
+            for path in elements_path.rglob(f'run_id={run_id}'):
+                if path.is_dir():
+                    # Check if directory has any parquet files
+                    parquet_files = list(path.glob('*.parquet'))
+                    if parquet_files:
+                        logger.debug(f"Found {len(parquet_files)} parquet files for run {run_id}")
+                        return True
+
+        logger.debug(f"No parquet files found for run {run_id}")
+        return False
+
     def list_runs(self, start_date: Optional[datetime] = None,
                  end_date: Optional[datetime] = None) -> List[str]:
         """List processing runs in date range."""
@@ -449,43 +500,88 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
             embeddings_path = os.path.join(self.base_path, 'embeddings/**/*.parquet')
             
-            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}')")
-            conn.execute(f"CREATE VIEW embeddings AS SELECT * FROM read_parquet('{embeddings_path}')")
+            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=true)")
+            conn.execute(f"CREATE VIEW embeddings AS SELECT * FROM read_parquet('{embeddings_path}', union_by_name=true)")
             
             # Convert query embedding to array string for DuckDB
             query_vec_str = '[' + ','.join(map(str, query_embedding)) + ']'
             
             # Build filter clause
             filter_clause = ""
+            parent_chain_filter = ""
             if filters:
                 conditions = []
                 for key, value in filters.items():
-                    if isinstance(value, str):
+                    if key == 'element_type':
+                        # Skip element_type - will be handled via parent chain CTE
+                        continue
+                    elif isinstance(value, str):
                         conditions.append(f"e.{key} = '{value}'")
                     else:
                         conditions.append(f"e.{key} = {value}")
                 if conditions:
                     filter_clause = "AND " + " AND ".join(conditions)
             
+            # Build parent chain CTE if element_type filter is present
+            parent_chain_cte = ""
+            if filters and 'element_type' in filters:
+                if isinstance(filters['element_type'], list):
+                    element_types = filters['element_type']
+                else:
+                    element_types = [filters['element_type']] if filters['element_type'] else []
+
+                if element_types:
+                    types_str = "', '".join(element_types)
+                    parent_chain_cte = f"""WITH RECURSIVE parent_chain AS (
+                -- Recursive CTE to check element and all its parents
+                SELECT
+                    element_id,
+                    element_type,
+                    parent_id,
+                    element_type IN ('{types_str}') as has_type,
+                    0 as level
+                FROM elements
+
+                UNION ALL
+
+                SELECT
+                    pc.element_id,
+                    e.element_type,
+                    e.parent_id,
+                    pc.has_type OR e.element_type IN ('{types_str}') as has_type,
+                    pc.level + 1
+                FROM parent_chain pc
+                JOIN elements e ON pc.parent_id = e.element_id
+                WHERE pc.level < 10  -- Limit recursion depth
+                    AND NOT pc.has_type  -- Stop if we already found a match
+            ), """
+                    parent_chain_filter = " AND e.element_id IN (SELECT DISTINCT element_id FROM parent_chain WHERE has_type)"
+
             # Semantic similarity search with cosine similarity
             # DuckDB doesn't have built-in cosine similarity, so we calculate it manually
             # FIXED: Filter out zero-magnitude embeddings to prevent division by zero and NaN results
-            search_query = f"""
-            WITH valid_embeddings AS (
-                SELECT 
+            # Build CTE chain properly
+            if parent_chain_cte:
+                # parent_chain_cte already includes "WITH" and trailing comma
+                search_query = f"""
+            {parent_chain_cte}
+            valid_embeddings AS (
+                SELECT
                     e.*,
                     emb.embedding,
+                    emb.embedding_text,
                     sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) as emb_magnitude
                 FROM elements e
                 JOIN embeddings emb ON e.element_id = emb.element_id
                 WHERE sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) > 0.0
                 {filter_clause}
+                {parent_chain_filter}
             ),
             search_results AS (
-                SELECT 
+                SELECT
                     *,
                     (
-                        list_dot_product(embedding::DOUBLE[], {query_vec_str}::DOUBLE[]) / 
+                        list_dot_product(embedding::DOUBLE[], {query_vec_str}::DOUBLE[]) /
                         (emb_magnitude * sqrt(list_dot_product({query_vec_str}::DOUBLE[], {query_vec_str}::DOUBLE[])))
                     ) as similarity
                 FROM valid_embeddings
@@ -497,9 +593,45 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             ORDER BY similarity DESC
             LIMIT {limit}
             """
-            
+            else:
+                # No parent_chain_cte, start with WITH
+                search_query = f"""
+            WITH valid_embeddings AS (
+                SELECT
+                    e.*,
+                    emb.embedding,
+                    emb.embedding_text,
+                    sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) as emb_magnitude
+                FROM elements e
+                JOIN embeddings emb ON e.element_id = emb.element_id
+                WHERE sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) > 0.0
+                {filter_clause}
+            ),
+            search_results AS (
+                SELECT
+                    *,
+                    (
+                        list_dot_product(embedding::DOUBLE[], {query_vec_str}::DOUBLE[]) /
+                        (emb_magnitude * sqrt(list_dot_product({query_vec_str}::DOUBLE[], {query_vec_str}::DOUBLE[])))
+                    ) as similarity
+                FROM valid_embeddings
+            )
+            SELECT * FROM search_results
+            WHERE similarity >= {min_similarity}
+            AND similarity IS NOT NULL
+            AND NOT isnan(similarity)
+            ORDER BY similarity DESC
+            LIMIT {limit}
+            """
+
+            # Log query details for debugging (can be enabled when needed)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Semantic search - filters: {filters}, min_similarity: {min_similarity}")
+
             results = conn.execute(search_query).fetchall()
             column_names = [desc[0] for desc in conn.description]
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Search query returned {len(results)} results")
             
             # Convert to list of dicts
             search_results = []
@@ -510,7 +642,7 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
                     # Get context: parent, siblings, children
                     result['context'] = self._get_element_context(conn, result['element_id'], result.get('doc_id'))
                 
-                # Remove embedding from result to reduce size
+                # Remove embedding vector from result to reduce size (keep embedding_text)
                 result.pop('embedding', None)
                 search_results.append(result)
             
@@ -532,7 +664,7 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         try:
             # Register Parquet files
             elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
-            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}')")
+            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=true)")
             
             # Build filter clause
             filter_clause = ""
@@ -575,7 +707,7 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         try:
             # Register Parquet files
             elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
-            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}')")
+            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=true)")
             
             # Build WHERE clause from criteria
             conditions = []
@@ -621,22 +753,90 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
     def get_element_by_id(self, element_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve a specific element by ID using DuckDB.
+        Joins embeddings (for embedding_text) with elements (for metadata).
         """
         if not DUCKDB_AVAILABLE:
             raise ImportError("DuckDB required for search operations")
-        
+
         conn = duckdb.connect(':memory:')
         try:
+            embeddings_path = os.path.join(self.base_path, 'embeddings/**/*.parquet')
             elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
-            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}')")
-            
-            result = conn.execute(f"SELECT * FROM elements WHERE element_id = '{element_id}' LIMIT 1").fetchone()
-            
-            if result:
-                column_names = [desc[0] for desc in conn.description]
-                return dict(zip(column_names, result))
-            return None
-            
+
+            try:
+                # Create views for both tables
+                conn.execute(f"CREATE VIEW embeddings AS SELECT * FROM read_parquet('{embeddings_path}', union_by_name=true)")
+                conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=true)")
+
+                # First check if the content column exists
+                # Try to get column information
+                try:
+                    # Test if content column exists
+                    test_query = "SELECT content FROM elements LIMIT 0"
+                    conn.execute(test_query).fetchone()
+                    has_content_column = True
+                except:
+                    has_content_column = False
+
+                # Build query based on available columns
+                if has_content_column:
+                    query = """
+                    SELECT
+                        e.element_id,
+                        e.doc_id,
+                        e.element_type,
+                        e.content,  -- Full content if stored
+                        emb.embedding_text,  -- Text used for embedding
+                        e.content_preview,
+                        e.content_location,
+                        e.metadata
+                    FROM elements e
+                    LEFT JOIN embeddings emb ON e.element_id = emb.element_id
+                    WHERE e.element_id = ?
+                    LIMIT 1
+                    """
+                else:
+                    # Fallback query without content column for older data
+                    query = """
+                    SELECT
+                        e.element_id,
+                        e.doc_id,
+                        e.element_type,
+                        NULL as content,  -- No content column in older data
+                        emb.embedding_text,  -- Text used for embedding
+                        e.content_preview,
+                        e.content_location,
+                        e.metadata
+                    FROM elements e
+                    LEFT JOIN embeddings emb ON e.element_id = emb.element_id
+                    WHERE e.element_id = ?
+                    LIMIT 1
+                    """
+
+                result = conn.execute(query, [element_id]).fetchone()
+
+                if result:
+                    return {
+                        'element_id': result[0],
+                        'doc_id': result[1],
+                        'element_type': result[2],
+                        'content': result[3],  # Full content (may be None)
+                        'embedding_text': result[4],  # Text used for embedding
+                        'content_preview': result[5],
+                        'content_location': result[6],
+                        'metadata': result[7]
+                    }
+                return None
+
+            except Exception as e:
+                # Handle the case where no parquet files exist yet (first run)
+                if "No files found that match the pattern" in str(e):
+                    # This is expected on first run - no documents have been processed yet
+                    return None
+                else:
+                    # Re-raise other errors
+                    raise
+
         finally:
             conn.close()
     
@@ -650,13 +850,24 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         conn = duckdb.connect(':memory:')
         try:
             elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
-            # Use union_by_name=True to handle schema mismatches
-            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=True)")
             
-            results = conn.execute(f"SELECT * FROM elements WHERE doc_id = '{doc_id}'").fetchall()
-            column_names = [desc[0] for desc in conn.description]
-            
-            return [dict(zip(column_names, row)) for row in results]
+            try:
+                # Use union_by_name=True to handle schema mismatches
+                conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=True)")
+                
+                results = conn.execute(f"SELECT * FROM elements WHERE doc_id = '{doc_id}'").fetchall()
+                column_names = [desc[0] for desc in conn.description]
+                
+                return [dict(zip(column_names, row)) for row in results]
+                
+            except Exception as e:
+                # Handle the case where no parquet files exist yet (first run)
+                if "No files found that match the pattern" in str(e):
+                    # This is expected on first run - no documents have been processed yet
+                    return []
+                else:
+                    # Re-raise other errors
+                    raise
             
         finally:
             conn.close()
@@ -704,6 +915,94 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         context['children'] = [dict(zip(column_names, row)) for row in children]
         
         return context
+    
+    def get_outgoing_relationships(self, element_id: str) -> List[ElementRelationship]:
+        """
+        Find all relationships where the specified element_id is the source.
+
+        Args:
+            element_id: The ID of the source element
+
+        Returns:
+            List of ElementRelationship objects where this element is the source
+        """
+        if not DUCKDB_AVAILABLE:
+            raise ImportError("DuckDB required for relationship operations")
+            
+        conn = duckdb.connect(':memory:')
+        try:
+            # Set up Parquet file paths
+            relationships_path = os.path.join(self.base_path, 'relationships/**/*.parquet')
+            elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
+            
+            try:
+                # Create views for relationships and elements
+                conn.execute(f"CREATE VIEW relationships AS SELECT * FROM read_parquet('{relationships_path}', union_by_name=True)")
+                conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=True)")
+                
+                # Query for outgoing relationships with target element details
+                # Filter by element_id directly since parquet doesn't have element_pk
+                results = conn.execute(f"""
+                    SELECT
+                        r.relationship_id,
+                        r.source_id,
+                        r.relationship_type,
+                        r.target_id as target_reference,
+                        r.doc_id,
+                        r.metadata,
+                        NULL as source_element_pk,
+                        t.element_type as target_element_type,
+                        t.content_preview as target_content_preview,
+                        NULL as target_element_pk
+                    FROM relationships r
+                    LEFT JOIN elements t ON r.target_id = t.element_id
+                    WHERE r.source_id = '{element_id}'
+                """).fetchall()
+                
+                column_names = [desc[0] for desc in conn.description]
+                relationship_dicts = [dict(zip(column_names, row)) for row in results]
+                
+                # Convert to ElementRelationship objects
+                element_relationships = []
+                for rel_dict in relationship_dicts:
+                    # Parse metadata if it's a JSON string
+                    metadata = rel_dict.get('metadata', {})
+                    if isinstance(metadata, str) and metadata:
+                        try:
+                            import json
+                            metadata = json.loads(metadata)
+                        except json.JSONDecodeError:
+                            metadata = {}
+                    elif metadata is None:
+                        metadata = {}
+                    
+                    element_rel = ElementRelationship(
+                        relationship_id=rel_dict.get('relationship_id', ''),
+                        source_id=rel_dict.get('source_id', ''),
+                        source_element_pk=rel_dict.get('source_element_pk'),
+                        source_element_type=None,  # We know this is the source but don't have type here
+                        relationship_type=rel_dict.get('relationship_type', ''),
+                        target_reference=rel_dict.get('target_reference') or '',  # Default to empty string if None
+                        target_element_pk=rel_dict.get('target_element_pk'),
+                        target_element_type=rel_dict.get('target_element_type'),
+                        target_content_preview=rel_dict.get('target_content_preview'),
+                        doc_id=rel_dict.get('doc_id'),
+                        metadata=metadata,
+                        is_source=True  # This element is always the source for outgoing relationships
+                    )
+                    element_relationships.append(element_rel)
+                
+                return element_relationships
+                
+            except Exception as e:
+                if "No files found that match the pattern" in str(e):
+                    # No relationship data exists yet
+                    return []
+                else:
+                    raise
+                    
+        finally:
+            conn.close()
     
     def close(self) -> None:
         """Close storage connections."""
