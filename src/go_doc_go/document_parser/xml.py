@@ -20,6 +20,7 @@ from .base import DocumentParser
 from .extract_dates import DateExtractor
 from .lru_cache import LRUCache, ttl_cache
 from .temporal_semantics import detect_temporal_type, TemporalType, create_semantic_temporal_expression
+from .temporal_metadata import generate_temporal_metadata
 from ..relationships import RelationshipType
 from ..storage import ElementType
 
@@ -517,11 +518,12 @@ class XmlParser(DocumentParser):
                 generic_names = {'value', 'text', 'data', 'content', 'val', 'string', 'item'}
 
                 if temporal_type is not TemporalType.NONE:
-                    # For temporal data, skip the verbose expansion for generic elements
+                    # For embedding text, always use dates as-is (no expansion)
+                    # The expansion will be in separate metadata
                     if element_name.lower() in generic_names:
                         result = text_content  # Just return the date as-is
                     else:
-                        # For meaningful element names, keep a simple format
+                        # For meaningful element names, include name but no expansion
                         result = f"{element_name} is {text_content}"
                 else:
                     # Format as appropriate for the element type
@@ -1142,6 +1144,11 @@ class XmlParser(DocumentParser):
                 # Fall back to just tag name if no text content
                 content_preview = f"<{element_name}>"
 
+            # Generate temporal metadata if element text is temporal
+            temporal_metadata_field = None
+            if element_text:
+                temporal_metadata_field = generate_temporal_metadata(element_text)
+
             # Create element metadata
             element_data = {
                 "element_id": element_id,
@@ -1165,7 +1172,8 @@ class XmlParser(DocumentParser):
                     "is_container": is_container,
                     "container_type": container_type,
                     "child_count": len(element) if is_container else 0
-                }
+                },
+                "temporal_metadata": temporal_metadata_field  # Add as separate field
             }
             elements.append(element_data)
             element_path_to_id[element_path] = element_id
@@ -1214,13 +1222,8 @@ class XmlParser(DocumentParser):
                 # Create text path
                 text_path = f"{element_path}/text()[1]"
 
-                # Check for temporal data
-                temporal_type = detect_temporal_type(text_content)
-                temporal_metadata = {"temporal_type": temporal_type.name}
-
-                # Add semantic representation if it's a temporal value
-                if temporal_type is not TemporalType.NONE:
-                    temporal_metadata["semantic_value"] = create_semantic_temporal_expression(text_content)
+                # Generate temporal metadata if applicable
+                temporal_metadata_field = generate_temporal_metadata(text_content)
 
                 text_element = {
                     "element_id": text_id,
@@ -1238,9 +1241,9 @@ class XmlParser(DocumentParser):
                     "metadata": {
                         "parent_element": element_name,
                         "path": text_path,
-                        "text": text_content,
-                        **temporal_metadata
-                    }
+                        "text": text_content
+                    },
+                    "temporal_metadata": temporal_metadata_field  # Add as separate field
                 }
                 elements.append(text_element)
                 element_path_to_id[text_path] = text_id

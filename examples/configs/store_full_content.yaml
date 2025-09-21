@@ -1,0 +1,52 @@
+# Example configuration for storing full element content in analytics storage
+#
+# The store_full_content flag controls a storage vs. performance tradeoff:
+# - true: Copies full element content to analytics storage (faster retrieval, more storage)
+# - false: Stores only preview & location pointer (less storage, slower retrieval)
+
+# Content sources configuration
+content_sources:
+  - name: "documents"
+    type: "file"
+    base_path: "./documents"
+    recursive: true
+
+# Storage configuration
+storage:
+  # Job storage for work queue coordination
+  job:
+    type: sqlite
+    path: ./job_queue.db
+
+  # Analytics storage for pipeline results
+  analytics:
+    type: parquet
+    base_path: ./data-lake
+
+# Processing configuration
+processing:
+  # NEW: Control whether to store full element content
+  store_full_content: true  # Set to true to store complete content
+
+  # When true:
+  # - Elements will have a 'content' field with full text
+  # - Faster retrieval (no need to access source files)
+  # - Works even if source files are moved/deleted
+  # - Higher storage requirements
+
+  # When false (default):
+  # - Elements only have 'content_preview' (truncated) and 'content_location' (pointer)
+  # - Must access source files to get full content
+  # - Minimal storage footprint
+  # - Always fetches latest version from source
+
+  # Other processing options
+  batch_size: 100
+  max_workers: 4
+
+# Embedding configuration (optional)
+embedding:
+  enabled: true
+  provider: "fastembed"
+  model: "BAAI/bge-small-en-v1.5"
+  batch_size: 32

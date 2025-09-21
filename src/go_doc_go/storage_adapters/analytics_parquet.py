@@ -232,7 +232,8 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             'content_hash': None,
             'metadata': None,
             'element_order': None,  # Ensure element_order is always present
-            'document_position': None  # Ensure document_position is always present
+            'document_position': None,  # Ensure document_position is always present
+            'temporal_metadata': None  # Nullable JSON field for temporal elements
         }
 
         # Process in batches
