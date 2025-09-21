@@ -153,10 +153,33 @@ class Config:
             else:
                 dest[key] = value
 
+    def _resolve_path_from_project_root(self, path: str) -> str:
+        """
+        Resolve a path relative to the project root.
+        
+        Args:
+            path: Path to resolve (can be relative or absolute)
+            
+        Returns:
+            Absolute path resolved from project root
+        """
+        if os.path.isabs(path):
+            return path
+        
+        # Check for project root environment variable
+        project_root = os.environ.get('GO_DOC_GO_PROJECT_ROOT')
+        if project_root:
+            return os.path.join(project_root, path)
+        
+        # Fallback to current working directory
+        return os.path.abspath(path)
+    
     def _validate_config(self) -> None:
         """Validate configuration settings."""
         # Ensure storage path exists or create it
         storage_path = self.get_storage_path()
+        # Resolve storage path relative to project root
+        storage_path = self._resolve_path_from_project_root(storage_path)
         logger.debug(f"Ensuring storage path exists: {storage_path}")
         # Only create directory if it's not a file path (e.g., SQLite db)
         if not storage_path.endswith('.db'):
@@ -168,7 +191,10 @@ class Config:
                 os.makedirs(parent_dir, exist_ok=True)
 
         # Ensure logs directory exists
-        log_dir = os.path.dirname(self.config["logging"]["file"])
+        log_file_path = self.config["logging"]["file"]
+        # Resolve log file path relative to project root
+        log_file_path = self._resolve_path_from_project_root(log_file_path)
+        log_dir = os.path.dirname(log_file_path)
         if log_dir:
             logger.debug(f"Ensuring log directory exists: {log_dir}")
             os.makedirs(log_dir, exist_ok=True)
@@ -196,7 +222,8 @@ class Config:
     def get_storage_path(self) -> str:
         """Get the storage path for document database."""
         path = self.config.get("storage", {}).get("path", "./data")
-        return os.path.expanduser(path)
+        path = os.path.expanduser(path)
+        return self._resolve_path_from_project_root(path)
 
     def get_storage_backend(self) -> str:
         """Get the storage backend type."""
@@ -261,55 +288,6 @@ class Config:
         """Get logging configuration."""
         return self.config["logging"]
 
-    def get_document_database(self):
-        """
-        Get the document database singleton instance.
-
-        Returns:
-            DocumentDatabase instance
-        """
-        if self._db_instance is None:
-            logger.debug("Creating new database instance")
-            from .storage import get_document_database
-            self._db_instance = get_document_database(self.config.get('storage', {}), )
-        else:
-            # logger.debug("Using existing database instance")
-            pass
-
-        return self._db_instance
-
-    def initialize_database(self):
-        """
-        Initialize the document database.
-
-        Returns:
-            The initialized database instance
-        """
-        db = self.get_document_database()
-        logger.debug("Initializing database")
-
-        # NEW: Check topic support compatibility
-        if self.is_topic_support_enabled() and hasattr(db, 'supports_topics') and not db.supports_topics():
-            logger.warning(
-                f"Topic support enabled in config but {self.get_storage_backend()} "
-                f"backend does not support topics. Topic features will be disabled."
-            )
-        elif self.is_topic_support_enabled() and hasattr(db, 'supports_topics') and db.supports_topics():
-            logger.info("Topic support enabled and available")
-
-        db.initialize()
-        return db
-
-    def close_database(self):
-        """
-        Close the document database connection if it exists.
-        """
-        if self._db_instance is not None:
-            logger.debug("Closing database connection")
-            self._db_instance.close()
-            self._db_instance = None
-        else:
-            logger.debug("No database instance to close")
     
     def _load_analytics_registry(self):
         """
@@ -452,18 +430,20 @@ class Config:
                 path = ontology_config.get("path")
                 active = ontology_config.get("active", True)
                 
-                if path and os.path.exists(path):
-                    try:
-                        name = self._ontology_manager.load_ontology(path)
-                        if active:
-                            self._ontology_manager.activate_domain(name)
-                            logger.info(f"Loaded and activated domain ontology: {name}")
-                        else:
-                            logger.info(f"Loaded domain ontology (inactive): {name}")
-                    except Exception as e:
-                        logger.error(f"Failed to load ontology from {path}: {e}")
-                else:
-                    logger.warning(f"Ontology file not found: {path}")
+                if path:
+                    path = self._resolve_path_from_project_root(path)
+                    if os.path.exists(path):
+                        try:
+                            name = self._ontology_manager.load_ontology(path)
+                            if active:
+                                self._ontology_manager.activate_domain(name)
+                                logger.info(f"Loaded and activated domain ontology: {name}")
+                            else:
+                                logger.info(f"Loaded domain ontology (inactive): {name}")
+                        except Exception as e:
+                            logger.error(f"Failed to load ontology from {path}: {e}")
+                    else:
+                        logger.warning(f"Ontology file not found: {path}")
         
         return self._ontology_manager
     

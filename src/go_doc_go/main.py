@@ -3,8 +3,9 @@ import os
 
 from dotenv import load_dotenv
 
-from go_doc_go.config import Config
-from go_doc_go.processing.two_pass import TwoPassProcessor, TwoPassWorker
+from .config import Config
+from .processing.two_pass import TwoPassProcessor, TwoPassWorker
+from .storage_adapters.factory import StorageFactory
 
 # Load environment variables from .env file
 load_dotenv()
@@ -78,8 +79,18 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None,
     
     # Route to appropriate processing method
     if worker_mode == 'coordinator':
-        # Coordinator mode: enqueue work for distributed workers
-        return _coordinate_two_pass_processing(config, source_configs, max_link_depth, progress_callback)
+        # Coordinator mode: use ElectedLeaderWorker which handles both enqueueing and processing
+        # The ElectedLeaderWorker will:
+        # - Attempt to become leader
+        # - If elected, discover and enqueue documents
+        # - Process documents from the queue (whether leader or not)
+        # - If leader, handle post-processing
+        coordination_result = _coordinate_two_pass_processing(config, source_configs, max_link_depth, progress_callback)
+
+        # ElectedLeaderWorker already handles both coordination and processing,
+        # so we just return its result directly
+        return coordination_result
+            
     elif worker_mode == 'worker':
         # Worker mode: process from queue (no leader election)
         worker = TwoPassWorker(config)
@@ -225,86 +236,61 @@ def _compute_cross_document_container_relationships(db, processed_doc_ids, confi
 
 def _coordinate_two_pass_processing(config: Config, source_configs=None, max_link_depth=None, progress_callback=None):
     """
-    Coordinate two-pass processing for distributed workers.
-    
-    This function enqueues work for distributed workers to process using the
-    two-pass approach. It doesn't process documents itself but coordinates
-    the work distribution.
-    
+    Coordinate two-pass processing for distributed workers using elected leader pattern.
+
+    This function uses the ElectedLeaderWorker to:
+    1. Attempt to become leader for document discovery
+    2. If elected, discover and enqueue documents
+    3. Process documents from the queue (all workers)
+    4. If leader, handle post-processing
+
     Args:
         config: Configuration object
         source_configs: Optional list of content source configs
         max_link_depth: Optional override for link depth
         progress_callback: Optional callback for progress updates
-        
+
     Returns:
-        Dictionary with coordination statistics
+        Dictionary with coordination and processing statistics
     """
-    logger.info("Coordinating two-pass processing for distributed workers")
-    
-    from .work_queue import WorkQueue, RunCoordinator
-    from .content_source.factory import get_content_source
-    
+    logger.info("Coordinating two-pass processing using elected leader pattern")
+
+    from .work_queue.coordinator import ElectedLeaderWorker
+    import uuid
+
     try:
-        # Initialize database and work queue
-        db = config.get_document_database()
-        
-        # Create run coordinator
-        run_config = {
-            'content_sources': source_configs or config.get_content_sources(),
-            'max_link_depth': max_link_depth,
-            'processing': config.config.get('processing', {})
-        }
-        
-        # Generate run ID from config
-        run_id = RunCoordinator.get_run_id_from_config(run_config)
-        coordinator = RunCoordinator(db, 'coordinator')
-        coordinator.ensure_run_exists(run_id, run_config)
-        
-        # Create work queue
-        work_queue = WorkQueue(db, 'coordinator')
-        
-        # Enqueue documents for Pass 1 (parsing)
-        sources_to_process = source_configs or config.get_content_sources()
-        total_documents = 0
-        
-        for source_config in sources_to_process:
-            source_name = source_config.get('name')
-            logger.info(f"Enqueuing documents from source: {source_name}")
-            
-            try:
-                source = get_content_source(source_config)
-                documents = source.list_documents()
-                
-                for doc in documents:
-                    # Enqueue document for Pass 1
-                    queue_id = work_queue.add_document(
-                        doc_id=doc['id'],
-                        source_name=source_name,
-                        run_id=run_id,
-                        metadata={
-                            'processing_pass': 1,
-                            'doc_type': doc.get('doc_type'),
-                            'source_config': source_config
-                        }
-                    )
-                    total_documents += 1
-                    
-                logger.info(f"Enqueued {len(documents)} documents from {source_name}")
-                
-            except Exception as e:
-                logger.error(f"Error enqueuing documents from source {source_name}: {e}")
-        
-        logger.info(f"Enqueued {total_documents} total documents for processing")
-        
-        # Return coordination statistics
-        return {
-            'documents_enqueued': total_documents,
-            'run_id': run_id,
-            'sources': len(sources_to_process),
-            'status': 'coordinated'
-        }
-        
+        # Generate unique worker ID for this coordinator
+        worker_id = f"coordinator_{uuid.uuid4().hex[:8]}"
+        logger.info(f"Creating elected leader worker: {worker_id}")
+
+        # Create elected leader worker
+        leader_worker = ElectedLeaderWorker(config, worker_id)
+
+        # Run as worker with leader duties
+        # This will:
+        # 1. Attempt leader election
+        # 2. If elected, discover and queue documents
+        # 3. Process documents from queue (whether leader or not)
+        # 4. If leader, handle post-processing when complete
+        result = leader_worker.run_as_worker_with_leader_duties(
+            source_configs=source_configs,
+            max_link_depth=max_link_depth
+        )
+
+        # Add progress callback support if provided
+        if progress_callback and result:
+            progress_callback({
+                'documents': result.get('documents_processed', 0),
+                'documents_total': result.get('documents_queued', 0),
+                'elements': 0,  # Will be updated during processing
+                'relationships': result.get('cross_document_relationships', 0),
+                'parsing_complete': result.get('documents_processed', 0) == result.get('documents_queued', 0),
+                'embedding_complete': False  # Will be updated during processing
+            })
+
+        logger.info(f"Coordination result: {result}")
+        return result
+
     except Exception as e:
-        logger.error(f"Two-pass coordination failed: {str(e)}")
+        logger.error(f"Two-pass coordination with leader election failed: {str(e)}")
         raise

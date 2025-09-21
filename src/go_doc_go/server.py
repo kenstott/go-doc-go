@@ -773,7 +773,7 @@ SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 # Configuration from environment variables
 CONFIG = {
     'HOST': os.environ.get('SERVER_HOST', '0.0.0.0'),
-    'PORT': int(os.environ.get('SERVER_PORT', '5000')),
+    'PORT': int(os.environ.get('API_PORT', os.environ.get('SERVER_PORT', '5002'))),
     'DEBUG': os.environ.get('DEBUG', 'False').lower() == 'true',
     'MAX_RESULTS': int(os.environ.get('MAX_RESULTS', '100')),
     'DEFAULT_RESULTS': int(os.environ.get('DEFAULT_RESULTS', '10')),
