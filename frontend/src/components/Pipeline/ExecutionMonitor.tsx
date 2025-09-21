@@ -102,7 +102,7 @@ const ExecutionMonitor: React.FC<ExecutionMonitorProps> = ({
   const fetchExecutions = async () => {
     setLoading(true);
     try {
-      let url = '/api/pipelines/executions';
+      let url = '/api/pipelines/executions/recent';
       if (pipelineId) {
         url = `/api/pipelines/${pipelineId}/executions`;
       }
@@ -349,6 +349,8 @@ const ExecutionMonitor: React.FC<ExecutionMonitorProps> = ({
           height: '90%',
           maxWidth: 'none',
           maxHeight: 'none',
+          display: 'flex',
+          flexDirection: 'column',
         }
       }}
     >
@@ -366,7 +368,7 @@ const ExecutionMonitor: React.FC<ExecutionMonitorProps> = ({
         </Box>
       </DialogTitle>
       
-      <DialogContent dividers>
+      <DialogContent dividers sx={{ flex: 1, overflow: 'auto' }}>
         {selectedExecution ? (
           // Detailed execution view
           <Box>

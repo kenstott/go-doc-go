@@ -68,7 +68,7 @@ import DualStorageConfig from './DualStorageConfig';
 interface PipelineConfig {
   name: string;
   description: string;
-  version: string;
+  version: number;  // Changed from string to number for consistency with Pipeline interface
   tags: string[];
   is_active: boolean;
   storage: {
@@ -130,7 +130,7 @@ interface PipelineConfig {
       table_prefix?: string;
     };
     
-    // Legacy backend-specific settings (backward compatibility)
+    // Backend-specific settings
     postgresql?: {
       uri?: string;
       host?: string;
@@ -312,7 +312,7 @@ const isDevelopment = import.meta.env.DEV;
 const defaultConfig: PipelineConfig = {
   name: '',
   description: '',
-  version: '1.0.0',
+  version: 1,  // Changed from '1.0.0' string to 1 number for consistency
   tags: [],
   is_active: true,
   storage: {
@@ -324,12 +324,6 @@ const defaultConfig: PipelineConfig = {
     analytics: {
       type: 'parquet',  // Changed from 'sqlite' to 'parquet' - sqlite not valid for analytics
       base_path: isDevelopment ? './data/analytics' : './analytics'
-    },
-    // Legacy single storage (kept for backward compatibility)
-    backend: 'sqlite',
-    path: './data',
-    sqlite: {
-      path: isDevelopment ? './data/pipeline_data.db' : './pipeline_data.db'
     },
     // Pre-configured backends for development
     ...(isDevelopment ? {
@@ -471,10 +465,39 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
   onClose,
   onSave
 }) => {
-  const [config, setConfig] = useState<PipelineConfig>(() => ({
-    ...defaultConfig,
-    ...initialConfig
-  }));
+  // Deep merge utility to ensure nested objects like embedding get proper defaults
+  const deepMerge = (defaults: any, overrides: any): any => {
+    if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) {
+      return overrides !== undefined ? overrides : defaults;
+    }
+    
+    if (!defaults || typeof defaults !== 'object' || Array.isArray(defaults)) {
+      return overrides;
+    }
+    
+    const result = { ...defaults };
+    
+    for (const key in overrides) {
+      if (overrides.hasOwnProperty(key)) {
+        if (typeof overrides[key] === 'object' && 
+            overrides[key] !== null && 
+            !Array.isArray(overrides[key]) &&
+            typeof defaults[key] === 'object' && 
+            defaults[key] !== null &&
+            !Array.isArray(defaults[key])) {
+          result[key] = deepMerge(defaults[key], overrides[key]);
+        } else {
+          result[key] = overrides[key];
+        }
+      }
+    }
+    
+    return result;
+  };
+
+  const [config, setConfig] = useState<PipelineConfig>(() => 
+    deepMerge(defaultConfig, initialConfig)
+  );
   const [activeTab, setActiveTab] = useState(0);
   const [yamlContent, setYamlContent] = useState('');
   const [yamlErrors, setYamlErrors] = useState<ValidationError[]>([]);
@@ -486,10 +509,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
   // Update config when initialConfig changes (for edit mode)
   useEffect(() => {
     if (initialConfig && open) {
-      setConfig(prevConfig => ({
-        ...defaultConfig,
-        ...initialConfig
-      }));
+      setConfig(deepMerge(defaultConfig, initialConfig));
     } else if (!initialConfig && open && mode === 'create') {
       // Reset to defaults for create mode
       setConfig(defaultConfig);
@@ -562,19 +582,17 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
       errors.push({ path: 'name', message: 'Pipeline name is required', severity: 'error' });
     }
 
-    // Validate storage configuration - support both new dual storage and legacy format
+    // Validate storage configuration - dual storage architecture required
     if (!configToValidate.storage) {
       errors.push({ path: 'storage', message: 'Storage configuration is required', severity: 'error' });
     } else {
-      // Check for new dual storage format
+      // Check for dual storage format (required)
       const hasDualStorage = configToValidate.storage.job && configToValidate.storage.analytics;
-      // Check for legacy format
-      const hasLegacyStorage = configToValidate.storage.backend;
       
-      if (!hasDualStorage && !hasLegacyStorage) {
+      if (!hasDualStorage) {
         errors.push({ 
           path: 'storage', 
-          message: 'Storage must specify either job + analytics (recommended) or backend (legacy)', 
+          message: 'Storage must specify dual storage (job + analytics)', 
           severity: 'error' 
         });
       }
@@ -658,7 +676,8 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
       console.log('onSave completed successfully');
     } catch (error) {
       console.error('Failed to save pipeline configuration:', error);
-      alert('Failed to save configuration');
+      // Let the parent component handle the error display - it has better error message extraction
+      throw error;
     } finally {
       setIsSaving(false);
     }
@@ -689,7 +708,10 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
         {
           name: `source-${prev.content_sources.length + 1}`,
           type: 'file',
-          base_path: './documents'
+          base_path: './documents',
+          file_pattern: '**/*.{pdf,docx,xlsx,csv,json,xml,html,htm,md,txt}',
+          watch_for_changes: false,
+          max_link_depth: 2
         }
       ]
     }));
@@ -1345,7 +1367,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
             <FormControl fullWidth>
               <InputLabel>Embedding Provider</InputLabel>
               <Select
-                value={config.embedding.provider}
+                value={config.embedding?.provider || ''}
                 onChange={(e) => setConfig(prev => ({
                   ...prev,
                   embedding: { ...prev.embedding, provider: e.target.value }
@@ -1369,14 +1391,14 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
             <FormControl fullWidth>
               <InputLabel>Model</InputLabel>
               <Select
-                value={config.embedding.model}
+                value={config.embedding?.model || ''}
                 onChange={(e) => setConfig(prev => ({
                   ...prev,
                   embedding: { ...prev.embedding, model: e.target.value }
                 }))}
                 label="Model"
               >
-                {(embeddingModels[config.embedding.provider] || []).map((model) => (
+                {(embeddingModels[config.embedding?.provider || ''] || []).map((model) => (
                   <MenuItem key={model} value={model}>
                     {model}
                   </MenuItem>
@@ -1389,7 +1411,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               fullWidth
               type="number"
               label="Dimensions"
-              value={config.embedding.dimensions}
+              value={config.embedding?.dimensions || 0}
               onChange={(e) => setConfig(prev => ({
                 ...prev,
                 embedding: { ...prev.embedding, dimensions: parseInt(e.target.value) }
@@ -1402,7 +1424,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               fullWidth
               type="number"
               label="Chunk Size"
-              value={config.embedding.chunk_size}
+              value={config.embedding?.chunk_size || 0}
               onChange={(e) => setConfig(prev => ({
                 ...prev,
                 embedding: { ...prev.embedding, chunk_size: parseInt(e.target.value) }
@@ -1415,7 +1437,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               fullWidth
               type="number"
               label="Overlap"
-              value={config.embedding.overlap}
+              value={config.embedding?.overlap || 0}
               onChange={(e) => setConfig(prev => ({
                 ...prev,
                 embedding: { ...prev.embedding, overlap: parseInt(e.target.value) }
@@ -1427,7 +1449,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
             <FormControlLabel
               control={
                 <Switch
-                  checked={config.embedding.contextual}
+                  checked={config.embedding?.contextual || false}
                   onChange={(e) => setConfig(prev => ({
                     ...prev,
                     embedding: { ...prev.embedding, contextual: e.target.checked }
@@ -1437,26 +1459,28 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
               label="Contextual Embeddings"
             />
           </Grid>
-          {config.embedding.contextual && (
+          {config.embedding?.contextual && (
             <>
+              {/* Window Size - Hidden: LEGACY parameter not actually used
               <Grid item xs={12} md={3}>
                 <TextField
                   fullWidth
                   type="number"
                   label="Window Size"
-                  value={config.embedding.window_size}
+                  value={config.embedding?.window_size || 0}
                   onChange={(e) => setConfig(prev => ({
                     ...prev,
                     embedding: { ...prev.embedding, window_size: parseInt(e.target.value) }
                   }))}
                 />
               </Grid>
+              */}
               <Grid item xs={12} md={3}>
                 <TextField
                   fullWidth
                   type="number"
                   label="Predecessor Count"
-                  value={config.embedding.predecessor_count}
+                  value={config.embedding?.predecessor_count || 0}
                   onChange={(e) => setConfig(prev => ({
                     ...prev,
                     embedding: { ...prev.embedding, predecessor_count: parseInt(e.target.value) }
@@ -1468,25 +1492,27 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
                   fullWidth
                   type="number"
                   label="Successor Count"
-                  value={config.embedding.successor_count}
+                  value={config.embedding?.successor_count || 0}
                   onChange={(e) => setConfig(prev => ({
                     ...prev,
                     embedding: { ...prev.embedding, successor_count: parseInt(e.target.value) }
                   }))}
                 />
               </Grid>
+              {/* Ancestor Depth - Hidden as it's not actually used in implementation
               <Grid item xs={12} md={3}>
                 <TextField
                   fullWidth
                   type="number"
                   label="Ancestor Depth"
-                  value={config.embedding.ancestor_depth}
+                  value={config.embedding?.ancestor_depth || 0}
                   onChange={(e) => setConfig(prev => ({
                     ...prev,
                     embedding: { ...prev.embedding, ancestor_depth: parseInt(e.target.value) }
                   }))}
                 />
               </Grid>
+              */}
             </>
           )}
         </>
@@ -2045,7 +2071,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
   ];
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="xl" fullWidth sx={{ '& .MuiDialog-paper': { height: '90vh', display: 'flex', flexDirection: 'column' } }}>
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">
@@ -2077,7 +2103,7 @@ const PipelineConfigEditor: React.FC<PipelineConfigEditorProps> = ({
         </Box>
       </DialogTitle>
 
-      <DialogContent sx={{ minHeight: 700 }}>
+      <DialogContent sx={{ minHeight: 700, overflow: 'auto', flex: 1 }}>
         {/* Getting Started Guide for Create Mode */}
         {mode === 'create' && activeTab === 0 && !isYamlMode && (
           <Alert severity="success" sx={{ mb: 2 }}>

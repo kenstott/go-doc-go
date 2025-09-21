@@ -206,6 +206,11 @@ export const pipelineApi = {
     const response = await api.get('/pipelines/executions/active');
     return response.data;
   },
+
+  getRecentExecutions: async (limit: number = 20) => {
+    const response = await api.get(`/pipelines/executions/recent?limit=${limit}`);
+    return response.data;
+  },
   
   getTemplates: async () => {
     const response = await api.get('/pipelines/templates');
@@ -241,6 +246,36 @@ export const pipelineApi = {
         'Content-Type': 'multipart/form-data'
       }
     });
+    return response.data;
+  },
+
+  query: async (pipelineId: number, queryOptions: {
+    query: string;
+    limit?: number;
+    offset?: number;
+    similarity_threshold?: number;
+    filters?: {
+      date_range?: {
+        operator: string;
+        relative_value?: number;
+        start_date?: string;
+        end_date?: string;
+        date?: string;
+      };
+      element_types?: string[];
+      document_types?: string[];
+      metadata?: Record<string, any>;
+    };
+    include_content?: boolean;
+    include_metadata?: boolean;
+  }) => {
+    const response = await api.post(`/pipelines/${pipelineId}/query`, queryOptions);
+    return response.data;
+  },
+
+  getElementContent: async (pipelineId: number, elementId: string) => {
+    // Direct lookup using the dedicated endpoint
+    const response = await api.get(`/pipelines/${pipelineId}/elements/${elementId}/content`);
     return response.data;
   }
 };

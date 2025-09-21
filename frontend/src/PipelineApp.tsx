@@ -1,13 +1,12 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, Typography, Button, IconButton, Card, CardContent, CardActions, Chip } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, PlayArrow as RunIcon, History as HistoryIcon } from '@mui/icons-material';
+import { Edit as EditIcon, Delete as DeleteIcon, PlayArrow as RunIcon, History as HistoryIcon, Search as SearchIcon } from '@mui/icons-material';
 import PipelineConfigEditor from './components/Pipeline/PipelineConfigEditor';
 import SimpleGettingStarted from './components/Pipeline/SimpleGettingStarted';
 import ExecutionMonitor from './components/Pipeline/ExecutionMonitor';
+import QueryDialog from './components/Pipeline/QueryDialog';
 // import GettingStartedOverlay from './components/Pipeline/GettingStartedOverlay';
-// Temporarily comment out PipelineManager to debug
-// import PipelineManager from './components/Pipeline/PipelineManager';
 
 const SimplePipelineView = () => {
   const [pipelines, setPipelines] = React.useState<any[]>([]);
@@ -18,6 +17,8 @@ const SimplePipelineView = () => {
   const [monitorOpen, setMonitorOpen] = React.useState(false);
   const [monitorPipelineId, setMonitorPipelineId] = React.useState<number | undefined>();
   const [monitorExecutionId, setMonitorExecutionId] = React.useState<string | undefined>();
+  const [queryDialogOpen, setQueryDialogOpen] = React.useState(false);
+  const [queryingPipeline, setQueryingPipeline] = React.useState<any>(null);
 
   const loadPipelines = () => {
     fetch('/api/pipelines')
@@ -260,7 +261,17 @@ const SimplePipelineView = () => {
               >
                 History
               </Button>
-              <IconButton 
+              <Button
+                startIcon={<SearchIcon />}
+                onClick={() => {
+                  setQueryingPipeline(pipeline);
+                  setQueryDialogOpen(true);
+                }}
+                color="primary"
+              >
+                Query
+              </Button>
+              <IconButton
                 onClick={() => handleEdit(pipeline)}
                 color="primary"
                 title="Edit Pipeline"
@@ -337,6 +348,16 @@ const SimplePipelineView = () => {
         }}
         pipelineId={monitorPipelineId}
         executionId={monitorExecutionId}
+      />
+
+      {/* Query Dialog */}
+      <QueryDialog
+        open={queryDialogOpen}
+        onClose={() => {
+          setQueryDialogOpen(false);
+          setQueryingPipeline(null);
+        }}
+        pipeline={queryingPipeline}
       />
     </Box>
   );

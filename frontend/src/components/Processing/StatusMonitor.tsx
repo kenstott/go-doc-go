@@ -394,9 +394,9 @@ const StatusMonitor: React.FC = () => {
       </Paper>
 
       {/* Log Details Dialog */}
-      <Dialog open={logDialogOpen} onClose={() => setLogDialogOpen(false)} maxWidth="md" fullWidth>
+      <Dialog open={logDialogOpen} onClose={() => setLogDialogOpen(false)} maxWidth="md" fullWidth sx={{ '& .MuiDialog-paper': { height: '80vh', display: 'flex', flexDirection: 'column' } }}>
         <DialogTitle>Log Entry Details</DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ overflow: 'auto', flex: 1 }}>
           {selectedLogEntry && (
             <Box>
               <Box sx={{ mb: 2 }}>
