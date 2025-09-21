@@ -14,7 +14,14 @@ from typing import Dict, Any, Optional, List, Union, Tuple
 
 from .base import DocumentParser
 from .extract_dates import DateExtractor
-from .temporal_semantics import detect_temporal_type, TemporalType, create_semantic_temporal_expression
+from .temporal_semantics import detect_temporal_type, TemporalType
+from .temporal_metadata import generate_temporal_metadata
+from .temporal_normalization import (
+    normalize_temporal,
+    create_temporal_value,
+    normalize_dates_in_text,
+    process_field_value
+)
 from ..relationships import RelationshipType
 from ..storage import ElementType
 
@@ -159,8 +166,7 @@ class CsvParser(DocumentParser):
                 if self.enable_temporal_detection and isinstance(cell_value, str):
                     temporal_type = detect_temporal_type(cell_value)
                     if temporal_type is not TemporalType.NONE:
-                        semantic_value = create_semantic_temporal_expression(cell_value)
-
+                        # Keep date as-is for embedding text (no expansion)
                         # Format based on whether this is a header or data cell
                         if row == 0 and self.extract_header:
                             # For header cells, just return the original text
@@ -172,11 +178,11 @@ class CsvParser(DocumentParser):
 
                                 # Format based on column semantics
                                 if self._is_identity_column(column_name):
-                                    return f"{column_name} is {semantic_value}"
+                                    return f"{column_name} is {cell_value}"
                                 else:
-                                    return f"{column_name}: {semantic_value}"
+                                    return f"{column_name}: {cell_value}"
                             else:
-                                return semantic_value
+                                return cell_value
 
                 # Non-temporal value or temporal detection disabled
                 if row > 0 and header_row and col < len(header_row):
@@ -200,19 +206,17 @@ class CsvParser(DocumentParser):
                     if row > 0 and self.extract_header and self.enable_temporal_detection:
                         temporal_type = detect_temporal_type(cell_str)
                         if temporal_type is not TemporalType.NONE:
-                            semantic_value = create_semantic_temporal_expression(cell_str)
-
+                            # Keep date as-is (no expansion)
                             # Include column name if available
                             if header_row and col_idx < len(header_row):
                                 column_name = header_row[col_idx]
 
                                 # Format based on column semantics
                                 if self._is_identity_column(column_name):
-                                    cell_str = f"{column_name} is {semantic_value}"
+                                    cell_str = f"{column_name} is {cell_str}"
                                 else:
-                                    cell_str = f"{column_name}: {semantic_value}"
-                            else:
-                                cell_str = semantic_value
+                                    cell_str = f"{column_name}: {cell_str}"
+                            # else keep cell_str as-is
                         elif header_row and col_idx < len(header_row):
                             # For non-temporal values, include column name if available
                             column_name = header_row[col_idx]
@@ -303,6 +307,7 @@ class CsvParser(DocumentParser):
             "element_type": ElementType.TABLE.value,
             "parent_id": root_id,
             "content_preview": f"CSV table with {len(csv_data)} rows",
+            "temporal_value": None,  # Tables are not temporal
             "content_location": json.dumps({
                 "source": source_id,
                 "type": ElementType.TABLE.value
@@ -364,6 +369,7 @@ class CsvParser(DocumentParser):
                 "element_type": ElementType.TABLE_HEADER_ROW.value,
                 "parent_id": table_id,
                 "content_preview": header_preview,
+                "temporal_value": None,  # Header rows are not temporal
                 "content_location": json.dumps({
                     "source": source_id,
                     "type": ElementType.TABLE_HEADER_ROW.value,
@@ -422,6 +428,7 @@ class CsvParser(DocumentParser):
                 "element_type": ElementType.TABLE_ROW.value,
                 "parent_id": table_id,
                 "content_preview": row_preview,
+                "temporal_value": None,  # Rows are not temporal
                 "element_order": abs_row_idx,  # Add element_order for document reconstruction
                 "content_location": json.dumps({
                     "source": source_id,
@@ -475,28 +482,34 @@ class CsvParser(DocumentParser):
                 if len(cell_preview) > self.max_content_preview:
                     cell_preview = cell_preview[:self.max_content_preview] + "..."
 
-                # Check for temporal data
+                # Process cell value for temporal content
                 cell_str = str(cell_value)
-                temporal_metadata = {}
+                temporal_value = None
+                normalized_preview = cell_preview
 
-                if self.enable_temporal_detection and isinstance(cell_str, str):
-                    temporal_type = detect_temporal_type(cell_str)
-                    if temporal_type is not TemporalType.NONE:
-                        semantic_value = create_semantic_temporal_expression(cell_str)
-                        temporal_metadata = {
-                            "temporal_type": temporal_type.name,
-                            "semantic_value": semantic_value
-                        }
-
-                        # Add indicator for temporal values in preview
-                        cell_preview = f"[TIME] {cell_preview}"
+                if self.enable_temporal_detection:
+                    cell_processing = process_field_value(cell_str, header_name, self.date_extractor)
+                    if cell_processing:
+                        if cell_processing["treatment"] == "short_temporal":
+                            temporal_value = cell_processing["temporal_value"]
+                            normalized_preview = cell_processing["normalized_text"]
+                            if len(normalized_preview) > self.max_content_preview:
+                                normalized_preview = normalized_preview[:self.max_content_preview] + "..."
+                        elif cell_processing["treatment"] == "long_with_dates":
+                            normalized_preview = cell_processing["normalized_text"][:self.max_content_preview]
+                            if len(cell_processing["normalized_text"]) > self.max_content_preview:
+                                normalized_preview += "..."
+                            # Create separate DATE elements for extracted dates
+                            for date_dict in cell_processing["extracted_dates"]:
+                                element_dates[cell_id] = element_dates.get(cell_id, []) + [date_dict]
 
                 cell_element = {
                     "element_id": cell_id,
                     "doc_id": doc_id,
                     "element_type": ElementType.TABLE_CELL.value,
                     "parent_id": row_id,
-                    "content_preview": cell_preview,
+                    "content_preview": normalized_preview,
+                    "temporal_value": temporal_value,
                     "content_location": json.dumps({
                         "source": source_id,
                         "type": ElementType.TABLE_CELL.value,
@@ -509,8 +522,7 @@ class CsvParser(DocumentParser):
                         "col": col_idx,
                         "header": header_name,
                         "value": cell_value,
-                        "is_identity_column": self._is_identity_column(header_name) if header_name else False,
-                        **temporal_metadata
+                        "is_identity_column": self._is_identity_column(header_name) if header_name else False
                     }
                 }
                 elements.append(cell_element)
@@ -1230,7 +1242,7 @@ class CsvParser(DocumentParser):
                                     if temporal_type is not TemporalType.NONE:
                                         semantic_values.append({
                                             "original": val,
-                                            "semantic": create_semantic_temporal_expression(val),
+                                            "semantic": val,  # Keep date as-is
                                             "temporal_type": temporal_type.name
                                         })
                                     else:
@@ -1274,7 +1286,7 @@ class CsvParser(DocumentParser):
                                 if temporal_type is not TemporalType.NONE:
                                     temporal_values[header_name] = {
                                         "value": cell_value,
-                                        "semantic": create_semantic_temporal_expression(cell_value),
+                                        "semantic": cell_value,  # Keep date as-is
                                         "temporal_type": temporal_type.name
                                     }
 
@@ -1306,7 +1318,7 @@ class CsvParser(DocumentParser):
                     if temporal_type is not TemporalType.NONE:
                         result["temporal"] = {
                             "type": temporal_type.name,
-                            "semantic": create_semantic_temporal_expression(cell_value)
+                            "semantic": cell_value  # Keep date as-is
                         }
 
                 return json.dumps(result, indent=2)
