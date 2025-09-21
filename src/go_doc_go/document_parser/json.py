@@ -19,7 +19,14 @@ import time
 from .base import DocumentParser
 from .extract_dates import DateExtractor
 from .lru_cache import LRUCache, ttl_cache
-from .temporal_semantics import detect_temporal_type, TemporalType, create_semantic_temporal_expression
+from .temporal_semantics import detect_temporal_type, TemporalType
+from .temporal_metadata import generate_temporal_metadata
+from .temporal_normalization import (
+    normalize_temporal,
+    create_temporal_value,
+    normalize_dates_in_text,
+    process_field_value
+)
 from ..relationships import RelationshipType
 from ..storage import ElementType
 
@@ -391,15 +398,14 @@ class JSONParser(DocumentParser):
             if isinstance(target_data, str):
                 temporal_type = detect_temporal_type(target_data)
                 if temporal_type is not TemporalType.NONE:
-                    semantic_value = create_semantic_temporal_expression(target_data)
-
+                    # Keep date as-is (no expansion)
                     # Format based on field semantics
                     is_identity = self._is_identity_field(field_name)
 
                     if is_identity:
-                        result = f"{field_name} is {semantic_value}"
+                        result = f"{field_name} is {target_data}"
                     else:
-                        result = f"{field_name}: {semantic_value}"
+                        result = f"{field_name}: {target_data}"
 
                     # Cache the result
                     if self.enable_caching:
@@ -421,11 +427,11 @@ class JSONParser(DocumentParser):
             if isinstance(target_data, str):
                 temporal_type = detect_temporal_type(target_data)
                 if temporal_type is not TemporalType.NONE:
-                    semantic_value = create_semantic_temporal_expression(target_data)
+                    normalized = normalize_temporal(target_data, temporal_type)
 
                     # Get index from path
                     index = json_path.split('[')[-1].rstrip(']')
-                    result = f"Item {index}: {semantic_value}"
+                    result = f"Item {index}: {normalized}"
 
                     # Cache the result
                     if self.enable_caching:
@@ -450,11 +456,11 @@ class JSONParser(DocumentParser):
                 if isinstance(target_data, str):
                     temporal_type = detect_temporal_type(target_data)
                     if temporal_type is not TemporalType.NONE:
-                        semantic_value = create_semantic_temporal_expression(target_data)
+                        normalized = normalize_temporal(target_data, temporal_type)
                         if element_name != "$":
-                            result = f"{element_name}: {semantic_value}"
+                            result = f"{element_name}: {normalized}"
                         else:
-                            result = semantic_value
+                            result = normalized
 
                         # Cache the result
                         if self.enable_caching:
@@ -535,90 +541,23 @@ class JSONParser(DocumentParser):
                     error_result = json.dumps({"error": f"Element not found at path: {json_path}"})
                     return error_result
 
-                # Check for temporal values in string fields
-                if isinstance(target_data, str):
-                    temporal_type = detect_temporal_type(target_data)
-
-                    if temporal_type is not TemporalType.NONE:
-                        # Create an enriched representation with semantic information
-                        semantic_value = create_semantic_temporal_expression(target_data)
-
-                        # Add semantic information to output
-                        enriched_data = {
-                            "value": target_data,
-                            "semantics": {
-                                "temporal_type": temporal_type.name,
-                                "semantic_expression": semantic_value
-                            }
-                        }
-
-                        # Return the enriched content
-                        result = json.dumps({element_name: enriched_data}, indent=2)
-
-                        # Cache the result
-                        if self.enable_caching:
-                            self.text_cache.set(cache_key, result)
-
-                        return result
+                # For string fields, just return as-is (normalization happens in _resolve_element_text)
+                # No special handling needed here for temporal values
 
                 # Handle specific element types
                 if element_type == ElementType.JSON_OBJECT.value and isinstance(target_data, dict):
-                    # Scan for temporal values in the object
-                    for key, value in target_data.items():
-                        if isinstance(value, str):
-                            temporal_type = detect_temporal_type(value)
-                            if temporal_type is not TemporalType.NONE:
-                                # Enrich the value with semantic information
-                                target_data[key] = {
-                                    "value": value,
-                                    "semantics": {
-                                        "temporal_type": temporal_type.name,
-                                        "semantic_expression": create_semantic_temporal_expression(value)
-                                    }
-                                }
-
-                    # Return object with its name as key
+                    # Return object with its name as key (no temporal enrichment)
                     result = json.dumps({element_name: target_data}, indent=2)
 
                 elif element_type == ElementType.JSON_ARRAY.value and isinstance(target_data, list):
-                    # Process array items for temporal values
-                    for i, item in enumerate(target_data):
-                        if isinstance(item, str):
-                            temporal_type = detect_temporal_type(item)
-                            if temporal_type is not TemporalType.NONE:
-                                # Enrich the value with semantic information
-                                target_data[i] = {
-                                    "value": item,
-                                    "semantics": {
-                                        "temporal_type": temporal_type.name,
-                                        "semantic_expression": create_semantic_temporal_expression(item)
-                                    }
-                                }
-
-                    # Return array with its name as key
+                    # Return array with its name as key (no temporal enrichment)
                     result = json.dumps({element_name: target_data}, indent=2)
 
                 elif element_type == ElementType.JSON_FIELD.value:
                     # For fields, extract the field name and return as a named object
                     parent_path, field_name = self._split_field_path(json_path)
-
-                    # Check for temporal data
-                    if isinstance(target_data, str):
-                        temporal_type = detect_temporal_type(target_data)
-                        if temporal_type is not TemporalType.NONE:
-                            # Enrich with semantic information
-                            enriched_data = {
-                                "value": target_data,
-                                "semantics": {
-                                    "temporal_type": temporal_type.name,
-                                    "semantic_expression": create_semantic_temporal_expression(target_data)
-                                }
-                            }
-                            result = json.dumps({field_name: enriched_data}, indent=2)
-                        else:
-                            result = json.dumps({field_name: target_data}, indent=2)
-                    else:
-                        result = json.dumps({field_name: target_data}, indent=2)
+                    # Return field data as-is (no temporal enrichment)
+                    result = json.dumps({field_name: target_data}, indent=2)
 
                 elif element_type == ElementType.JSON_ITEM.value and json_path.endswith("]"):
                     # For array items, extract the index
@@ -627,26 +566,8 @@ class JSONParser(DocumentParser):
                         try:
                             index = int(match.group(1))
 
-                            # Check for temporal values
-                            if isinstance(target_data, str):
-                                temporal_type = detect_temporal_type(target_data)
-                                if temporal_type is not TemporalType.NONE:
-                                    # Enrich with semantic information
-                                    enriched_data = {
-                                        "value": target_data,
-                                        "semantics": {
-                                            "temporal_type": temporal_type.name,
-                                            "semantic_expression": create_semantic_temporal_expression(target_data)
-                                        }
-                                    }
-                                    # Return as a named object with index
-                                    result = json.dumps({f"{element_name}[{index}]": enriched_data}, indent=2)
-                                else:
-                                    # Return as a named object with index
-                                    result = json.dumps({f"{element_name}[{index}]": target_data}, indent=2)
-                            else:
-                                # Return as a named object with index
-                                result = json.dumps({f"{element_name}[{index}]": target_data}, indent=2)
+                            # Return as a named object with index (no temporal enrichment)
+                            result = json.dumps({f"{element_name}[{index}]": target_data}, indent=2)
 
                         except (ValueError, IndexError):
                             error_result = json.dumps({"error": f"Invalid array index in path: {json_path}"})
@@ -965,6 +886,7 @@ class JSONParser(DocumentParser):
                 "element_type": ElementType.JSON_OBJECT.value,
                 "parent_id": parent_id,
                 "content_preview": object_preview,
+                "temporal_value": None,  # Objects are not temporal
                 "content_location": json.dumps({
                     "source": source_id,
                     "type": ElementType.JSON_OBJECT.value,
@@ -1012,25 +934,31 @@ class JSONParser(DocumentParser):
                 field_id = self._generate_id("field_")
                 field_preview = self._get_preview(value)
 
-                # Extract dates from field value
-                self._extract_dates_from_json_value(value, field_id, element_dates)
+                # Process field value for temporal content
+                field_processing = process_field_value(value, key, self.date_extractor)
+                temporal_value = None
+                normalized_preview = field_preview
 
-                # Check for temporal data if this is a string value
-                temporal_metadata = {}
-                if isinstance(value, str):
-                    temporal_type = detect_temporal_type(value)
-                    if temporal_type is not TemporalType.NONE:
-                        temporal_metadata = {
-                            "temporal_type": temporal_type.name,
-                            "semantic_value": create_semantic_temporal_expression(value)
-                        }
+                if field_processing:
+                    if field_processing["treatment"] == "short_temporal":
+                        temporal_value = field_processing["temporal_value"]
+                        normalized_preview = field_processing["normalized_text"]
+                    elif field_processing["treatment"] == "long_with_dates":
+                        normalized_preview = field_processing["normalized_text"]
+                        # Create separate DATE elements for extracted dates
+                        for date_dict in field_processing["extracted_dates"]:
+                            element_dates[field_id] = element_dates.get(field_id, []) + [date_dict]
+
+                # Extract dates from field value (for backward compatibility)
+                self._extract_dates_from_json_value(value, field_id, element_dates)
 
                 field_element = {
                     "element_id": field_id,
                     "doc_id": doc_id,
                     "element_type": ElementType.JSON_FIELD.value,
                     "parent_id": object_id,
-                    "content_preview": f"{key}: {field_preview}" if self.include_field_names else field_preview,
+                    "content_preview": f"{key}: {normalized_preview}" if self.include_field_names else normalized_preview,
+                    "temporal_value": temporal_value,
                     "content_location": json.dumps({
                         "source": source_id,
                         "type": ElementType.JSON_FIELD.value,
@@ -1041,8 +969,7 @@ class JSONParser(DocumentParser):
                         "field_name": key,
                         "field_type": self._get_type(value),
                         "json_path": field_path,
-                        "is_identity_field": self._is_identity_field(key),
-                        **temporal_metadata
+                        "is_identity_field": self._is_identity_field(key)
                     }
                 }
 
@@ -1085,25 +1012,31 @@ class JSONParser(DocumentParser):
                     item_id = self._generate_id("item_")
                     item_preview = self._get_preview(item)
 
-                    # Extract dates from item value
-                    self._extract_dates_from_json_value(item, item_id, element_dates)
+                    # Process item value for temporal content
+                    item_processing = process_field_value(item, f"item[{i}]", self.date_extractor)
+                    temporal_value = None
+                    normalized_preview = item_preview
 
-                    # Check for temporal data if this is a string value
-                    temporal_metadata = {}
-                    if isinstance(item, str):
-                        temporal_type = detect_temporal_type(item)
-                        if temporal_type is not TemporalType.NONE:
-                            temporal_metadata = {
-                                "temporal_type": temporal_type.name,
-                                "semantic_value": create_semantic_temporal_expression(item)
-                            }
+                    if item_processing:
+                        if item_processing["treatment"] == "short_temporal":
+                            temporal_value = item_processing["temporal_value"]
+                            normalized_preview = item_processing["normalized_text"]
+                        elif item_processing["treatment"] == "long_with_dates":
+                            normalized_preview = item_processing["normalized_text"]
+                            # Create separate DATE elements for extracted dates
+                            for date_dict in item_processing["extracted_dates"]:
+                                element_dates[item_id] = element_dates.get(item_id, []) + [date_dict]
+
+                    # Extract dates from item value (for backward compatibility)
+                    self._extract_dates_from_json_value(item, item_id, element_dates)
 
                     item_element = {
                         "element_id": item_id,
                         "doc_id": doc_id,
                         "element_type": ElementType.JSON_ITEM.value,
                         "parent_id": parent_id,
-                        "content_preview": item_preview,
+                        "content_preview": normalized_preview,
+                        "temporal_value": temporal_value,
                         "content_location": json.dumps({
                             "source": source_id,
                             "type": ElementType.JSON_ITEM.value,
@@ -1113,8 +1046,7 @@ class JSONParser(DocumentParser):
                         "metadata": {
                             "index": i,
                             "item_type": self._get_type(item),
-                            "json_path": item_path,
-                            **temporal_metadata
+                            "json_path": item_path
                         }
                     }
 
@@ -1163,6 +1095,7 @@ class JSONParser(DocumentParser):
                     "element_type": ElementType.JSON_ARRAY.value,
                     "parent_id": parent_id,
                     "content_preview": array_preview,
+                    "temporal_value": None,  # Arrays are not temporal
                     "content_location": json.dumps({
                         "source": source_id,
                         "type": ElementType.JSON_ARRAY.value,
@@ -1207,25 +1140,31 @@ class JSONParser(DocumentParser):
                     item_id = self._generate_id("item_")
                     item_preview = self._get_preview(item)
 
-                    # Extract dates from item value
-                    self._extract_dates_from_json_value(item, item_id, element_dates)
+                    # Process item value for temporal content
+                    item_processing = process_field_value(item, f"item[{i}]", self.date_extractor)
+                    temporal_value = None
+                    normalized_preview = item_preview
 
-                    # Check for temporal data if this is a string value
-                    temporal_metadata = {}
-                    if isinstance(item, str):
-                        temporal_type = detect_temporal_type(item)
-                        if temporal_type is not TemporalType.NONE:
-                            temporal_metadata = {
-                                "temporal_type": temporal_type.name,
-                                "semantic_value": create_semantic_temporal_expression(item)
-                            }
+                    if item_processing:
+                        if item_processing["treatment"] == "short_temporal":
+                            temporal_value = item_processing["temporal_value"]
+                            normalized_preview = item_processing["normalized_text"]
+                        elif item_processing["treatment"] == "long_with_dates":
+                            normalized_preview = item_processing["normalized_text"]
+                            # Create separate DATE elements for extracted dates
+                            for date_dict in item_processing["extracted_dates"]:
+                                element_dates[item_id] = element_dates.get(item_id, []) + [date_dict]
+
+                    # Extract dates from item value (for backward compatibility)
+                    self._extract_dates_from_json_value(item, item_id, element_dates)
 
                     item_element = {
                         "element_id": item_id,
                         "doc_id": doc_id,
                         "element_type": ElementType.JSON_ITEM.value,
                         "parent_id": array_id,
-                        "content_preview": item_preview,
+                        "content_preview": normalized_preview,
+                        "temporal_value": temporal_value,
                         "content_location": json.dumps({
                             "source": source_id,
                             "type": ElementType.JSON_ITEM.value,
@@ -1235,8 +1174,7 @@ class JSONParser(DocumentParser):
                         "metadata": {
                             "index": i,
                             "item_type": self._get_type(item),
-                            "json_path": item_path,
-                            **temporal_metadata
+                            "json_path": item_path
                         }
                     }
 
