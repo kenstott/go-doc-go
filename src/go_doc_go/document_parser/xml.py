@@ -442,14 +442,8 @@ class XmlParser(DocumentParser):
                     # Try to get text content from an element
                     text_content = element.text.strip() if element.text else ""
             elif element_type == "xml_list":
-                # For list containers, get a summary of child elements
-                if hasattr(element, 'itertext'):
-                    text_content = ''.join(element.itertext()).strip()
-                    if len(text_content) > 100:
-                        # Summarize if too long
-                        text_content = f"List with {len(element)} items"
-                else:
-                    text_content = f"List with {len(element)} items"
+                # For list containers, just provide a summary, not full content
+                text_content = f"List with {len(element)} items"
             elif element_type == "xml_object":
                 # For object containers, summarize properties
                 properties = []
@@ -463,12 +457,14 @@ class XmlParser(DocumentParser):
                 else:
                     text_content = "Empty object"
             else:
-                # For regular elements, get all contained text
-                if hasattr(element, 'itertext'):
-                    text_content = ''.join(element.itertext()).strip()
-                else:
-                    # Fallback for non-element objects
-                    text_content = str(element).strip()
+                # For regular elements, get ONLY direct text content, not descendant text
+                # This ensures parent elements don't include their children's content
+                text_content = ""
+                if hasattr(element, 'text') and element.text:
+                    text_content = element.text.strip()
+                # Also include tail text if this is a mixed content element
+                if not text_content and hasattr(element, 'tail') and element.tail:
+                    text_content = element.tail.strip()
 
             logger.debug(f"Extracted text content: '{text_content}'")
 
@@ -1127,15 +1123,10 @@ class XmlParser(DocumentParser):
             else:
                 element_type = "xml_element"  # For non-containers
 
-            # Get element's text content for preview
+            # Get element's DIRECT text content for preview (not children's text)
             element_text = ""
             if element.text and element.text.strip():
                 element_text = element.text.strip()
-            elif hasattr(element, 'itertext'):
-                # Get all text content from element and its children
-                all_text = ' '.join(element.itertext()).strip()
-                if all_text:
-                    element_text = all_text
 
             # Create content preview with actual text content
             if element_text:
