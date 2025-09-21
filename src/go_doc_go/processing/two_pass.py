@@ -77,9 +77,10 @@ class TwoPassProcessor:
         self.use_gpu = proc_config.get('use_gpu', True)
         
         # Initialize embedding generator if enabled
+        # Use analytics backend configuration from registry to ensure consistency
         self.embedding_generator = None
         if config.is_embedding_enabled():
-            self.embedding_generator = get_embedding_generator(config)
+            self.embedding_generator = self._get_analytics_embedding_generator(config)
             logger.info(f"Initialized embedding generator: {type(self.embedding_generator).__name__}")
         
         # Initialize relationship detector if enabled
@@ -102,11 +103,89 @@ class TwoPassProcessor:
         logger.info(f"Initialized TwoPassProcessor with {self.parser_threads} parser threads, "
                    f"{self.embedder_threads} embedder threads")
     
+    def _get_analytics_embedding_generator(self, config: Config):
+        """
+        Create embedding generator using analytics registry configuration.
+        
+        This ensures embedding generators in Pass 2 use the same model as configured
+        in the analytics registry for the target backend.
+        
+        Args:
+            config: Application configuration
+            
+        Returns:
+            EmbeddingGenerator instance using analytics registry configuration
+        """
+        # Get the analytics backend name from configuration
+        storage_config = config.config.get('storage', {})
+        analytics_config = storage_config.get('analytics')
+        
+        if not analytics_config:
+            logger.warning("No analytics storage configured, falling back to global embedding config")
+            return get_embedding_generator(config)
+        
+        # Handle both direct config and registry name formats
+        analytics_backend_name = None
+        if isinstance(analytics_config, str):
+            # Analytics specified as registry name (e.g., "parquet_duckdb")
+            analytics_backend_name = analytics_config
+        elif isinstance(analytics_config, dict):
+            # Analytics specified as direct config - look for type field
+            backend_type = analytics_config.get('type', '')
+            # Map common backend types to likely registry names
+            type_to_registry = {
+                'parquet': 'parquet_duckdb',
+                'elasticsearch': 'elasticsearch',
+                'mongodb': 'mongodb',
+                'neo4j': 'neo4j',
+                'solr': 'solr'
+            }
+            analytics_backend_name = type_to_registry.get(backend_type)
+        
+        if not analytics_backend_name:
+            logger.warning("Could not determine analytics backend name, falling back to global embedding config")
+            return get_embedding_generator(config)
+        
+        # Get analytics registry configuration
+        backends = config.list_analytics_backends()
+        backend_config = backends.get(analytics_backend_name)
+        
+        if not backend_config:
+            logger.warning(f"Analytics backend '{analytics_backend_name}' not found in registry, "
+                         f"falling back to global embedding config")
+            return get_embedding_generator(config)
+        
+        # Get embedding configuration from backend
+        embedding_config = backend_config.get('embedding', {})
+        
+        if not embedding_config:
+            logger.warning(f"No embedding configuration found for backend '{analytics_backend_name}', "
+                         f"falling back to global embedding config")
+            return get_embedding_generator(config)
+        
+        # Create embedder using analytics registry configuration
+        try:
+            from ..embeddings.factory import get_embedder_from_analytics_registry
+            embedder = get_embedder_from_analytics_registry(analytics_backend_name, embedding_config, config)
+            logger.info(f"Created embedding generator for analytics backend '{analytics_backend_name}' "
+                       f"using model: {embedding_config.get('model', 'unknown')}")
+            return embedder
+            
+        except ImportError as e:
+            logger.error(f"Failed to import embedding factory: {e}")
+            return get_embedding_generator(config)
+        except Exception as e:
+            logger.error(f"Failed to create embedder for analytics backend '{analytics_backend_name}': {e}")
+            return get_embedding_generator(config)
+    
     def process_local(self, source_configs: Optional[List[Dict[str, Any]]] = None,
                      max_link_depth: Optional[int] = None, 
                      progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """
-        Process documents locally using two-pass approach.
+        DEPRECATED: Local processing mode creates divergent code paths.
+        
+        This method now redirects to queue-based processing to ensure
+        uniform document processing through the work queue.
         
         Args:
             source_configs: Content source configurations
@@ -116,123 +195,21 @@ class TwoPassProcessor:
         Returns:
             Processing statistics
         """
-        logger.info("Starting local two-pass processing")
+        logger.warning("process_local is DEPRECATED - redirecting to queue-based processing")
+        logger.info("All documents will be enqueued and processed uniformly through the work queue")
         
-        # Store progress callback
-        self.progress_callback = progress_callback
+        # Import here to avoid circular dependency
+        from ..main import ingest_documents
         
-        # Use configured sources if not provided
-        if source_configs is None:
-            source_configs = self.config.get_content_sources()
-        
-        # Call initial progress callback with start state
-        if self.progress_callback:
-            self.progress_callback({
-                'documents': 0,
-                'elements': 0,
-                'relationships': 0,
-                'embeddings': 0,
-                'pass': 'starting',
-                'parsing_complete': False,
-                'embedding_complete': False
-            })
-        
-        # Pass 1: Parse and store documents
-        pass1_start = time.time()
-        self._run_pass1(source_configs, max_link_depth)
-        self.stats['pass1_time'] = time.time() - pass1_start
-        
-        logger.info(f"Pass 1 complete: {self.stats['documents']} documents, "
-                   f"{self.stats['elements']} elements in {self.stats['pass1_time']:.1f}s")
-        
-        # Call progress callback after Pass 1
-        if self.progress_callback:
-            self.progress_callback({
-                'documents': self.stats['documents'],
-                'elements': self.stats['elements'],
-                'relationships': self.stats['relationships'],
-                'embeddings': self.stats['embeddings'],
-                'documents_parsed': self.stats['documents'],
-                'documents_embedded': 0,
-                'documents_total': getattr(self, 'documents_total', self.stats['documents']),
-                'pass': 'parsing_complete',
-                'parsing_complete': True,
-                'embedding_complete': False
-            })
-        
-        # Pass 2: Generate embeddings (if enabled)
-        if self.embedding_generator:
-            pass2_start = time.time()
-            self._run_pass2()
-            self.stats['pass2_time'] = time.time() - pass2_start
-            
-            logger.info(f"Pass 2 complete: {self.stats['embeddings']} embeddings "
-                       f"in {self.stats['pass2_time']:.1f}s")
-            
-            # Call progress callback after Pass 2
-            if self.progress_callback:
-                self.progress_callback({
-                    'documents': self.stats['documents'],
-                    'elements': self.stats['elements'],
-                    'relationships': self.stats['relationships'],
-                    'embeddings': self.stats['embeddings'],
-                    'documents_parsed': self.stats['documents'],
-                    'documents_embedded': self.stats['documents'],
-                    'documents_total': getattr(self, 'documents_total', self.stats['documents']),
-                    'pass': 'embedding_complete',
-                    'parsing_complete': True,
-                    'embedding_complete': True
-                })
-        else:
-            # No embedding phase, just mark as complete
-            if self.progress_callback:
-                self.progress_callback({
-                    'documents': self.stats['documents'],
-                    'elements': self.stats['elements'],
-                    'relationships': self.stats['relationships'],
-                    'embeddings': 0,
-                    'documents_parsed': self.stats['documents'],
-                    'documents_embedded': 0,
-                    'documents_total': getattr(self, 'documents_total', self.stats['documents']),
-                    'pass': 'complete_no_embeddings',
-                    'parsing_complete': True,
-                    'embedding_complete': True  # Mark as complete since no embedding needed
-                })
-        
-        # Record metrics to analytics storage
-        total_time = self.stats['pass1_time'] + self.stats.get('pass2_time', 0)
-        metrics = {
-            'documents_processed': self.stats['documents'],
-            'elements_created': self.stats['elements'],
-            'relationships_created': self.stats['relationships'],
-            'embeddings_generated': self.stats['embeddings'],
-            'processing_time': total_time,
-            'errors': self.stats['errors'],
-            'metadata': {
-                'pass1_time': self.stats['pass1_time'],
-                'pass2_time': self.stats.get('pass2_time', 0),
-                'parser_threads': self.parser_threads,
-                'embedder_threads': self.embedder_threads,
-                'use_gpu': self.use_gpu
-            }
-        }
-        
-        try:
-            self.analytics_storage.append_metrics(metrics, self.run_id)
-            logger.info(f"Recorded processing metrics for run {self.run_id}")
-        except Exception as e:
-            logger.error(f"Failed to record metrics: {e}")
-        
-        # Return comprehensive stats including 2-pass specific fields
-        final_stats = self.stats.copy()
-        final_stats.update({
-            'documents_total': getattr(self, 'documents_total', self.stats['documents']),
-            'documents_parsed': self.stats['documents'],
-            'documents_embedded': self.stats['documents'] if self.embedding_generator else 0,
-            'parsing_complete': True,
-            'embedding_complete': True
-        })
-        return final_stats
+        # Use ingest_documents with coordinator mode to enqueue and process
+        # This ensures all processing goes through the same queue-based pathway
+        return ingest_documents(
+            config=self.config,
+            source_configs=source_configs,
+            max_link_depth=max_link_depth,
+            processing_mode='coordinator',  # Enqueue documents then process through queue
+            progress_callback=progress_callback
+        )
     
     def _run_pass1(self, source_configs: List[Dict[str, Any]], 
                    max_link_depth: Optional[int] = None):
@@ -379,10 +356,8 @@ class TwoPassProcessor:
             result = parser.parse(doc)
             
             # Store using dual storage architecture (MANDATORY)
-            # Job storage for processing coordination (if needed)
-            if self.job_storage:
-                # Mark document as processed in job storage
-                self.job_storage.mark_completed(doc.get('id'), self.worker_id)
+            # Note: Local processing doesn't use job queue, so no mark_completed needed
+            # Job storage is only for distributed queue-based processing
             
             # Analytics storage for permanent data
             # Append to analytics storage
@@ -396,7 +371,7 @@ class TwoPassProcessor:
                 result.get('relationships', []), self.run_id
             )
             
-            logger.debug(f"Appended to analytics storage: {docs_written} docs, "
+            logger.info(f"Stored to analytics storage for {doc_id}: {docs_written} docs, "
                        f"{elems_written} elements, {rels_written} relationships")
             
             # Update statistics (thread-safe)
@@ -664,7 +639,7 @@ class TwoPassWorker:
         # Initialize embedding generator if needed
         self.embedding_generator = None
         if self.worker_role in ['embedder', 'both'] and config.is_embedding_enabled():
-            self.embedding_generator = get_embedding_generator(config)
+            self.embedding_generator = self._get_analytics_embedding_generator(config)
             logger.info(f"Worker {self.worker_id} initialized embedding generator")
         
         # Track statistics
@@ -677,6 +652,75 @@ class TwoPassWorker:
         }
         
         logger.info(f"Initialized TwoPassWorker {self.worker_id} with role: {self.worker_role}")
+    
+    def _get_analytics_embedding_generator(self, config: Config):
+        """
+        Create embedding generator using analytics registry configuration.
+        
+        This ensures embedding generators in Pass 2 use the same model as configured
+        in the analytics registry for the target backend.
+        """
+        # Get the analytics backend name from configuration
+        storage_config = config.config.get('storage', {})
+        analytics_config = storage_config.get('analytics')
+        
+        if not analytics_config:
+            logger.warning("No analytics storage configured, falling back to global embedding config")
+            return get_embedding_generator(config)
+        
+        # Handle both direct config and registry name formats
+        analytics_backend_name = None
+        embedding_config = None
+        
+        if isinstance(analytics_config, str):
+            # Analytics specified as registry name (e.g., "parquet_duckdb")
+            analytics_backend_name = analytics_config
+            # Get the full backend configuration from the registry
+            backend_config = config.get_analytics_backend(analytics_backend_name)
+            if backend_config:
+                # Extract embedding configuration from the backend config
+                embedding_config = backend_config.get('embedding', {})
+        elif isinstance(analytics_config, dict):
+            # Analytics specified as direct config - look for type field
+            backend_type = analytics_config.get('type', '')
+            # Map common backend types to likely registry names
+            type_to_registry = {
+                'parquet': 'parquet_duckdb',
+                'elasticsearch': 'elasticsearch',
+                'mongodb': 'mongodb',
+                'neo4j': 'neo4j',
+                'solr': 'solr'
+            }
+            analytics_backend_name = type_to_registry.get(backend_type)
+            if analytics_backend_name:
+                # Try to get backend config from registry
+                backend_config = config.get_analytics_backend(analytics_backend_name)
+                if backend_config:
+                    embedding_config = backend_config.get('embedding', {})
+                else:
+                    # Use embedding config from analytics config if available
+                    embedding_config = analytics_config.get('embedding', {})
+        
+        if not analytics_backend_name:
+            logger.warning(f"Could not determine analytics backend name from config: {analytics_config}")
+            return get_embedding_generator(config)
+        
+        if not embedding_config:
+            logger.warning(f"No embedding configuration found for analytics backend: {analytics_backend_name}")
+            # Fall back to global embedding config
+            embedding_config = config.config.get('embedding', {})
+        
+        # Import the factory function
+        from ..embeddings.factory import get_embedder_from_analytics_registry
+        
+        try:
+            # Create embedder using analytics registry configuration
+            logger.info(f"Creating embedder for analytics backend: {analytics_backend_name}")
+            return get_embedder_from_analytics_registry(analytics_backend_name, embedding_config, config)
+        except Exception as e:
+            logger.error(f"Failed to create embedder from analytics registry for {analytics_backend_name}: {e}")
+            logger.info("Falling back to global embedding configuration")
+            return get_embedding_generator(config)
     
     def run(self, progress_callback: Optional[callable] = None, run_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -745,13 +789,23 @@ class TwoPassWorker:
         """
         logger.info(f"Worker {self.worker_id} running as embedder")
         
+        # Get the actual run_id from config if not provided
+        if not run_id:
+            from ..work_queue.work_queue import RunCoordinator
+            run_id = RunCoordinator.get_run_id_from_config(self.config.config)
+            logger.info(f"Embedder using run_id from config: {run_id}")
+        
+        # Ensure the run exists before trying to use it
+        if not self.coordinator.ensure_run_exists(run_id, self.config.config):
+            logger.warning(f"Could not ensure run exists for embedder: {run_id}")
+        
         # Check if we should be the GPU leader
         is_gpu_worker = self.use_gpu and self._has_gpu_available()
         
         while True:
             if is_gpu_worker:
-                # Try to become GPU leader
-                if not self.coordinator.attempt_leader_election(run_id or 'embedding'):
+                # Try to become GPU leader using the proper run_id
+                if not self.coordinator.attempt_leader_election(run_id):
                     # Another worker is GPU leader, wait
                     time.sleep(self.queue_poll_interval * 5)
                     continue
@@ -767,7 +821,7 @@ class TwoPassWorker:
             
             # Renew leadership if GPU worker
             if is_gpu_worker:
-                self.coordinator.renew_leadership(run_id or 'embedding')
+                self.coordinator.renew_leadership(run_id)
     
     def _run_both_roles(self, run_id: Optional[str] = None):
         """
@@ -803,10 +857,18 @@ class TwoPassWorker:
             result = parser.parse(doc)
             
             # Store in analytics storage (dual storage is mandatory)
-            self.analytics_storage.append_documents([result['document']], run_id=doc.get('run_id'))
-            self.analytics_storage.append_elements(result['elements'], run_id=doc.get('run_id'))
+            doc_id = doc.get('doc_id', 'unknown')
+            logger.info(f"Worker {self.worker_id} storing document {doc_id} to analytics storage")
+
+            docs_stored = self.analytics_storage.append_documents([result['document']], run_id=doc.get('run_id'))
+            logger.info(f"Worker {self.worker_id} stored {docs_stored} document records for {doc_id}")
+
+            elements_stored = self.analytics_storage.append_elements(result['elements'], run_id=doc.get('run_id'))
+            logger.info(f"Worker {self.worker_id} stored {elements_stored}/{len(result['elements'])} elements for {doc_id}")
+
             if result.get('relationships'):
-                self.analytics_storage.append_relationships(result['relationships'], run_id=doc.get('run_id'))
+                rels_stored = self.analytics_storage.append_relationships(result['relationships'], run_id=doc.get('run_id'))
+                logger.info(f"Worker {self.worker_id} stored {rels_stored}/{len(result['relationships'])} relationships for {doc_id}")
             
             # Mark as completed in queue
             self.work_queue.mark_completed(doc['queue_id'])
@@ -864,7 +926,7 @@ class TwoPassWorker:
                 })
             
             # Append to analytics storage
-            written = self.analytics_storage.append_embeddings(embedding_docs, run_id=self.current_run_id)
+            written = self.analytics_storage.append_embeddings(embedding_docs, self.run_id)
             self.stats['embeddings_generated'] += written
                 
         except Exception as e:

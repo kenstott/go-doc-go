@@ -1120,6 +1120,31 @@ class FileDocumentDatabase(DocumentDatabase):
         """Close the database (no-op for file-based database)."""
         pass
 
+    def transaction(self):
+        """
+        Transaction context manager for file database.
+        
+        Note: File database doesn't support true ACID transactions.
+        This is a no-op context manager for compatibility with work queue system.
+        For distributed processing, use PostgreSQL or SQLite instead.
+        
+        Returns:
+            Context manager that yields None
+        """
+        import contextlib
+        
+        @contextlib.contextmanager
+        def _transaction():
+            try:
+                yield
+                # File database auto-saves changes immediately
+            except Exception:
+                # File database can't rollback - changes are already persisted
+                logger.warning("FileDocumentDatabase cannot rollback transaction - changes are persistent")
+                raise
+        
+        return _transaction()
+
     def get_element(self, element_id_or_pk: Union[str, int]) -> Optional[Dict[str, Any]]:
         """
         Get element by ID or PK.

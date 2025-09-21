@@ -1717,9 +1717,43 @@ class DocumentDatabase(ABC):
             elif elem_type == 'footnote':
                 footnote_num = metadata.get('number', '?')
                 html_parts.append(f"<span class=\"footnote\">{footnote_num}</span> {escaped_content}")
+            elif elem_type == 'header':
+                level = metadata.get('level', 1)
+                html_parts.append(f"<h{level}>{escaped_content}</h{level}>")
+            elif elem_type == 'paragraph':
+                html_parts.append(f"<p>{escaped_content}</p>")
+            elif elem_type == 'list':
+                list_type = metadata.get('list_type', 'unordered')
+                tag = 'ul' if list_type == 'unordered' else 'ol'
+                html_parts.append(f"<{tag}>")
+                # Note: list items should follow
+            elif elem_type == 'list_item':
+                html_parts.append(f"<li>{escaped_content}</li>")
+            elif elem_type == 'table':
+                html_parts.append("<table>")
+            elif elem_type == 'table_row':
+                html_parts.append("<tr>")
+                # Parse cells if available
+                if metadata.get('cells'):
+                    for cell in metadata['cells']:
+                        html_parts.append(f"<td>{cell}</td>")
+                html_parts.append("</tr>")
+            elif elem_type == 'table_cell':
+                html_parts.append(f"<td>{escaped_content}</td>")
+            elif elem_type == 'code_block':
+                html_parts.append(f"<pre><code>{escaped_content}</code></pre>")
+            elif elem_type == 'blockquote':
+                html_parts.append(f"<blockquote>{escaped_content}</blockquote>")
+            elif elem_type == 'link':
+                href = metadata.get('href', '#')
+                html_parts.append(f"<a href=\"{href}\">{escaped_content}</a>")
+            elif elem_type == 'image':
+                src = metadata.get('src', '')
+                alt = metadata.get('alt', escaped_content)
+                html_parts.append(f"<img src=\"{src}\" alt=\"{alt}\">")
             else:
-                # Use standard HTML reconstruction for other elements
-                pass
+                # For any other element types, wrap in a div with the element type as class
+                html_parts.append(f"<div class=\"{elem_type}\">{escaped_content}</div>")
 
         html_parts.extend(["</body>", "</html>"])
         return '\n'.join(html_parts)
@@ -1781,10 +1815,29 @@ class DocumentDatabase(ABC):
 
             else:
                 # Handle other elements normally
-                if elem_type == 'paragraph':
+                if elem_type == 'header':
+                    level = min(metadata.get('level', 2), 3)  # Keep headers smaller in slides
+                    html_parts.append(f"<h{level}>{escaped_content}</h{level}>")
+                elif elem_type == 'paragraph':
                     html_parts.append(f"<p>{escaped_content}</p>")
-                elif elem_type.startswith('h') or elem_type in ['header', 'title']:
-                    html_parts.append(f"<h3>{escaped_content}</h3>")
+                elif elem_type == 'list':
+                    list_type = metadata.get('list_type', 'unordered')
+                    tag = 'ul' if list_type == 'unordered' else 'ol'
+                    html_parts.append(f"<{tag}>")
+                elif elem_type == 'list_item':
+                    html_parts.append(f"<li>{escaped_content}</li>")
+                elif elem_type == 'table':
+                    html_parts.append("<table>")
+                elif elem_type == 'table_row':
+                    html_parts.append("<tr>")
+                elif elem_type == 'table_cell':
+                    html_parts.append(f"<td>{escaped_content}</td>")
+                elif elem_type == 'code_block':
+                    html_parts.append(f"<pre><code>{escaped_content}</code></pre>")
+                elif elem_type == 'blockquote':
+                    html_parts.append(f"<blockquote>{escaped_content}</blockquote>")
+                elif elem_type in ['title', 'slide_title']:
+                    html_parts.append(f"<h2>{escaped_content}</h2>")
                 else:
                     html_parts.append(f"<div class=\"{elem_type}\">{escaped_content}</div>")
 

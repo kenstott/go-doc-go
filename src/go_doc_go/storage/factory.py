@@ -33,10 +33,17 @@ def get_document_database(config: Dict[str, Any]) -> DocumentDatabase:
         ValueError: If database type is not supported
     """
     storage_path = config.get("path", "./data")
-    backend_type = config.get("backend", "file")
+    backend_type = config.get("backend")
+    
+    if not backend_type:
+        raise ValueError(
+            "No database backend specified in storage configuration. "
+            "Required field 'backend' is missing. "
+            f"Available backends: file, sqlite, postgres, elasticsearch, mongodb, neo4j, solr"
+        )
 
     if backend_type == "file":
-        return FileDocumentDatabase(storage_path)
+        return FileDocumentDatabase({"storage_path": storage_path})
     elif backend_type == "sqlite":
         return SQLiteDocumentDatabase(storage_path)
     elif backend_type == "solr":
