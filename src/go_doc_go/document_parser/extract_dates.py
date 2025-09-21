@@ -14,6 +14,13 @@ from typing import List, Dict, Any, Optional
 
 try:
     import datefinder
+    # Suppress datefinder's verbose debug logging
+    datefinder_logger = logging.getLogger('datefinder')
+    datefinder_logger.setLevel(logging.WARNING)
+
+    # Also suppress dateutil parser logging (used internally by datefinder)
+    dateutil_logger = logging.getLogger('dateutil')
+    dateutil_logger.setLevel(logging.WARNING)
 except ImportError:
     raise ImportError("datefinder is required. Install with: pip install datefinder")
 
@@ -136,7 +143,8 @@ class DateExtractor:
                  min_year: int = 1900,
                  max_year: int = 2100,
                  fiscal_year_start_month: int = 10,  # October (US federal)
-                 default_locale: str = "US"):
+                 default_locale: str = "US",
+                 max_dates_per_element: int = 50):
         """
         Initialize the date extractor.
 
@@ -146,12 +154,119 @@ class DateExtractor:
             max_year: Maximum valid year for extracted dates
             fiscal_year_start_month: Month when fiscal year starts (1-12)
             default_locale: Default locale for date format detection
+            max_dates_per_element: Maximum number of dates to extract per element
         """
         self.context_chars = context_chars
         self.min_year = min_year
         self.max_year = max_year
         self.fiscal_year_start_month = fiscal_year_start_month
         self.default_locale = default_locale
+        self.max_dates_per_element = max_dates_per_element
+
+    def _preprocess_text_for_dates(self, text: str) -> str:
+        """
+        Pre-process text to improve date extraction accuracy.
+
+        Args:
+            text: Raw text to process
+
+        Returns:
+            Cleaned text suitable for date extraction
+        """
+        import re
+
+        # Add spaces around common date patterns to prevent concatenation
+        # Match YYYY-MM-DD or YYYY/MM/DD patterns
+        text = re.sub(r'(\d{4}[-/]\d{1,2}[-/]\d{1,2})', r' \1 ', text)
+        # Match DD-MM-YYYY or DD/MM/YYYY patterns
+        text = re.sub(r'(\d{1,2}[-/]\d{1,2}[-/]\d{4})', r' \1 ', text)
+        # Add space between consecutive YYYY-MM-DD patterns
+        text = re.sub(r'(\d{4}-\d{1,2}-\d{1,2})(\d{4}-\d{1,2}-\d{1,2})', r'\1 \2', text)
+
+        # Add space between consecutive date patterns
+        text = re.sub(r'(\d{4})(\d{4})', r'\1 \2', text)
+
+        # Remove obvious non-date numeric patterns
+        # Remove numbers with comma separators (e.g., 21,448 or 1,234,567)
+        text = re.sub(r'\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b', ' ', text)
+
+        # Remove decimals (0.123, 1.5, etc.)
+        text = re.sub(r'\b\d+\.\d+\b', ' ', text)
+
+        # Remove percentages
+        text = re.sub(r'\b\d+(?:\.\d+)?\s*%', ' ', text)
+
+        # Remove very large numbers (more than 4 digits unless it's a year)
+        text = re.sub(r'\b\d{5,}\b', ' ', text)
+
+        # Remove small standalone numbers (< 100) that aren't likely to be dates
+        # But keep numbers that might be days (1-31) or months (1-12) if they're near date indicators
+        # This is done after other filtering to avoid interfering with date patterns
+        text = re.sub(r'\b(?<![-/])(3[2-9]|[4-9]\d|100)(?![-/])\b', ' ', text)
+
+        # Remove numbers that look like IDs or codes (alphanumeric mixtures)
+        text = re.sub(r'\b[A-Za-z0-9]{10,}\b', ' ', text)
+
+        # Remove currency amounts (basic patterns)
+        text = re.sub(r'[$€£¥]\s*\d+(?:,\d{3})*(?:\.\d{2})?', ' ', text)
+        text = re.sub(r'\d+(?:,\d{3})*(?:\.\d{2})?\s*(?:USD|EUR|GBP|JPY)', ' ', text, flags=re.IGNORECASE)
+
+        # Normalize whitespace
+        text = re.sub(r'\s+', ' ', text)
+
+        return text.strip()
+
+    def _is_worth_date_extraction(self, text: str) -> bool:
+        """
+        Quick check to determine if text is worth processing for dates.
+
+        Args:
+            text: Text to check
+
+        Returns:
+            True if text likely contains dates, False otherwise
+        """
+        if not text or len(text.strip()) < 3:
+            return False
+
+        # Quick checks for date indicators
+        date_indicators = [
+            # Month names
+            'january', 'february', 'march', 'april', 'may', 'june',
+            'july', 'august', 'september', 'october', 'november', 'december',
+            'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+            # Date patterns
+            '/', '-', 'date', 'time', 'year', 'month', 'day',
+            # Temporal words
+            'today', 'tomorrow', 'yesterday', 'week', 'quarter',
+            # Year patterns (but be careful with IDs)
+            '19', '20',  # Common year prefixes
+        ]
+
+        text_lower = text.lower()
+
+        # Check for any date indicators
+        has_indicator = any(indicator in text_lower for indicator in date_indicators)
+
+        # Check for date-like patterns (YYYY, DD/MM, MM/DD, etc.)
+        import re
+        has_date_pattern = bool(
+            re.search(r'\b(19|20)\d{2}\b', text) or  # Years
+            re.search(r'\b\d{1,2}[-/]\d{1,2}\b', text) or  # MM/DD or DD/MM
+            re.search(r'\b\d{1,2}[-/]\d{1,2}[-/]\d{2,4}\b', text)  # Full dates
+        )
+
+        # If text is purely numeric (after stripping whitespace and punctuation), skip it
+        cleaned_for_check = re.sub(r'[\s,.$%()-]', '', text)
+        if cleaned_for_check.isdigit():
+            # Unless it's a 4-digit year or 6-8 digit date format
+            if len(cleaned_for_check) == 4 and cleaned_for_check.startswith(('19', '20')):
+                return True
+            elif len(cleaned_for_check) in [6, 8]:  # YYMMDD or YYYYMMDD
+                return True
+            return False
+
+        return has_indicator or has_date_pattern
 
     def extract_dates(self, text: str) -> List[ExtractedDate]:
         """
@@ -165,12 +280,31 @@ class DateExtractor:
         """
         extracted_dates = []
 
+        # Quick pre-check to avoid unnecessary processing
+        if not self._is_worth_date_extraction(text):
+            logger.debug(f"Skipping date extraction for text with no date indicators (length: {len(text) if text else 0})")
+            return extracted_dates
+
+        # Pre-process text to improve extraction
+        text = self._preprocess_text_for_dates(text)
+
+        # After preprocessing, check again if there's anything left worth processing
+        if not text or not self._is_worth_date_extraction(text):
+            logger.debug("Text eliminated after preprocessing or no date indicators found")
+            return extracted_dates
+
         try:
             # First, extract specific dates using datefinder
             matches = datefinder.find_dates(text, source=True, strict=False)
 
+            date_count = 0
             for date_obj, original_text in matches:
-                if self._is_valid_date(date_obj):
+                # Check if we've hit the limit
+                if date_count >= self.max_dates_per_element:
+                    logger.debug(f"Reached maximum date extraction limit of {self.max_dates_per_element}")
+                    break
+
+                if self._is_valid_date(date_obj) and self._is_likely_date_format(original_text):
                     # Find position of the original text in the full text
                     start_pos = text.find(original_text)
                     end_pos = start_pos + len(original_text) if start_pos >= 0 else -1
@@ -184,10 +318,14 @@ class DateExtractor:
                     )
 
                     extracted_dates.append(extracted_date)
+                    date_count += 1
 
             # Also look for vague temporal references that datefinder might miss
-            vague_dates = self._extract_vague_temporal_references(text)
-            extracted_dates.extend(vague_dates)
+            # (but respect the limit)
+            if date_count < self.max_dates_per_element:
+                vague_dates = self._extract_vague_temporal_references(text)
+                remaining_slots = self.max_dates_per_element - date_count
+                extracted_dates.extend(vague_dates[:remaining_slots])
 
         except Exception as e:
             logger.warning(f"Error extracting dates from text: {e}")
@@ -620,6 +758,44 @@ class DateExtractor:
     def _is_valid_date(self, date_obj: datetime) -> bool:
         """Check if the date is within valid range."""
         return self.min_year <= date_obj.year <= self.max_year
+
+    def _is_likely_date_format(self, text: str) -> bool:
+        """
+        Check if the text looks like a proper date format, not just a number.
+        Rejects pure numeric sequences like '120682' that could be IDs.
+        """
+        text = text.strip()
+
+        # Allow obvious date formats with separators
+        if any(sep in text for sep in ['/', '-', '.', ' ']):
+            return True
+
+        # Allow text with month names
+        month_names = [
+            'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+            'jul', 'aug', 'sep', 'oct', 'nov', 'dec',
+            'january', 'february', 'march', 'april', 'may', 'june',
+            'july', 'august', 'september', 'october', 'november', 'december'
+        ]
+        if any(month in text.lower() for month in month_names):
+            return True
+
+        # Allow relative/temporal words
+        temporal_words = ['today', 'tomorrow', 'yesterday', 'now', 'then', 'when', 'during']
+        if any(word in text.lower() for word in temporal_words):
+            return True
+
+        # Reject pure numeric sequences without clear date formatting
+        # This catches cases like "120682" which are likely IDs, not dates
+        if text.isdigit():
+            # Allow 4-digit years (1900-2099)
+            if len(text) == 4 and text.startswith(('19', '20')):
+                return True
+            # Reject all other pure numeric sequences
+            return False
+
+        # Allow other formats that made it through datefinder
+        return True
 
     def _extract_context(self, text: str, start_pos: int, end_pos: int) -> str:
         """Extract context around a date."""

@@ -8,9 +8,9 @@ import logging
 from typing import Dict, Any, List, Optional
 import pandas as pd
 
-from go_doc_go.document_parser.base import DocumentParser
-from go_doc_go.storage import ElementType
-from go_doc_go.relationships import RelationshipType
+from .base import DocumentParser
+from ..storage import ElementType
+from ..relationships import RelationshipType
 
 logger = logging.getLogger(__name__)
 

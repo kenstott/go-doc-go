@@ -292,12 +292,15 @@ class PdfParser(DocumentParser):
             location_data = content_location
             source = location_data.get("source", "")
 
+            # Strip timestamp suffix if present (format: path::timestamp)
+            actual_source = source.split('::')[0] if '::' in source else source
+
             # Check if source exists and is a file
-            if not os.path.exists(source) or not os.path.isfile(source):
+            if not os.path.exists(actual_source) or not os.path.isfile(actual_source):
                 return False
 
             # Check file extension for PDF
-            _, ext = os.path.splitext(source.lower())
+            _, ext = os.path.splitext(actual_source.lower())
             return ext == '.pdf'
 
         except (json.JSONDecodeError, TypeError):
@@ -883,6 +886,10 @@ class PdfParser(DocumentParser):
                     "block_number": block_no
                 }
             }
+
+            # Add full content if configured to store it
+            if self.config.get('store_full_content', False):
+                block_element["content"] = text.replace('\n', ' ')  # Store full untruncated content
 
             if is_header:
                 # Add header-specific metadata

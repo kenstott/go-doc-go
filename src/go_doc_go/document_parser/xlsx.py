@@ -654,6 +654,12 @@ class XlsxParser(DocumentParser):
                     "metadata": cell_metadata
                 }
 
+                # Add full content if configured to store it
+                if self.config.get('store_full_content', False):
+                    # For cells, full content is the same as the cell value string representation
+                    full_content = str(cell.value) if cell.value is not None else ""
+                    cell_element["content"] = full_content
+
                 elements.append(cell_element)
 
                 # Create relationship from row to cell
@@ -1487,12 +1493,15 @@ class XlsxParser(DocumentParser):
             location_data = content_location
             source = location_data.get("source", "")
 
+            # Strip timestamp suffix if present (format: path::timestamp)
+            actual_source = source.split('::')[0] if '::' in source else source
+
             # Check if source exists and is a file
-            if not os.path.exists(source) or not os.path.isfile(source):
+            if not os.path.exists(actual_source) or not os.path.isfile(actual_source):
                 return False
 
             # Check file extension for XLSX
-            _, ext = os.path.splitext(source.lower())
+            _, ext = os.path.splitext(actual_source.lower())
             return ext in ['.xlsx', '.xlsm', '.xltx', '.xltm']
 
         except (json.JSONDecodeError, TypeError):

@@ -301,11 +301,11 @@ class HtmlParser(DocumentParser):
         # Handle specific element types
         if element_type == "header":
             # For headers, just return the text
-            result = soup.get_text().strip()
+            result = soup.get_text(separator=' ', strip=True)
 
         elif element_type == "paragraph":
             # For paragraphs, return the text
-            result = soup.get_text().strip()
+            result = soup.get_text(separator=' ', strip=True)
 
         elif element_type == "list":
             # For lists, format each item on a new line with a bullet or number
@@ -315,15 +315,15 @@ class HtmlParser(DocumentParser):
 
             for i, item in enumerate(items):
                 if list_type == "ordered":
-                    formatted_items.append(f"{i + 1}. {item.get_text().strip()}")
+                    formatted_items.append(f"{i + 1}. {item.get_text(separator=' ', strip=True)}")
                 else:
-                    formatted_items.append(f"• {item.get_text().strip()}")
+                    formatted_items.append(f"• {item.get_text(separator=' ', strip=True)}")
 
             result = "\n".join(formatted_items)
 
         elif element_type == "list_item":
             # For a single list item, return the text
-            result = soup.get_text().strip()
+            result = soup.get_text(separator=' ', strip=True)
 
         elif element_type in ["table", "table_row", "table_cell", "table_header"]:
             if element_type == "table":
@@ -334,7 +334,7 @@ class HtmlParser(DocumentParser):
                 # Check if table has headers
                 headers = soup.find_all('th')
                 if headers:
-                    header_texts = [h.get_text().strip() for h in headers]
+                    header_texts = [h.get_text(separator=' ', strip=True) for h in headers]
                     formatted_rows.append(" | ".join(header_texts))
                     formatted_rows.append("-" * (sum(len(h) + 3 for h in header_texts)))
 
@@ -345,7 +345,7 @@ class HtmlParser(DocumentParser):
                         continue
 
                     cells = row.find_all(['td', 'th'])
-                    row_text = " | ".join(cell.get_text().strip() for cell in cells)
+                    row_text = " | ".join(cell.get_text(separator=' ', strip=True) for cell in cells)
                     if row_text.strip():  # Skip empty rows
                         formatted_rows.append(row_text)
 
@@ -354,11 +354,11 @@ class HtmlParser(DocumentParser):
             elif element_type == "table_row":
                 # For a table row, return cells separated by |
                 cells = soup.find_all(['td', 'th'])
-                result = " | ".join(cell.get_text().strip() for cell in cells)
+                result = " | ".join(cell.get_text(separator=' ', strip=True) for cell in cells)
 
             elif element_type in ["table_cell", "table_header"]:
                 # For a single cell, just return the text
-                result = soup.get_text().strip()
+                result = soup.get_text(separator=' ', strip=True)
 
         elif element_type == "image":
             # For an image, return the alt text or a description
@@ -382,12 +382,12 @@ class HtmlParser(DocumentParser):
 
         elif element_type == "blockquote":
             # For blockquotes, prefix each line with >
-            lines = soup.get_text().strip().split('\n')
+            lines = soup.get_text(separator=' ', strip=True).split('\n')
             result = '\n'.join(f"> {line}" for line in lines)
 
         else:
             # Default case: return all text content
-            result = soup.get_text().strip()
+            result = soup.get_text(separator=' ', strip=True)
 
         # Cache the result if enabled
         if self.enable_caching:
@@ -412,7 +412,9 @@ class HtmlParser(DocumentParser):
         except Exception as e:
             # If standard selector fails with namespace error, try XML-aware approach
             if "pseudo-class" in str(e) and ":" in selector:
-                logger.debug(f"Standard CSS selector failed with XML namespace issue: {e}")
+                # Only log at debug level if we actually need to troubleshoot
+                # This is expected behavior for XML/XBRL documents
+                logger.debug(f"Using XML namespace fallback for selector: {selector}")
                 return self._select_xml_fallback(soup, selector)
             else:
                 # Re-raise if it's not a namespace issue
@@ -488,7 +490,11 @@ class HtmlParser(DocumentParser):
                 
                 # Add direct children only (respecting > combinator)
                 for match in matches:
-                    if match.parent == element or element == soup:
+                    if element == soup:
+                        # For root level searches, add all matches
+                        next_elements.append(match)
+                    elif match.parent == element:
+                        # For nested searches, only add direct children
                         next_elements.append(match)
             
             current_elements = next_elements
@@ -733,7 +739,8 @@ class HtmlParser(DocumentParser):
             try:
                 # Get plain text from HTML for date extraction
                 soup = self._get_or_create_soup(content)
-                document_text = soup.get_text()
+                # Use separator to add spaces between elements
+                document_text = soup.get_text(separator=' ', strip=True)
                 document_dates = self.date_extractor.extract_dates_as_dicts(document_text)
                 if document_dates:
                     element_dates[root_id] = document_dates
@@ -752,7 +759,7 @@ class HtmlParser(DocumentParser):
         for a in soup.find_all('a', href=True):
             extracted_links.append({
                 "source_id": root_id,  # Initially assign to root, will update later
-                "link_text": a.get_text().strip(),
+                "link_text": a.get_text(separator=' ', strip=True),
                 "link_target": a['href'],
                 "link_type": "html"
             })
@@ -911,7 +918,7 @@ class HtmlParser(DocumentParser):
                     for a in child.find_all('a', href=True):
                         links.append({
                             "source_id": element_id,
-                            "link_text": a.get_text().strip(),
+                            "link_text": a.get_text(separator=' ', strip=True),
                             "link_target": a['href'],
                             "link_type": "html"
                         })
@@ -956,7 +963,7 @@ class HtmlParser(DocumentParser):
     def _create_element_for_tag(self, tag, doc_id, parent_id, source_id, element_dates):
         """Create an appropriate element based on tag type."""
         element_type = self._get_element_type(tag.name)
-        content_text = tag.get_text().strip()
+        content_text = tag.get_text(separator=' ', strip=True)
 
         # Skip empty elements
         if not content_text and tag.name not in ['img', 'table']:
@@ -992,6 +999,10 @@ class HtmlParser(DocumentParser):
                 "full_path": source_id
             }
         }
+
+        # Add full content if configured to store it
+        if self.config.get('store_full_content', False):
+            element["content"] = content_text  # Store full untruncated content
 
         # Add element-specific metadata
         if tag.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
@@ -1055,7 +1066,7 @@ class HtmlParser(DocumentParser):
 
         list_type = 'ordered' if tag.name == 'ol' else 'unordered'
         list_id = self._generate_id("list_")
-        list_text = tag.get_text().strip()
+        list_text = tag.get_text(separator=' ', strip=True)
 
         # Extract dates from list text
         self._extract_dates_from_text(list_text, list_id, element_dates)
@@ -1068,7 +1079,7 @@ class HtmlParser(DocumentParser):
                 item_texts = []
                 char_count = 0
                 for item in items[:3]:  # Max 3 items for preview
-                    item_text = item.get_text().strip()
+                    item_text = item.get_text(separator=' ', strip=True)
                     if item_text and char_count + len(item_text) + 3 <= self.max_content_preview:  # +3 for ", "
                         item_texts.append(item_text)
                         char_count += len(item_text) + 3
@@ -1140,7 +1151,7 @@ class HtmlParser(DocumentParser):
 
         # Process list items
         for i, item in enumerate(tag.find_all('li', recursive=False)):
-            item_text = item.get_text().strip()
+            item_text = item.get_text(separator=' ', strip=True)
             if not item_text:
                 continue
 
@@ -1202,7 +1213,7 @@ class HtmlParser(DocumentParser):
             for a in item.find_all('a', href=True):
                 links.append({
                     "source_id": item_id,
-                    "link_text": a.get_text().strip(),
+                    "link_text": a.get_text(separator=' ', strip=True),
                     "link_target": a['href'],
                     "link_type": "html"
                 })
@@ -1217,7 +1228,7 @@ class HtmlParser(DocumentParser):
 
         table_id = self._generate_id("table_")
         table_html = str(tag)
-        table_text = tag.get_text().strip()
+        table_text = tag.get_text(separator=' ', strip=True)
 
         # Extract dates from table text
         self._extract_dates_from_text(table_text, table_id, element_dates)
@@ -1275,7 +1286,7 @@ class HtmlParser(DocumentParser):
         if header_row:
             header_cells = header_row.find_all('th')
             for i, cell in enumerate(header_cells):
-                cell_text = cell.get_text().strip()
+                cell_text = cell.get_text(separator=' ', strip=True)
                 if not cell_text:
                     continue
 
@@ -1335,7 +1346,7 @@ class HtmlParser(DocumentParser):
                 for a in cell.find_all('a', href=True):
                     links.append({
                         "source_id": cell_id,
-                        "link_text": a.get_text().strip(),
+                        "link_text": a.get_text(separator=' ', strip=True),
                         "link_target": a['href'],
                         "link_type": "html"
                     })
@@ -1343,8 +1354,20 @@ class HtmlParser(DocumentParser):
         # Process rows
         tbody = tag.find('tbody') or tag
         for i, row in enumerate(tbody.find_all('tr')):
+            row_text = row.get_text(separator=' ', strip=True)
+
+            # Skip completely empty rows
+            if not row_text or len(row_text.strip()) == 0:
+                continue
+
+            # Also skip rows that only contain separators (e.g., "| | |")
+            cells = row.find_all(['td', 'th'])
+            cell_texts = [cell.get_text(separator=' ', strip=True) for cell in cells]
+            non_empty_cells = [text for text in cell_texts if text.strip()]
+            if not non_empty_cells:
+                continue
+
             row_id = self._generate_id("tr_")
-            row_text = row.get_text().strip()
 
             # Extract dates from row text
             self._extract_dates_from_text(row_text, row_id, element_dates)
@@ -1353,7 +1376,7 @@ class HtmlParser(DocumentParser):
             if row_text and len(row_text.strip()) > 0:
                 # Get cell contents and create a readable preview
                 cells = row.find_all(['td', 'th'])
-                cell_texts = [cell.get_text().strip() for cell in cells if cell.get_text().strip()]
+                cell_texts = [cell.get_text(separator=' ', strip=True) for cell in cells if cell.get_text(separator=' ', strip=True)]
                 
                 if cell_texts:
                     # Join first few non-empty cells for preview
@@ -1424,7 +1447,7 @@ class HtmlParser(DocumentParser):
 
             # Process cells
             for j, cell in enumerate(row.find_all(['td', 'th'])):
-                cell_text = cell.get_text().strip()
+                cell_text = cell.get_text(separator=' ', strip=True)
                 if not cell_text:
                     continue
 
@@ -1490,7 +1513,7 @@ class HtmlParser(DocumentParser):
                 for a in cell.find_all('a', href=True):
                     links.append({
                         "source_id": cell_id,
-                        "link_text": a.get_text().strip(),
+                        "link_text": a.get_text(separator=' ', strip=True),
                         "link_target": a['href'],
                         "link_type": "html"
                     })
@@ -1511,12 +1534,15 @@ class HtmlParser(DocumentParser):
             location_data = content_location
             source = location_data.get("source", "")
 
+            # Strip timestamp suffix if present (format: path::timestamp)
+            actual_source = source.split('::')[0] if '::' in source else source
+
             # Check if source exists and is a file
-            if not os.path.exists(source) or not os.path.isfile(source):
+            if not os.path.exists(actual_source) or not os.path.isfile(actual_source):
                 return False
 
             # Check file extension for HTML
-            _, ext = os.path.splitext(source.lower())
+            _, ext = os.path.splitext(actual_source.lower())
             return ext in ['.html', '.htm', '.xhtml']
 
         except (json.JSONDecodeError, TypeError):
@@ -1542,7 +1568,7 @@ class HtmlParser(DocumentParser):
         for a in soup.find_all('a', href=True):
             links.append({
                 "source_id": element_id,
-                "link_text": a.get_text().strip(),
+                "link_text": a.get_text(separator=' ', strip=True),
                 "link_target": a['href'],
                 "link_type": "html"
             })

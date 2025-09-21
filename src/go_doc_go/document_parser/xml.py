@@ -1127,13 +1127,34 @@ class XmlParser(DocumentParser):
             else:
                 element_type = "xml_element"  # For non-containers
 
+            # Get element's text content for preview
+            element_text = ""
+            if element.text and element.text.strip():
+                element_text = element.text.strip()
+            elif hasattr(element, 'itertext'):
+                # Get all text content from element and its children
+                all_text = ' '.join(element.itertext()).strip()
+                if all_text:
+                    element_text = all_text
+
+            # Create content preview with actual text content
+            if element_text:
+                # Include actual text content in preview, not just tag name
+                preview_text = element_text[:self.max_content_preview]
+                if len(element_text) > self.max_content_preview:
+                    preview_text += "..."
+                content_preview = f"<{element_name}> {preview_text}"
+            else:
+                # Fall back to just tag name if no text content
+                content_preview = f"<{element_name}>"
+
             # Create element metadata
             element_data = {
                 "element_id": element_id,
                 "doc_id": doc_id,
                 "element_type": element_type,  # Use determined element type
                 "parent_id": parent_id,
-                "content_preview": f"<{element_name}>",
+                "content_preview": content_preview,
                 "content_location": json.dumps({
                     "source": source_id,
                     "type": element_type,  # Also store it in the content location
@@ -1146,7 +1167,7 @@ class XmlParser(DocumentParser):
                     "has_attributes": bool(element.attrib),
                     "attributes": dict(element.attrib) if self.extract_attributes else {},
                     "path": element_path,
-                    "text": element.text.strip() if element.text else "",
+                    "text": element_text,
                     "is_container": is_container,
                     "container_type": container_type,
                     "child_count": len(element) if is_container else 0
@@ -1573,8 +1594,11 @@ class XmlParser(DocumentParser):
             source = location_data.get("source", "")
             element_type = location_data.get("type", "")
 
+            # Strip timestamp suffix if present (format: path::timestamp)
+            actual_source = source.split('::')[0] if '::' in source else source
+
             # Check if source exists and is a file
-            if not os.path.exists(source) or not os.path.isfile(source):
+            if not os.path.exists(actual_source) or not os.path.isfile(actual_source):
                 return False
 
             # Check if element type is one we handle
@@ -1582,7 +1606,7 @@ class XmlParser(DocumentParser):
                 return False
 
             # Check file extension for XML
-            _, ext = os.path.splitext(source.lower())
+            _, ext = os.path.splitext(actual_source.lower())
             return ext in ['.xml', '.xsd', '.rdf', '.rss', '.svg', '.wsdl', '.xslt']
 
         except (json.JSONDecodeError, TypeError):

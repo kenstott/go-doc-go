@@ -1331,8 +1331,11 @@ class CsvParser(DocumentParser):
             source = location_data.get("source", "")
             element_type = location_data.get("type", "")
 
+            # Strip timestamp suffix if present (format: path::timestamp)
+            actual_source = source.split('::')[0] if '::' in source else source
+
             # Check if source exists and is a file
-            if not os.path.exists(source) or not os.path.isfile(source):
+            if not os.path.exists(actual_source) or not os.path.isfile(actual_source):
                 return False
 
             # Check if element type is one we handle
@@ -1341,7 +1344,7 @@ class CsvParser(DocumentParser):
                 return False
 
             # Check file extension for CSV
-            _, ext = os.path.splitext(source.lower())
+            _, ext = os.path.splitext(actual_source.lower())
             return ext in ['.csv', '.tsv', '.txt']
 
         except (json.JSONDecodeError, TypeError):
