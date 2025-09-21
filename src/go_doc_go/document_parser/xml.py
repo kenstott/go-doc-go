@@ -19,8 +19,14 @@ from lxml import etree
 from .base import DocumentParser
 from .extract_dates import DateExtractor
 from .lru_cache import LRUCache, ttl_cache
-from .temporal_semantics import detect_temporal_type, TemporalType, create_semantic_temporal_expression
+from .temporal_semantics import detect_temporal_type, TemporalType
 from .temporal_metadata import generate_temporal_metadata
+from .temporal_normalization import (
+    normalize_temporal,
+    create_temporal_value,
+    normalize_dates_in_text,
+    process_field_value
+)
 from ..relationships import RelationshipType
 from ..storage import ElementType
 
@@ -501,8 +507,9 @@ class XmlParser(DocumentParser):
                 for attr_name, attr_value in attributes.items():
                     attr_temporal_type = detect_temporal_type(attr_value)
                     if attr_temporal_type is not TemporalType.NONE:
-                        # Convert to semantic expression
-                        attributes[attr_name] = (attr_value, create_semantic_temporal_expression(attr_value))
+                        # Mark for normalization
+                        normalized = normalize_temporal(attr_value, attr_temporal_type)
+                        attributes[attr_name] = (attr_value, normalized)
 
             # Format semantic representation based on node type
             if attributes and not text_content:
@@ -586,8 +593,8 @@ class XmlParser(DocumentParser):
                 # Check if this is a time range
                 temporal_type = detect_temporal_type(attr_value)
                 if temporal_type is not TemporalType.NONE:
-                    semantic_value = create_semantic_temporal_expression(attr_value)
-                    return f"{element_name} has {attr_name} of {semantic_value}"
+                    normalized = normalize_temporal(attr_value, temporal_type)
+                    return f"{element_name} has {attr_name} of {normalized}"
                 else:
                     return f"{element_name} has {attr_name} of \"{attr_value}\""
             else:
@@ -620,8 +627,8 @@ class XmlParser(DocumentParser):
                     # Check if this is a time range
                     temporal_type = detect_temporal_type(attr_value)
                     if temporal_type is not TemporalType.NONE:
-                        semantic_value = create_semantic_temporal_expression(attr_value)
-                        attr_phrases.append(f"with {attr_name} of {semantic_value}")
+                        normalized = normalize_temporal(attr_value, temporal_type)
+                        attr_phrases.append(f"with {attr_name} of {normalized}")
                     else:
                         attr_phrases.append(f"with {attr_name} of \"{attr_value}\"")
                 else:
@@ -661,8 +668,8 @@ class XmlParser(DocumentParser):
 
                 # Otherwise check and process
                 if detect_temporal_type(attr_value) is TemporalType.TIME_RANGE:
-                    semantic_value = create_semantic_temporal_expression(attr_value)
-                    time_range_attr = (attr_name, semantic_value)
+                    normalized = normalize_temporal(attr_value, TemporalType.TIME_RANGE)
+                    time_range_attr = (attr_name, normalized)
                     break
 
         # If this is a time element with range attribute, prioritize the range
@@ -719,7 +726,7 @@ class XmlParser(DocumentParser):
 
         # Combine with text content
         if temporal_type is not TemporalType.NONE:
-            text_repr = create_semantic_temporal_expression(text_content)
+            text_repr = normalize_temporal(text_content, temporal_type)
             return f"{element_name}{attr_text} is {text_repr}"
         else:
             is_container, container_type = self._analyze_container_type(element_name)
@@ -1025,6 +1032,7 @@ class XmlParser(DocumentParser):
         """
         elements = []
         relationships = []
+        element_dates = {}  # Initialize element_dates for date extraction
 
         # Create a map to track element paths to IDs
         element_path_to_id = {}
@@ -1144,10 +1152,21 @@ class XmlParser(DocumentParser):
                 # Fall back to just tag name if no text content
                 content_preview = f"<{element_name}>"
 
-            # Generate temporal metadata if element text is temporal
-            temporal_metadata_field = None
+            # Process element text for temporal content
+            temporal_value = None
+            normalized_preview = content_preview
+
             if element_text:
-                temporal_metadata_field = generate_temporal_metadata(element_text)
+                text_processing = process_field_value(element_text, element_name, self.date_extractor)
+                if text_processing:
+                    if text_processing["treatment"] == "short_temporal":
+                        temporal_value = text_processing["temporal_value"]
+                        normalized_preview = text_processing["normalized_text"]
+                    elif text_processing["treatment"] == "long_with_dates":
+                        normalized_preview = text_processing["normalized_text"]
+                        # Create separate DATE elements for extracted dates
+                        for date_dict in text_processing["extracted_dates"]:
+                            element_dates[element_id] = element_dates.get(element_id, []) + [date_dict]
 
             # Create element metadata
             element_data = {
@@ -1155,7 +1174,8 @@ class XmlParser(DocumentParser):
                 "doc_id": doc_id,
                 "element_type": element_type,  # Use determined element type
                 "parent_id": parent_id,
-                "content_preview": content_preview,
+                "content_preview": normalized_preview,
+                "temporal_value": temporal_value,
                 "content_location": json.dumps({
                     "source": source_id,
                     "type": element_type,  # Also store it in the content location
@@ -1172,8 +1192,7 @@ class XmlParser(DocumentParser):
                     "is_container": is_container,
                     "container_type": container_type,
                     "child_count": len(element) if is_container else 0
-                },
-                "temporal_metadata": temporal_metadata_field  # Add as separate field
+                }
             }
             elements.append(element_data)
             element_path_to_id[element_path] = element_id
@@ -1222,15 +1241,32 @@ class XmlParser(DocumentParser):
                 # Create text path
                 text_path = f"{element_path}/text()[1]"
 
-                # Generate temporal metadata if applicable
-                temporal_metadata_field = generate_temporal_metadata(text_content)
+                # Process text for temporal content
+                temporal_value = None
+                normalized_preview = text_preview
+
+                text_processing = process_field_value(text_content, f"{element_name}/text", self.date_extractor)
+                if text_processing:
+                    if text_processing["treatment"] == "short_temporal":
+                        temporal_value = text_processing["temporal_value"]
+                        normalized_preview = text_processing["normalized_text"][:self.max_content_preview]
+                        if len(text_processing["normalized_text"]) > self.max_content_preview:
+                            normalized_preview += "..."
+                    elif text_processing["treatment"] == "long_with_dates":
+                        normalized_preview = text_processing["normalized_text"][:self.max_content_preview]
+                        if len(text_processing["normalized_text"]) > self.max_content_preview:
+                            normalized_preview += "..."
+                        # Create separate DATE elements
+                        for date_dict in text_processing["extracted_dates"]:
+                            element_dates[text_id] = element_dates.get(text_id, []) + [date_dict]
 
                 text_element = {
                     "element_id": text_id,
                     "doc_id": doc_id,
                     "element_type": "xml_text",
                     "parent_id": element_id,
-                    "content_preview": text_preview,
+                    "content_preview": normalized_preview,
+                    "temporal_value": temporal_value,
                     "content_location": json.dumps({
                         "source": source_id,
                         "type": "xml_text",
@@ -1242,8 +1278,7 @@ class XmlParser(DocumentParser):
                         "parent_element": element_name,
                         "path": text_path,
                         "text": text_content
-                    },
-                    "temporal_metadata": temporal_metadata_field  # Add as separate field
+                    }
                 }
                 elements.append(text_element)
                 element_path_to_id[text_path] = text_id
