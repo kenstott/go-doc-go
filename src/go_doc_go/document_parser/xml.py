@@ -442,20 +442,11 @@ class XmlParser(DocumentParser):
                     # Try to get text content from an element
                     text_content = element.text.strip() if element.text else ""
             elif element_type == "xml_list":
-                # For list containers, just provide a summary, not full content
-                text_content = f"List with {len(element)} items"
+                # For list containers, only get direct text content (no child information)
+                text_content = element.text.strip() if element.text else ""
             elif element_type == "xml_object":
-                # For object containers, summarize properties
-                properties = []
-                for child in element:
-                    child_name = self._get_normalized_tag_name(child.tag)
-                    properties.append(child_name)
-
-                if properties:
-                    text_content = f"Object with properties: {', '.join(properties[:5])}" + (
-                        "..." if len(properties) > 5 else "")
-                else:
-                    text_content = "Empty object"
+                # For object containers, only get direct text content (no child information)
+                text_content = element.text.strip() if element.text else ""
             else:
                 # For regular elements, get ONLY direct text content, not descendant text
                 # This ensures parent elements don't include their children's content
@@ -522,17 +513,29 @@ class XmlParser(DocumentParser):
                                                                     temporal_type)
             else:
                 # Text-only node (existing code)
+                # List of generic element names that shouldn't have prefixes
+                generic_names = {'value', 'text', 'data', 'content', 'val', 'string', 'item'}
+
                 if temporal_type is not TemporalType.NONE:
-                    result = f"{element_name} is {create_semantic_temporal_expression(text_content)}"
+                    # For temporal data, skip the verbose expansion for generic elements
+                    if element_name.lower() in generic_names:
+                        result = text_content  # Just return the date as-is
+                    else:
+                        # For meaningful element names, keep a simple format
+                        result = f"{element_name} is {text_content}"
                 else:
                     # Format as appropriate for the element type
                     is_container, container_type = self._analyze_container_type(element_name)
                     is_identity_element = self._is_identity_element(element_name)
 
-                    if is_identity_element:
+                    # Generic elements should just return their content
+                    if element_name.lower() in {'value', 'text', 'data', 'content', 'val', 'string', 'item'}:
+                        result = text_content
+                    elif is_identity_element:
                         result = f"{element_name} is \"{text_content}\""
                     elif is_container:
-                        result = f"{element_name} contains \"{text_content}\""
+                        # Containers with text should just return their text
+                        result = text_content if text_content else ""
                     else:
                         result = text_content
 
