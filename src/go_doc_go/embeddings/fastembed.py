@@ -31,7 +31,7 @@ class FastEmbedGenerator(EmbeddingGenerator):
         "intfloat/e5-base-v2": 768
     }
 
-    def __init__(self, _config: Config, model_name: str = "BAAI/bge-small-en-v1.5",
+    def __init__(self, _config: Config, model_name: str,
                  dimensions: Optional[int] = None,
                  cache_dir: Optional[str] = None):
         """
@@ -42,6 +42,7 @@ class FastEmbedGenerator(EmbeddingGenerator):
             dimensions: Override dimensions (optional)
             cache_dir: Directory to cache models (optional)
         """
+        logger.info(f"[ENTRY] FastEmbedGenerator.__init__: model={model_name}, dimensions={dimensions}, cache_dir={cache_dir}")
         super().__init__(_config)
         if not FASTEMBED_AVAILABLE:
             raise ImportError("FastEmbed library is required for FastEmbed embeddings")
@@ -53,23 +54,29 @@ class FastEmbedGenerator(EmbeddingGenerator):
         self.model = None
 
         # Load the model
+        logger.info("[FastEmbedGenerator.__init__] About to call _load_model()")
         self._load_model()
+        logger.info("[EXIT] FastEmbedGenerator.__init__: Initialization complete")
 
     def _load_model(self) -> None:
         """Load the FastEmbed model."""
+        logger.info(f"[ENTRY] _load_model: Starting to load FastEmbed model {self.model_name}")
         try:
             # Detect available execution providers for ONNX Runtime
+            logger.info("[_load_model] Detecting optimal providers...")
             providers = self._get_optimal_providers()
-            
+            logger.info(f"[_load_model] Providers detected: {providers}")
+
             # Initialize the TextEmbedding model with GPU support if available
+            logger.info(f"[_load_model] Initializing TextEmbedding with model={self.model_name}, cache_dir={self.cache_dir}")
             self.model = TextEmbedding(
                 model_name=self.model_name,
                 cache_dir=self.cache_dir,
                 providers=providers
             )
-            logger.info(f"Loaded FastEmbed model: {self.model_name} with providers: {providers}")
+            logger.info(f"[EXIT] _load_model: Successfully loaded FastEmbed model: {self.model_name} with providers: {providers}")
         except Exception as e:
-            logger.error(f"Error loading FastEmbed model {self.model_name}: {str(e)}")
+            logger.error(f"[ERROR] _load_model: Error loading FastEmbed model {self.model_name}: {str(e)}")
             raise
 
     def generate(self, text: str) -> List[float]:

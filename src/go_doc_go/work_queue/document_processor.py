@@ -21,23 +21,26 @@ class QueuedDocumentProcessor:
     in a distributed manner with link discovery capabilities.
     """
     
-    def __init__(self, db, work_queue: WorkQueue, relationship_detector: RelationshipDetector,
+    def __init__(self, job_storage, analytics_storage, work_queue: WorkQueue,
+                 relationship_detector: RelationshipDetector,
                  embedding_generator: Optional[EmbeddingGenerator] = None):
         """
         Initialize the queued document processor.
-        
+
         Args:
-            db: Database connection for storing processed documents
+            job_storage: Job storage for queue operations
+            analytics_storage: Analytics storage for document/element storage
             work_queue: WorkQueue instance for claiming and managing work
             relationship_detector: Detector for document relationships
             embedding_generator: Optional embedding generator
         """
-        self.db = db
+        self.job_storage = job_storage
+        self.analytics_storage = analytics_storage
         self.work_queue = work_queue
         self.relationship_detector = relationship_detector
         self.embedding_generator = embedding_generator
         self.worker_id = work_queue.worker_id
-        self.dead_letter_queue = DeadLetterQueue(db)
+        self.dead_letter_queue = DeadLetterQueue(job_storage)
         
         logger.info(f"Initialized QueuedDocumentProcessor for worker {self.worker_id}")
     
@@ -61,15 +64,28 @@ class QueuedDocumentProcessor:
         }
         
         logger.info(f"Worker {self.worker_id} starting document processing for run {run_id}")
-        
+
         documents_processed = 0
+        attempts_with_no_work = 0
+        max_attempts = 3  # Try a few times before giving up
+
         while max_documents is None or documents_processed < max_documents:
             # Claim next document from queue
+            logger.debug(f"Worker {self.worker_id} attempting to claim document from queue (attempt {attempts_with_no_work + 1})")
             claimed_doc = self.work_queue.claim_next_document(run_id)
-            
+
             if not claimed_doc:
-                logger.debug(f"No more work available for worker {self.worker_id}")
-                break
+                attempts_with_no_work += 1
+                logger.debug(f"No work available for worker {self.worker_id} (attempt {attempts_with_no_work}/{max_attempts})")
+                if attempts_with_no_work >= max_attempts:
+                    logger.info(f"No more work available for worker {self.worker_id} after {max_attempts} attempts")
+                    break
+                # Wait a bit before retrying
+                time.sleep(1)
+                continue
+
+            # Reset counter if we got work
+            attempts_with_no_work = 0
             
             doc_id = claimed_doc['doc_id']
             queue_id = claimed_doc['queue_id']
@@ -137,25 +153,31 @@ class QueuedDocumentProcessor:
         
         return stats
     
-    def _process_single_document(self, doc_id: str, source_name: str, 
+    def _process_single_document(self, doc_id: str, source_name: str,
                                 claimed_doc: Dict[str, Any], run_id: str) -> Dict[str, Any]:
         """
         Process a single claimed document.
-        
+
         Args:
             doc_id: Document ID
             source_name: Name of the content source
             claimed_doc: Claimed document info from queue
             run_id: Processing run ID
-            
+
         Returns:
             Processing results with statistics
         """
-        # Get content source to fetch document
-        from ..content_source.factory import get_content_source_by_name
-        
+        # Get content source configuration from metadata
+        from ..content_source.factory import get_content_source
+
+        metadata = claimed_doc.get('metadata', {})
+        source_config = metadata.get('source_config')
+
+        if not source_config:
+            raise ValueError(f"No source_config in metadata for document {doc_id} - cannot fetch document without configuration")
+
         try:
-            content_source = get_content_source_by_name(source_name)
+            content_source = get_content_source(source_config)
         except Exception as e:
             raise RuntimeError(f"Failed to get content source '{source_name}': {str(e)}")
         
@@ -172,36 +194,6 @@ class QueuedDocumentProcessor:
             doc_content = content_source.fetch_document(original_doc_id)
         except Exception as e:
             raise RuntimeError(f"Failed to fetch document content: {str(e)}")
-        
-        # Check if document is unchanged (skip if so)
-        last_processed_info = self.db.get_last_processed_info(doc_id)
-        if last_processed_info:
-            try:
-                # Check modification time (use original doc_id for content source)
-                if not content_source.has_changed(original_doc_id, last_processed_info.get("last_modified")):
-                    logger.info(f"Document unchanged since last processing: {doc_id}")
-                    return {
-                        "elements_created": 0,
-                        "relationships_created": 0, 
-                        "links_discovered": 0,
-                        "content_hash": last_processed_info.get("content_hash"),
-                        "file_size": last_processed_info.get("file_size")
-                    }
-                
-                # Check content hash if available
-                if ("content_hash" in last_processed_info and 
-                    doc_content.get("content_hash") == last_processed_info["content_hash"]):
-                    logger.info(f"Document content unchanged (verified by hash): {doc_id}")
-                    return {
-                        "elements_created": 0,
-                        "relationships_created": 0,
-                        "links_discovered": 0,
-                        "content_hash": doc_content.get("content_hash"),
-                        "file_size": doc_content.get("file_size")
-                    }
-            except Exception as e:
-                logger.warning(f"Error checking if document changed: {str(e)}")
-                # Continue with processing
         
         # Create parser and parse document
         parser = get_parser_for_content(doc_content)
@@ -220,28 +212,45 @@ class QueuedDocumentProcessor:
             links
         ))
         
-        # Store document in database
-        self.db.store_document(
-            parsed_doc['document'], 
-            parsed_doc['elements'], 
-            relationships, 
-            element_dates
-        )
-        
-        # Update processing history
-        content_hash = doc_content.get("content_hash", "")
-        if content_hash:
-            self.db.update_processing_history(doc_id, content_hash)
-        
+        # Store document in analytics storage using batch operations
+        logger.info(f"Storing document {doc_id} to analytics storage")
+        docs_stored = self.analytics_storage.append_documents([parsed_doc['document']], run_id)
+        logger.info(f"Stored {docs_stored} document records for {doc_id}")
+
+        elements_stored = self.analytics_storage.append_elements(parsed_doc['elements'], run_id)
+        logger.info(f"Stored {elements_stored}/{len(parsed_doc['elements'])} elements for {doc_id}")
+
+        relationships_stored = self.analytics_storage.append_relationships(relationships, run_id)
+        logger.info(f"Stored {relationships_stored}/{len(relationships)} relationships for {doc_id}")
+
         # Generate embeddings if enabled
         embeddings_created = 0
         if self.embedding_generator:
-            embeddings = self.embedding_generator.generate_from_elements(parsed_doc['elements'], self.db)
-            
-            # Store embeddings
-            for element_id, embedding in embeddings.items():
-                self.db.store_embedding(element_id, embedding)
-            
+            embeddings = self.embedding_generator.generate_from_elements(parsed_doc['elements'], self.analytics_storage)
+
+            # Convert embeddings to batch format for analytics storage
+            embedding_records = []
+            for element_id, embedding_data in embeddings.items():
+                if isinstance(embedding_data, dict):
+                    # New format with embedding and text
+                    embedding_records.append({
+                        'element_id': element_id,
+                        'embedding': embedding_data['embedding'],
+                        'embedding_text': embedding_data['embedding_text']
+                    })
+                else:
+                    # Legacy format - just the embedding vector
+                    embedding_records.append({
+                        'element_id': element_id,
+                        'embedding': embedding_data,
+                        'embedding_text': None
+                    })
+
+            # Store embeddings in analytics storage
+            if embedding_records:
+                embeddings_stored = self.analytics_storage.append_embeddings(embedding_records, run_id)
+                logger.info(f"Stored {embeddings_stored}/{len(embedding_records)} embeddings for {doc_id}")
+
             embeddings_created = len(embeddings)
             logger.debug(f"Generated {embeddings_created} embeddings for document {doc_id}")
         

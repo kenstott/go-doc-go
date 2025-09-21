@@ -54,19 +54,23 @@ class ElectedLeaderWorker:
         self._initialize_components()
         
         # Get run ID from configuration
-        run_id = RunCoordinator.get_run_id_from_config(self.config.config)
-        logger.info(f"Processing run ID: {run_id}")
-        
+        generated_run_id = RunCoordinator.get_run_id_from_config(self.config.config)
+        logger.info(f"Generated run ID: {generated_run_id}")
+
         # Ensure processing run exists
-        run_info = self.run_coordinator.ensure_run_exists(run_id, self.config.config)
+        run_info = self.run_coordinator.ensure_run_exists(generated_run_id, self.config.config)
         logger.info(f"Processing run initialized: {run_info}")
-        
+
+        # Use the actual run_id from run_info (in case of existing run with different ID)
+        run_id = run_info['run_id']
+        logger.info(f"Using actual run ID: {run_id}")
+
         # Register as worker
         self.run_coordinator.register_worker(run_id, self.worker_id, {
             'version': '1.0.0',
             'capabilities': {'leader_eligible': True}
         })
-        
+
         # Attempt to become leader
         if self.run_coordinator.attempt_leader_election(run_id):
             logger.info(f"Worker {self.worker_id} elected as leader")
@@ -83,7 +87,9 @@ class ElectedLeaderWorker:
             queuing_stats = {"documents_queued": 0}
         
         # All workers (including leader) process documents from queue
-        # This is the main worker loop that will be implemented elsewhere
+        # Create and run document processor to consume the queued work
+        processing_stats = self._process_queued_documents(run_id)
+        logger.info(f"Document processing completed: {processing_stats}")
         
         # If we are the leader, we also handle "last man standing" duties
         if self.is_leader:
@@ -121,17 +127,87 @@ class ElectedLeaderWorker:
     def _initialize_components(self):
         """Initialize database and coordination components."""
         logger.debug("Initializing worker components")
-        
-        # Initialize database
-        self.db = self.config.get_document_database()
-        logger.debug(f"Database initialized: {type(self.db).__name__}")
-        
+
+        # Initialize dual storage architecture - MANDATORY
+        from ..storage_adapters.factory import StorageFactory
+        job_storage, analytics_storage = StorageFactory.create_from_pipeline_config(
+            self.config.config,
+            registry=self.config.list_analytics_backends()
+        )
+
+        # Use job storage for work queue coordination
+        self.db = job_storage
+        self.analytics_storage = analytics_storage
+        logger.debug(f"Dual storage initialized - Job: {type(job_storage).__name__}, Analytics: {type(analytics_storage).__name__}")
+
         # Initialize work queue and run coordinator with worker ID
         self.work_queue = WorkQueue(self.db, self.worker_id)
         self.run_coordinator = RunCoordinator(self.db, self.worker_id)
-        
+
         logger.debug("Coordinator components initialized")
     
+    def _get_analytics_embedding_generator(self):
+        """
+        Get the embedding generator configured for the analytics backend.
+
+        Returns:
+            Configured embedding generator for analytics backend
+        """
+        logger.info("[ENTRY] _get_analytics_embedding_generator")
+
+        # Get analytics configuration from storage config
+        analytics_config = self.config.config.get('storage', {}).get('analytics')
+        logger.info(f"[_get_analytics_embedding_generator] analytics_config: {analytics_config}")
+
+        if not analytics_config:
+            raise ValueError("No analytics configuration found in storage config - required for embedding initialization")
+
+        # Extract analytics backend name and get its embedding config
+        analytics_backend_name = None
+        embedding_config = None
+
+        if isinstance(analytics_config, str):
+            # Analytics specified as registry name
+            analytics_backend_name = analytics_config
+            logger.info(f"[_get_analytics_embedding_generator] Analytics is registry name: {analytics_backend_name}")
+            # Get backend config from analytics registry
+            backend_config = self.config.get_analytics_backend(analytics_backend_name)
+            logger.info(f"[_get_analytics_embedding_generator] Backend config from registry: {backend_config}")
+            if backend_config:
+                embedding_config = backend_config.get('embedding', {})
+                logger.info(f"[_get_analytics_embedding_generator] Embedding config from backend: {embedding_config}")
+        elif isinstance(analytics_config, dict):
+            # Analytics specified as direct config
+            backend_type = analytics_config.get('type', '')
+            # Map common backend types to registry names
+            type_to_registry = {
+                'parquet': 'parquet_duckdb',
+                'elasticsearch': 'elasticsearch',
+                'mongodb': 'mongodb'
+            }
+            analytics_backend_name = type_to_registry.get(backend_type)
+            if analytics_backend_name:
+                backend_config = self.config.get_analytics_backend(analytics_backend_name)
+                if backend_config:
+                    embedding_config = backend_config.get('embedding', {})
+                else:
+                    embedding_config = analytics_config.get('embedding', {})
+
+        if not embedding_config:
+            raise ValueError(f"No embedding configuration found for analytics backend: {analytics_backend_name}")
+
+        # Create embedder using analytics registry configuration
+        from ..embeddings.factory import get_embedder_from_analytics_registry
+
+        try:
+            logger.info(f"[_get_analytics_embedding_generator] Calling get_embedder_from_analytics_registry with backend_name={analytics_backend_name}, embedding_config={embedding_config}")
+            result = get_embedder_from_analytics_registry(analytics_backend_name, embedding_config, self.config)
+            logger.info(f"[EXIT] _get_analytics_embedding_generator: Successfully created embedder")
+            return result
+        except Exception as e:
+            logger.error(f"[ERROR] _get_analytics_embedding_generator: Failed to create embedder from analytics registry: {e}")
+            raise
+
     def _document_already_processed(self, compound_doc_id: str, run_id: str) -> bool:
         """
         Check if a document (with compound ID) has already been processed.
@@ -144,12 +220,9 @@ class ElectedLeaderWorker:
             True if document has already been processed, False otherwise
         """
         try:
-            # Get analytics storage using StorageFactory (same as TwoPassProcessor)
-            from ..storage_adapters.factory import StorageFactory
-            _, analytics_storage = StorageFactory.create_from_pipeline_config(self.config.config)
-            
+            # Use the already initialized analytics storage
             # Check if any elements exist for this document
-            elements = analytics_storage.get_document_elements(compound_doc_id)
+            elements = self.analytics_storage.get_document_elements(compound_doc_id)
             
             # If elements exist, document has been processed
             is_processed = len(elements) > 0
@@ -376,7 +449,7 @@ class ElectedLeaderWorker:
                 
                 processed_doc_ids = [doc['doc_id'] for doc in processed_docs]
                 relationship_count = _compute_cross_document_container_relationships(
-                    self.db, processed_doc_ids, self.config
+                    self.analytics_storage, processed_doc_ids, self.config
                 )
                 
                 post_processing_stats["relationships_created"] = relationship_count
@@ -414,12 +487,13 @@ class ElectedLeaderWorker:
             completed_queue_items = self.db.execute(queue_status_query, (run_id,))
             
             # Convert queue items to document info format expected by post-processing
+            # Query returns tuples with columns: doc_id, source_name, completed_at
             completed_docs = []
             for item in completed_queue_items:
                 doc_info = {
-                    'doc_id': item['doc_id'],
-                    'source_name': item.get('source_name', 'unknown'),
-                    'completed_at': item.get('completed_at')
+                    'doc_id': item[0],  # doc_id
+                    'source_name': item[1] if item[1] else 'unknown',  # source_name
+                    'completed_at': item[2]  # completed_at
                 }
                 completed_docs.append(doc_info)
             
@@ -429,3 +503,66 @@ class ElectedLeaderWorker:
         except Exception as e:
             logger.error(f"Error retrieving processed documents for run {run_id}: {str(e)}")
             return []
+    
+    def _process_queued_documents(self, run_id: str) -> Dict[str, Any]:
+        """
+        Process documents from the queue using the QueuedDocumentProcessor.
+        
+        Args:
+            run_id: Processing run ID
+            
+        Returns:
+            Processing statistics
+        """
+        logger.info(f"Worker {self.worker_id} starting queued document processing for run {run_id}")
+        
+        # Initialize embedding generator (if enabled) - use analytics backend config
+        embedding_generator = None
+        if self.config.is_embedding_enabled():
+            try:
+                logger.info("Starting embedding generator initialization...")
+                embedding_generator = self._get_analytics_embedding_generator()
+                logger.info(f"Embedding generator initialized for analytics backend")
+            except Exception as e:
+                logger.error(f"Failed to initialize embedding generator: {e}")
+                logger.warning("Continuing without embeddings")
+                embedding_generator = None
+        
+        # Initialize relationship detector
+        logger.info("[_process_queued_documents] Starting relationship detector initialization...")
+        ontology_manager = None
+        if self.config.is_domain_detection_enabled():
+            ontology_manager = self.config.get_ontology_manager()
+
+        from ..relationships import create_relationship_detector
+        relationship_detector = create_relationship_detector(
+            self.config.get_relationship_detection_config(),
+            embedding_generator,
+            db=self.db,
+            ontology_manager=ontology_manager
+        )
+        logger.info("[_process_queued_documents] Relationship detector initialized")
+
+        # Initialize document processor with both storages
+        logger.info("[_process_queued_documents] Starting document processor initialization...")
+        from .document_processor import QueuedDocumentProcessor
+        processor = QueuedDocumentProcessor(
+            job_storage=self.db,
+            analytics_storage=self.analytics_storage,
+            work_queue=self.work_queue,
+            relationship_detector=relationship_detector,
+            embedding_generator=embedding_generator
+        )
+        logger.info("[_process_queued_documents] Document processor initialized")
+
+        # Process documents from the queue
+        logger.info(f"[_process_queued_documents] Starting to process documents for run {run_id}")
+        processing_stats = processor.process_documents(run_id)
+        logger.info(f"[_process_queued_documents] Finished processing documents: {processing_stats}")
+        
+        logger.info(
+            f"Worker {self.worker_id} completed queued processing: "
+            f"{processing_stats['documents_processed']} processed, {processing_stats['documents_failed']} failed"
+        )
+        
+        return processing_stats

@@ -10,7 +10,8 @@ from .base import JobStorage, AnalyticsStorage
 # Job storage implementations
 from .job_postgresql import PostgreSQLJobStorage
 from .job_redis import RedisJobStorage
-from .job_sqlite import SQLiteJobStorage
+# SQLite uses the queue adapter directly - no JobStorage wrapper needed
+from ..queue.sqlite_adapter import SQLiteQueueAdapter, create_sqlite_queue_adapter
 
 # Analytics storage implementations
 from .analytics_parquet import ParquetAnalyticsStorage
@@ -27,11 +28,12 @@ class StorageFactory:
     """Factory for creating storage adapter instances."""
     
     # Registry of job storage implementations
+    # Note: SQLite returns SQLiteQueueAdapter directly (no JobStorage wrapper)
     JOB_STORAGE_TYPES = {
         'postgresql': PostgreSQLJobStorage,
         'postgres': PostgreSQLJobStorage,
         'redis': RedisJobStorage,
-        'sqlite': SQLiteJobStorage
+        'sqlite': 'sqlite_queue_adapter'  # Special case - uses queue adapter directly
     }
     
     # Registry of analytics storage implementations
@@ -57,7 +59,7 @@ class StorageFactory:
             config: Storage configuration with 'type' and backend-specific settings
             
         Returns:
-            JobStorage instance
+            JobStorage instance (or SQLiteQueueAdapter for SQLite)
             
         Raises:
             ValueError: If storage type is unknown or configuration is invalid
@@ -76,6 +78,18 @@ class StorageFactory:
         
         storage_class = cls.JOB_STORAGE_TYPES[storage_type]
         
+        # Special handling for SQLite - use queue adapter directly
+        if storage_type == 'sqlite':
+            try:
+                # SQLite uses the queue adapter directly (no JobStorage wrapper needed)
+                storage = create_sqlite_queue_adapter(config)
+                logger.info(f"Created SQLite queue adapter (direct usage, no JobStorage wrapper)")
+                return storage
+            except Exception as e:
+                logger.error(f"Failed to create SQLite queue adapter: {e}")
+                raise
+        
+        # Regular JobStorage implementations
         try:
             storage = storage_class(config)
             logger.info(f"Created job storage: {storage_type}")

@@ -110,6 +110,9 @@ class PipelineExecutionEngine:
         # Parse pipeline configuration
         try:
             pipeline_config = yaml.safe_load(pipeline.config_yaml)
+            # Add pipeline name to config for run_id generation
+            # This allows reprocessing by simply renaming the pipeline
+            pipeline_config['name'] = pipeline.name
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid pipeline configuration YAML: {e}")
         
@@ -224,7 +227,7 @@ class PipelineExecutionEngine:
                 config=exec_config,
                 source_configs=pipeline_config.get('content_sources'),
                 max_link_depth=pipeline_config.get('max_link_depth'),
-                processing_mode=pipeline_config.get('processing', {}).get('mode', 'single'),
+                processing_mode=pipeline_config.get('processing', {}).get('mode', 'auto'),
                 progress_callback=progress_callback
             )
             
@@ -288,36 +291,21 @@ class PipelineExecutionEngine:
         
         # Start with base configuration
         exec_config_dict = self.config.config.copy()
-        
+
+        # Include pipeline name if present (for run_id generation)
+        if 'name' in pipeline_config:
+            exec_config_dict['name'] = pipeline_config['name']
+
         # Override with pipeline-specific settings
         if 'storage' in pipeline_config:
-            exec_config_dict['storage'] = pipeline_config['storage']
-            
-            # Fix SQLite path handling
-            if exec_config_dict['storage'].get('backend') == 'sqlite':
-                # Check if there's a nested sqlite config with path
-                sqlite_config = exec_config_dict['storage'].get('sqlite', {})
-                if 'path' in sqlite_config:
-                    # Use the nested sqlite path
-                    db_path = sqlite_config['path']
-                else:
-                    # Get the base path
-                    db_path = exec_config_dict['storage'].get('path', ':memory:')
-                    # If it's a directory path, append a default database name
-                    if db_path != ':memory:' and not db_path.startswith(':'):
-                        if not db_path.endswith('.db'):
-                            # It's a directory, append database filename
-                            db_path = os.path.join(db_path, 'pipeline_execution.db')
-                
-                # Update the path in storage config for SQLite
-                exec_config_dict['storage']['path'] = db_path
-                
-                # Ensure database directory exists
-                if db_path != ':memory:' and not db_path.startswith(':'):
-                    db_dir = os.path.dirname(db_path)
-                    if db_dir and not os.path.exists(db_dir):
-                        logger.info(f"Creating database directory: {db_dir}")
-                        os.makedirs(db_dir, exist_ok=True)
+            # Pipeline has storage config - use it completely
+            # Don't merge with base config to avoid corruption of dual storage setup
+            pipeline_storage = pipeline_config['storage']
+            exec_config_dict['storage'] = pipeline_storage
+            logger.info(f"Using pipeline storage config: {pipeline_storage}")
+        else:
+            # No storage in pipeline config - preserve main config storage
+            logger.info(f"No storage in pipeline config, preserving main config storage: {exec_config_dict.get('storage', {})}")
         
         if 'embedding' in pipeline_config:
             exec_config_dict['embedding'] = pipeline_config['embedding']
@@ -332,12 +320,7 @@ class PipelineExecutionEngine:
         exec_config = Config()
         exec_config.config = exec_config_dict
         
-        # Only initialize database for single storage mode
         # Dual storage is handled by TwoPassProcessor
-        storage_config = exec_config_dict.get('storage', {})
-        if not ('job' in storage_config and 'analytics' in storage_config):
-            # Single storage mode - initialize database
-            exec_config.initialize_database()
         
         return exec_config
     
