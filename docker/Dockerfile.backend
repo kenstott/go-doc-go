@@ -64,7 +64,7 @@ WORKDIR /app
 # Copy application source code
 COPY --chown=goDocGo:goDocGo ./src/ /app/src/
 COPY --chown=goDocGo:goDocGo ./config.yaml /app/config/
-COPY --chown=goDocGo:goDocGo ./example_ontology_config.yaml /app/config/
+# Note: Ontology examples are included in ./examples/ontologies/ below
 
 # Copy examples and templates
 COPY --chown=goDocGo:goDocGo ./examples/ /app/examples/

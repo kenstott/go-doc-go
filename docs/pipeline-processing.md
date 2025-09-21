@@ -344,9 +344,9 @@ GET /api/pipeline/{pipeline_id}/status
 
 ## Migration Guide
 
-### From Single Storage to Dual Storage
+### Storage Configuration
 
-The system NO LONGER supports single storage mode. All pipelines MUST use dual storage:
+All pipelines MUST use dual storage architecture:
 
 ```yaml
 # OLD (NO LONGER SUPPORTED)

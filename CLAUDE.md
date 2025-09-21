@@ -10,6 +10,9 @@ Go-Doc-Go is a comprehensive document parsing and analysis system designed to ex
 2. **DRY (Don't Repeat Yourself)**: Extract common functionality into reusable functions
 3. **Explicit is better than implicit**: Use clear, descriptive names
 4. **Composition over inheritance**: Prefer composition and mixins over deep inheritance hierarchies
+5. **Default values**: You are prohibited from providing default values under most circumstances, use required values and error out if not received.
+6. **Fallback code paths**: Your prohibited from creating fallbacks with human consent, particularly as a method to support legacy.
+7. **Legacy**: There is no such concept as legacy. DO NOT use the word legacy. DO NOT introduce legacy code.
 
 ### Naming Conventions
 - **Classes**: PascalCase (e.g., `DocumentParser`, `PdfParser`)
@@ -94,288 +97,44 @@ class ParserConfig:
         return {**cls.DEFAULTS, **(config or {})}
 ```
 
-## Testing Best Practices
+## Testing Guidelines
 
 ### Test Organization
 ```
 tests/
-├── unit/           # Unit tests - test individual components in isolation
-├── integration/    # Integration tests - test component interactions
-├── performance/    # Performance tests - test speed and resource usage
+├── unit/           # Unit tests - isolated component tests
+├── integration/    # Integration tests - component interactions  
 ├── fixtures/       # Test data and fixtures
-└── conftest.py     # Pytest configuration and shared fixtures
+└── conftest.py     # Pytest configuration
 ```
 
-### Test Categorization with Markers
-
-#### pytest.ini Configuration
-```ini
-[tool.pytest.ini_options]
-markers = [
-    "unit: Unit tests - fast, isolated component tests",
-    "integration: Integration tests - test component interactions", 
-    "performance: Performance tests - measure speed and resources",
-    "slow: Tests that take > 1 second",
-    "requires_pdf: Tests requiring PyMuPDF",
-    "requires_docx: Tests requiring python-docx",
-    "requires_postgres: Tests requiring PostgreSQL Docker instance",
-    "atomic: Tests verifying atomic operations and concurrency",
-    "queue_lifecycle: Tests covering full document processing lifecycle",
-    "stub: Temporary tests for debugging - must be deleted after use",
-    "temp: Temporary experimental tests - must be deleted after use"
-]
-```
-
-#### Test Marking Examples
+### Basic Test Structure
 ```python
 import pytest
-from unittest.mock import Mock, patch
 
-@pytest.mark.unit
 class TestDocumentParser:
-    """Unit tests for DocumentParser base class."""
-    
-    def test_generate_id(self):
-        """Test ID generation - no external dependencies."""
+    def test_parse_returns_valid_elements(self):
+        """Test that parser returns valid element types."""
         parser = DocumentParser()
-        id1 = parser._generate_id("test_")
-        id2 = parser._generate_id("test_")
+        result = parser.parse(sample_content)
         
-        assert id1.startswith("test_")
-        assert id1 != id2  # IDs should be unique
-        assert len(id1) == 13  # prefix + 8 chars
-
-@pytest.mark.integration
-class TestPdfParserIntegration:
-    """Integration tests for PDF parser with real files."""
-    
-    @pytest.mark.requires_pdf
-    def test_parse_real_pdf(self, sample_pdf_path):
-        """Test parsing actual PDF file."""
-        parser = PdfParser()
-        with open(sample_pdf_path, 'rb') as f:
-            result = parser.parse({
-                "id": sample_pdf_path,
-                "content": f.read(),
-                "metadata": {}
-            })
-        
-        assert_valid_parse_result(result)
-
-@pytest.mark.performance
-class TestParserPerformance:
-    """Performance tests for parsers."""
-    
-    @pytest.mark.slow
-    def test_large_document_performance(self, large_pdf_path):
-        """Test parsing speed for large documents."""
-        import time
-        
-        parser = PdfParser({"max_pages": 1000})
-        
-        start_time = time.time()
-        with open(large_pdf_path, 'rb') as f:
-            result = parser.parse({
-                "id": large_pdf_path,
-                "content": f.read(),
-                "metadata": {}
-            })
-        elapsed = time.time() - start_time
-        
-        # Performance assertions
-        assert elapsed < 10.0  # Should parse in under 10 seconds
-        assert len(result["elements"]) > 0
+        for element in result["elements"]:
+            element_type = element["element_type"] 
+            assert element_type in [e.value for e in ElementType]
 ```
 
-### Running Tests by Category
-```bash
-# Run only unit tests (fast)
-pytest -m unit
-
-# Run integration tests
-pytest -m integration
-
-# Run performance tests
-pytest -m performance
-
-# Run PostgreSQL tests
-pytest -m requires_postgres
-
-# Run atomic operation tests
-pytest -m atomic
-
-# Run all non-slow tests
-pytest -m "not slow"
-
-# Run specific test categories together
-pytest -m "unit or performance"
-
-# Run with coverage for unit tests only
-pytest -m unit --cov=src/go_doc_go --cov-report=html
-
-# Run full queue system tests
-pytest -m "atomic or queue_lifecycle or requires_postgres" --timeout=300
-```
-
-### Test Design Principles
-
-#### 1. Test Design Objectives, Not Implementation
+### Test Validation Helpers
 ```python
-# BAD: Testing current behavior
-def test_pdf_parser_creates_content_element():
-    """This tests what the code does, not what it should do."""
-    result = parser.parse(pdf_content)
-    # This might pass even if "content" is wrong
-    assert result["elements"][0]["element_type"] == "content"
-
-# GOOD: Testing design requirements
-def test_pdf_parser_creates_valid_element_types():
-    """Test that all created elements use valid ElementType values."""
-    result = parser.parse(pdf_content)
-    
-    for element in result["elements"]:
-        element_type = element["element_type"]
-        # Validate against design specification
-        assert element_type in [e.value for e in ElementType], \
-            f"Invalid element type '{element_type}' not in ElementType enum"
-```
-
-#### 2. Use Fixtures for Test Data
-```python
-# conftest.py
-import pytest
-from pathlib import Path
-
-@pytest.fixture
-def sample_documents_dir():
-    """Directory containing sample documents for testing."""
-    return Path(__file__).parent / "fixtures" / "documents"
-
-@pytest.fixture
-def simple_pdf_content():
-    """Create a simple PDF for testing."""
-    import fitz
-    doc = fitz.open()
-    page = doc.new_page()
-    page.insert_text((72, 72), "Test Document", fontsize=16)
-    page.insert_text((72, 100), "Test paragraph content.", fontsize=11)
-    return doc.tobytes()
-
-@pytest.fixture
-def expected_pdf_structure():
-    """Expected structure for simple PDF parsing."""
-    return {
-        "min_elements": 3,  # root, body, page minimum
-        "required_types": [ElementType.ROOT, ElementType.BODY, ElementType.PAGE],
-        "relationships": [RelationshipType.CONTAINS, RelationshipType.CONTAINED_BY]
-    }
-```
-
-#### 3. Test Helpers and Assertions
-```python
-# test_helpers.py
 def assert_valid_parse_result(result: Dict[str, Any]):
-    """Common assertions for parse results."""
+    """Validate parser output structure."""
     assert "document" in result
     assert "elements" in result
     assert "relationships" in result
     
-    # Validate document structure
-    doc = result["document"]
-    assert "doc_id" in doc
-    assert "doc_type" in doc
-    assert "metadata" in doc
-    
-    # Validate all elements
     for element in result["elements"]:
-        assert_valid_element(element)
-    
-    # Validate relationships
-    for rel in result["relationships"]:
-        assert_valid_relationship(rel)
-
-def assert_valid_element(element: Dict[str, Any]):
-    """Validate element structure and types."""
-    required_fields = ["element_id", "element_type", "content_preview"]
-    for field in required_fields:
-        assert field in element, f"Missing required field: {field}"
-    
-    # Validate element type
-    element_type = element["element_type"]
-    valid_types = [e.value for e in ElementType]
-    assert element_type in valid_types, \
-        f"Invalid element_type: {element_type}"
-
-def assert_valid_relationship(rel: Dict[str, Any]):
-    """Validate relationship structure."""
-    required_fields = ["source_id", "target_id", "relationship_type"]
-    for field in required_fields:
-        assert field in rel, f"Missing required field: {field}"
-    
-    # Validate relationship type
-    rel_type = rel["relationship_type"]
-    valid_types = [r.value for r in RelationshipType]
-    assert rel_type in valid_types, \
-        f"Invalid relationship_type: {rel_type}"
-```
-
-### Performance Testing Guidelines
-
-```python
-@pytest.mark.performance
-class TestPerformanceRequirements:
-    """Test performance requirements and SLAs."""
-    
-    @pytest.fixture(autouse=True)
-    def setup_performance_monitoring(self):
-        """Setup performance monitoring for tests."""
-        import psutil
-        import time
-        
-        self.process = psutil.Process()
-        self.start_memory = self.process.memory_info().rss / 1024 / 1024  # MB
-        self.start_time = time.time()
-        
-        yield
-        
-        self.end_memory = self.process.memory_info().rss / 1024 / 1024  # MB
-        self.elapsed_time = time.time() - self.start_time
-        self.memory_used = self.end_memory - self.start_memory
-    
-    def test_memory_usage_under_limit(self, large_document):
-        """Test that memory usage stays within limits."""
-        parser = create_parser("pdf")
-        result = parser.parse(large_document)
-        
-        # Memory should not exceed 500MB for a 100MB document
-        assert self.memory_used < 500, \
-            f"Memory usage {self.memory_used}MB exceeds limit"
-    
-    def test_parsing_speed_requirements(self, standard_document):
-        """Test parsing speed meets requirements."""
-        parser = create_parser("pdf")
-        result = parser.parse(standard_document)
-        
-        # Should parse standard document in under 1 second
-        assert self.elapsed_time < 1.0, \
-            f"Parsing took {self.elapsed_time}s, exceeds 1s limit"
-    
-    @pytest.mark.parametrize("doc_size,time_limit", [
-        (1, 0.1),    # 1MB document should parse in 100ms
-        (10, 1.0),   # 10MB document should parse in 1s
-        (100, 10.0), # 100MB document should parse in 10s
-    ])
-    def test_scaling_performance(self, create_document, doc_size, time_limit):
-        """Test that parsing scales linearly with document size."""
-        document = create_document(size_mb=doc_size)
-        parser = create_parser("pdf")
-        
-        start = time.time()
-        result = parser.parse(document)
-        elapsed = time.time() - start
-        
-        assert elapsed < time_limit, \
-            f"{doc_size}MB document took {elapsed}s, exceeds {time_limit}s limit"
+        assert "element_id" in element
+        assert "element_type" in element
+        assert "content_preview" in element
 ```
 
 ## Common Patterns and Solutions
@@ -639,155 +398,8 @@ def _validate_queries(self):
 field = config.get("new_name", config.get("old_name", config.get("legacy_name", config.get("ancient_name"))))
 ```
 
-## Common Issues and Solutions
 
-### Issue: Tests passing but functionality broken
-**Solution**: Tests should validate against design specs, not current behavior
-```python
-# Always test against specifications
-assert element_type in VALID_ELEMENT_TYPES  # Not what the code returns
-```
 
-### Issue: Slow tests
-**Solution**: Use test markers and run categories separately
-```python
-@pytest.mark.slow
-@pytest.mark.integration
-def test_large_file_parsing():
-    pass
-```
 
-### Issue: Flaky tests
-**Solution**: Use fixtures and deterministic test data
-```python
-@pytest.fixture
-def deterministic_uuid(monkeypatch):
-    """Make UUID generation deterministic for tests."""
-    counter = 0
-    def mock_uuid4():
-        nonlocal counter
-        counter += 1
-        return f"test-uuid-{counter:08d}"
-    monkeypatch.setattr(uuid, 'uuid4', mock_uuid4)
-```
 
-## Implementation Honesty Rules - CRITICAL
 
-### NEVER Claim Completion of Unimplemented Features
-- **NEVER** claim a feature is "enhanced" or "implemented" when you've only added stubs
-- **NEVER** write commit messages claiming functionality that doesn't exist
-- **NEVER** say "I've added X" when X is just empty methods or placeholder code
-- **ALWAYS** be explicit about what is actually implemented vs what is stubbed
-
-### Stub Code Rules - ZERO TOLERANCE
-- **PROHIBITED**: Any stub method without `# STUB:` comment and issue tracking
-- **REQUIRED**: All stubs must have associated TODO with specific completion criteria
-- **REQUIRED**: Stub methods must throw `NotImplementedError` with descriptive message
-
-```python
-# EXAMPLE - Proper stub implementation
-class WorkQueue:
-    def add_priority_document(self, doc_id: str, priority: int) -> int:
-        """
-        Add high-priority document to queue.
-        
-        STUB: Priority handling not implemented - needs queue reordering logic
-        TODO: Implement priority-based claiming in claim_next_document()
-        """
-        raise NotImplementedError(
-            "Priority document handling not implemented - stub only"
-        )
-```
-
-### Commit Message Integrity
-- **REQUIRED**: Commit messages MUST accurately reflect what was done
-- Use `wip:` prefix for work-in-progress commits with stubs
-- Use `stub:` or `scaffold:` prefix when adding structure without implementation
-- Only use `feat:` when the feature actually works
-
-### Completion Claims - VERIFICATION REQUIRED
-**ONLY** claim something is complete when:
-- It actually processes real data end-to-end
-- It has been tested with real inputs and produces meaningful outputs
-- All public methods return real data (not empty lists/null)
-- No `NotImplementedError` in production code paths
-
-## Quality Gates - NON-NEGOTIABLE
-
-A task is ONLY complete when ALL of the following pass:
-
-1. **Functionality Verified**: Real execution with expected inputs/outputs
-2. **Tests Passing**: All unit and related tests green
-3. **Code Quality**: No warnings, proper error handling, no debug artifacts
-4. **Documentation Current**: Comments and docs reflect actual behavior
-5. **Regression Tested**: Related functionality still works
-6. **Performance Verified**: SLAs met under expected load
-
-### Verification Evidence Required
-When claiming completion, provide:
-1. **Test execution output** showing success
-2. **Sample data** demonstrating functionality
-3. **Command used** for verification
-4. **Expected vs actual results** comparison
-
-## Mandatory Status Reporting Format
-
-For every work session, use this exact format:
-
-```
-**TASK STATUS REPORT**
-- **Current Task**: [specific task description]
-- **Status**: [In Progress/Blocked/Complete]
-- **Actions Taken**: [specific commands executed, files modified]
-- **Verification**: [test results, execution output, proof of functionality]
-- **Next Steps**: [if not complete, specific next actions]
-- **Blockers**: [if blocked, specific technical obstacles]
-```
-
-## Root Cause Analysis - REQUIRED
-
-### Problem Resolution Standards
-- **PROHIBITED**: Surface-level fixes without understanding root cause
-- **REQUIRED**: Document investigation process and findings
-- **REQUIRED**: Trace through full execution path for failures
-- **REQUIRED**: Test fix against original failure scenario
-
-### Evidence-Based Development
-- **REQUIRED**: Use debugger/logging to understand actual program behavior
-- **REQUIRED**: Generate stack traces for complex issue analysis
-- **REQUIRED**: Test hypotheses with isolated test cases
-- **PROHIBITED**: Guessing at solutions without evidence
-
-## Code Review Checklist
-
-### Functionality Requirements
-- [ ] All new code has tests that verify design objectives
-- [ ] Code actually works end-to-end (not just stubs)
-- [ ] Error handling covers expected failure modes
-- [ ] Performance tests for resource-intensive operations
-
-### Code Quality Requirements
-- [ ] No duplicated code (DRY principle followed)
-- [ ] Type hints used for all functions
-- [ ] Error handling is specific and logged with context
-- [ ] No debug artifacts (print statements, temporary files)
-- [ ] Element types and relationships use proper enums
-- [ ] Memory usage is bounded for large inputs
-
-### Testing Requirements  
-- [ ] Tests validate design objectives, not current implementation
-- [ ] Coverage meets minimum requirements (70% overall, 80% critical)
-- [ ] Performance tests verify SLA compliance
-- [ ] All test categories properly marked with pytest markers
-
-### Documentation Requirements
-- [ ] Documentation updated for API changes
-- [ ] Commit message accurately describes actual changes
-- [ ] Stub code properly marked and tracked
-- [ ] Status reporting format followed for complex tasks
-
-### Verification Requirements
-- [ ] Pre-commit checklist script passes
-- [ ] All related tests pass with evidence provided
-- [ ] Performance benchmarks met
-- [ ] No regressions in related functionality

@@ -10,6 +10,14 @@ analytics_registry:
     base_path: "./data-lake"
     format: parquet
     compression: snappy3
+    # Embedding configuration for this analytics backend
+    embedding:
+      provider: "fastembed"
+      model: "sentence-transformers/all-MiniLM-L6-v2"
+      dimensions: 384
+      cache_dir: "./embedding-cache"
+      contextual: true
+      cross_document: true
     search_capabilities:
       full_text: true
       semantic: true
@@ -40,6 +48,14 @@ analytics_registry:
     hosts:
       - "http://localhost:9200"
     index_prefix: "godocgo"
+    # Embedding configuration for this analytics backend
+    embedding:
+      provider: "fastembed"
+      model: "sentence-transformers/all-MiniLM-L6-v2"
+      dimensions: 384
+      cache_dir: "./embedding-cache"
+      contextual: true
+      cross_document: true
     search_capabilities:
       full_text: true
       semantic: true
