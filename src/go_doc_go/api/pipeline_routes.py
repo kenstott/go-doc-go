@@ -419,6 +419,46 @@ def get_pipeline_executions(pipeline_id: int):
         return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
 
 
+@pipeline_bp.route('/executions/recent', methods=['GET'])
+def get_recent_executions():
+    """
+    Get recent pipeline executions across all pipelines.
+
+    Query Parameters:
+        limit: Number of executions to return (default: 20, max: 100)
+    """
+    try:
+        limit = min(int(request.args.get('limit', 20)), 100)
+
+        execution_tracker = get_execution_tracker()
+        executions = execution_tracker.list_executions(limit=limit)
+
+        # Convert to dict and include pipeline names
+        db = get_db()
+        result_executions = []
+
+        for execution in executions:
+            execution_dict = execution.to_dict()
+
+            # Add pipeline name if available
+            try:
+                pipeline = db.get_pipeline(execution.pipeline_id)
+                execution_dict['pipeline_name'] = pipeline.name
+            except:
+                execution_dict['pipeline_name'] = f"Pipeline {execution.pipeline_id}"
+
+            result_executions.append(execution_dict)
+
+        return jsonify({
+            'executions': result_executions,
+            'total': len(result_executions)
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting recent executions: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
 @pipeline_bp.route('/executions/<string:run_id>', methods=['GET'])
 def get_execution(run_id: str):
     """Get execution details by run ID."""
@@ -582,7 +622,6 @@ def list_active_executions():
     except Exception as e:
         logger.error(f"Error listing active executions: {e}")
         return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
-
 
 # Progress Monitoring Routes
 
@@ -750,6 +789,280 @@ def get_dashboard_summary():
         return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
 
 
+# Query Routes
+
+@pipeline_bp.route('/<int:pipeline_id>/query', methods=['POST'])
+def query_pipeline(pipeline_id: int):
+    """
+    Query data processed by a specific pipeline.
+
+    This endpoint allows searching through documents that have been processed
+    by the specified pipeline, but only if the pipeline has been successfully executed.
+
+    Request Body:
+    {
+        "query": "search text",
+        "run_id": "optional_run_id_for_time_travel",  // Optional: query specific execution
+        "limit": 10,
+        "offset": 0,
+        "similarity_threshold": 0.7,
+        "filters": {
+            "date_range": {
+                "operator": "relative_days",
+                "relative_value": 30
+            },
+            "element_types": ["paragraph", "header"],
+            "document_types": ["pdf", "docx"],
+            "metadata": {
+                "key": "value"
+            }
+        },
+        "include_content": false,
+        "include_metadata": true
+    }
+
+    Returns:
+    {
+        "query": "search text",
+        "results": [...],
+        "total_results": 42,
+        "execution_time_ms": 150,
+        "pipeline_id": 123,
+        "pipeline_name": "My Pipeline"
+    }
+    """
+    try:
+        # Validate pipeline exists
+        db = get_db()
+        try:
+            pipeline = db.get_pipeline(pipeline_id)
+        except PipelineNotFoundError:
+            return jsonify({'error': 'Pipeline not found'}), 404
+
+        # Parse request data first to check for run_id parameter
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'Request body is required'}), 400
+
+        # Check if client specified a run_id for time travel
+        requested_run_id = data.get('run_id')
+
+        if requested_run_id:
+            # Use the specified run_id
+            target_run_id = requested_run_id
+            logger.info(f"Using client-specified run_id: {target_run_id}")
+        else:
+            # Get the latest run_id from the analytics storage
+            try:
+                from ..storage_adapters.factory import StorageFactory
+                from ..config import Config
+                config = Config()
+                # Get analytics storage configuration from config
+                storage_config = config.config.get('storage', {})
+                analytics_config = storage_config.get('analytics', {'type': 'parquet', 'base_path': './data-lake'})
+                analytics_storage = StorageFactory.create_analytics_storage(analytics_config)
+
+                # Get the most recent run_id by scanning the data lake chronologically
+                import os
+                from pathlib import Path
+
+                # Scan for run_ids in elements data, organized by date
+                elements_path = Path(analytics_storage.base_path) / 'elements'
+                latest_run_id = None
+                latest_date = (0, 0, 0)  # (year, month, day)
+
+                if elements_path.exists():
+                    # Find all date directories
+                    for year_dir in elements_path.glob('year=*'):
+                        year = int(year_dir.name.split('=')[1])
+                        for month_dir in year_dir.glob('month=*'):
+                            month = int(month_dir.name.split('=')[1])
+                            for day_dir in month_dir.glob('day=*'):
+                                day = int(day_dir.name.split('=')[1])
+                                current_date = (year, month, day)
+
+                                # Check if this date is more recent
+                                if current_date > latest_date:
+                                    # Find run_ids in this date
+                                    for run_dir in day_dir.glob('run_id=*'):
+                                        latest_date = current_date
+                                        latest_run_id = run_dir.name.split('=')[1]
+
+                if not latest_run_id:
+                    return jsonify({
+                        'error': 'No data available',
+                        'message': 'No processed data found. Run the pipeline to generate data.'
+                    }), 400
+
+                target_run_id = latest_run_id
+                logger.info(f"Using latest run_id from date {latest_date[0]}-{latest_date[1]:02d}-{latest_date[2]:02d}: {target_run_id}")
+
+            except Exception as e:
+                import traceback
+                logger.error(f"Failed to get latest run_id from analytics storage: {e}")
+                logger.error(f"Full traceback: {traceback.format_exc()}")
+                return jsonify({
+                    'error': 'Failed to determine latest data',
+                    'message': 'Could not identify latest processed data',
+                    'details': str(e)
+                }), 500
+
+        query_text = data.get('query', '').strip()
+        if not query_text:
+            return jsonify({'error': 'Query text is required'}), 400
+
+        # Extract search parameters
+        limit = min(data.get('limit', 10), 100)  # Cap at 100 results
+        offset = max(data.get('offset', 0), 0)
+        similarity_threshold = max(0.0, min(data.get('similarity_threshold', 0.7), 1.0))
+        include_content = data.get('include_content', False)
+        include_metadata = data.get('include_metadata', True)
+
+        # Build filters from request
+        filters = data.get('filters', {})
+        search_filters = {}
+
+        # Filter by run_id to only search the latest successful execution
+        search_filters['_run_id'] = target_run_id
+        logger.info(f"Query filtering by run_id: {target_run_id}")
+
+        # Extract element type filters
+        if 'element_types' in filters:
+            search_filters['element_type'] = filters['element_types']
+
+        # Extract document type filters
+        if 'document_types' in filters:
+            search_filters['doc_type'] = filters['document_types']
+
+        # Extract date filters
+        if 'date_range' in filters:
+            date_filter = filters['date_range']
+            operator = date_filter.get('operator')
+
+            if operator == 'relative_days':
+                from datetime import datetime, timedelta
+                days = date_filter.get('relative_value', 30)
+                date_after = (datetime.now() - timedelta(days=days)).isoformat()
+                search_filters['date_after'] = date_after
+            elif operator == 'within':
+                if 'start_date' in date_filter:
+                    search_filters['date_after'] = date_filter['start_date']
+                if 'end_date' in date_filter:
+                    search_filters['date_before'] = date_filter['end_date']
+            elif operator == 'after':
+                search_filters['date_after'] = date_filter.get('date')
+            elif operator == 'before':
+                search_filters['date_before'] = date_filter.get('date')
+
+        # Extract custom metadata filters
+        if 'metadata' in filters:
+            search_filters['metadata'] = filters['metadata']
+
+        # Perform the search using the SearchEngine
+        from ..search_module import SearchEngine, SearchRequest
+
+        # Get the pipeline's configuration to determine which analytics backend to use
+        pipeline_config = {}
+        if pipeline.config_yaml:
+            import yaml
+            try:
+                pipeline_config = yaml.safe_load(pipeline.config_yaml)
+            except Exception as e:
+                logger.warning(f"Could not parse pipeline config: {e}")
+
+        # Determine search service from pipeline config (required - no defaults)
+        # Analytics backend is stored under storage.analytics.type in the pipeline config
+        if 'storage' not in pipeline_config:
+            return jsonify({
+                'error': 'Pipeline configuration error',
+                'message': 'Pipeline has no storage configuration. Please configure the pipeline storage settings.'
+            }), 400
+
+        if 'analytics' not in pipeline_config['storage']:
+            return jsonify({
+                'error': 'Pipeline configuration error',
+                'message': 'Pipeline has no analytics backend configured. Please configure the analytics storage.'
+            }), 400
+
+        analytics_type = pipeline_config['storage']['analytics'].get('type')
+        if not analytics_type:
+            return jsonify({
+                'error': 'Pipeline configuration error',
+                'message': 'Analytics backend type is not specified in pipeline configuration.'
+            }), 400
+
+        # Map the storage type to the search service name
+        # parquet -> parquet_duckdb is the correct mapping
+        if analytics_type == 'parquet':
+            search_service = 'parquet_duckdb'
+        else:
+            search_service = analytics_type
+
+        logger.info(f"Using search service: {search_service} for pipeline {pipeline_id}")
+
+        # Create search request
+        search_request = SearchRequest(
+            search_service=search_service,
+            similarity_query=query_text,
+            limit=limit,
+            offset=offset,
+            filters=search_filters,
+            similarity_threshold=similarity_threshold,
+            include_content=include_content,
+            include_metadata=include_metadata
+        )
+
+        # Execute search
+        import time
+        start_time = time.time()
+
+        try:
+            search_engine = SearchEngine()
+            search_response = search_engine.search(search_request)
+            execution_time_ms = int((time.time() - start_time) * 1000)
+
+            # Format response
+            results = []
+            for hit in search_response.hits:
+                result = {
+                    'element_id': hit.element_id,
+                    'doc_id': hit.doc_id,
+                    'score': hit.score,
+                    'content_preview': hit.content_preview,
+                    'element_type': hit.element_type
+                }
+
+                if include_metadata and hit.metadata:
+                    result['metadata'] = hit.metadata
+
+                if include_content and hit.content:
+                    result['content'] = hit.content
+
+                results.append(result)
+
+            return jsonify({
+                'query': query_text,
+                'results': results,
+                'total_results': search_response.total_hits,
+                'execution_time_ms': execution_time_ms,
+                'pipeline_id': pipeline_id,
+                'pipeline_name': pipeline.name,
+                'search_service': search_service,
+                'filters_applied': search_response.filters_applied
+            })
+
+        except Exception as search_error:
+            logger.error(f"Search execution failed: {search_error}")
+            return jsonify({
+                'error': 'Search execution failed',
+                'message': str(search_error)
+            }), 500
+
+    except Exception as e:
+        logger.error(f"Error querying pipeline {pipeline_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
 # Import/Export Routes
 
 @pipeline_bp.route('/<int:pipeline_id>/export', methods=['GET'])
@@ -891,3 +1204,93 @@ def validate_configuration():
     except Exception as e:
         logger.error(f"Error validating configuration: {e}")
         return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/<int:pipeline_id>/elements/<element_id>/content', methods=['GET'])
+def get_element_content(pipeline_id: int, element_id: str):
+    """
+    Get the full content for a specific element.
+
+    This endpoint retrieves the complete content text for a single element
+    that was processed by the specified pipeline using a direct lookup.
+    """
+    try:
+        # Get database instance
+        db = get_db()
+
+        # Get pipeline configuration
+        pipeline = db.get_pipeline(pipeline_id)
+        if not pipeline:
+            raise NotFound(f"Pipeline {pipeline_id} not found")
+
+        # Parse pipeline config
+        config_dict = yaml.safe_load(pipeline.config_yaml)
+
+        # Get the analytics backend through the factory
+        from ..storage_adapters.factory import StorageFactory
+
+        # Extract analytics configuration
+        analytics_config = config_dict.get('storage', {}).get('analytics', {})
+        if not analytics_config:
+            return jsonify({'error': 'No analytics configuration found'}), 400
+
+        # Create the analytics backend
+        analytics_backend = StorageFactory.create_analytics_storage(analytics_config)
+
+        # Use the backend's get_element method
+        element_data = analytics_backend.get_element_by_id(element_id)
+
+        if not element_data:
+            raise NotFound(f"Element {element_id} not found")
+
+        # Determine what type of content we have
+        content_type = None
+        content_value = None
+
+        # Priority 1: Check for stored full content
+        if element_data.get('content'):
+            content_type = 'full_content'
+            content_value = element_data['content']
+        # Priority 2: Use embedding text if available
+        elif element_data.get('embedding_text'):
+            content_type = 'embedding_text'
+            content_value = element_data['embedding_text']
+        # Priority 3: Try to resolve from content_location
+        elif element_data.get('content_location'):
+            try:
+                from ..adapter.factory import ContentResolverFactory
+                # Create content resolver
+                resolver_config = config_dict.get('content_sources', {})
+                resolver = ContentResolverFactory.create_resolver(resolver_config)
+
+                # Resolve content from source
+                content_value = resolver.resolve_content(element_data['content_location'], text=True)
+                content_type = 'resolved_from_source'
+            except Exception as e:
+                logger.warning(f"Failed to resolve content from source: {str(e)}")
+                # Fall back to content preview
+                content_type = 'preview_only'
+                content_value = element_data.get('content_preview', '')
+        else:
+            # Last resort: use content preview
+            content_type = 'preview_only'
+            content_value = element_data.get('content_preview', '')
+
+        return jsonify({
+            'element_id': element_id,
+            'content': content_value,
+            'content_type': content_type,  # Indicates what type of content is being returned
+            'element_type': element_data.get('element_type'),
+            'doc_id': element_data.get('doc_id')
+        }), 200
+
+    except NotFound as e:
+        return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        logger.error(f"Error getting element content for pipeline {pipeline_id}, element {element_id}: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to get element content',
+            'details': str(e),
+            'element_id': element_id,
+            'pipeline_id': pipeline_id
+        }), 500

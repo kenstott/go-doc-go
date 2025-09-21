@@ -54,7 +54,7 @@ class SearchEngine:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the search engine.
-        
+
         Args:
             config: Optional configuration dictionary
         """
@@ -62,6 +62,7 @@ class SearchEngine:
         self._embedder = None
         self._config_obj = None  # Config object for analytics backend access
         self._analytics_adapters = {}  # Cache for analytics backend adapters
+        self._content_resolver = None  # Content resolver for full content retrieval
         self._initialize_components()
     
     def _initialize_components(self):
@@ -75,18 +76,9 @@ class SearchEngine:
             logger.warning(f"Could not load Config for analytics backends: {e}")
             self._config_obj = None
         
-        # Get embedding generator if available (for future semantic search in analytics backends)
-        if self.config.get('embedding', {}).get('enabled', True):
-            try:
-                from go_doc_go.embeddings.fastembed import FastEmbedGenerator
-                from go_doc_go import Config
-                # Create a Config object if needed for FastEmbedGenerator
-                config_obj = self._config_obj if self._config_obj else Config()
-                self._embedder = FastEmbedGenerator(_config=config_obj)
-                logger.debug("Embedding generator initialized for semantic search")
-            except ImportError:
-                logger.debug("FastEmbed not available, embeddings disabled")
-                self._embedder = None
+        # Backend-specific embedders will be created on-demand using analytics registry
+        self._backend_embedders = {}  # Cache for backend-specific embedders
+        logger.debug("SearchEngine initialized with analytics registry-based embedding configuration")
     
     def search(self, request: Union[SearchRequest, Dict[str, Any]]) -> SearchResponse:
         """
@@ -186,6 +178,57 @@ class SearchEngine:
         
         return adapter
     
+    def _get_embedder_for_backend(self, backend_name: str):
+        """
+        Get or create embedder for specific analytics backend using analytics registry.
+        
+        Args:
+            backend_name: Name of the analytics backend
+        
+        Returns:
+            EmbeddingGenerator instance or None if creation fails
+        """
+        # Check cache first
+        if backend_name in self._backend_embedders:
+            return self._backend_embedders[backend_name]
+        
+        if not self._config_obj:
+            logger.error("Config not available, cannot create embedder")
+            return None
+        
+        # Get backend configuration from analytics registry
+        backends = self._config_obj.list_analytics_backends()
+        backend_config = backends.get(backend_name)
+        
+        if not backend_config:
+            logger.error(f"Backend configuration not found for: {backend_name}")
+            return None
+        
+        # Get embedding configuration from backend
+        embedding_config = backend_config.get('embedding', {})
+        
+        if not embedding_config:
+            logger.warning(f"No embedding configuration found for backend: {backend_name}")
+            return None
+        
+        # Create embedder using analytics registry configuration
+        try:
+            from .embeddings.factory import get_embedder_from_analytics_registry
+            embedder = get_embedder_from_analytics_registry(backend_name, embedding_config, self._config_obj)
+            
+            if embedder:
+                self._backend_embedders[backend_name] = embedder
+                logger.info(f"Created embedder for backend '{backend_name}' using model: {embedding_config.get('model', 'unknown')}")
+            
+            return embedder
+            
+        except ImportError as e:
+            logger.error(f"Failed to import embedding factory: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to create embedder for backend '{backend_name}': {e}")
+            return None
+    
     def _create_adapter(self, search_service: str):
         """
         Create a new analytics backend adapter.
@@ -209,10 +252,16 @@ class SearchEngine:
         
         backend_type = backend_config.get('type')
         
+        # Get backend-specific embedder
+        backend_embedder = self._get_embedder_for_backend(search_service)
+        
+        if not backend_embedder:
+            logger.error(f"Failed to create embedder for backend: {search_service}")
+            return None
+        
         # Create adapter based on backend type
-        # For now, return a stub adapter for demonstration
         if backend_type == 'parquet':
-            return ParquetDuckDBSearchAdapter(backend_config, self._embedder)
+            return ParquetDuckDBSearchAdapter(backend_config, backend_embedder)
         elif backend_type == 'elasticsearch':
             # Future: return ElasticsearchAdapter(backend_config)
             logger.info(f"Elasticsearch adapter not yet implemented")
@@ -261,9 +310,19 @@ class SearchEngine:
                 metadata=metadata
             )
             
-            # Add full content if requested and available
-            if request.include_content and 'content' in result:
-                hit.content = result.get('content', '')
+            # Add full content if requested
+            if request.include_content:
+                if 'content' in result:
+                    # Content already available in result
+                    hit.content = result.get('content', '')
+                else:
+                    # Try to resolve content from content_location
+                    content_location = metadata.get('content_location')
+                    if content_location:
+                        hit.content = self._resolve_full_content(content_location)
+                    else:
+                        # No content available, use preview as fallback
+                        hit.content = hit.content_preview
             
             return hit
             
@@ -324,11 +383,11 @@ class SearchEngine:
     def _create_hit_from_result(self, result: Dict[str, Any], request: SearchRequest) -> Optional[SearchHit]:
         """
         Create a SearchHit from a raw database result.
-        
+
         Args:
             result: Raw result from database
             request: Original search request
-        
+
         Returns:
             SearchHit object or None if invalid
         """
@@ -338,7 +397,7 @@ class SearchEngine:
             element_id = result.get('element_id', '')
             doc_id = result.get('doc_id', '')
             score = result.get('similarity', result.get('score', 0.0))
-            
+
             # Build the hit with available information
             hit = SearchHit(
                 element_id=element_id or f"element_{result.get('element_pk', 'unknown')}",
@@ -348,13 +407,23 @@ class SearchEngine:
                 element_type=result.get('element_type', 'unknown'),
                 metadata=result.get('metadata', {})
             )
-            
-            # Add full content if requested and available
-            if request.include_content and 'content' in result:
-                hit.content = result.get('content', '')
-            
+
+            # Add full content if requested
+            if request.include_content:
+                if 'content' in result:
+                    # Content already available in result
+                    hit.content = result.get('content', '')
+                else:
+                    # Try to resolve content from content_location
+                    content_location = hit.metadata.get('content_location')
+                    if content_location:
+                        hit.content = self._resolve_full_content(content_location)
+                    else:
+                        # No content available, use preview as fallback
+                        hit.content = hit.content_preview
+
             return hit
-            
+
         except Exception as e:
             logger.debug(f"Could not create hit from result: {e}")
             return None
@@ -380,8 +449,14 @@ class SearchEngine:
         
         # Element type filter
         if 'element_type' in filters:
-            if hit.element_type != filters['element_type']:
-                return False
+            element_types = filters['element_type']
+            # Handle both single string and list of strings
+            if isinstance(element_types, str):
+                if hit.element_type != element_types:
+                    return False
+            elif isinstance(element_types, list):
+                if hit.element_type not in element_types:
+                    return False
         
         # Date filters
         if 'date_after' in filters:
@@ -400,6 +475,54 @@ class SearchEngine:
                     return False
         
         return True
+
+    def _resolve_full_content(self, content_location: str) -> Optional[str]:
+        """
+        Resolve full content from content_location using content resolver.
+
+        Args:
+            content_location: JSON string or dict containing content location info
+
+        Returns:
+            Full content string or None if resolution fails
+        """
+        try:
+            # Parse content_location if it's a JSON string
+            if isinstance(content_location, str):
+                try:
+                    content_location = json.loads(content_location)
+                except:
+                    logger.warning(f"Could not parse content_location: {content_location}")
+                    return None
+
+            # Initialize content resolver if not already done
+            if not self._content_resolver:
+                try:
+                    from go_doc_go.adapter.factory import create_content_resolver
+                    from go_doc_go import Config
+                    config_obj = Config()
+                    self._content_resolver = create_content_resolver(config_obj)
+                    logger.info("Created content resolver for full content retrieval")
+                except Exception as e:
+                    logger.error(f"Failed to create content resolver: {e}")
+                    return None
+
+            # Try to resolve content using the resolver
+            if self._content_resolver:
+                try:
+                    # Content resolver expects content_location as a string
+                    location_str = json.dumps(content_location) if isinstance(content_location, dict) else content_location
+                    full_content = self._content_resolver.resolve_content(location_str, text=True)
+                    logger.debug(f"Successfully resolved content from location: {content_location.get('source', 'unknown')}")
+                    return full_content
+                except Exception as e:
+                    logger.warning(f"Failed to resolve content from location: {e}")
+                    return None
+
+        except Exception as e:
+            logger.error(f"Error in content resolution: {e}")
+
+        return None
 
 
 # Convenience function for simple searches
@@ -540,12 +663,11 @@ class ParquetDuckDBSearchAdapter(AnalyticsSearchAdapter):
             logger.debug(f"Generated embedding of dimension {len(query_embedding)} for query")
             
             # Use existing search_semantic method from ParquetAnalyticsStorage
-            # Note: Filters temporarily disabled as columns don't match Parquet schema
             results = self.storage.search_semantic(
                 query_embedding=query_embedding,
                 limit=limit,
                 min_similarity=similarity_threshold,
-                filters=None,  # Temporarily disabled - need column mapping
+                filters=filters,  # Pass through filters including run_id
                 include_context=include_metadata
             )
             
