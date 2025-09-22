@@ -2,12 +2,13 @@
 Domain-based relationship detector using ontology rules.
 """
 import logging
+import json
 from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
 
 from ..storage.base import DocumentDatabase
 from ..domain import (
-    OntologyManager, 
+    OntologyManager,
     OntologyEvaluator,
     ElementTermMapping,
     DomainRelationship
@@ -180,34 +181,140 @@ class DomainRelationshipDetector(RelationshipDetector):
                 all_mappings.extend(filtered_mappings)
         
         return all_mappings
-    
+
+    def _resolve_full_element_content(self, element: Dict[str, Any]) -> str:
+        """
+        Resolve full element content using the existing content resolution system.
+
+        Args:
+            element: Element dictionary containing content_location
+
+        Returns:
+            Full resolved content as string, or content_preview if resolution fails
+        """
+        content_location = element.get('content_location')
+        if not content_location:
+            return element.get('content_preview', '')
+
+        try:
+            # Parse content_location if it's a JSON string
+            if isinstance(content_location, str):
+                location_data = json.loads(content_location)
+            else:
+                location_data = content_location
+
+            # Import content resolver factory (avoid circular import)
+            from ..adapter.factory import create_content_resolver
+            from ..config import Config
+
+            # Create resolver with current config
+            config = Config.from_dict(self.config)
+            resolver = create_content_resolver(config)
+
+            # Resolve full content
+            full_content = resolver.resolve_content(location_data, text=True)
+            return full_content.strip() if full_content else element.get('content_preview', '')
+
+        except Exception as e:
+            logger.debug(f"Failed to resolve full content for element {element.get('element_id')}: {e}")
+            # Fallback to content_preview
+            return element.get('content_preview', '')
+
+    def _extract_searchable_metadata(self, metadata: Dict[str, Any]) -> List[str]:
+        """
+        Extract searchable metadata fields universal across all document types.
+
+        Args:
+            metadata: Element metadata dictionary
+
+        Returns:
+            List of searchable metadata strings
+        """
+        searchable = []
+
+        # Universal structural identifiers (different parsers use different field names)
+        for field in ['element_name', 'structural_name', 'tag_name', 'field_name', 'column_name']:
+            if metadata.get(field):
+                searchable.append(str(metadata[field]))
+
+        # Location identifiers
+        for field in ['path', 'xpath', 'css_selector', 'cell_address', 'json_path']:
+            if metadata.get(field):
+                # Extract meaningful parts from paths
+                path_value = str(metadata[field])
+                searchable.append(path_value)
+                # Also add path components separately
+                if '/' in path_value:
+                    path_parts = [part for part in path_value.split('/') if part and part != 'text()']
+                    searchable.extend(path_parts)
+                elif '.' in path_value:
+                    path_parts = [part for part in path_value.split('.') if part]
+                    searchable.extend(path_parts)
+
+        # Attributes and properties (XML attributes, HTML attributes, etc.)
+        if metadata.get('attributes') and isinstance(metadata['attributes'], dict):
+            for key, value in metadata['attributes'].items():
+                if value and str(value).strip():
+                    searchable.append(str(key))  # Attribute name
+                    searchable.append(str(value))  # Attribute value
+
+        # Hierarchical context (parent element names)
+        if metadata.get('hierarchy') and isinstance(metadata['hierarchy'], list):
+            searchable.extend(str(item) for item in metadata['hierarchy'] if item)
+
+        # Document-type specific identifiers
+        for field in ['class', 'id', 'name', 'type', 'style', 'sheet_name', 'table_name']:
+            if metadata.get(field):
+                searchable.append(str(metadata[field]))
+
+        return [s for s in searchable if s and s.strip()]  # Filter empty strings
+
     def _prepare_element_for_mapping(self, element: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Prepare element data for ontology mapping.
-        
+        Prepare element data for ontology mapping with full content resolution and metadata.
+
         Args:
             element: Raw element from database
-            
+
         Returns:
-            Element data prepared for evaluation
+            Element data prepared for evaluation with comprehensive searchable content
         """
-        # Get element text content
-        text = element.get('content_preview', '')
-        
+        # Resolve full element content (not just truncated preview)
+        full_content = self._resolve_full_element_content(element)
+
+        # Extract searchable metadata
+        metadata = element.get('metadata', {})
+        searchable_metadata = self._extract_searchable_metadata(metadata)
+
+        # Build comprehensive searchable text by combining full content with metadata
+        searchable_parts = []
+
+        # Add full content first (most important)
+        if full_content:
+            searchable_parts.append(full_content)
+
+        # Add searchable metadata
+        if searchable_metadata:
+            searchable_parts.extend(searchable_metadata)
+
+        # Create combined searchable text
+        combined_text = ' '.join(searchable_parts)
+
         # Get element embedding if available
         embedding = None
         if self.embedding_generator and element.get('element_id'):
             # Try to get existing embedding from database
             embedding = self.db.get_embedding(element['element_id'])
-        
+
         return {
             'element_pk': element['element_pk'],
             'element_id': element['element_id'],
             'element_type': element.get('element_type', ''),
-            'text': text,
+            'text': combined_text,  # Now includes full content + all searchable metadata
             'embedding': embedding,
             'document_position': element.get('document_position', 0),
-            'parent_id': element.get('parent_id')
+            'parent_id': element.get('parent_id'),
+            'metadata': metadata  # Preserve original metadata for reference
         }
     
     def _store_mappings(self, mappings: List[ElementTermMapping]) -> None:
