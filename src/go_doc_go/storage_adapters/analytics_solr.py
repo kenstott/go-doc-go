@@ -326,3 +326,51 @@ class SolrAnalyticsStorage(AnalyticsStorage):
         """Close Solr connections."""
         # pysolr doesn't maintain persistent connections
         self.clients.clear()
+
+    # TODO: Implement sampling methods for MCP database sampling
+    def sample_elements(self, filters: Optional[Dict] = None, limit: int = 100,
+                       stratify_by: Optional[str] = None,
+                       random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample elements from Solr with flexible filtering.
+
+        TODO: Implement Solr sampling
+        - Use random field and sort for sampling
+        - Implement stratified sampling with faceting
+        - Apply filters with fq parameter
+        """
+        raise NotImplementedError("Solr sampling methods not yet implemented")
+
+    def get_corpus_stats(self, filters: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Get comprehensive statistics about the Solr corpus.
+
+        TODO: Implement faceting and stats for corpus statistics
+        - Use facet queries for counts
+        - Use stats component for numeric fields
+        - Use terms component for distributions
+        """
+        raise NotImplementedError("Solr corpus stats not yet implemented")
+
+    def sample_documents(self, filters: Optional[Dict] = None, limit: int = 50,
+                        random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample documents from Solr.
+
+        TODO: Implement document sampling
+        - Use random_* fields for sampling
+        - Apply document type filters
+        """
+        raise NotImplementedError("Solr document sampling not yet implemented")
+
+    def execute_custom_query(self, query: str,
+                            params: Optional[List] = None) -> List[Dict[str, Any]]:
+        """
+        Execute custom Solr query.
+
+        TODO: Implement safe execution of Solr queries
+        - Parse query parameters
+        - Validate safety (no updates/deletes)
+        - Execute and return results
+        """
+        raise NotImplementedError("Solr custom query execution not yet implemented")

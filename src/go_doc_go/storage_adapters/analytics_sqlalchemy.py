@@ -439,3 +439,51 @@ class SQLAlchemyAnalyticsStorage(AnalyticsStorage):
         if self.engine:
             self.engine.dispose()
             self.engine = None
+
+    # TODO: Implement sampling methods for MCP database sampling
+    def sample_elements(self, filters: Optional[Dict] = None, limit: int = 100,
+                       stratify_by: Optional[str] = None,
+                       random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample elements from SQL database with flexible filtering.
+
+        TODO: Implement SQL sampling queries
+        - Use TABLESAMPLE or ORDER BY RANDOM() for sampling
+        - Implement stratified sampling with window functions
+        - Apply filters with WHERE clauses
+        """
+        raise NotImplementedError("SQLAlchemy sampling methods not yet implemented")
+
+    def get_corpus_stats(self, filters: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Get comprehensive statistics about the database corpus.
+
+        TODO: Implement SQL aggregations for statistics
+        - Count rows in each table
+        - Get distribution with GROUP BY
+        - Calculate statistics with aggregate functions
+        """
+        raise NotImplementedError("SQLAlchemy corpus stats not yet implemented")
+
+    def sample_documents(self, filters: Optional[Dict] = None, limit: int = 50,
+                        random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample documents from SQL database.
+
+        TODO: Implement document sampling
+        - Query documents table with filters
+        - Use TABLESAMPLE or ORDER BY RANDOM()
+        """
+        raise NotImplementedError("SQLAlchemy document sampling not yet implemented")
+
+    def execute_custom_query(self, query: str,
+                            params: Optional[List] = None) -> List[Dict[str, Any]]:
+        """
+        Execute custom SQL query.
+
+        TODO: Implement safe execution of SQL queries
+        - Validate query is read-only (SELECT only)
+        - Execute with parameters
+        - Return results as list of dicts
+        """
+        raise NotImplementedError("SQLAlchemy custom query execution not yet implemented")

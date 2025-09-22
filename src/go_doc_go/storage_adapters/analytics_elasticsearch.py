@@ -402,3 +402,51 @@ class ElasticsearchAnalyticsStorage(AnalyticsStorage):
         if self.client:
             self.client.close()
             self.client = None
+
+    # TODO: Implement sampling methods for MCP database sampling
+    def sample_elements(self, filters: Optional[Dict] = None, limit: int = 100,
+                       stratify_by: Optional[str] = None,
+                       random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample elements from Elasticsearch with flexible filtering.
+
+        TODO: Implement Elasticsearch sampling
+        - Use function_score query with random_score for sampling
+        - Implement stratified sampling with composite aggregation
+        - Apply filters with must clauses
+        """
+        raise NotImplementedError("Elasticsearch sampling methods not yet implemented")
+
+    def get_corpus_stats(self, filters: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Get comprehensive statistics about the document corpus.
+
+        TODO: Implement aggregations for corpus statistics
+        - Use cardinality aggregation for unique counts
+        - Use terms aggregation for distributions
+        - Use stats aggregation for numeric fields
+        """
+        raise NotImplementedError("Elasticsearch corpus stats not yet implemented")
+
+    def sample_documents(self, filters: Optional[Dict] = None, limit: int = 50,
+                        random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample documents from Elasticsearch.
+
+        TODO: Implement document sampling
+        - Use function_score with random_score
+        - Apply filters for document type, source
+        """
+        raise NotImplementedError("Elasticsearch document sampling not yet implemented")
+
+    def execute_custom_query(self, query: str,
+                            params: Optional[List] = None) -> List[Dict[str, Any]]:
+        """
+        Execute custom Elasticsearch query DSL.
+
+        TODO: Implement safe execution of Elasticsearch queries
+        - Parse JSON query DSL
+        - Validate safety (no index modifications)
+        - Execute and return results
+        """
+        raise NotImplementedError("Elasticsearch custom query not yet implemented")

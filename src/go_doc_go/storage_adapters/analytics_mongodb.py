@@ -302,3 +302,51 @@ class MongoDBAnalyticsStorage(AnalyticsStorage):
             self.client.close()
             self.client = None
             self.db = None
+
+    # TODO: Implement sampling methods for MCP database sampling
+    def sample_elements(self, filters: Optional[Dict] = None, limit: int = 100,
+                       stratify_by: Optional[str] = None,
+                       random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample elements from the database with flexible filtering.
+
+        TODO: Implement MongoDB aggregation pipeline for sampling
+        - Use $sample stage for random sampling
+        - Implement stratified sampling with $facet
+        - Apply filters with $match stage
+        """
+        raise NotImplementedError("MongoDB sampling methods not yet implemented")
+
+    def get_corpus_stats(self, filters: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Get comprehensive statistics about the document corpus.
+
+        TODO: Implement aggregation pipeline for corpus statistics
+        - Count documents, elements, relationships
+        - Get distribution of element types
+        - Calculate size statistics
+        """
+        raise NotImplementedError("MongoDB corpus stats not yet implemented")
+
+    def sample_documents(self, filters: Optional[Dict] = None, limit: int = 50,
+                        random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample documents from the database.
+
+        TODO: Implement document sampling
+        - Use $sample stage for random selection
+        - Apply filters for document type, source, etc.
+        """
+        raise NotImplementedError("MongoDB document sampling not yet implemented")
+
+    def execute_custom_query(self, query: str,
+                            params: Optional[List] = None) -> List[Dict[str, Any]]:
+        """
+        Execute custom MongoDB aggregation pipeline.
+
+        TODO: Implement safe execution of custom aggregation pipelines
+        - Parse JSON aggregation pipeline
+        - Validate safety (read-only operations)
+        - Execute and return results
+        """
+        raise NotImplementedError("MongoDB custom query execution not yet implemented")

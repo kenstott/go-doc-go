@@ -330,3 +330,51 @@ class Neo4jAnalyticsStorage(AnalyticsStorage):
         if self.driver:
             self.driver.close()
             self.driver = None
+
+    # TODO: Implement sampling methods for MCP database sampling
+    def sample_elements(self, filters: Optional[Dict] = None, limit: int = 100,
+                       stratify_by: Optional[str] = None,
+                       random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample elements from Neo4j graph with flexible filtering.
+
+        TODO: Implement Cypher queries for sampling
+        - Use RAND() function for random sampling
+        - Implement stratified sampling with COLLECT and UNWIND
+        - Apply filters with WHERE clauses
+        """
+        raise NotImplementedError("Neo4j sampling methods not yet implemented")
+
+    def get_corpus_stats(self, filters: Optional[Dict] = None) -> Dict[str, Any]:
+        """
+        Get comprehensive statistics about the graph corpus.
+
+        TODO: Implement Cypher aggregations for statistics
+        - Count nodes by label
+        - Count relationships by type
+        - Calculate graph metrics (density, components)
+        """
+        raise NotImplementedError("Neo4j corpus stats not yet implemented")
+
+    def sample_documents(self, filters: Optional[Dict] = None, limit: int = 50,
+                        random_seed: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Sample document nodes from Neo4j.
+
+        TODO: Implement document node sampling
+        - Query Document nodes with filters
+        - Use RAND() for random selection
+        """
+        raise NotImplementedError("Neo4j document sampling not yet implemented")
+
+    def execute_custom_query(self, query: str,
+                            params: Optional[List] = None) -> List[Dict[str, Any]]:
+        """
+        Execute custom Cypher query.
+
+        TODO: Implement safe execution of Cypher queries
+        - Validate read-only query (no CREATE, SET, DELETE, REMOVE)
+        - Execute with parameters
+        - Return results as list of dicts
+        """
+        raise NotImplementedError("Neo4j custom query execution not yet implemented")

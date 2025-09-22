@@ -39,16 +39,21 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize Parquet analytics storage.
-        
+
         Args:
-            config: Configuration with path, partitioning scheme, etc.
+            config: Configuration with path/base_path, partitioning scheme, etc.
         """
         super().__init__(config)
-        
+
         if not PARQUET_AVAILABLE:
             raise ImportError("pandas and pyarrow required for Parquet analytics storage")
-        
-        self.base_path = config.get('path', './data-lake')
+
+        # Handle both 'path' and 'base_path' field names
+        path = config.get('base_path') or config.get('path')
+        if not path:
+            raise ValueError("Parquet analytics requires 'base_path' or 'path' configuration")
+
+        self.base_path = path
         self.s3_bucket = None
         self.s3_prefix = None
         
@@ -897,6 +902,312 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         finally:
             conn.close()
     
+    def sample_elements(self,
+                       filters: Optional[Dict[str, Any]] = None,
+                       limit: int = 100,
+                       stratify_by: Optional[str] = None,
+                       random_seed: Optional[int] = None,
+                       run_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Sample elements from the parquet data lake.
+
+        Args:
+            filters: Column filters to apply
+            limit: Maximum number of elements
+            stratify_by: Column to stratify sampling by
+            random_seed: Random seed for reproducibility
+            run_id: Filter to specific run_id
+
+        Returns:
+            List of element dictionaries
+        """
+        if not DUCKDB_AVAILABLE:
+            raise ImportError("DuckDB required for sampling operations")
+
+        conn = duckdb.connect(':memory:')
+        try:
+            # Register parquet files
+            elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
+            documents_path = os.path.join(self.base_path, 'documents/**/*.parquet')
+
+            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', hive_partitioning=true, union_by_name=true)")
+            conn.execute(f"CREATE VIEW documents AS SELECT * FROM read_parquet('{documents_path}', hive_partitioning=true, union_by_name=true)")
+
+            # Create enriched view
+            conn.execute("""
+                CREATE VIEW element_document_enriched AS
+                SELECT
+                    e.*,
+                    d.source as doc_source,
+                    d.doc_type,
+                    json_extract_string(e.metadata, '$.element_name') as structural_name,
+                    json_extract_string(e.metadata, '$.path') as structural_path,
+                    CASE
+                        WHEN e.element_type = 'xml_element' THEN 'xml'
+                        WHEN e.element_type = 'json_field' THEN 'json'
+                        WHEN e.element_type = 'csv_cell' THEN 'csv'
+                        ELSE 'other'
+                    END as format_type
+                FROM elements e
+                LEFT JOIN documents d ON e.doc_id = d.doc_id
+            """)
+
+            # Build WHERE clause
+            where_conditions = []
+            params = []
+
+            # Add run_id filter if provided
+            if run_id:
+                where_conditions.append(f"run_id = '{run_id}'")
+
+            if filters:
+                for key, value in filters.items():
+                    if isinstance(value, list):
+                        values_str = "', '".join(str(v) for v in value)
+                        where_conditions.append(f"{key} IN ('{values_str}')")
+                    elif isinstance(value, str) and '*' in value:
+                        where_conditions.append(f"{key} LIKE '{value.replace('*', '%')}'")
+                    else:
+                        where_conditions.append(f"{key} = '{value}'")
+
+            where_clause = " AND ".join(where_conditions) if where_conditions else "TRUE"
+
+            # Build sampling query
+            if stratify_by:
+                # Set seed if provided
+                if random_seed:
+                    conn.execute(f"SELECT SETSEED({random_seed / 10000.0})")  # Normalize seed to 0-1 range
+
+                # Stratified sampling
+                query = f"""
+                WITH stratified AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {stratify_by}
+                            ORDER BY RANDOM()
+                        ) as rn
+                    FROM element_document_enriched
+                    WHERE {where_clause}
+                ),
+                strata_counts AS (
+                    SELECT COUNT(DISTINCT {stratify_by}) as num_strata
+                    FROM element_document_enriched
+                    WHERE {where_clause}
+                )
+                SELECT stratified.* FROM stratified, strata_counts
+                WHERE rn <= GREATEST(1, CAST({limit} AS FLOAT) / NULLIF(num_strata, 0))
+                LIMIT {limit}
+                """
+            else:
+                # Set seed if provided
+                if random_seed:
+                    conn.execute(f"SELECT SETSEED({random_seed / 10000.0})")  # Normalize seed to 0-1 range
+
+                # Simple random sampling
+                query = f"""
+                SELECT * FROM element_document_enriched
+                WHERE {where_clause}
+                ORDER BY RANDOM()
+                LIMIT {limit}
+                """
+
+            results = conn.execute(query).fetchall()
+            column_names = [desc[0] for desc in conn.description]
+
+            return [dict(zip(column_names, row)) for row in results]
+
+        finally:
+            conn.close()
+
+    def get_corpus_stats(self, filters: Optional[Dict[str, Any]] = None, run_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get statistics about the corpus.
+
+        Args:
+            filters: Optional filters to apply
+            run_id: Filter to specific run_id
+
+        Returns:
+            Dictionary with corpus statistics
+        """
+        if not DUCKDB_AVAILABLE:
+            raise ImportError("DuckDB required for statistics operations")
+
+        conn = duckdb.connect(':memory:')
+        try:
+            # Register parquet files
+            elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
+            documents_path = os.path.join(self.base_path, 'documents/**/*.parquet')
+            relationships_path = os.path.join(self.base_path, 'relationships/**/*.parquet')
+
+            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', hive_partitioning=true, union_by_name=true)")
+            conn.execute(f"CREATE VIEW documents AS SELECT * FROM read_parquet('{documents_path}', hive_partitioning=true, union_by_name=true)")
+            conn.execute(f"CREATE VIEW relationships AS SELECT * FROM read_parquet('{relationships_path}', hive_partitioning=true, union_by_name=true)")
+
+            # Build WHERE clause for corpus stats
+            where_conditions = []
+
+            # Add run_id filter if provided
+            if run_id:
+                where_conditions.append(f"run_id = '{run_id}'")
+
+            if filters:
+                for key, value in filters.items():
+                    if isinstance(value, list):
+                        values_str = "', '".join(str(v) for v in value)
+                        where_conditions.append(f"{key} IN ('{values_str}')")
+                    elif isinstance(value, str) and '*' in value:
+                        where_conditions.append(f"{key} LIKE '{value.replace('*', '%')}'")
+                    else:
+                        where_conditions.append(f"{key} = '{value}'")
+
+            where_clause = " AND ".join(where_conditions) if where_conditions else "TRUE"
+
+            # Get statistics
+            stats_query = f"""
+            SELECT
+                COUNT(*) as total_elements,
+                COUNT(DISTINCT doc_id) as total_documents,
+                COUNT(DISTINCT element_type) as distinct_element_types
+            FROM elements
+            WHERE {where_clause}
+            """
+
+            stats = conn.execute(stats_query).fetchone()
+            column_names = [desc[0] for desc in conn.description]
+            result = dict(zip(column_names, stats))
+
+            # Get element type distribution
+            dist_query = f"""
+            SELECT element_type, COUNT(*) as count
+            FROM elements
+            WHERE {where_clause}
+            GROUP BY element_type
+            ORDER BY count DESC
+            """
+
+            dist_results = conn.execute(dist_query).fetchall()
+            result['element_type_distribution'] = {row[0]: row[1] for row in dist_results}
+
+            # Get relationships count
+            rel_count = conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
+            result['total_relationships'] = rel_count
+
+            return result
+
+        finally:
+            conn.close()
+
+    def sample_documents(self,
+                        filters: Optional[Dict[str, Any]] = None,
+                        limit: int = 50,
+                        random_seed: Optional[int] = None,
+                        run_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Sample documents from the parquet data lake.
+
+        Args:
+            filters: Column filters to apply
+            limit: Maximum number of documents
+            random_seed: Random seed for reproducibility
+            run_id: Filter to specific run_id
+
+        Returns:
+            List of document dictionaries
+        """
+        if not DUCKDB_AVAILABLE:
+            raise ImportError("DuckDB required for sampling operations")
+
+        conn = duckdb.connect(':memory:')
+        try:
+            # Register parquet files
+            documents_path = os.path.join(self.base_path, 'documents/**/*.parquet')
+            conn.execute(f"CREATE VIEW documents AS SELECT * FROM read_parquet('{documents_path}', hive_partitioning=true, union_by_name=true)")
+
+            # Build WHERE clause for document sampling
+            where_conditions = []
+
+            # Add run_id filter if provided
+            if run_id:
+                where_conditions.append(f"run_id = '{run_id}'")
+
+            if filters:
+                for key, value in filters.items():
+                    if isinstance(value, list):
+                        values_str = "', '".join(str(v) for v in value)
+                        where_conditions.append(f"{key} IN ('{values_str}')")
+                    elif isinstance(value, str) and '*' in value:
+                        where_conditions.append(f"{key} LIKE '{value.replace('*', '%')}'")
+                    else:
+                        where_conditions.append(f"{key} = '{value}'")
+
+            where_clause = " AND ".join(where_conditions) if where_conditions else "TRUE"
+
+            # Set seed if provided
+            if random_seed:
+                conn.execute(f"SELECT SETSEED({random_seed / 10000.0})")  # Normalize seed to 0-1 range
+
+            # Sample documents
+            query = f"""
+            SELECT * FROM documents
+            WHERE {where_clause}
+            ORDER BY RANDOM()
+            LIMIT {limit}
+            """
+
+            results = conn.execute(query).fetchall()
+            column_names = [desc[0] for desc in conn.description]
+
+            return [dict(zip(column_names, row)) for row in results]
+
+        finally:
+            conn.close()
+
+    def execute_custom_query(self, query: str, params: Optional[List] = None, run_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Execute a custom DuckDB query on the parquet data.
+
+        Args:
+            query: DuckDB SQL query
+            params: Optional query parameters
+            run_id: Filter to specific run_id (note: user must include run_id filter manually in query)
+
+        Returns:
+            List of result dictionaries
+        """
+        if not DUCKDB_AVAILABLE:
+            raise ImportError("DuckDB required for custom queries")
+
+        # Safety check - only allow SELECT queries
+        if not query.strip().upper().startswith('SELECT'):
+            raise ValueError("Only SELECT queries are allowed")
+
+        conn = duckdb.connect(':memory:')
+        try:
+            # Register all parquet files as views
+            elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
+            documents_path = os.path.join(self.base_path, 'documents/**/*.parquet')
+            relationships_path = os.path.join(self.base_path, 'relationships/**/*.parquet')
+            embeddings_path = os.path.join(self.base_path, 'embeddings/**/*.parquet')
+
+            conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', hive_partitioning=true, union_by_name=true)")
+            conn.execute(f"CREATE VIEW documents AS SELECT * FROM read_parquet('{documents_path}', hive_partitioning=true, union_by_name=true)")
+            conn.execute(f"CREATE VIEW relationships AS SELECT * FROM read_parquet('{relationships_path}', hive_partitioning=true, union_by_name=true)")
+            conn.execute(f"CREATE VIEW embeddings AS SELECT * FROM read_parquet('{embeddings_path}', hive_partitioning=true)")
+
+            # Execute query
+            if params:
+                results = conn.execute(query, params).fetchall()
+            else:
+                results = conn.execute(query).fetchall()
+
+            column_names = [desc[0] for desc in conn.description]
+
+            return [dict(zip(column_names, row)) for row in results]
+
+        finally:
+            conn.close()
+
     def _get_element_context(self, conn: Any, element_id: str, doc_id: Optional[str]) -> Dict[str, Any]:
         """
         Get surrounding context for an element.
