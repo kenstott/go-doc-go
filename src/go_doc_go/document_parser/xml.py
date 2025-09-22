@@ -785,7 +785,18 @@ class XmlParser(DocumentParser):
 
             # Special case for root or document
             if not path or path == "/":
-                result = etree.tostring(root, encoding='unicode', pretty_print=True)
+                # For root element, return just the root element tag, not the entire document
+                # This prevents embeddings from containing the entire document
+                root_tag = root.tag
+                root_name = self._get_normalized_tag_name(root_tag)
+
+                # Get attributes if any
+                attrs_str = ""
+                if root.attrib:
+                    attrs = [f'{k}="{v}"' for k, v in root.attrib.items()]
+                    attrs_str = " " + " ".join(attrs)
+
+                result = f"<{root_name}{attrs_str}>"
                 if self.enable_caching:
                     self.text_cache.set(cache_key, result)
                 return result
@@ -816,8 +827,23 @@ class XmlParser(DocumentParser):
             else:
                 # For XML elements
                 if hasattr(element, 'tag'):
-                    # Use lxml's tostring to serialize the element
-                    result = etree.tostring(element, encoding='unicode', pretty_print=True)
+                    # Only return the element's direct content, not full subtree
+                    # This prevents parent elements from including all children
+                    tag_name = self._get_normalized_tag_name(element.tag)
+
+                    # Get attributes
+                    attrs = []
+                    if element.attrib:
+                        attrs = [f'{k}="{v}"' for k, v in element.attrib.items()]
+
+                    # Get only direct text content (not descendants)
+                    direct_text = element.text.strip() if element.text else ""
+
+                    # Build XML representation with only direct content
+                    if attrs:
+                        result = f"<{tag_name} {' '.join(attrs)}>{direct_text}</{tag_name}>"
+                    else:
+                        result = f"<{tag_name}>{direct_text}</{tag_name}>"
                 else:
                     # Fallback for non-element objects
                     result = f"<value>{str(element)}</value>"

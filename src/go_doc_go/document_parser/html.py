@@ -211,6 +211,12 @@ class HtmlParser(DocumentParser):
         elif tag_name == 'blockquote':
             return ElementType.BLOCKQUOTE.value
         else:
+            # Check for namespace-prefixed elements (iXBRL, XBRL, etc.)
+            if ':' in tag_name:
+                namespace, local_name = tag_name.split(':', 1)
+                # Create element type that preserves namespace info
+                # e.g., "ix:nonnumeric" becomes "ix_nonnumeric"
+                return f"{namespace}_{local_name}"
             # For container elements
             return tag_name  # Use the tag name as the element type (div, article, etc.)
 
@@ -386,8 +392,30 @@ class HtmlParser(DocumentParser):
             result = '\n'.join(f"> {line}" for line in lines)
 
         else:
-            # Default case: return all text content
-            result = soup.get_text(separator=' ', strip=True)
+            # Default case: return only direct text content, not all descendants
+            # This prevents container elements from including all child text
+            # (similar to the fix we applied for XML elements)
+            direct_text = []
+            for child in soup.children:
+                if isinstance(child, str):
+                    text = child.strip()
+                    if text:
+                        direct_text.append(text)
+
+            # For namespace elements, also include key attributes
+            if soup.name and ':' in soup.name:
+                # Include important attributes for iXBRL/XBRL elements
+                important_attrs = []
+                for attr, value in (soup.attrs or {}).items():
+                    # Skip style and class attributes, but include data attributes
+                    if attr not in ['style', 'class'] and value and len(str(value)) < 100:
+                        important_attrs.append(f"{attr}={value}")
+
+                result = ' '.join(direct_text) if direct_text else ""
+                if important_attrs:
+                    result = result + " [" + ", ".join(important_attrs) + "]" if result else "[" + ", ".join(important_attrs) + "]"
+            else:
+                result = ' '.join(direct_text) if direct_text else ""
 
         # Cache the result if enabled
         if self.enable_caching:
@@ -873,9 +901,11 @@ class HtmlParser(DocumentParser):
                 continue
 
             # Create an element for this tag
-            if child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol',
-                              'pre', 'code', 'blockquote', 'table', 'img', 'div',
-                              'article', 'section', 'nav', 'aside', 'figure']:
+            # Include standard HTML tags AND namespace-prefixed tags (for iXBRL, XBRL, etc.)
+            if (child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol',
+                               'pre', 'code', 'blockquote', 'table', 'img', 'div',
+                               'article', 'section', 'nav', 'aside', 'figure'] or
+                ':' in child.name):  # Process namespace-prefixed tags
 
                 # Create an element
                 element = self._create_element_for_tag(child, doc_id, parent_id, source_id, element_dates)
@@ -963,7 +993,22 @@ class HtmlParser(DocumentParser):
     def _create_element_for_tag(self, tag, doc_id, parent_id, source_id, element_dates):
         """Create an appropriate element based on tag type."""
         element_type = self._get_element_type(tag.name)
-        content_text = tag.get_text(separator=' ', strip=True)
+
+        # Get only direct text content, not all descendants
+        # This applies to ALL elements to prevent container pollution
+        direct_text = []
+        for child in tag.children:
+            if isinstance(child, str):
+                text = child.strip()
+                if text:
+                    direct_text.append(text)
+        content_text = ' '.join(direct_text) if direct_text else ""
+
+        # For specific element types that should include all text, use get_text
+        if tag.name in ['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'th', 'td', 'blockquote', 'pre', 'code']:
+            # These elements typically don't have complex nested structure
+            # and we want all their text content
+            content_text = tag.get_text(separator=' ', strip=True)
 
         # Skip empty elements
         if not content_text and tag.name not in ['img', 'table']:

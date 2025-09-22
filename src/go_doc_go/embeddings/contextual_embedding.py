@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any, Tuple
 import logging
+import json
 
 from .base import EmbeddingGenerator
 # Semantic tagging removed - using simple text curation
@@ -662,15 +663,19 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 logger.debug(f"Skipping non-leaf element: {element.get('element_type')} (has children)")
                 continue
 
-            # Skip inherently container element types (even if they appear to have no children)
-            container_types = {
-                'xml_list', 'table', 'document', 'section', 'header', 'footer',
-                'nav', 'aside', 'article', 'main', 'div', 'form', 'fieldset'
-            }
-            if element.get("element_type") in container_types:
+            # Skip XML root elements specifically (they have path="/")
+            content_location = element.get('content_location', {})
+            if isinstance(content_location, str):
+                try:
+                    content_location = json.loads(content_location)
+                except (json.JSONDecodeError, TypeError):
+                    content_location = {}
+
+            if content_location.get('path') == '/' or 'xml_root_' in element.get('element_id', ''):
                 skipped_elements += 1
-                logger.debug(f"Skipping container element type: {element.get('element_type')}")
+                logger.debug(f"Skipping XML root element: {element.get('element_id')}")
                 continue
+
 
             # Also skip certain granular elements that should use their parent
             if element.get("element_type") in {'table_cell', 'json_item', 'json_field'}:
@@ -916,9 +921,21 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 break  # Parent not found in elements
 
             # Collect parent if it has meaningful content (skip empty containers)
+            # Check if parent is an XML root element
+            content_loc = parent_element.get('content_location', {})
+            if isinstance(content_loc, str):
+                try:
+                    content_loc = json.loads(content_loc)
+                except (json.JSONDecodeError, TypeError):
+                    content_loc = {}
+
+            is_xml_root = (content_loc.get('path') == '/' or
+                          'xml_root_' in parent_element.get('element_id', ''))
+
             # Headers, sections with titles, etc. are crucial for context
             if (parent_element.get("content_preview") and
                     parent_element["element_type"] != "root" and
+                    not is_xml_root and
                     not self._is_structural_only_container(parent_element)):
                 ancestors_collected.append(parent_id)
 
@@ -949,11 +966,23 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             while i >= 0 and pred_count < self.predecessor_count:
                 pred_element = all_elements[i]
 
+                # Check if predecessor is an XML root element
+                pred_content_loc = pred_element.get('content_location', {})
+                if isinstance(pred_content_loc, str):
+                    try:
+                        pred_content_loc = json.loads(pred_content_loc)
+                    except (json.JSONDecodeError, TypeError):
+                        pred_content_loc = {}
+
+                is_pred_xml_root = (pred_content_loc.get('path') == '/' or
+                                   'xml_root_' in pred_element.get('element_id', ''))
+
                 # Skip elements that:
-                # 1. Are root elements
+                # 1. Are root elements (including XML roots)
                 # 2. Don't have content (empty content_preview)
                 # 3. Are just container elements
                 if (pred_element["element_type"] != "root" and
+                        not is_pred_xml_root and
                         pred_element.get("content_preview") and
                         not self._is_structural_only_container(pred_element)):
                     context_ids.add(pred_element["element_id"])
@@ -968,8 +997,20 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             while i < len(all_elements) and succ_count < self.successor_count:
                 succ_element = all_elements[i]
 
+                # Check if successor is an XML root element
+                succ_content_loc = succ_element.get('content_location', {})
+                if isinstance(succ_content_loc, str):
+                    try:
+                        succ_content_loc = json.loads(succ_content_loc)
+                    except (json.JSONDecodeError, TypeError):
+                        succ_content_loc = {}
+
+                is_succ_xml_root = (succ_content_loc.get('path') == '/' or
+                                   'xml_root_' in succ_element.get('element_id', ''))
+
                 # Same filtering as for predecessors
                 if (succ_element["element_type"] != "root" and
+                        not is_succ_xml_root and
                         succ_element.get("content_preview") and
                         not self._is_structural_only_container(succ_element)):
                     context_ids.add(succ_element["element_id"])

@@ -500,22 +500,36 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             # Register Parquet files as views
             elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
             embeddings_path = os.path.join(self.base_path, 'embeddings/**/*.parquet')
-            
+            documents_path = os.path.join(self.base_path, 'documents/**/*.parquet')
+
             conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', union_by_name=true)")
             conn.execute(f"CREATE VIEW embeddings AS SELECT * FROM read_parquet('{embeddings_path}', union_by_name=true)")
-            
+            conn.execute(f"CREATE VIEW documents AS SELECT * FROM read_parquet('{documents_path}', union_by_name=true)")
+
             # Convert query embedding to array string for DuckDB
             query_vec_str = '[' + ','.join(map(str, query_embedding)) + ']'
-            
+
             # Build filter clause
             filter_clause = ""
             parent_chain_filter = ""
+            needs_doc_join = False
             if filters:
                 conditions = []
                 for key, value in filters.items():
                     if key == 'element_type':
                         # Skip element_type - will be handled via parent chain CTE
                         continue
+                    elif key == 'doc_type':
+                        # doc_type is in documents table, not elements
+                        needs_doc_join = True
+                        if isinstance(value, list):
+                            # Handle list of doc_types
+                            types_str = "', '".join(value)
+                            conditions.append(f"d.doc_type IN ('{types_str}')")
+                        elif isinstance(value, str):
+                            conditions.append(f"d.doc_type = '{value}'")
+                        else:
+                            conditions.append(f"d.doc_type = {value}")
                     elif isinstance(value, str):
                         conditions.append(f"e.{key} = '{value}'")
                     else:
@@ -564,6 +578,11 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             # Build CTE chain properly
             if parent_chain_cte:
                 # parent_chain_cte already includes "WITH" and trailing comma
+                # Check if we need to join with documents table
+                from_clause = "FROM elements e"
+                if needs_doc_join:
+                    from_clause += " JOIN documents d ON e.doc_id = d.doc_id"
+
                 search_query = f"""
             {parent_chain_cte}
             valid_embeddings AS (
@@ -572,7 +591,7 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
                     emb.embedding,
                     emb.embedding_text,
                     sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) as emb_magnitude
-                FROM elements e
+                {from_clause}
                 JOIN embeddings emb ON e.element_id = emb.element_id
                 WHERE sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) > 0.0
                 {filter_clause}
@@ -596,6 +615,11 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             """
             else:
                 # No parent_chain_cte, start with WITH
+                # Check if we need to join with documents table
+                from_clause = "FROM elements e"
+                if needs_doc_join:
+                    from_clause += " JOIN documents d ON e.doc_id = d.doc_id"
+
                 search_query = f"""
             WITH valid_embeddings AS (
                 SELECT
@@ -603,7 +627,7 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
                     emb.embedding,
                     emb.embedding_text,
                     sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) as emb_magnitude
-                FROM elements e
+                {from_clause}
                 JOIN embeddings emb ON e.element_id = emb.element_id
                 WHERE sqrt(list_dot_product(emb.embedding::DOUBLE[], emb.embedding::DOUBLE[])) > 0.0
                 {filter_clause}
