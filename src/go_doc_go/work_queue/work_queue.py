@@ -145,9 +145,12 @@ class RunCoordinator:
                         storage_state['has_analytics_data'] = True
                         logger.debug(f"Analytics registry '{backend_name}' check - type: {backend_type}, assumed has_data: True")
 
-        processing_config['storage_state'] = storage_state
+        # Note: We intentionally do NOT include storage_state in the hash
+        # This ensures deterministic run_id generation based only on configuration
+        # that affects how documents are processed, not on whether data exists
+        # Storage state is still tracked separately for reprocessing decisions
 
-        # Sort keys for deterministic hashing
+        # Sort keys for deterministic hashing (excluding storage_state)
         config_str = json.dumps(processing_config, sort_keys=True)
 
         # Create hash - use first 16 chars for readability
@@ -574,6 +577,35 @@ class WorkQueue:
         
         return None
     
+    def delete_documents_for_run(self, run_id: str) -> int:
+        """
+        Delete all documents for a run to allow re-enqueueing.
+
+        Args:
+            run_id: Processing run ID
+
+        Returns:
+            Number of documents deleted
+        """
+        with self.db.transaction():
+            # Get count of documents to delete (for logging)
+            count_result = self.db.execute("""
+                SELECT COUNT(*) as count
+                FROM document_queue
+                WHERE run_id = %s
+            """, (run_id,))
+
+            count = count_result.get('count', 0) if count_result else 0
+
+            # Delete all documents for this run
+            self.db.execute("""
+                DELETE FROM document_queue
+                WHERE run_id = %s
+            """, (run_id,))
+
+            logger.info(f"Deleted {count} documents for run {run_id} to allow fresh discovery")
+            return count
+
     def mark_completed(self, queue_id: int, content_hash: Optional[str] = None,
                       file_size: Optional[int] = None) -> None:
         """

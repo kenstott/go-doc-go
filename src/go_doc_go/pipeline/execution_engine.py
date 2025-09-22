@@ -3,6 +3,7 @@ Pipeline execution engine that integrates pipeline configurations with document 
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import threading
@@ -115,15 +116,50 @@ class PipelineExecutionEngine:
             pipeline_config['name'] = pipeline.name
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid pipeline configuration YAML: {e}")
-        
-        # Create execution record
+
+        # Compute hash-based run_id from configuration
+        # This ensures the same configuration always produces the same run_id
+        config_str = json.dumps(pipeline_config, sort_keys=True)
+        full_hash = hashlib.sha256(config_str.encode()).hexdigest()
+        run_id = full_hash[:16]
+        logger.info(f"Computed run_id from configuration: {run_id}")
+
+        # Get or reset execution record
         execution_params = execution_params or {}
-        execution = self.execution_tracker.start_execution(
+        execution, was_reset = self.execution_tracker.get_or_reset_execution(
             pipeline_id=pipeline_id,
+            run_id=run_id,
             config_snapshot=pipeline.config_yaml,
             worker_count=execution_params.get('worker_count', 1),
-            documents_total=execution_params.get('documents_total', 0)
+            documents_total=execution_params.get('documents_total', 0),
+            execution_engine=self
         )
+
+        if was_reset:
+            # Check if execution is still active in our tracking
+            with self._execution_lock:
+                if run_id in self._active_executions:
+                    active_info = self._active_executions[run_id]
+                    if active_info['thread'].is_alive():
+                        raise RuntimeError(f"Execution {run_id} is still running in a background thread")
+                    else:
+                        # Thread is dead, clean it up
+                        del self._active_executions[run_id]
+                        if run_id in self._execution_logs:
+                            del self._execution_logs[run_id]
+                        logger.info(f"Cleaned up dead execution thread for {run_id}")
+
+            # Delete all queued documents for this run to allow fresh discovery
+            from ..work_queue.work_queue import WorkQueue
+            # Need to get the database connection for work queue
+            from ..storage_adapters.factory import StorageFactory
+            job_storage, _ = StorageFactory.create_from_pipeline_config(
+                pipeline_config,
+                registry=self.config.list_analytics_backends()
+            )
+            work_queue = WorkQueue(job_storage, f"reset-{uuid.uuid4().hex[:8]}")
+            deleted = work_queue.delete_documents_for_run(run_id)
+            logger.info(f"Deleted {deleted} queued documents for run {run_id} to allow fresh discovery")
         
         # Notify progress monitor that execution is starting
         self.progress_monitor.execution_started(execution.run_id, pipeline_config)

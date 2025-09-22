@@ -440,17 +440,18 @@ class PipelineExecutionTracker:
         """
         self.db = db
 
-    def start_execution(self, pipeline_id: int, config_snapshot: Optional[str] = None,
+    def start_execution(self, pipeline_id: int, run_id: str, config_snapshot: Optional[str] = None,
                        worker_count: int = 1, documents_total: int = 0) -> PipelineExecution:
         """
         Start a new pipeline execution.
-        
+
         Args:
             pipeline_id: Pipeline ID
+            run_id: Pre-computed hash-based run ID from configuration
             config_snapshot: Snapshot of configuration at execution time
             worker_count: Number of workers for this execution
             documents_total: Total number of documents to process
-            
+
         Returns:
             Created execution record
         """
@@ -460,7 +461,7 @@ class PipelineExecutionTracker:
         execution = PipelineExecution(
             pipeline_id=pipeline_id,
             pipeline_version=pipeline.version,
-            run_id=f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}",
+            run_id=run_id,
             status="pending",
             started_at=datetime.now(),
             worker_count=worker_count,
@@ -496,7 +497,8 @@ class PipelineExecutionTracker:
 
     def update_execution_progress(self, run_id: str, documents_processed: int = None,
                                 documents_total: int = None, status: str = None,
-                                errors_count: int = None, warnings_count: int = None) -> bool:
+                                errors_count: int = None, warnings_count: int = None,
+                                heartbeat: bool = False) -> bool:
         """
         Update execution progress.
         
@@ -577,30 +579,162 @@ class PipelineExecutionTracker:
     def list_executions(self, pipeline_id: Optional[int] = None, limit: int = 50) -> List[PipelineExecution]:
         """
         List recent executions.
-        
+
         Args:
             pipeline_id: Optional pipeline ID filter
             limit: Maximum number of executions to return
-            
+
         Returns:
             List of executions ordered by start time (most recent first)
         """
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
-            
+
             if pipeline_id:
                 cursor.execute("""
-                    SELECT * FROM pipeline_executions 
-                    WHERE pipeline_id = ? 
-                    ORDER BY started_at DESC 
+                    SELECT * FROM pipeline_executions
+                    WHERE pipeline_id = ?
+                    ORDER BY started_at DESC
                     LIMIT ?
                 """, (pipeline_id, limit))
             else:
                 cursor.execute("""
-                    SELECT * FROM pipeline_executions 
-                    ORDER BY started_at DESC 
+                    SELECT * FROM pipeline_executions
+                    ORDER BY started_at DESC
                     LIMIT ?
                 """, (limit,))
-            
+
             rows = cursor.fetchall()
             return [PipelineExecution.from_db_row(dict(row)) for row in rows]
+
+    def get_most_recent_successful_run_id(self, pipeline_id: int) -> Optional[str]:
+        """
+        Get the most recent successful run_id for a pipeline.
+
+        Args:
+            pipeline_id: Pipeline ID
+
+        Returns:
+            run_id of the most recent successful execution, or None if no successful runs found
+        """
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT run_id FROM pipeline_executions
+                WHERE pipeline_id = ? AND status = 'completed'
+                ORDER BY started_at DESC
+                LIMIT 1
+            """, (pipeline_id,))
+            row = cursor.fetchone()
+
+            return row['run_id'] if row else None
+
+    def reset_execution(self, run_id: str, pipeline_id: int, config_snapshot: str,
+                       worker_count: int = 1, documents_total: int = 0) -> PipelineExecution:
+        """
+        Reset an existing execution for re-running.
+
+        Args:
+            run_id: Execution run ID to reset
+            pipeline_id: Pipeline ID
+            config_snapshot: Updated configuration snapshot
+            worker_count: Number of workers for this execution
+            documents_total: Total number of documents (0 for leader to discover)
+
+        Returns:
+            Reset execution record
+        """
+        # Get pipeline to verify it exists and get current version
+        pipeline = self.db.get_pipeline(pipeline_id)
+
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Reset the execution record
+            cursor.execute("""
+                UPDATE pipeline_executions
+                SET status = 'pending',
+                    started_at = ?,
+                    completed_at = NULL,
+                    documents_processed = 0,
+                    documents_total = ?,
+                    errors_count = 0,
+                    warnings_count = 0,
+                    worker_count = ?,
+                    config_snapshot = ?,
+                    pipeline_version = ?
+                WHERE run_id = ?
+            """, (
+                datetime.now().isoformat(),
+                documents_total,
+                worker_count,
+                config_snapshot,
+                pipeline.version,
+                run_id
+            ))
+
+            conn.commit()
+
+            # Return the reset execution
+            return self.get_execution(run_id)
+
+    def get_or_reset_execution(self, pipeline_id: int, run_id: str, config_snapshot: Optional[str] = None,
+                              worker_count: int = 1, documents_total: int = 0,
+                              execution_engine=None) -> Tuple[PipelineExecution, bool]:
+        """
+        Get an existing execution or reset it if completed/failed, or create new if doesn't exist.
+
+        Args:
+            pipeline_id: Pipeline ID
+            run_id: Pre-computed hash-based run ID from configuration
+            config_snapshot: Snapshot of configuration at execution time
+            worker_count: Number of workers for this execution
+            documents_total: Total number of documents to process
+            execution_engine: Optional execution engine to check if execution is actually active
+
+        Returns:
+            Tuple of (execution record, was_reset) where was_reset is True if an existing execution was reset
+
+        Raises:
+            RuntimeError: If execution is already running
+        """
+        existing = self.get_execution(run_id)
+
+        if existing:
+            if existing.status in ['running', 'pending']:
+                # Check if execution is actually still running
+                is_actually_running = False
+
+                if execution_engine:
+                    # Check if thread is still alive in execution engine
+                    with execution_engine._execution_lock:
+                        if run_id in execution_engine._active_executions:
+                            active_info = execution_engine._active_executions[run_id]
+                            is_actually_running = active_info['thread'].is_alive()
+
+                if is_actually_running:
+                    raise RuntimeError(f"Execution {run_id} is already {existing.status}")
+                else:
+                    # Execution is marked as running but thread is dead - reset it
+                    logger.warning(f"Execution {run_id} marked as {existing.status} but thread is dead - resetting")
+
+            # Reset completed/failed/cancelled execution or dead execution
+            logger.info(f"Resetting existing execution {run_id} (was {existing.status})")
+            execution = self.reset_execution(
+                run_id=run_id,
+                pipeline_id=pipeline_id,
+                config_snapshot=config_snapshot or existing.config_snapshot,
+                worker_count=worker_count,
+                documents_total=documents_total
+            )
+            return execution, True
+        else:
+            # Create new execution
+            execution = self.start_execution(
+                pipeline_id=pipeline_id,
+                run_id=run_id,
+                config_snapshot=config_snapshot,
+                worker_count=worker_count,
+                documents_total=documents_total
+            )
+            return execution, False
