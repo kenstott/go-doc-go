@@ -92,25 +92,19 @@ class EnhancedContentResolver(ContentResolver):
                 logger.warning(f"Adapter {source_type} does not support location: {location_data.get('source', '')}")
                 return f"Adapter {source_type} does not support this location"
 
-            # Handle root element type specially for efficiency
+            # Handle root element type specially
             element_type = location_data.get("type", "")
             if element_type == "root":
-                # Get content directly from adapter
-                content_info = adapter.get_content(location_data)
-                content = content_info.get("content", "")
-
-                # Convert to string if binary
-                if isinstance(content, bytes):
-                    try:
-                        content = content.decode('utf-8')
-                    except UnicodeDecodeError:
-                        content = f"(Binary content of {len(content)} bytes)"
+                # Don't return raw file content for root elements
+                # Root elements should not contribute actual content to embeddings
+                # Return empty string so they don't pollute the context
+                result = ""
 
                 # Cache if enabled
                 if self.cache_enabled:
-                    self._update_cache(cache_key, content)
+                    self._update_cache(cache_key, result)
 
-                return content
+                return result
 
             # For specific element types, get content and pass to appropriate parser
             content_info = adapter.get_content(location_data)
