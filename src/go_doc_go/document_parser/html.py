@@ -113,7 +113,7 @@ class HtmlParser(DocumentParser):
         """
         # Strip timestamp suffix if present (format: path::timestamp)
         actual_path = source_path.split('::')[0] if '::' in source_path else source_path
-        
+
         # Check cache first if enabled
         if self.enable_caching:
             content = self.content_cache.get(source_path)
@@ -223,6 +223,7 @@ class HtmlParser(DocumentParser):
     def _add_selectors(self, element, parent_selector=""):
         """
         Add CSS selectors to elements for location with caching for complex paths.
+        Generates unique selectors using nth-of-type positioning when needed.
 
         Args:
             element: BeautifulSoup element
@@ -247,15 +248,51 @@ class HtmlParser(DocumentParser):
         else:
             tag_selector = element.name
 
-            # Add ID if present
+            # Priority 1: Use ID if present (most specific)
             if element.get('id'):
                 id_selector = f"#{element.get('id')}"
                 tag_selector = f"{tag_selector}{id_selector}"
 
-            # Add first class if present
+            # Priority 2: Use unique combination of classes
             elif element.get('class'):
-                class_selector = f".{element.get('class')[0]}"
+                # Use all classes for better specificity
+                classes = element.get('class')
+                if isinstance(classes, list):
+                    class_selector = ''.join([f".{cls}" for cls in classes[:3]])  # Limit to 3 classes
+                else:
+                    class_selector = f".{classes}"
                 tag_selector = f"{tag_selector}{class_selector}"
+
+            # Priority 3: Use data attributes if available
+            elif element.attrs:
+                # Look for data attributes or other unique attributes
+                unique_attrs = []
+                for attr, value in element.attrs.items():
+                    if attr.startswith('data-') or attr in ['aria-label', 'name', 'type']:
+                        if isinstance(value, str) and value:
+                            # Escape special characters in attribute values
+                            escaped_value = value.replace('"', '\\"')
+                            unique_attrs.append(f'[{attr}="{escaped_value}"]')
+                            if len(unique_attrs) >= 2:  # Limit to 2 attributes
+                                break
+
+                if unique_attrs:
+                    tag_selector = f"{tag_selector}{''.join(unique_attrs)}"
+
+            # Always add nth-of-type if there are siblings with the same tag
+            # (unless we already have an ID which makes it unique)
+            if not element.get('id'):
+                # Count preceding siblings with the same tag name
+                position = 1
+                for sibling in element.find_previous_siblings(element.name):
+                    position += 1
+
+                # Also check if there are following siblings
+                has_following_siblings = bool(element.find_next_siblings(element.name))
+
+                # Add nth-of-type if not the only child of this type
+                if position > 1 or has_following_siblings:
+                    tag_selector = f"{tag_selector}:nth-of-type({position})"
 
             # Combine with parent selector
             if parent_selector:
@@ -426,11 +463,11 @@ class HtmlParser(DocumentParser):
     def _select_with_xml_namespaces(self, soup: BeautifulSoup, selector: str) -> List:
         """
         Select elements using a CSS selector that may contain XML namespace prefixes.
-        
+
         Args:
             soup: BeautifulSoup object
             selector: CSS selector potentially containing XML namespaces (ix:nonnumeric, xbrl:*, etc.)
-            
+
         Returns:
             List of matching BeautifulSoup elements
         """
@@ -451,11 +488,11 @@ class HtmlParser(DocumentParser):
     def _select_xml_fallback(self, soup: BeautifulSoup, selector: str) -> List:
         """
         Fallback selector for XML namespaced elements.
-        
+
         Args:
             soup: BeautifulSoup object
             selector: Original CSS selector with XML namespaces
-            
+
         Returns:
             List of matching BeautifulSoup elements
         """
@@ -463,13 +500,13 @@ class HtmlParser(DocumentParser):
         # Example: "body > div > ix:nonnumeric#F_abc > div > custom:element#F_def > table > tr"
         parts = [part.strip() for part in selector.split('>')]
         current_elements = [soup]
-        
+
         for part in parts:
             if not current_elements:
                 break
-                
+
             next_elements = []
-            
+
             for element in current_elements:
                 # Handle any XML namespace elements
                 if ':' in part:
@@ -478,10 +515,10 @@ class HtmlParser(DocumentParser):
                         # Handle namespace with ID (e.g., "ix:nonnumeric#F_abc")
                         namespace_tag, id_value = part.split('#', 1)
                         namespace, tag_name = namespace_tag.split(':', 1)
-                        
+
                         # Find elements with this namespace:tag combination and matching ID
-                        matches = element.find_all(lambda tag: 
-                            tag.name and ':' in tag.name and 
+                        matches = element.find_all(lambda tag:
+                            tag.name and ':' in tag.name and
                             tag.name.split(':')[0] == namespace and
                             tag.name.split(':')[-1] == tag_name and
                             tag.get('id') == id_value
@@ -490,7 +527,7 @@ class HtmlParser(DocumentParser):
                         # Handle namespace with class (e.g., "ix:nonnumeric.classname")
                         namespace_tag, class_name = part.split('.', 1)
                         namespace, tag_name = namespace_tag.split(':', 1)
-                        
+
                         matches = element.find_all(lambda tag:
                             tag.name and ':' in tag.name and
                             tag.name.split(':')[0] == namespace and
@@ -515,7 +552,7 @@ class HtmlParser(DocumentParser):
                         matches = element.find_all(tag_name, class_=class_name)
                     else:
                         matches = element.find_all(part)
-                
+
                 # Add direct children only (respecting > combinator)
                 for match in matches:
                     if element == soup:
@@ -524,9 +561,9 @@ class HtmlParser(DocumentParser):
                     elif match.parent == element:
                         # For nested searches, only add direct children
                         next_elements.append(match)
-            
+
             current_elements = next_elements
-        
+
         return current_elements
 
     def _resolve_element_content(self, location_data: Dict[str, Any],
@@ -571,13 +608,8 @@ class HtmlParser(DocumentParser):
         if selector:
             elements = self._select_with_xml_namespaces(soup, selector)
             if elements:
-                # Use row parameter if provided to select specific element from results
-                row = location_data.get("row", 0)
-                if 0 <= row < len(elements):
-                    result = str(elements[row])
-                else:
-                    # Fallback to first element if row is out of bounds
-                    result = str(elements[0])
+                # Should always return 1 item
+                result = str(elements[0])
 
         # Handle element type-specific content if no result yet
         elif element_type == "header":
@@ -900,12 +932,16 @@ class HtmlParser(DocumentParser):
             if not hasattr(child, 'name') or not child.name:
                 continue
 
+            # Skip ix: namespace tags completely - we don't want to parse or store them
+            # Also skip processing their children to avoid any ix: content
+            if child.name.startswith('ix:'):
+                continue
+
             # Create an element for this tag
-            # Include standard HTML tags AND namespace-prefixed tags (for iXBRL, XBRL, etc.)
-            if (child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol',
+            # Include standard HTML tags only (removed namespace-prefixed tag processing)
+            if child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol',
                                'pre', 'code', 'blockquote', 'table', 'img', 'div',
-                               'article', 'section', 'nav', 'aside', 'figure'] or
-                ':' in child.name):  # Process namespace-prefixed tags
+                               'article', 'section', 'nav', 'aside', 'figure']:
 
                 # Create an element
                 element = self._create_element_for_tag(child, doc_id, parent_id, source_id, element_dates)
@@ -1134,7 +1170,7 @@ class HtmlParser(DocumentParser):
                         if remaining > 10 and item_text:
                             item_texts.append(item_text[:remaining] + "...")
                         break
-                
+
                 if item_texts:
                     content_preview = ", ".join(item_texts)
                     if len(items) > len(item_texts):
@@ -1422,7 +1458,7 @@ class HtmlParser(DocumentParser):
                 # Get cell contents and create a readable preview
                 cells = row.find_all(['td', 'th'])
                 cell_texts = [cell.get_text(separator=' ', strip=True) for cell in cells if cell.get_text(separator=' ', strip=True)]
-                
+
                 if cell_texts:
                     # Join first few non-empty cells for preview
                     preview_parts = []
@@ -1437,7 +1473,7 @@ class HtmlParser(DocumentParser):
                             if remaining > 10:  # Only add if meaningful space left
                                 preview_parts.append(cell_text[:remaining] + "...")
                             break
-                    
+
                     content_preview = " | ".join(preview_parts) if preview_parts else f"Row {i + 1}"
                 else:
                     content_preview = f"Row {i + 1}"  # Fallback for empty rows
