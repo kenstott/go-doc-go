@@ -41,6 +41,10 @@ def detect_temporal_type(input_string: str) -> TemporalType:
         if len(input_string) > 50 or len(input_string.split()) > 8:
             return TemporalType.NONE
 
+        if re.match(r'^\d+(\.\d+)?$',
+                    input_string.strip()):  # Matches integers (e.g., "123") or floats (e.g., "123.45")
+            return TemporalType.NONE
+
         # Check for time range patterns first
         time_range_patterns = [
             r'^\d{1,2}:\d{2}\s*[-–—to]\s*\d{1,2}:\d{2}$',  # 14:00-16:00, 2:00-4:00
@@ -55,9 +59,10 @@ def detect_temporal_type(input_string: str) -> TemporalType:
 
         # Check if it's a time-only string (no date component)
         time_patterns = [
-            r'^\d{1,2}:\d{2}(:\d{2})?(\s*[ap]\.?m\.?)?$',  # 3:45pm, 15:30, 3:45:30 PM
-            r'^\d{1,2}\s*[ap]\.?m\.?$',  # 3pm, 11 a.m.
-            r'^([01]?\d|2[0-3])([.:][0-5]\d)?([.:][0-5]\d)?$',  # 0500, 13.45, 22:30:15
+            r'^[0-1]?\d:[0-5]\d(:[0-5]\d)?\s*[ap]\.?m\.?$',  # 3:45pm, 03:45 pm, 3:45:30 PM
+            r'^[0-1]?\d:[0-5]\d(:[0-5]\d)?$',  # 15:30, 13:45:30 (24-hour clock formats)
+            r'^[0]?\d\s*[ap]\.?m\.?|1[0-2]\s*[ap]\.?m\.?$',
+            # 3pm, 11 a.m., 04 pm (requires clear am/pm for single digits)
             r'^(noon|midnight)$'  # noon, midnight
         ]
 

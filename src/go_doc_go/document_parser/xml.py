@@ -14,6 +14,7 @@ import uuid
 from typing import Dict, Any, Optional, Union, Tuple, List
 
 import time
+import re
 from lxml import etree
 
 from .base import DocumentParser
@@ -96,6 +97,11 @@ class XmlParser(DocumentParser):
         self.text_cache = LRUCache(max_size=self.max_cache_size * 2, ttl=self.cache_ttl)
 
     @staticmethod
+    def camel_case_to_spaces(camel_case_string: str) -> str:
+        # Use regex to insert a space before each uppercase letter (but not at the start)
+        return re.sub(r'(?<!^)(?=[A-Z])', ' ', camel_case_string)
+
+    @staticmethod
     def _load_source_content(source_path: str) -> Tuple[Union[str, bytes], Optional[str]]:
         """
         Load content from a source file with proper error handling.
@@ -110,7 +116,7 @@ class XmlParser(DocumentParser):
         """
         # Strip timestamp suffix if present (format: path::timestamp)
         actual_path = source_path.split('::')[0] if '::' in source_path else source_path
-        
+
         if not os.path.exists(actual_path):
             error_msg = f"Error: Source file not found: {source_path}"
             logger.error(error_msg)
@@ -426,6 +432,16 @@ class XmlParser(DocumentParser):
             # Get or create lxml root
             root = self._get_or_create_lxml_root(content)
 
+            # Special case for root element
+            if not path or path == "/":
+                # For root element, return just the root tag name
+                root_tag = root.tag
+                root_name = self.camel_case_to_spaces(self._get_normalized_tag_name(root_tag))
+                result = f"{root_name}"
+                if self.enable_caching:
+                    self.text_cache.set(cache_key, result)
+                return result
+
             # Execute XPath query
             ns_dict = self._prepare_namespace_dict(namespaces)
             elements = root.xpath(path, namespaces=ns_dict)
@@ -528,10 +544,11 @@ class XmlParser(DocumentParser):
                     # For embedding text, always use dates as-is (no expansion)
                     # The expansion will be in separate metadata
                     if element_name.lower() in generic_names:
-                        result = text_content  # Just return the date as-is
+                        components = path.split('/')
+                        result = f"{self.camel_case_to_spaces(components[-2])} is {text_content}"  # Just return the date as-is
                     else:
                         # For meaningful element names, include name but no expansion
-                        result = f"{element_name} is {text_content}"
+                        result = f"{self.camel_case_to_spaces(element_name)} is {text_content}"
                 else:
                     # Format as appropriate for the element type
                     is_container, container_type = self._analyze_container_type(element_name)
@@ -539,14 +556,23 @@ class XmlParser(DocumentParser):
 
                     # Generic elements should just return their content
                     if element_name.lower() in {'value', 'text', 'data', 'content', 'val', 'string', 'item'}:
-                        result = text_content
+                        components = path.split('/')
+                        result = f"{self.camel_case_to_spaces(components[-2])} is \"{text_content}\""
                     elif is_identity_element:
-                        result = f"{element_name} is \"{text_content}\""
+                        if text_content:
+                            result = f"{self.camel_case_to_spaces(element_name)} is \"{text_content}\""
+                        else:
+                            result = self.camel_case_to_spaces(element_name)
                     elif is_container:
-                        # Containers with text should just return their text
-                        result = text_content if text_content else ""
+                        if text_content:
+                            result = f"{self.camel_case_to_spaces(element_name)} is \"{text_content}\""
+                        else:
+                            result = self.camel_case_to_spaces(element_name)
                     else:
-                        result = text_content
+                        if text_content:
+                            result = f"{self.camel_case_to_spaces(element_name)} is \"{text_content}\""
+                        else:
+                            result = self.camel_case_to_spaces(element_name)
 
             logger.debug(f"Formatted text result: {result}")
 
@@ -1258,7 +1284,9 @@ class XmlParser(DocumentParser):
             relationships.append(relationship)
 
             # Process text nodes if they have content
-            if element.text and element.text.strip():
+            # Only create separate text nodes for container elements (xml_list, xml_object)
+            # xml_element types already have their text captured in the element itself
+            if element.text and element.text.strip() and element_type != "xml_element":
                 text_id = self._generate_id("text_")
                 text_content = element.text.strip()
                 text_preview = text_content[:self.max_content_preview] + (
