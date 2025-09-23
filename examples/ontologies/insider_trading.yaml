@@ -1,0 +1,502 @@
+domain:
+  name: "insider_trading_detection"
+  version: "1.0.0"
+  description: "Comprehensive ontology for detecting insider trading patterns and relationships from SEC filings and related documents"
+  settings:
+    default_confidence_threshold: 0.75
+    max_relationships_per_pair: 10
+    enable_transitive_inference: true
+    enable_temporal_analysis: true
+
+# Core terms for insider trading detection
+terms:
+  # ========== ENTITIES ==========
+
+  # People and Roles
+  - id: "insider"
+    label: "Corporate Insider"
+    description: "Person with material non-public information (officers, directors, 10%+ shareholders)"
+    aliases: ["executive", "director", "officer", "board member", "significant shareholder"]
+
+  - id: "reporting_person"
+    label: "Reporting Person"
+    description: "Individual required to file SEC forms about stock transactions"
+    aliases: ["filer", "reporting owner", "rptOwner"]
+
+  - id: "beneficial_owner"
+    label: "Beneficial Owner"
+    description: "Person or entity with voting or investment power over securities"
+    aliases: ["owner", "shareholder", "stockholder"]
+
+  - id: "director"
+    label: "Board Director"
+    description: "Member of company board of directors"
+    aliases: ["board member", "independent director", "non-executive director"]
+
+  - id: "officer"
+    label: "Corporate Officer"
+    description: "Executive officer with significant company responsibilities"
+    aliases: ["CEO", "CFO", "COO", "CTO", "executive officer", "principal officer"]
+
+  # Companies and Entities
+  - id: "issuer"
+    label: "Issuing Company"
+    description: "Company whose securities are being traded"
+    aliases: ["company", "corporation", "issuing company", "registrant"]
+
+  - id: "subsidiary"
+    label: "Subsidiary Company"
+    description: "Company controlled by the issuer"
+    aliases: ["controlled entity", "affiliate", "related company"]
+
+  # ========== TRANSACTIONS ==========
+
+  - id: "stock_transaction"
+    label: "Stock Transaction"
+    description: "Purchase, sale, or other disposition of securities"
+    aliases: ["transaction", "trade", "securities transaction"]
+
+  - id: "purchase"
+    label: "Stock Purchase"
+    description: "Acquisition of securities"
+    aliases: ["buy", "acquisition", "purchase transaction"]
+
+  - id: "sale"
+    label: "Stock Sale"
+    description: "Disposition of securities"
+    aliases: ["sell", "disposition", "sale transaction"]
+
+  - id: "option_exercise"
+    label: "Option Exercise"
+    description: "Exercise of stock options"
+    aliases: ["exercise", "option transaction"]
+
+  - id: "derivative_transaction"
+    label: "Derivative Transaction"
+    description: "Transaction involving derivative securities"
+    aliases: ["derivative", "option", "warrant"]
+
+  # ========== TRANSACTION ATTRIBUTES ==========
+
+  - id: "transaction_date"
+    label: "Transaction Date"
+    description: "Date when transaction occurred"
+    aliases: ["trade date", "execution date"]
+
+  - id: "transaction_amount"
+    label: "Transaction Amount"
+    description: "Dollar value or share quantity of transaction"
+    aliases: ["amount", "value", "shares", "quantity"]
+
+  - id: "share_price"
+    label: "Share Price"
+    description: "Price per share in transaction"
+    aliases: ["price", "price per share", "execution price"]
+
+  # ========== SEC FORMS ==========
+
+  - id: "form_4"
+    label: "SEC Form 4"
+    description: "Statement of changes in beneficial ownership"
+    aliases: ["Form 4", "ownership change"]
+
+  - id: "form_3"
+    label: "SEC Form 3"
+    description: "Initial statement of beneficial ownership"
+    aliases: ["Form 3", "initial ownership"]
+
+  - id: "form_5"
+    label: "SEC Form 5"
+    description: "Annual statement of changes in beneficial ownership"
+    aliases: ["Form 5", "annual ownership"]
+
+  # ========== TIMING INDICATORS ==========
+
+  - id: "earnings_date"
+    label: "Earnings Announcement Date"
+    description: "Date of earnings announcement"
+    aliases: ["earnings", "earnings release", "quarterly results"]
+
+  - id: "material_event"
+    label: "Material Corporate Event"
+    description: "Significant corporate event that could affect stock price"
+    aliases: ["merger", "acquisition", "restructuring", "major announcement"]
+
+  - id: "blackout_period"
+    label: "Trading Blackout Period"
+    description: "Period when insiders are restricted from trading"
+    aliases: ["blackout", "quiet period", "restriction period"]
+
+# Element mappings - how to identify entities in documents
+element_mappings:
+  # ========== PEOPLE IDENTIFICATION ==========
+
+  - term_id: "reporting_person"
+    rules:
+      - type: keywords
+        search_scope: "element_name"
+        keywords: ["rptOwnerName", "reportingOwnerName", "signerName"]
+        confidence_threshold: 0.9
+
+      - type: keywords
+        search_scope: "path"
+        keywords: ["reportingOwner", "signatoryName"]
+        confidence_threshold: 0.85
+
+      - type: semantic
+        semantic_phrase: "person filing SEC ownership report"
+        confidence_threshold: 0.8
+
+  - term_id: "insider"
+    rules:
+      - type: keywords
+        search_scope: "all"
+        keywords: ["director", "officer", "CEO", "CFO", "COO", "CTO", "president", "vice president"]
+        confidence_threshold: 0.9
+
+      - type: regex
+        search_scope: "all"
+        pattern: "\\b(Chief|Senior|Executive|Principal)\\s+(Officer|Financial|Executive|Operating|Technology)\\b"
+        confidence_threshold: 0.95
+
+  - term_id: "director"
+    rules:
+      - type: keywords
+        search_scope: "all"
+        keywords: ["director", "board member", "independent director"]
+        confidence_threshold: 0.9
+
+      - type: semantic
+        semantic_phrase: "member of board of directors"
+        confidence_threshold: 0.8
+
+  - term_id: "officer"
+    rules:
+      - type: keywords
+        search_scope: "all"
+        keywords: ["officer", "CEO", "CFO", "COO", "CTO", "president"]
+        confidence_threshold: 0.9
+
+      - type: regex
+        search_scope: "all"
+        pattern: "\\b(Chief|Principal|Executive|Senior)\\s+(Executive|Financial|Operating|Technology|Information)\\s+Officer\\b"
+        confidence_threshold: 0.95
+
+  # ========== COMPANY IDENTIFICATION ==========
+
+  - term_id: "issuer"
+    rules:
+      - type: keywords
+        search_scope: "element_name"
+        keywords: ["issuerName", "companyName", "registrantName"]
+        confidence_threshold: 0.95
+
+      - type: keywords
+        search_scope: "path"
+        keywords: ["issuer", "company", "registrant"]
+        confidence_threshold: 0.8
+
+  # ========== TRANSACTION IDENTIFICATION ==========
+
+  - term_id: "stock_transaction"
+    rules:
+      - type: keywords
+        search_scope: "element_name"
+        keywords: ["transaction", "nonDerivativeTransaction", "derivativeTransaction"]
+        confidence_threshold: 0.9
+
+      - type: keywords
+        search_scope: "path"
+        keywords: ["transactionAmounts", "transactionShares", "transactionPricePerShare"]
+        confidence_threshold: 0.8
+
+  - term_id: "purchase"
+    rules:
+      - type: keywords
+        search_scope: "all"
+        keywords: ["purchase", "buy", "acquisition", "A"]
+        word_boundary: true
+        confidence_threshold: 0.85
+        element_types: ["xml_element", "json_field"]
+
+  - term_id: "sale"
+    rules:
+      - type: keywords
+        search_scope: "all"
+        keywords: ["sale", "sell", "disposition", "D"]
+        word_boundary: true
+        confidence_threshold: 0.85
+        element_types: ["xml_element", "json_field"]
+
+  - term_id: "option_exercise"
+    rules:
+      - type: keywords
+        search_scope: "all"
+        keywords: ["exercise", "option exercise", "M"]
+        confidence_threshold: 0.9
+
+      - type: semantic
+        semantic_phrase: "exercise of stock options or warrants"
+        confidence_threshold: 0.8
+
+  # ========== TEMPORAL ELEMENTS ==========
+
+  - term_id: "transaction_date"
+    rules:
+      - type: keywords
+        search_scope: "element_name"
+        keywords: ["transactionDate", "executionDate", "tradeDate"]
+        confidence_threshold: 0.95
+
+      - type: keywords
+        search_scope: "path"
+        keywords: ["transactionDate", "date"]
+        confidence_threshold: 0.8
+        element_types: ["xml_element", "json_field"]
+
+  - term_id: "transaction_amount"
+    rules:
+      - type: keywords
+        search_scope: "element_name"
+        keywords: ["transactionShares", "sharesOwnedFollowingTransaction", "transactionPricePerShare"]
+        confidence_threshold: 0.9
+
+      - type: keywords
+        search_scope: "path"
+        keywords: ["transactionAmounts", "postTransactionAmounts", "shares"]
+        confidence_threshold: 0.8
+
+  # ========== FORM IDENTIFICATION ==========
+
+  - term_id: "form_4"
+    rules:
+      - type: keywords
+        search_scope: "all"
+        keywords: ["Form 4", "ownershipDocument", "statement of changes"]
+        confidence_threshold: 0.9
+
+      - type: semantic
+        semantic_phrase: "SEC form 4 beneficial ownership change report"
+        confidence_threshold: 0.85
+
+# Relationship rules for building the knowledge graph
+relationship_rules:
+  # ========== PERSON-COMPANY RELATIONSHIPS ==========
+
+  - id: "person_works_for_company"
+    relationship_type: "EMPLOYED_BY"
+    source:
+      term_id: "reporting_person"
+      semantic_phrase: "person employed by or affiliated with company"
+    target:
+      term_id: "issuer"
+      semantic_phrase: "company employing person or receiving services"
+    constraints:
+      same_document: true
+    confidence_calculation: "average"
+    bidirectional: false
+
+  - id: "insider_at_company"
+    relationship_type: "INSIDER_AT"
+    source:
+      term_id: "insider"
+      semantic_phrase: "corporate insider with material information"
+    target:
+      term_id: "issuer"
+      semantic_phrase: "company where person has insider status"
+    constraints:
+      same_document: true
+    confidence_calculation: "min"
+    bidirectional: false
+
+  - id: "director_serves_company"
+    relationship_type: "SERVES_AS_DIRECTOR"
+    source:
+      term_id: "director"
+      semantic_phrase: "person serving on board of directors"
+    target:
+      term_id: "issuer"
+      semantic_phrase: "company with board of directors"
+    constraints:
+      same_document: true
+    confidence_calculation: "average"
+    bidirectional: false
+
+  - id: "officer_leads_company"
+    relationship_type: "SERVES_AS_OFFICER"
+    source:
+      term_id: "officer"
+      semantic_phrase: "executive officer leading company operations"
+    target:
+      term_id: "issuer"
+      semantic_phrase: "company with executive leadership"
+    constraints:
+      same_document: true
+    confidence_calculation: "average"
+    bidirectional: false
+
+  # ========== TRANSACTION RELATIONSHIPS ==========
+
+  - id: "person_executes_transaction"
+    relationship_type: "EXECUTED"
+    source:
+      term_id: "reporting_person"
+      semantic_phrase: "person executing securities transaction"
+    target:
+      term_id: "stock_transaction"
+      semantic_phrase: "securities transaction being executed"
+    constraints:
+      same_document: true
+      hierarchy_level: 2  # Allow some distance in document structure
+    confidence_calculation: "min"
+    bidirectional: false
+
+  - id: "transaction_involves_company"
+    relationship_type: "INVOLVES_SECURITIES_OF"
+    source:
+      term_id: "stock_transaction"
+      semantic_phrase: "transaction involving company securities"
+    target:
+      term_id: "issuer"
+      semantic_phrase: "company whose securities are being traded"
+    constraints:
+      same_document: true
+    confidence_calculation: "average"
+    bidirectional: false
+
+  - id: "transaction_occurs_on_date"
+    relationship_type: "OCCURRED_ON"
+    source:
+      term_id: "stock_transaction"
+      semantic_phrase: "transaction with specific execution date"
+    target:
+      term_id: "transaction_date"
+      semantic_phrase: "date when transaction was executed"
+    constraints:
+      same_document: true
+      hierarchy_level: 1
+    confidence_calculation: "max"
+    bidirectional: false
+
+  - id: "transaction_has_amount"
+    relationship_type: "HAS_AMOUNT"
+    source:
+      term_id: "stock_transaction"
+      semantic_phrase: "transaction with monetary or share value"
+    target:
+      term_id: "transaction_amount"
+      semantic_phrase: "value or quantity of transaction"
+    constraints:
+      same_document: true
+      hierarchy_level: 1
+    confidence_calculation: "max"
+    bidirectional: false
+
+  # ========== TEMPORAL RELATIONSHIPS ==========
+
+  - id: "transaction_near_earnings"
+    relationship_type: "OCCURRED_NEAR"
+    source:
+      term_id: "stock_transaction"
+      semantic_phrase: "transaction timing relative to earnings"
+    target:
+      term_id: "earnings_date"
+      semantic_phrase: "earnings announcement creating information asymmetry"
+    constraints:
+      temporal_proximity: 30  # Within 30 days
+      cross_document: true
+    confidence_calculation: "weighted"
+    bidirectional: false
+
+  - id: "transaction_during_blackout"
+    relationship_type: "OCCURRED_DURING"
+    source:
+      term_id: "stock_transaction"
+      semantic_phrase: "transaction during restricted trading period"
+    target:
+      term_id: "blackout_period"
+      semantic_phrase: "period when trading is restricted"
+    constraints:
+      temporal_overlap: true
+      cross_document: true
+    confidence_calculation: "min"
+    bidirectional: false
+
+  # ========== CROSS-DOCUMENT RELATIONSHIPS ==========
+
+  - id: "multiple_transactions_same_person"
+    relationship_type: "PATTERN_WITH"
+    source:
+      term_id: "stock_transaction"
+      semantic_phrase: "transaction part of trading pattern"
+    target:
+      term_id: "stock_transaction"
+      semantic_phrase: "related transaction by same person"
+    constraints:
+      cross_document: true
+      same_person: true
+      temporal_proximity: 90  # Within 90 days
+    confidence_calculation: "average"
+    bidirectional: true
+
+# Derived entity rules for complex entities
+derived_entity_rules:
+  - entity_type: "TradingPattern"
+    description: "Pattern of related transactions by same person"
+    source_terms: ["stock_transaction"]
+    aggregation_rules:
+      - group_by: "reporting_person"
+      - temporal_window: 90  # days
+      - minimum_transactions: 2
+    derived_attributes:
+      - total_value: "sum(transaction_amounts)"
+      - transaction_count: "count(transactions)"
+      - date_range: "date_span(transaction_dates)"
+      - pattern_type: "classify_pattern(transaction_types)"
+
+  - entity_type: "InsiderProfile"
+    description: "Comprehensive profile of corporate insider"
+    source_terms: ["insider", "reporting_person"]
+    aggregation_rules:
+      - group_by: "person_name"
+      - include_all_roles: true
+    derived_attributes:
+      - companies: "list(associated_companies)"
+      - roles: "list(corporate_roles)"
+      - total_transactions: "count(all_transactions)"
+      - recent_activity: "transactions_in_last_30_days"
+
+  - entity_type: "SuspiciousActivity"
+    description: "Potentially suspicious trading activity"
+    source_terms: ["stock_transaction", "insider", "material_event"]
+    detection_rules:
+      - unusual_timing: "transaction_near_material_event"
+      - unusual_volume: "transaction_amount > typical_volume * 3"
+      - pattern_anomaly: "deviation_from_historical_pattern"
+      - blackout_violation: "transaction_during_blackout_period"
+    risk_scoring:
+      - high_risk: "multiple_risk_factors >= 2"
+      - medium_risk: "single_significant_factor"
+      - low_risk: "minor_anomalies_only"
+
+# Analysis settings for insider trading detection
+analysis_settings:
+  temporal_analysis:
+    earnings_proximity_days: 30
+    material_event_proximity_days: 14
+    pattern_analysis_window: 365
+
+  volume_analysis:
+    unusual_volume_threshold: 3.0  # 3x normal volume
+    large_transaction_threshold: 1000000  # $1M+
+
+  pattern_detection:
+    minimum_pattern_transactions: 3
+    suspicious_frequency_threshold: 5  # transactions per month
+
+  risk_scoring:
+    weights:
+      timing_proximity: 0.4
+      transaction_size: 0.3
+      frequency_pattern: 0.2
+      role_sensitivity: 0.1
