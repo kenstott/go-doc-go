@@ -98,23 +98,46 @@ const ExecutionMonitor: React.FC<ExecutionMonitorProps> = ({
   const [fontSize, setFontSize] = useState(0.85); // Base font size in rem
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  // Fetch executions
+  // Fetch executions using the new monitoring API
   const fetchExecutions = async () => {
     setLoading(true);
     try {
-      let url = '/api/pipelines/executions/recent';
+      let url = '/api/pipelines/monitor?status=all&limit=100';
       if (pipelineId) {
-        url = `/api/pipelines/${pipelineId}/executions`;
+        url = `/api/pipelines/monitor?status=all&limit=100&pipeline_id=${pipelineId}`;
       }
-      
+
       const response = await fetch(url);
       if (response.ok) {
         const data = await response.json();
-        setExecutions(data.executions || []);
-        
+        // Convert monitoring data to execution status format
+        const executions = (data.jobs || []).map((job: any) => ({
+          run_id: job.run_id,
+          pipeline_id: job.pipeline_id,
+          status: job.status,
+          documents_processed: job.documents_processed || 0,
+          documents_total: job.documents_total || 0,
+          started_at: job.started_at,
+          completed_at: job.completed_at,
+          errors_count: job.error_count || 0,
+          warnings_count: job.warning_count || 0,
+          progress_data: job.progress ? {
+            status: job.status,
+            last_update: job.last_heartbeat,
+            stats: {
+              documents: job.documents_processed,
+              documents_parsed: job.documents_processed,
+              documents_embedded: job.documents_processed,
+              parsing_complete: job.status === 'completed' || job.progress_percentage >= 100,
+              embedding_complete: job.status === 'completed'
+            }
+          } : null
+        }));
+        setExecutions(executions);
+
         // If we have a specific execution ID, select it
-        if (executionId && data.executions) {
-          const exec = data.executions.find((e: ExecutionStatus) => e.run_id === executionId);
+        if (executionId && executions) {
+          const exec = executions.find((e: ExecutionStatus) => e.run_id === executionId);
           if (exec) {
             setSelectedExecution(exec);
           }
@@ -127,27 +150,45 @@ const ExecutionMonitor: React.FC<ExecutionMonitorProps> = ({
     }
   };
 
-  // Fetch specific execution details with real-time progress
+  // Fetch specific execution details with real-time progress using monitoring API
   const fetchExecutionDetails = async (runId: string) => {
     try {
-      const response = await fetch(`/api/pipelines/executions/${runId}/status`);
+      // Use specific job monitoring endpoint for detailed real-time data
+      const response = await fetch(`/api/pipelines/monitor/${runId}`);
       if (response.ok) {
-        const data = await response.json();
-        
-        // The status endpoint returns { execution, progress, recent_events }
-        const executionData = {
-          ...data.execution,
-          // Add progress data to execution for compatibility
-          progress_data: data.progress,
-          recent_events: data.recent_events
-        };
-        
-        setSelectedExecution(executionData);
-        
-        // Update in list too
-        setExecutions(prev => prev.map(e => 
-          e.run_id === runId ? executionData : e
-        ));
+        const job = await response.json();
+
+        if (job && job.run_id) {
+          const executionData = {
+            run_id: job.run_id,
+            pipeline_id: job.pipeline_id,
+            status: job.status,
+            documents_processed: job.documents_processed || 0,
+            documents_total: job.documents_total || 0,
+            started_at: job.started_at,
+            completed_at: job.completed_at,
+            errors_count: job.error_count || 0,
+            warnings_count: job.warning_count || 0,
+            progress_data: {
+              status: job.status,
+              last_update: job.last_heartbeat,
+              stats: {
+                documents: job.documents_processed,
+                documents_parsed: job.documents_processed,
+                documents_embedded: job.documents_processed,
+                parsing_complete: job.status === 'completed' || job.progress_percentage >= 100,
+                embedding_complete: job.status === 'completed'
+              }
+            }
+          };
+
+          setSelectedExecution(executionData);
+
+          // Update in list too
+          setExecutions(prev => prev.map(e =>
+            e.run_id === runId ? executionData : e
+          ));
+        }
       }
     } catch (error) {
       console.error('Error fetching execution details:', error);
