@@ -1,11 +1,22 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Box, Typography, Button, IconButton, Card, CardContent, CardActions, Chip } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, PlayArrow as RunIcon, History as HistoryIcon, Search as SearchIcon } from '@mui/icons-material';
+import { Box, Typography, Button, IconButton, Card, CardContent, CardActions, Chip, Alert, CircularProgress } from '@mui/material';
+import {
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  PlayArrow as RunIcon,
+  History as HistoryIcon,
+  Search as SearchIcon,
+  Stop as StopIcon,
+  Visibility as VisibilityIcon,
+  CleaningServices as CleanupIcon
+} from '@mui/icons-material';
 import PipelineConfigEditor from './components/Pipeline/PipelineConfigEditor';
 import SimpleGettingStarted from './components/Pipeline/SimpleGettingStarted';
 import ExecutionMonitor from './components/Pipeline/ExecutionMonitor';
 import QueryDialog from './components/Pipeline/QueryDialog';
+import { JobStatusBadge, MonitoringSection, LastRunInfo, JobMonitorData } from './components/Pipeline/MonitoringComponents';
+import { CleanupDialog, CancelDialog } from './components/Pipeline/CleanupDialog';
 // import GettingStartedOverlay from './components/Pipeline/GettingStartedOverlay';
 
 const SimplePipelineView = () => {
@@ -20,6 +31,12 @@ const SimplePipelineView = () => {
   const [queryDialogOpen, setQueryDialogOpen] = React.useState(false);
   const [queryingPipeline, setQueryingPipeline] = React.useState<any>(null);
 
+  // Monitoring state
+  const [monitoringData, setMonitoringData] = React.useState<Map<number, JobMonitorData>>(new Map());
+  const [autoRefresh, setAutoRefresh] = React.useState(true);
+  const [cleanupDialog, setCleanupDialog] = React.useState<{ open: boolean; runId?: string; pipelineName?: string }>({ open: false });
+  const [cancelDialog, setCancelDialog] = React.useState<{ open: boolean; runId?: string; pipelineName?: string }>({ open: false });
+
   const loadPipelines = () => {
     fetch('/api/pipelines')
       .then(res => res.json())
@@ -33,9 +50,48 @@ const SimplePipelineView = () => {
       });
   };
 
+  // Load monitoring data alongside pipelines
+  const loadMonitoringData = async () => {
+    try {
+      const response = await fetch('/api/pipelines/monitor?status=all&limit=100');
+      if (response.ok) {
+        const data = await response.json();
+
+        // Map monitoring data by pipeline_id
+        const monitorMap = new Map<number, JobMonitorData>();
+        data.jobs?.forEach((job: JobMonitorData) => {
+          // Keep only the most recent job per pipeline
+          const existingJob = monitorMap.get(job.pipeline_id);
+          if (!existingJob || new Date(job.timing.started_at) > new Date(existingJob.timing.started_at)) {
+            monitorMap.set(job.pipeline_id, job);
+          }
+        });
+        setMonitoringData(monitorMap);
+      }
+    } catch (err) {
+      console.error('Error loading monitoring data:', err);
+    }
+  };
+
   React.useEffect(() => {
     loadPipelines();
+    loadMonitoringData();
   }, []);
+
+  // Auto-refresh monitoring data for active jobs
+  React.useEffect(() => {
+    if (!autoRefresh) return;
+
+    // Check if there are any active jobs
+    const hasActiveJobs = Array.from(monitoringData.values()).some(
+      job => ['pending', 'initializing', 'running'].includes(job.status)
+    );
+
+    if (hasActiveJobs) {
+      const interval = setInterval(loadMonitoringData, 5000); // Refresh every 5 seconds
+      return () => clearInterval(interval);
+    }
+  }, [autoRefresh, monitoringData]);
 
   const handleCreateNew = () => {
     setEditMode('create');
@@ -155,7 +211,7 @@ const SimplePipelineView = () => {
       
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" gutterBottom>Knowledge Pipeline Manager</Typography>
+          <Typography variant="h4" gutterBottom>Knowledge Pipeline Manager (Live)</Typography>
           <Typography variant="body1" color="text.secondary">
             {pipelines.length} pipeline{pipelines.length !== 1 ? 's' : ''} configured
           </Typography>
@@ -186,17 +242,25 @@ const SimplePipelineView = () => {
       
       {/* Pipeline Cards */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {pipelines.map((pipeline: any) => (
-          <Card key={pipeline.id} variant="outlined">
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography variant="h6" gutterBottom>
-                    {pipeline.name || 'Unnamed Pipeline'}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" paragraph>
-                    {pipeline.description || 'No description provided'}
-                  </Typography>
+        {pipelines.map((pipeline: any) => {
+          const jobData = monitoringData.get(pipeline.id);
+          const isActive = jobData && ['pending', 'initializing', 'running'].includes(jobData.status);
+          const hasFailed = jobData && ['failed', 'cancelled'].includes(jobData.status);
+
+          return (
+            <Card key={pipeline.id} variant="outlined" sx={{ opacity: isActive ? 1 : 0.98 }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Box sx={{ flex: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="h6">
+                        {pipeline.name || 'Unnamed Pipeline'}
+                      </Typography>
+                      {jobData && <JobStatusBadge job={jobData} />}
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" paragraph>
+                      {pipeline.description || 'No description provided'}
+                    </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Chip 
                       label={`ID: ${pipeline.id}`} 
@@ -216,14 +280,38 @@ const SimplePipelineView = () => {
                     {pipeline.tags && pipeline.tags.map((tag: string) => (
                       <Chip key={tag} label={tag} size="small" />
                     ))}
+                    </Box>
                   </Box>
                 </Box>
-              </Box>
-            </CardContent>
-            <CardActions sx={{ justifyContent: 'flex-end' }}>
-              <Button 
-                startIcon={<RunIcon />}
-                onClick={async () => {
+
+                {/* Monitoring Section for Active Jobs */}
+                {isActive && jobData && (
+                  <MonitoringSection
+                    job={jobData}
+                    onCancel={() => {
+                      setCancelDialog({
+                        open: true,
+                        runId: jobData.run_id,
+                        pipelineName: pipeline.name
+                      });
+                    }}
+                    onViewDetails={() => {
+                      setMonitorPipelineId(pipeline.id);
+                      setMonitorExecutionId(jobData.run_id);
+                      setMonitorOpen(true);
+                    }}
+                  />
+                )}
+
+                {/* Last Run Info for Inactive Pipelines */}
+                {!isActive && jobData && <LastRunInfo job={jobData} />}
+              </CardContent>
+              <CardActions sx={{ justifyContent: 'flex-end' }}>
+                {/* Dynamic Run/Cancel button based on status */}
+                {!isActive ? (
+                  <Button
+                    startIcon={<RunIcon />}
+                    onClick={async () => {
                   try {
                     const response = await fetch(`/api/pipelines/${pipeline.id}/execute`, {
                       method: 'POST',
@@ -245,11 +333,56 @@ const SimplePipelineView = () => {
                     console.error('Error executing pipeline:', err);
                     alert('Error executing pipeline');
                   }
-                }}
-                color="primary"
-              >
-                Run
-              </Button>
+                    }}
+                    color="primary"
+                  >
+                    Run
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      startIcon={<VisibilityIcon />}
+                      onClick={() => {
+                        setMonitorPipelineId(pipeline.id);
+                        setMonitorExecutionId(jobData?.run_id);
+                        setMonitorOpen(true);
+                      }}
+                      color="primary"
+                    >
+                      Monitor
+                    </Button>
+                    <Button
+                      startIcon={<StopIcon />}
+                      onClick={() => {
+                        setCancelDialog({
+                          open: true,
+                          runId: jobData?.run_id,
+                          pipelineName: pipeline.name
+                        });
+                      }}
+                      color="warning"
+                    >
+                      Cancel
+                    </Button>
+                  </>
+                )}
+
+                {/* Cleanup button for failed jobs */}
+                {hasFailed && jobData && (
+                  <Button
+                    startIcon={<CleanupIcon />}
+                    onClick={() => {
+                      setCleanupDialog({
+                        open: true,
+                        runId: jobData.run_id,
+                        pipelineName: pipeline.name
+                      });
+                    }}
+                    color="secondary"
+                  >
+                    Cleanup
+                  </Button>
+                )}
               <Button
                 startIcon={<HistoryIcon />}
                 onClick={() => {
@@ -271,23 +404,26 @@ const SimplePipelineView = () => {
               >
                 Query
               </Button>
-              <IconButton
-                onClick={() => handleEdit(pipeline)}
-                color="primary"
-                title="Edit Pipeline"
-              >
-                <EditIcon />
-              </IconButton>
-              <IconButton 
-                onClick={() => handleDelete(pipeline.id)}
-                color="error"
-                title="Delete Pipeline"
-              >
-                <DeleteIcon />
-              </IconButton>
-            </CardActions>
-          </Card>
-        ))}
+                <IconButton
+                  onClick={() => handleEdit(pipeline)}
+                  color="primary"
+                  disabled={isActive}
+                  title={isActive ? "Cannot edit while running" : "Edit Pipeline"}
+                >
+                  <EditIcon />
+                </IconButton>
+                <IconButton
+                  onClick={() => handleDelete(pipeline.id)}
+                  color="error"
+                  disabled={isActive}
+                  title={isActive ? "Cannot delete while running" : "Delete Pipeline"}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </CardActions>
+            </Card>
+          );
+        })}
       </Box>
       
       {pipelines.length === 0 && (
@@ -358,6 +494,63 @@ const SimplePipelineView = () => {
           setQueryingPipeline(null);
         }}
         pipeline={queryingPipeline}
+      />
+
+      {/* Cleanup Dialog */}
+      <CleanupDialog
+        open={cleanupDialog.open}
+        onClose={() => setCleanupDialog({ open: false })}
+        runId={cleanupDialog.runId || ''}
+        pipelineName={cleanupDialog.pipelineName}
+        onConfirm={async (options) => {
+          if (!cleanupDialog.runId) return;
+
+          const response = await fetch(`/api/pipelines/executions/${cleanupDialog.runId}/cleanup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              revert_to_previous: options.revertToPrevious,
+              delete_files: options.deleteFiles,
+              force: options.force
+            })
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Cleanup failed');
+          }
+
+          // Refresh data after cleanup
+          loadPipelines();
+          loadMonitoringData();
+        }}
+      />
+
+      {/* Cancel Dialog */}
+      <CancelDialog
+        open={cancelDialog.open}
+        onClose={() => setCancelDialog({ open: false })}
+        pipelineName={cancelDialog.pipelineName}
+        onConfirm={async (cleanup) => {
+          if (!cancelDialog.runId) return;
+
+          const response = await fetch(`/api/pipelines/executions/${cancelDialog.runId}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cleanup: cleanup,
+              reason: 'User requested cancellation'
+            })
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || 'Cancellation failed');
+          }
+
+          // Refresh data after cancellation
+          loadMonitoringData();
+        }}
       />
     </Box>
   );

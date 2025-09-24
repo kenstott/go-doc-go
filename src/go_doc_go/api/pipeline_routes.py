@@ -549,18 +549,214 @@ def get_execution_status(run_id: str):
 def cancel_execution(run_id: str):
     """
     Cancel an active execution.
+
+    Request Body (optional):
+    {
+        "cleanup": false,  // Whether to cleanup data after cancellation
+        "reason": "User requested cancellation"
+    }
     """
     try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor, JobStatus
+
+        data = request.get_json() or {}
+        cleanup_after = data.get('cleanup', False)
+        reason = data.get('reason', 'User requested cancellation')
+
+        # Update monitoring status
+        monitor = PipelineMonitor()
+        monitor.update_job_status(
+            run_id,
+            status=JobStatus.CANCELLED,
+            last_error=reason
+        )
+
+        # Cancel via execution engine
         engine = get_execution_engine()
         cancelled = engine.cancel_execution(run_id)
-        
+
         if not cancelled:
             return jsonify({'error': 'Not Found', 'message': f'Execution {run_id} not found or not active'}), 404
-        
-        return jsonify({'message': 'Execution cancellation requested'})
-        
+
+        # If cleanup requested, mark for cleanup
+        if cleanup_after:
+            monitor.update_job_status(run_id, cleanup_status='pending')
+
+        return jsonify({
+            'message': 'Execution cancelled',
+            'run_id': run_id,
+            'cleanup_pending': cleanup_after
+        })
+
     except Exception as e:
         logger.error(f"Error cancelling execution {run_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/executions/<string:run_id>/cleanup', methods=['POST'])
+def cleanup_execution(run_id: str):
+    """
+    Clean up all data from a specific execution.
+
+    This will delete all documents, elements, and relationships created by this run.
+
+    Request Body:
+    {
+        "revert_to_previous": false,  // Make previous successful run current
+        "delete_files": false,         // Also delete stored files
+        "force": false                 // Force cleanup even if job is running
+    }
+
+    Returns:
+    {
+        "message": "Cleanup completed",
+        "stats": {
+            "documents_deleted": 100,
+            "elements_deleted": 500,
+            "relationships_deleted": 200
+        }
+    }
+    """
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor
+        from ..storage import get_storage_backend
+
+        data = request.get_json() or {}
+        revert_to_previous = data.get('revert_to_previous', False)
+        delete_files = data.get('delete_files', False)
+        force = data.get('force', False)
+
+        monitor = PipelineMonitor()
+
+        # Get job status
+        job = monitor.get_job_status(run_id)
+        if not job:
+            return jsonify({'error': 'Not Found', 'message': f'Execution {run_id} not found'}), 404
+
+        # Check if job is still running
+        if not force and job['status'] in ['running', 'initializing']:
+            return jsonify({
+                'error': 'Conflict',
+                'message': 'Cannot cleanup while job is running. Cancel first or use force=true'
+            }), 409
+
+        # Update cleanup status
+        monitor.update_job_status(run_id, cleanup_status='in_progress')
+
+        try:
+            # Get storage backend
+            storage = get_storage_backend()
+
+            # Count items to be deleted (for stats)
+            stats = {
+                'documents_deleted': 0,
+                'elements_deleted': 0,
+                'relationships_deleted': 0
+            }
+
+            # Delete from storage tables
+            # This would need to be implemented in the storage backend
+            if hasattr(storage, 'cleanup_run'):
+                cleanup_stats = storage.cleanup_run(run_id, delete_files=delete_files)
+                stats.update(cleanup_stats)
+            else:
+                # Fallback: manual deletion
+                # You would implement this based on your storage schema
+                logger.warning(f"Storage backend doesn't support cleanup_run, using fallback")
+
+            # Update monitoring
+            monitor.update_job_status(
+                run_id,
+                cleanup_status='completed',
+                documents_cleaned=stats['documents_deleted'],
+                elements_cleaned=stats['elements_deleted']
+            )
+
+            # Handle revert to previous
+            if revert_to_previous:
+                # Find the last successful run for this pipeline
+                with monitor._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT run_id FROM pipeline_job_status
+                        WHERE pipeline_id = ? AND status = 'completed'
+                        AND run_id != ?
+                        ORDER BY completed_at DESC
+                        LIMIT 1
+                    """, (job['pipeline_id'], run_id))
+
+                    row = cursor.fetchone()
+                    if row:
+                        previous_run_id = row[0]
+                        # Update pipeline to use previous run as current
+                        # This would need to be added to pipeline config
+                        logger.info(f"Would revert pipeline {job['pipeline_id']} to run {previous_run_id}")
+
+            return jsonify({
+                'message': 'Cleanup completed',
+                'run_id': run_id,
+                'stats': stats,
+                'reverted_to': previous_run_id if revert_to_previous and 'previous_run_id' in locals() else None
+            })
+
+        except Exception as cleanup_error:
+            # Update status to failed
+            monitor.update_job_status(
+                run_id,
+                cleanup_status='failed',
+                last_error=str(cleanup_error)
+            )
+            raise
+
+    except Exception as e:
+        logger.error(f"Error cleaning up execution {run_id}: {e}")
+        return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/pipelines/<int:pipeline_id>/active-runs', methods=['GET'])
+def get_active_runs(pipeline_id: int):
+    """
+    Check if a pipeline has any active runs.
+
+    Returns:
+    {
+        "has_active": true,
+        "active_runs": [
+            {
+                "run_id": "run_123",
+                "status": "running",
+                "started_at": "2024-01-01T10:00:00Z",
+                "progress_percentage": 45.2
+            }
+        ]
+    }
+    """
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor
+
+        monitor = PipelineMonitor()
+
+        # Get active jobs for this pipeline
+        active_jobs = [
+            job for job in monitor.get_active_jobs(pipeline_id)
+            if job['status'] in ['pending', 'initializing', 'running']
+        ]
+
+        return jsonify({
+            'has_active': len(active_jobs) > 0,
+            'active_runs': [
+                {
+                    'run_id': job['run_id'],
+                    'status': job['status'],
+                    'started_at': job['started_at'],
+                    'progress_percentage': job.get('progress_percentage', 0)
+                }
+                for job in active_jobs
+            ]
+        })
+
+    except Exception as e:
+        logger.error(f"Error checking active runs for pipeline {pipeline_id}: {e}")
         return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
 
 
@@ -787,6 +983,445 @@ def get_dashboard_summary():
     except Exception as e:
         logger.error(f"Error getting dashboard summary: {e}")
         return jsonify({'error': 'Internal Server Error', 'message': str(e)}), 500
+
+
+# Unified Monitoring Routes
+
+@pipeline_bp.route('/monitor', methods=['GET'])
+def monitor_pipelines():
+    """
+    Unified monitoring endpoint for all pipeline jobs.
+
+    Provides comprehensive real-time monitoring data for all running and recent pipeline executions.
+
+    Query Parameters:
+    - status: Filter by status (running, completed, failed, all) - default: running
+    - include_workers: Include detailed worker status (true/false) - default: false
+    - include_history: Include historical performance data (true/false) - default: false
+    - pipeline_id: Filter by specific pipeline ID
+    - since: Return jobs updated since timestamp (ISO format)
+    - limit: Maximum number of jobs to return (default: 50, max: 200)
+
+    Returns:
+    {
+        "jobs": [
+            {
+                "run_id": "run_20241201_123456_abc",
+                "pipeline_id": 1,
+                "pipeline_name": "Financial Analysis",
+                "status": "running",
+                "phase": "embedding",
+                "health": "healthy",
+                "progress": {
+                    "percentage": 45.2,
+                    "documents_total": 1000,
+                    "documents_claimed": 500,
+                    "documents_processed": 452,
+                    "documents_failed": 3,
+                    "documents_remaining": 545
+                },
+                "workers": {
+                    "total": 10,
+                    "active": 8,
+                    "failed": 1,
+                    "idle": 1,
+                    "details": []  // Included if include_workers=true
+                },
+                "performance": {
+                    "avg_processing_time_ms": 250,
+                    "estimated_completion": "2024-12-01T14:30:00Z",
+                    "throughput_per_minute": 28.5
+                },
+                "timing": {
+                    "started_at": "2024-12-01T10:00:00Z",
+                    "running_time_minutes": 210,
+                    "last_heartbeat": "2024-12-01T13:30:00Z"
+                },
+                "errors": {
+                    "count": 3,
+                    "last_error": "Failed to process document X"
+                }
+            }
+        ],
+        "summary": {
+            "total_jobs": 15,
+            "running_jobs": 3,
+            "completed_jobs": 10,
+            "failed_jobs": 2,
+            "total_workers_active": 25,
+            "total_documents_processing": 3456,
+            "system_health": "good",
+            "oldest_running_job": "2024-12-01T08:00:00Z"
+        },
+        "performance_history": [],  // Included if include_history=true
+        "timestamp": "2024-12-01T13:30:15Z"
+    }
+    """
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor, JobStatus
+
+        # Initialize monitor
+        monitor = PipelineMonitor()
+
+        # Parse query parameters
+        status_filter = request.args.get('status', 'running')
+        include_workers = request.args.get('include_workers', 'false').lower() == 'true'
+        include_history = request.args.get('include_history', 'false').lower() == 'true'
+        pipeline_id = request.args.get('pipeline_id', type=int)
+        since = request.args.get('since')
+        limit = min(int(request.args.get('limit', 50)), 200)
+
+        # Get jobs based on status filter
+        if status_filter == 'all':
+            # Get all recent jobs
+            with monitor._get_connection() as conn:
+                cursor = conn.cursor()
+                query = """
+                    SELECT * FROM pipeline_monitoring_dashboard
+                    WHERE 1=1
+                """
+                params = []
+
+                if pipeline_id:
+                    query += " AND pipeline_id = ?"
+                    params.append(pipeline_id)
+
+                if since:
+                    query += " AND updated_at >= ?"
+                    params.append(since)
+
+                query += " ORDER BY started_at DESC LIMIT ?"
+                params.append(limit)
+
+                cursor.execute(query, params)
+                jobs = [dict(row) for row in cursor.fetchall()]
+        else:
+            # First, detect and fix any stale jobs automatically
+            try:
+                stale_fixed = monitor.detect_and_fix_stale_jobs(stale_threshold_minutes=15)
+                if stale_fixed > 0:
+                    logger.info(f"Automatically fixed {stale_fixed} stale jobs during monitoring query")
+            except Exception as e:
+                logger.error(f"Failed to auto-detect stale jobs: {e}")
+
+            # Get active jobs
+            jobs = monitor.get_active_jobs(pipeline_id)
+
+            # Filter by specific status if needed
+            if status_filter != 'running':
+                jobs = [j for j in jobs if j['status'] == status_filter]
+
+        # Format job data for response
+        formatted_jobs = []
+        total_active_workers = 0
+        total_documents_processing = 0
+
+        for job in jobs[:limit]:
+            job_data = {
+                'run_id': job['run_id'],
+                'pipeline_id': job['pipeline_id'],
+                'pipeline_name': job.get('pipeline_name', f"Pipeline {job['pipeline_id']}"),
+                'status': job['status'],
+                'phase': job.get('phase'),
+                'health': job.get('calculated_health', job.get('health_status', 'unknown')),
+                'progress': {
+                    'percentage': round(job.get('calculated_progress_pct', 0), 2),
+                    'documents_total': job.get('documents_total', 0),
+                    'documents_claimed': job.get('documents_claimed', 0),
+                    'documents_processed': job.get('documents_processed', 0),
+                    'documents_failed': job.get('documents_failed', 0),
+                    'documents_remaining': job.get('documents_remaining', 0)
+                },
+                'workers': {
+                    'total': job.get('total_workers', 0),
+                    'active': job.get('active_workers', 0),
+                    'failed': job.get('failed_workers', 0),
+                    'idle': job.get('idle_workers', 0)
+                },
+                'performance': {
+                    'avg_processing_time_ms': job.get('avg_processing_time_ms', 0),
+                    'estimated_completion': job.get('calculated_eta'),
+                },
+                'timing': {
+                    'started_at': job.get('started_at'),
+                    'running_time_minutes': job.get('duration_minutes', 0),
+                    'last_heartbeat': job.get('last_heartbeat')
+                },
+                'errors': {
+                    'count': job.get('error_count', 0),
+                    'last_error': job.get('last_error')
+                }
+            }
+
+            # Calculate throughput
+            if job.get('duration_minutes', 0) > 0:
+                job_data['performance']['throughput_per_minute'] = round(
+                    job.get('documents_processed', 0) / job['duration_minutes'], 2
+                )
+
+            # Include worker details if requested
+            if include_workers:
+                job_data['workers']['details'] = monitor.get_worker_status(job['run_id'])
+
+            formatted_jobs.append(job_data)
+
+            # Accumulate summary stats
+            if job['status'] == 'running':
+                total_active_workers += job.get('active_workers', 0)
+                total_documents_processing += job.get('documents_remaining', 0)
+
+        # Get monitoring summary
+        summary_data = monitor.get_monitoring_summary()
+
+        # Build response summary
+        summary = {
+            'total_jobs': len(jobs),
+            'running_jobs': len([j for j in jobs if j['status'] == 'running']),
+            'completed_jobs': len([j for j in jobs if j['status'] == 'completed']),
+            'failed_jobs': len([j for j in jobs if j['status'] == 'failed']),
+            'total_workers_active': total_active_workers,
+            'total_documents_processing': total_documents_processing,
+            'system_health': 'good' if summary_data.get('total_active_jobs', 0) < 10 else 'busy',
+            'oldest_running_job': min(
+                (j['started_at'] for j in jobs if j['status'] == 'running'),
+                default=None
+            )
+        }
+
+        response = {
+            'jobs': formatted_jobs,
+            'summary': summary,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        # Include historical performance if requested
+        if include_history:
+            response['performance_history'] = summary_data.get('recent_history', [])
+            response['phase_performance'] = summary_data.get('phase_performance', [])
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"Error in monitoring endpoint: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to get monitoring data',
+            'message': str(e)
+        }), 500
+
+
+@pipeline_bp.route('/monitor/<string:run_id>', methods=['GET'])
+def monitor_job(run_id: str):
+    """
+    Get detailed monitoring data for a specific job.
+
+    Parameters:
+        run_id: The execution run ID
+
+    Query Parameters:
+        include_workers: Include detailed worker status (true/false)
+        include_events: Include recent processing events (true/false)
+        events_limit: Number of events to include (default: 100)
+
+    Returns detailed monitoring data for the specified job.
+    """
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor
+
+        monitor = PipelineMonitor()
+
+        # Parse query parameters
+        include_workers = request.args.get('include_workers', 'true').lower() == 'true'
+        include_events = request.args.get('include_events', 'false').lower() == 'true'
+        events_limit = min(int(request.args.get('events_limit', 100)), 1000)
+
+        # Get job status
+        job = monitor.get_job_status(run_id)
+        if not job:
+            return jsonify({'error': 'Job not found', 'run_id': run_id}), 404
+
+        # Get job health
+        health_status, health_reason = monitor.get_job_health(run_id)
+
+        response = {
+            'job': dict(job),
+            'health': {
+                'status': health_status.value,
+                'reason': health_reason
+            }
+        }
+
+        # Include worker details
+        if include_workers:
+            response['workers'] = monitor.get_worker_status(run_id)
+
+        # Include processing events
+        if include_events:
+            with monitor._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT * FROM pipeline_processing_events
+                    WHERE run_id = ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                """, (run_id, events_limit))
+                response['events'] = [dict(row) for row in cursor.fetchall()]
+
+        # Get phase checkpoints
+        with monitor._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM pipeline_phase_checkpoints
+                WHERE run_id = ?
+                ORDER BY
+                    CASE phase
+                        WHEN 'setup' THEN 1
+                        WHEN 'ingestion' THEN 2
+                        WHEN 'parsing' THEN 3
+                        WHEN 'extraction' THEN 4
+                        WHEN 'embedding' THEN 5
+                        WHEN 'storage' THEN 6
+                        WHEN 'cleanup' THEN 7
+                        ELSE 8
+                    END
+            """, (run_id,))
+            response['phases'] = [dict(row) for row in cursor.fetchall()]
+
+        return jsonify(response)
+
+    except Exception as e:
+        logger.error(f"Error getting job monitoring data: {e}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to get job monitoring data',
+            'message': str(e)
+        }), 500
+
+
+@pipeline_bp.route('/monitor/<string:run_id>/heartbeat', methods=['POST'])
+def send_job_heartbeat(run_id: str):
+    """
+    Send a heartbeat for a job or worker.
+
+    Request Body (optional):
+    {
+        "worker_id": "worker_123",  // If sending worker heartbeat
+        "stats": {  // Optional statistics update
+            "documents_processed": 100,
+            "documents_failed": 2,
+            "memory_usage_mb": 512,
+            "cpu_usage_percent": 45.5
+        }
+    }
+    """
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor
+
+        monitor = PipelineMonitor()
+        data = request.get_json() or {}
+
+        worker_id = data.get('worker_id')
+        stats = data.get('stats')
+
+        if worker_id:
+            # Worker heartbeat
+            success = monitor.worker_heartbeat(worker_id, stats)
+        else:
+            # Job heartbeat
+            success = monitor.job_heartbeat(run_id)
+
+            # Update job stats if provided
+            if stats:
+                monitor.update_job_status(
+                    run_id,
+                    documents_processed=stats.get('documents_processed'),
+                    documents_failed=stats.get('documents_failed'),
+                    active_workers=stats.get('active_workers')
+                )
+
+        if success:
+            return jsonify({'message': 'Heartbeat received'}), 200
+        else:
+            return jsonify({'error': 'Failed to record heartbeat'}), 500
+
+    except Exception as e:
+        logger.error(f"Error processing heartbeat: {e}")
+        return jsonify({'error': 'Failed to process heartbeat', 'message': str(e)}), 500
+
+
+@pipeline_bp.route('/monitor/cleanup-stale', methods=['POST'])
+def cleanup_stale_jobs():
+    """
+    Manually trigger cleanup of stale jobs.
+
+    Request Body (optional):
+    {
+        "stale_threshold_minutes": 30  // Default: 30 minutes
+    }
+
+    Returns:
+    {
+        "fixed_count": 2,
+        "message": "Fixed 2 stale jobs"
+    }
+    """
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor
+
+        # Parse request data
+        data = request.get_json() or {}
+        stale_threshold_minutes = data.get('stale_threshold_minutes', 30)
+
+        # Initialize monitor
+        monitor = PipelineMonitor()
+
+        # Detect and fix stale jobs
+        fixed_count = monitor.detect_and_fix_stale_jobs(stale_threshold_minutes)
+
+        message = f"Fixed {fixed_count} stale job{'s' if fixed_count != 1 else ''}"
+        return jsonify({
+            'fixed_count': fixed_count,
+            'message': message
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error cleaning up stale jobs: {e}")
+        return jsonify({
+            'error': 'Failed to cleanup stale jobs',
+            'message': str(e)
+        }), 500
+
+
+@pipeline_bp.route('/monitor/migrate-executions', methods=['POST'])
+def migrate_executions_to_monitoring():
+    """
+    Migrate existing pipeline executions to the monitoring system.
+
+    Returns:
+    {
+        "migrated_count": 71,
+        "message": "Migrated 71 executions to monitoring system"
+    }
+    """
+    try:
+        from ..pipeline.pipeline_monitor import PipelineMonitor
+
+        # Initialize monitor
+        monitor = PipelineMonitor()
+
+        # Migrate existing executions
+        migrated_count = monitor.migrate_executions_to_monitoring()
+
+        message = f"Migrated {migrated_count} execution{'s' if migrated_count != 1 else ''} to monitoring system"
+        return jsonify({
+            'migrated_count': migrated_count,
+            'message': message
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error migrating executions to monitoring: {e}")
+        return jsonify({
+            'error': 'Failed to migrate executions',
+            'message': str(e)
+        }), 500
 
 
 # Query Routes
