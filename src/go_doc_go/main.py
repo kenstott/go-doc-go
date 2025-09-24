@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 _config = Config(os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml"))
 
 
-def ingest_documents(config: Config, source_configs=None, max_link_depth=None, 
-                    processing_mode: str = None, progress_callback=None):
+def ingest_documents(config: Config, source_configs=None, max_link_depth=None,
+                    processing_mode: str = None, progress_callback=None, run_id: str = None):
     """
     Ingest documents from configured content sources using two-pass processing.
     
@@ -85,7 +85,7 @@ def ingest_documents(config: Config, source_configs=None, max_link_depth=None,
         # - If elected, discover and enqueue documents
         # - Process documents from the queue (whether leader or not)
         # - If leader, handle post-processing
-        coordination_result = _coordinate_two_pass_processing(config, source_configs, max_link_depth, progress_callback)
+        coordination_result = _coordinate_two_pass_processing(config, source_configs, max_link_depth, progress_callback, run_id)
 
         # ElectedLeaderWorker already handles both coordination and processing,
         # so we just return its result directly
@@ -234,7 +234,7 @@ def _compute_cross_document_container_relationships(db, processed_doc_ids, confi
     return relationship_count
 
 
-def _coordinate_two_pass_processing(config: Config, source_configs=None, max_link_depth=None, progress_callback=None):
+def _coordinate_two_pass_processing(config: Config, source_configs=None, max_link_depth=None, progress_callback=None, run_id: str = None):
     """
     Coordinate two-pass processing for distributed workers using elected leader pattern.
 
@@ -264,7 +264,7 @@ def _coordinate_two_pass_processing(config: Config, source_configs=None, max_lin
         logger.info(f"Creating elected leader worker: {worker_id}")
 
         # Create elected leader worker
-        leader_worker = ElectedLeaderWorker(config, worker_id)
+        leader_worker = ElectedLeaderWorker(config, worker_id, run_id)
 
         # Run as worker with leader duties
         # This will:

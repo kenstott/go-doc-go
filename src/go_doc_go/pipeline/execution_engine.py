@@ -117,6 +117,11 @@ class PipelineExecutionEngine:
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid pipeline configuration YAML: {e}")
 
+        # Clean up any stale executions first
+        cleaned_count = self.cleanup_stale_executions(stale_hours=1)
+        if cleaned_count > 0:
+            logger.info(f"Cleaned up {cleaned_count} stale executions")
+
         # Compute hash-based run_id from configuration
         # This ensures the same configuration always produces the same run_id
         config_str = json.dumps(pipeline_config, sort_keys=True)
@@ -239,8 +244,8 @@ class PipelineExecutionEngine:
                 # Update execution tracker
                 self.execution_tracker.update_execution_progress(
                     run_id=run_id,
-                    documents_processed=stats.get('documents', 0),
-                    documents_total=documents_total or stats.get('documents', 0),
+                    documents_processed=stats.get('documents_processed', stats.get('documents', 0)),
+                    documents_total=documents_total or stats.get('documents_total', stats.get('documents', 0)),
                     status='running'
                 )
                 
@@ -264,21 +269,27 @@ class PipelineExecutionEngine:
                 source_configs=pipeline_config.get('content_sources'),
                 max_link_depth=pipeline_config.get('max_link_depth'),
                 processing_mode=pipeline_config.get('processing', {}).get('mode', 'auto'),
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                run_id=run_id
             )
             
             logger.info(f"Pipeline execution completed successfully: {run_id}")
             logger.info(f"Execution stats: {stats}")
             
             # Update final status
-            self.execution_tracker.update_execution_progress(
+            update_result = self.execution_tracker.update_execution_progress(
                 run_id=run_id,
-                documents_processed=stats.get('documents', 0),
-                documents_total=stats.get('documents', 0),
+                documents_processed=stats.get('documents_processed', 0),
+                documents_total=stats.get('documents_total', stats.get('documents_processed', 0)),
                 status='completed',
-                errors_count=stats.get('errors', 0),
+                errors_count=stats.get('documents_failed', 0),
                 warnings_count=stats.get('warnings', 0)
             )
+
+            if update_result:
+                logger.info(f"Successfully updated execution status to completed for {run_id}")
+            else:
+                logger.warning(f"Failed to update execution status to completed for {run_id}")
             
             # Execution tracking is already updated in update_execution_progress above
             
@@ -312,7 +323,69 @@ class PipelineExecutionEngine:
             with self._execution_lock:
                 if run_id in self._active_executions:
                     del self._active_executions[run_id]
+                    logger.info(f"Cleaned up active execution tracking for {run_id}")
+
+                # Also clean up execution logs
+                if run_id in self._execution_logs:
+                    del self._execution_logs[run_id]
+                    logger.info(f"Cleaned up execution logs for {run_id}")
     
+    def cleanup_stale_executions(self, stale_hours: int = 24) -> int:
+        """
+        Clean up executions that are marked as running but have been stale for more than stale_hours.
+
+        Args:
+            stale_hours: Number of hours after which to consider an execution stale
+
+        Returns:
+            Number of executions cleaned up
+        """
+        cleaned_count = 0
+        try:
+            with self.pipeline_db._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Find executions marked as running that started more than stale_hours ago
+                cursor.execute("""
+                    SELECT run_id, started_at FROM pipeline_executions
+                    WHERE status = 'running'
+                    AND datetime(started_at) < datetime('now', '-{} hours')
+                """.format(stale_hours))
+
+                stale_executions = cursor.fetchall()
+
+                for run_id, started_at in stale_executions:
+                    # Check if execution is actually still running
+                    is_actually_running = False
+                    with self._execution_lock:
+                        if run_id in self._active_executions:
+                            active_info = self._active_executions[run_id]
+                            is_actually_running = active_info['thread'].is_alive()
+
+                    if not is_actually_running:
+                        # Mark as failed since it was abandoned
+                        cursor.execute("""
+                            UPDATE pipeline_executions
+                            SET status = 'failed', completed_at = datetime('now')
+                            WHERE run_id = ?
+                        """, (run_id,))
+
+                        logger.warning(f"Cleaned up stale execution {run_id} (started: {started_at})")
+                        cleaned_count += 1
+
+                        # Clean up tracking data
+                        if run_id in self._active_executions:
+                            del self._active_executions[run_id]
+                        if run_id in self._execution_logs:
+                            del self._execution_logs[run_id]
+
+                conn.commit()
+
+        except Exception as e:
+            logger.error(f"Error cleaning up stale executions: {e}")
+
+        return cleaned_count
+
     def _create_execution_config(self, pipeline_config: Dict[str, Any]) -> Config:
         """
         Create execution-specific configuration from pipeline config.

@@ -19,16 +19,18 @@ class ElectedLeaderWorker:
     queue population, and post-processing while still processing documents.
     """
     
-    def __init__(self, config: Config, worker_id: str):
+    def __init__(self, config: Config, worker_id: str, fixed_run_id: str = None):
         """
         Initialize elected leader worker.
-        
+
         Args:
-            config: Configuration object  
+            config: Configuration object
             worker_id: Unique worker ID
+            fixed_run_id: Optional fixed run_id to use instead of generating one
         """
         self.config = config
         self.worker_id = worker_id
+        self.fixed_run_id = fixed_run_id
         self.db = None
         self.work_queue = None
         self.run_coordinator = None
@@ -53,9 +55,13 @@ class ElectedLeaderWorker:
         # Initialize components
         self._initialize_components()
         
-        # Get run ID from configuration
-        generated_run_id = RunCoordinator.get_run_id_from_config(self.config.config)
-        logger.info(f"Generated run ID: {generated_run_id}")
+        # Use fixed run_id if provided, otherwise generate from config
+        if self.fixed_run_id:
+            generated_run_id = self.fixed_run_id
+            logger.info(f"Using provided run ID: {generated_run_id}")
+        else:
+            generated_run_id = RunCoordinator.get_run_id_from_config(self.config.config)
+            logger.info(f"Generated run ID: {generated_run_id}")
 
         # Ensure processing run exists
         run_info = self.run_coordinator.ensure_run_exists(generated_run_id, self.config.config)
