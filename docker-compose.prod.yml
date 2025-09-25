@@ -74,40 +74,42 @@ services:
       retries: 3
       start_period: 60s
 
-  # Production Frontend with Nginx
-  frontend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.frontend
-      target: production
-      args:
-        REACT_APP_API_URL: ${FRONTEND_API_URL:-/api}
-        REACT_APP_VERSION: ${TAG:-latest}
-    image: go-doc-go/frontend:${TAG:-latest}
-    container_name: go-doc-go-frontend
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      - NGINX_HOST=${NGINX_HOST:-localhost}
-    volumes:
-      # SSL certificates (if using HTTPS)
-      - ./ssl:/etc/ssl/certs:ro
-      - ./docker/nginx-prod.conf:/etc/nginx/nginx.conf:ro
-    depends_on:
-      - backend
-    networks:
-      - go-doc-go-external
-      - go-doc-go-internal
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.25'
+  # Frontend DEPRECATED - Use CLI tools instead
+  # See deprecated/frontend_* for old UI code
+  #
+  # frontend:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/Dockerfile.frontend
+  #     target: production
+  #     args:
+  #       REACT_APP_API_URL: ${FRONTEND_API_URL:-/api}
+  #       REACT_APP_VERSION: ${TAG:-latest}
+  #   image: go-doc-go/frontend:${TAG:-latest}
+  #   container_name: go-doc-go-frontend
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   environment:
+  #     - NGINX_HOST=${NGINX_HOST:-localhost}
+  #   volumes:
+  #     # SSL certificates (if using HTTPS)
+  #     - ./ssl:/etc/ssl/certs:ro
+  #     - ./docker/nginx-prod.conf:/etc/nginx/nginx.conf:ro
+  #   depends_on:
+  #     - backend
+  #   networks:
+  #     - go-doc-go-external
+  #     - go-doc-go-internal
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+  #         cpus: '0.5'
+  #       reservations:
+  #         memory: 256M
+  #         cpus: '0.25'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s

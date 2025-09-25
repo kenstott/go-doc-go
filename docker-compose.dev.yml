@@ -30,8 +30,8 @@ services:
       - FLASK_DEBUG=1
       - LOG_LEVEL=DEBUG
       
-      # CORS for development
-      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+      # CORS disabled for CLI-only mode
+      # - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
       
       # Optional: Pre-configured API keys for development
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -63,35 +63,8 @@ services:
       retries: 3
       start_period: 60s
 
-  # Frontend Development Server with Hot Reloading
-  frontend:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.frontend
-      target: development
-    container_name: go-doc-go-dev-frontend
-    ports:
-      - "3000:5173"  # Vite dev server
-    environment:
-      - REACT_APP_API_URL=http://localhost:5002
-      - REACT_APP_VERSION=dev
-      - NODE_ENV=development
-      - VITE_API_URL=http://localhost:5002
-    volumes:
-      # Source code hot reloading
-      - ./frontend/src:/app/src:ro
-      - ./frontend/public:/app/public:ro
-      - ./frontend/index.html:/app/index.html:ro
-      - ./frontend/vite.config.js:/app/vite.config.js:ro
-      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
-      
-      # Node modules persistence
-      - frontend_node_modules:/app/node_modules
-    depends_on:
-      - backend
-    networks:
-      - go-doc-go-dev
-    restart: unless-stopped
+  # Frontend DEPRECATED - Use CLI tools instead
+  # See deprecated/frontend_* for old UI code
 
   # Development Pipeline Workers
   worker:
@@ -301,5 +274,4 @@ volumes:
     name: go-doc-go-dev-solr
   
   # Frontend dependencies
-  frontend_node_modules:
-    name: go-doc-go-dev-frontend-modules
+  # frontend_node_modules: DEPRECATED - removed with frontend
