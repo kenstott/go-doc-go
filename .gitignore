@@ -91,3 +91,4 @@ GOOGLE_DRIVE_SETUP_STATUS.md
 
 # Deprecated UI code (preserved for reference)
 deprecated/frontend_*
+tests/test_output/
