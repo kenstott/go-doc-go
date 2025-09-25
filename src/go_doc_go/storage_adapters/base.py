@@ -380,15 +380,36 @@ class AnalyticsStorage(ABC):
     def get_document_elements(self, doc_id: str) -> List[Dict[str, Any]]:
         """
         Get all elements for a document.
-        
+
         Args:
             doc_id: Document identifier
-            
+
         Returns:
             List of elements
         """
         pass
-    
+
+    @abstractmethod
+    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+        """
+        Clean up all data for a specific processing run.
+
+        For immutable storage backends like Parquet, this removes entire
+        data files/directories organized by run_id. This is fundamentally
+        different from record-level deletion which doesn't apply to
+        immutable formats.
+
+        Args:
+            run_id: Processing run identifier to clean up
+
+        Returns:
+            Dictionary with cleanup statistics:
+            - files_removed: Number of files deleted
+            - directories_removed: Number of directories removed
+            - total_bytes_freed: Total bytes freed (if available)
+        """
+        pass
+
     @abstractmethod
     def close(self) -> None:
         """Close storage connections."""

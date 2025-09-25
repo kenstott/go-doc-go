@@ -296,6 +296,34 @@ class MongoDBAnalyticsStorage(AnalyticsStorage):
         
         return None
     
+    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+        """
+        Clean up all MongoDB documents for a specific processing run.
+
+        TODO: Implement MongoDB-based cleanup that:
+        - Deletes documents from collections where {'_run_id': run_id}
+        - Uses bulk operations for efficiency
+        - Returns count of deleted documents per collection
+        - May drop collections entirely if they only contain data for this run_id
+
+        Args:
+            run_id: Processing run identifier to clean up
+
+        Returns:
+            Dictionary with cleanup statistics:
+            - documents_deleted: Total number of documents deleted
+            - collections_dropped: Number of collections dropped entirely
+            - storage_type: 'mongodb'
+            - implementation_details: Description of what was deleted
+        """
+        # TODO: Implement MongoDB-based cleanup
+        return {
+            'documents_deleted': 0,
+            'collections_dropped': 0,
+            'storage_type': 'mongodb',
+            'implementation_details': f'TODO: Delete MongoDB documents where _run_id = {run_id}'
+        }
+
     def close(self) -> None:
         """Close MongoDB connection."""
         if self.client:

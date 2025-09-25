@@ -58,6 +58,22 @@ class Config:
                 "max_tokens": 16384
             },
             "content_sources": [],
+            "processing": {
+                "batch_size": 100,
+                "max_workers": 4,
+                "timeout_seconds": 300,
+                "job_control": {
+                    "backend": "sqlite",
+                    "path": "./job_queue.db",
+                    "claim_timeout": 300,
+                    "heartbeat_interval": 30,
+                    "max_retries": 3
+                }
+            },
+            "analytics": {
+                "enabled": True,
+                "outputs": []
+            },
             "relationship_detection": {
                 "enabled": True,
                 "link_pattern": r"\[\[(.*?)\]\]|href=[\"\'](.*?)[\"\']"
@@ -512,6 +528,43 @@ class Config:
         """
         return self.config.get(key, default)
     
+    def get_processing_config(self) -> Dict[str, Any]:
+        """Get processing configuration."""
+        return self.config.get("processing", {})
+
+    def get_processing_batch_size(self) -> int:
+        """Get processing batch size."""
+        return self.get_processing_config().get("batch_size", 100)
+
+    def get_processing_max_workers(self) -> int:
+        """Get maximum number of processing workers."""
+        return self.get_processing_config().get("max_workers", 4)
+
+    def get_processing_timeout(self) -> int:
+        """Get processing timeout in seconds."""
+        return self.get_processing_config().get("timeout_seconds", 300)
+
+    def get_queue_config(self) -> Dict[str, Any]:
+        """Get work queue configuration."""
+        return self.get_processing_config().get("queue", {})
+
+    def get_analytics_config(self) -> Dict[str, Any]:
+        """Get analytics configuration."""
+        return self.config.get("analytics", {})
+
+    def is_analytics_enabled(self) -> bool:
+        """Check if analytics are enabled."""
+        return self.get_analytics_config().get("enabled", True)
+
+    def get_analytics_outputs(self) -> List[Dict[str, Any]]:
+        """Get configured analytics outputs."""
+        return self.get_analytics_config().get("outputs", [])
+
+    def get_job_control_config(self) -> Dict[str, Any]:
+        """Get job control configuration from processing section."""
+        processing_config = self.config.get("processing", {})
+        return processing_config.get("job_control", {})
+
     def save(self, path: str) -> None:
         """
         Save current configuration to file.

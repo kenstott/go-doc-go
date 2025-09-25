@@ -325,6 +325,34 @@ class Neo4jAnalyticsStorage(AnalyticsStorage):
             
             return stats
     
+    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+        """
+        Clean up all Neo4j nodes and relationships for a specific processing run.
+
+        TODO: Implement Neo4j-based cleanup that:
+        - Deletes nodes where n._run_id = run_id using MATCH + DELETE
+        - Cascade deletes relationships connected to deleted nodes
+        - May use batched operations for large datasets
+        - Returns count of deleted nodes and relationships
+
+        Args:
+            run_id: Processing run identifier to clean up
+
+        Returns:
+            Dictionary with cleanup statistics:
+            - nodes_deleted: Total number of nodes deleted
+            - relationships_deleted: Total number of relationships deleted
+            - storage_type: 'neo4j'
+            - implementation_details: Description of what was deleted
+        """
+        # TODO: Implement Neo4j-based cleanup
+        return {
+            'nodes_deleted': 0,
+            'relationships_deleted': 0,
+            'storage_type': 'neo4j',
+            'implementation_details': f'TODO: Delete Neo4j nodes where _run_id = {run_id}'
+        }
+
     def close(self) -> None:
         """Close Neo4j connection."""
         if self.driver:

@@ -434,6 +434,34 @@ class SQLAlchemyAnalyticsStorage(AnalyticsStorage):
         finally:
             session.close()
     
+    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+        """
+        Clean up all SQL records for a specific processing run.
+
+        TODO: Implement SQL-based cleanup that:
+        - Deletes records from documents, elements, embeddings, relationships tables WHERE _run_id = run_id
+        - Uses transactions for atomicity
+        - Returns count of deleted records
+        - May need to handle foreign key constraints
+
+        Args:
+            run_id: Processing run identifier to clean up
+
+        Returns:
+            Dictionary with cleanup statistics:
+            - records_deleted: Total number of records deleted
+            - tables_affected: Number of tables that had records deleted
+            - storage_type: 'postgresql'|'mysql'|'sqlite' etc.
+            - implementation_details: Description of what was deleted
+        """
+        # TODO: Implement SQL-based cleanup
+        return {
+            'records_deleted': 0,
+            'tables_affected': 0,
+            'storage_type': self.engine.dialect.name if self.engine else 'unknown',
+            'implementation_details': f'TODO: Delete SQL records WHERE _run_id = {run_id}'
+        }
+
     def close(self) -> None:
         """Close SQLAlchemy connections."""
         if self.engine:

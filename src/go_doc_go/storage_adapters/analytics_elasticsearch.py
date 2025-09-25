@@ -397,6 +397,34 @@ class ElasticsearchAnalyticsStorage(AnalyticsStorage):
         
         return None
     
+    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+        """
+        Clean up all Elasticsearch documents for a specific processing run.
+
+        TODO: Implement Elasticsearch-based cleanup that:
+        - Deletes documents from indices where _run_id = run_id using delete_by_query
+        - May delete entire indices if they only contain data for this run_id
+        - Uses refresh=true for immediate visibility
+        - Returns count of deleted documents per index
+
+        Args:
+            run_id: Processing run identifier to clean up
+
+        Returns:
+            Dictionary with cleanup statistics:
+            - documents_deleted: Total number of documents deleted
+            - indices_deleted: Number of indices deleted entirely
+            - storage_type: 'elasticsearch'
+            - implementation_details: Description of what was deleted
+        """
+        # TODO: Implement Elasticsearch-based cleanup
+        return {
+            'documents_deleted': 0,
+            'indices_deleted': 0,
+            'storage_type': 'elasticsearch',
+            'implementation_details': f'TODO: Delete Elasticsearch documents where _run_id = {run_id}'
+        }
+
     def close(self) -> None:
         """Close Elasticsearch connection."""
         if self.client:

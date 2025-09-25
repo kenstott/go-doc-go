@@ -322,6 +322,34 @@ class SolrAnalyticsStorage(AnalyticsStorage):
         
         return None
     
+    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+        """
+        Clean up all Solr documents for a specific processing run.
+
+        TODO: Implement Solr-based cleanup that:
+        - Deletes documents from cores where _run_id:run_id using delete queries
+        - Uses commit=true for immediate persistence
+        - May optimize cores after large deletions
+        - Returns count of deleted documents per core
+
+        Args:
+            run_id: Processing run identifier to clean up
+
+        Returns:
+            Dictionary with cleanup statistics:
+            - documents_deleted: Total number of documents deleted
+            - cores_affected: Number of cores that had documents deleted
+            - storage_type: 'solr'
+            - implementation_details: Description of what was deleted
+        """
+        # TODO: Implement Solr-based cleanup
+        return {
+            'documents_deleted': 0,
+            'cores_affected': 0,
+            'storage_type': 'solr',
+            'implementation_details': f'TODO: Delete Solr documents where _run_id = {run_id}'
+        }
+
     def close(self) -> None:
         """Close Solr connections."""
         # pysolr doesn't maintain persistent connections
