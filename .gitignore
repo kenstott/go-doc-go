@@ -88,3 +88,6 @@ enable_google_drive_api.py
 .env.google_drive
 .env.sharepoint
 GOOGLE_DRIVE_SETUP_STATUS.md
+
+# Deprecated UI code (preserved for reference)
+deprecated/frontend_*

@@ -160,58 +160,83 @@ for company in companies:
     print(f"{company.name}: {len(executives)} execs, {len(metrics)} metrics")
 ```
 
-## Web Interface
+## Command-Line Interface
 
-Go-Doc-Go includes a comprehensive **React-based web interface** for managing your document processing pipelines:
+Go-Doc-Go provides **simple, config-driven CLI tools** for document processing and monitoring:
 
-### 🎯 **Pipeline Management**
-- **Visual pipeline configuration** with drag-and-drop interface
-- **Real-time processing monitoring** with progress tracking
-- **Queue status and worker coordination** - see distributed processing in action
-- **One-click pipeline execution** with detailed logging
+### 🚀 **Document Processing**
+- **Process all sources** defined in your config.yaml
+- **Process specific sources** with filtering
+- **Validate configuration** before processing
+- **Batch processing** with configurable workers and timeouts
 
-### ⚙️ **Configuration Management** 
-- **Interactive settings editor** for all Go-Doc-Go configuration options
-- **Live validation** with immediate feedback on configuration changes
-- **Storage backend configuration** (PostgreSQL, SQLite, Elasticsearch, etc.)
-- **Embedding and AI provider setup** (OpenAI, HuggingFace, FastEmbed)
+### 📊 **Status & Monitoring**
+- **Real-time status** of processing and storage
+- **Follow logs** for live updates (like tail -f)
+- **Storage information** with size and statistics
+- **File-based monitoring** without database dependencies
 
-### 🧠 **Ontology & Domain Management**
-- **Visual ontology editor** for defining domain entities and relationships
-- **Entity mapping rules** with pattern matching and semantic definitions
-- **Domain activation/deactivation** for different document types
-- **Knowledge graph visualization** of extracted entities
+### 📈 **Analytics & Reporting**
+- **Analytics summary** from configured outputs
+- **Storage backend** information and statistics
+- **Parquet, SQLite, JSON** output analysis
+- **Detailed file listings** and metadata
 
-### 📊 **Processing Results**
-- **Real-time results viewing** as documents are processed
-- **Element relationship explorer** to navigate document structure
-- **Search interface** with semantic, structured, and topic-based search
-- **Document reconstruction** - convert parsed elements back to readable formats
-
-### 🚀 **Getting Started with the UI**
+### 🛠️ **CLI Tools Available**
 
 ```bash
-# Start the web interface
-cd frontend && npm install && npm run build
-GO_DOC_GO_CONFIG_PATH=config.yaml python -m go_doc_go.server
+# Document processing
+PYTHONPATH=src python -m go_doc_go.cli.process --help
 
-# Access the UI
-open http://localhost:5000
+# Process all content sources in config
+PYTHONPATH=src python -m go_doc_go.cli.process
+
+# Process specific sources only
+PYTHONPATH=src python -m go_doc_go.cli.process --sources wikipedia,documents
+
+# Validate configuration without processing
+PYTHONPATH=src python -m go_doc_go.cli.process --validate-only
+
+# Status and monitoring
+PYTHONPATH=src python -m go_doc_go.cli.status
+
+# Follow logs in real-time
+PYTHONPATH=src python -m go_doc_go.cli.status --follow
+
+# Analytics summary
+PYTHONPATH=src python -m go_doc_go.cli.analytics
+
+# Detailed analytics with file listings
+PYTHONPATH=src python -m go_doc_go.cli.analytics --detailed
+```
+
+### 🚀 **Getting Started with CLI**
+
+```bash
+# Process documents using your config.yaml
+PYTHONPATH=src python -m go_doc_go.cli.process
+
+# Check processing status and storage information
+PYTHONPATH=src python -m go_doc_go.cli.status
+
+# View analytics from configured outputs
+PYTHONPATH=src python -m go_doc_go.cli.analytics
 ```
 
 **Key Features:**
-- 📱 **Responsive design** - works on desktop, tablet, and mobile
-- 🔒 **Configuration validation** - prevents invalid setups
-- 🎨 **Modern Material-UI design** - intuitive and professional
-- ⚡ **Real-time updates** - see processing progress live
-- 📋 **YAML editor** with syntax highlighting for advanced users
+- 🖥️ **Config-driven** - all configuration in single config.yaml file
+- 📊 **Rich formatting** - human-readable tables and status displays
+- ⚡ **File-based monitoring** - no database dependencies for status
+- 🔧 **Comprehensive help** - detailed help for every command and option
+- 📈 **Analytics integration** - supports parquet, SQLite, JSON outputs
 
-The UI is perfect for:
-- **Setting up new projects** - guided configuration wizard
-- **Monitoring large processing jobs** - real-time progress and logs  
-- **Managing complex ontologies** - visual relationship modeling
-- **Exploring results** - interactive search and document navigation
-- **Team collaboration** - shared configuration and domain management
+**Simplified Architecture:**
+- **Single config.yaml** - eliminates pipeline database complexity
+- **Direct processing** - process content sources without job orchestration
+- **File-based status** - monitoring via logs and analytics outputs
+- **Declarative configuration** - infrastructure as code approach
+
+> **Note**: Web UI has been deprecated in favor of the more powerful and automation-friendly CLI interface. UI code preserved in `deprecated/frontend_*` for reference.
 
 ## Core Capabilities
 
@@ -222,12 +247,12 @@ The UI is perfect for:
 - **📊 Document Reconstruction**: Convert parsed elements back to readable formats (MD, HTML, JSON)
 - **🧠 Knowledge Extraction**: Domain entity recognition and relationship discovery
 - **⚡ Performance**: FastEmbed integration, bulk processing, optimized for large datasets
-- **🎛️ Web UI**: Modern React interface for pipeline management, configuration, and monitoring
+- **🖥️ CLI Tools**: Comprehensive command-line interface for pipeline management, monitoring, and automation
 
 ## Documentation
 
 - **[Installation Guide](docs/installation.md)** - All installation options and dependencies
-- **[Web Interface Guide](docs/web-ui.md)** - Complete UI setup, features, and usage
+- **[CLI Reference](docs/cli.md)** - Complete CLI command reference and examples
 - **[Data Sources](docs/sources.md)** - Comprehensive source support (databases, files, APIs, cloud)
 - **[Storage Backends](docs/storage.md)** - All storage options and trade-offs
 - **[Scaling Guide](docs/scaling.md)** - Horizontal pipeline architecture and performance

@@ -278,3 +278,56 @@ class WebContentSource(ContentSource):
         # Default to exclude if no include pattern matched
         logger.debug(f"URL excluded (no matching include pattern): {url}")
         return False
+
+    def supports_continuous_discovery(self) -> bool:
+        """Web sources support continuous discovery for crawling new links."""
+        return True
+
+    def discover_new_documents(self, last_discovery_time: Optional[float] = None) -> List[Dict[str, Any]]:
+        """
+        Discover new documents by re-crawling and finding new links.
+
+        Args:
+            last_discovery_time: Unix timestamp of last discovery
+
+        Returns:
+            List of newly discovered documents
+        """
+        import time
+        current_time = time.time()
+
+        if last_discovery_time and (current_time - last_discovery_time) < self.refresh_interval:
+            logger.debug(f"Skipping discovery - refresh interval not yet reached")
+            return []
+
+        logger.info(f"Web source {self.name} discovering new documents")
+
+        # For web sources, we need to re-crawl existing URLs to find new links
+        # This is a simplified implementation - more sophisticated crawlers would
+        # maintain state about previously seen links
+        new_documents = []
+
+        try:
+            # Re-crawl base URLs to find new links
+            for base_url in self.url_list:
+                try:
+                    response = self.session.get(base_url, timeout=30)
+                    if response.status_code == 200:
+                        # Use link following to find new documents
+                        linked_docs = self.follow_links(
+                            response.text,
+                            base_url,
+                            current_depth=0
+                        )
+                        new_documents.extend(linked_docs)
+                        logger.debug(f"Found {len(linked_docs)} linked documents from {base_url}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to crawl {base_url} for new links: {e}")
+
+            logger.info(f"Web discovery found {len(new_documents)} potential new documents")
+            return new_documents
+
+        except Exception as e:
+            logger.error(f"Error during web discovery: {e}")
+            return []

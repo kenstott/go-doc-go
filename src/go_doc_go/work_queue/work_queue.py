@@ -177,17 +177,21 @@ class RunCoordinator:
         """
         try:
             from ..storage_adapters.factory import StorageFactory
+            from ..config import Config
 
-            # Get analytics storage configuration
-            storage_config = config.get('storage', {})
-            analytics_config = storage_config.get('analytics', {})
+            # Load the analytics registry for string reference resolution
+            go_config = Config()
+            registry = go_config.list_analytics_backends()
 
-            # Create analytics storage instance
-            analytics_storage = StorageFactory.create_analytics_storage(analytics_config)
+            # Create both job and analytics storage using the proper factory method
+            # This handles string references to the analytics registry correctly
+            job_storage, analytics_storage = StorageFactory.create_from_pipeline_config(config, registry)
 
             # Use the storage's has_run method to check if data exists
             if hasattr(analytics_storage, 'has_run'):
-                return analytics_storage.has_run(run_id)
+                result = analytics_storage.has_run(run_id)
+                logger.debug(f"Analytics storage has_run check for {run_id}: {result}")
+                return result
             else:
                 # If storage doesn't implement has_run, assume data exists
                 logger.debug(f"Analytics storage doesn't implement has_run method - assuming data exists")

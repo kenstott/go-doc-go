@@ -94,9 +94,17 @@ class PipelineMonitor:
             logger.warning(f"Monitoring schema file not found: {schema_path}")
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
+        """Get database connection with row factory and proper concurrency settings."""
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
+
+        # Enable WAL mode for better concurrency
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        conn.execute("PRAGMA temp_store=memory")
+        conn.execute("PRAGMA mmap_size=268435456")  # 256MB mmap
+
         return conn
 
     # Job Status Management

@@ -19,6 +19,7 @@ from ..config import Config
 from ..config_db import PipelineConfigDB, PipelineExecutionTracker, PipelineExecution
 from ..main import ingest_documents
 from .progress_monitor import ProgressMonitor
+from .pipeline_monitor import PipelineMonitor
 
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ class PipelineExecutionEngine:
         self.pipeline_db = PipelineConfigDB(db_path or 'pipeline_config.db')
         self.execution_tracker = PipelineExecutionTracker(self.pipeline_db)
         self.progress_monitor = ProgressMonitor()
+        self.pipeline_monitor = PipelineMonitor(db_path or 'pipeline_config.db')
         
         # Track active executions
         self._active_executions = {}
@@ -80,7 +82,15 @@ class PipelineExecutionEngine:
         
         # Log buffers for each execution
         self._execution_logs = {}
-        
+
+        # Clean up any stale executions on engine startup
+        try:
+            cleaned_count = self.cleanup_stale_executions(stale_hours=2)  # 2 hours on startup
+            if cleaned_count > 0:
+                logger.info(f"Cleaned up {cleaned_count} stale executions on engine startup")
+        except Exception as e:
+            logger.warning(f"Failed to clean up stale executions on startup: {e}")
+
         logger.info("Pipeline execution engine initialized")
     
     def execute_pipeline(self, pipeline_id: int, execution_params: Optional[Dict[str, Any]] = None) -> PipelineExecution:
@@ -117,8 +127,8 @@ class PipelineExecutionEngine:
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid pipeline configuration YAML: {e}")
 
-        # Clean up any stale executions first
-        cleaned_count = self.cleanup_stale_executions(stale_hours=1)
+        # Clean up any stale executions first - be more aggressive for immediate cleanup
+        cleaned_count = self.cleanup_stale_executions(stale_hours=0.5)  # 30 minutes instead of 1 hour
         if cleaned_count > 0:
             logger.info(f"Cleaned up {cleaned_count} stale executions")
 
@@ -166,6 +176,16 @@ class PipelineExecutionEngine:
             deleted = work_queue.delete_documents_for_run(run_id)
             logger.info(f"Deleted {deleted} queued documents for run {run_id} to allow fresh discovery")
         
+        # Create monitoring job record
+        self.pipeline_monitor.create_job(
+            run_id=execution.run_id,
+            pipeline_id=pipeline_id,
+            pipeline_name=pipeline.name,
+            total_workers=execution.worker_count,
+            documents_total=execution.documents_total,
+            metadata={'config_hash': execution.run_id, 'pipeline_version': pipeline.version}
+        )
+
         # Notify progress monitor that execution is starting
         self.progress_monitor.execution_started(execution.run_id, pipeline_config)
         
@@ -221,11 +241,17 @@ class PipelineExecutionEngine:
         
         try:
             logger.info(f"Executing pipeline in background: {run_id}")
-            
-            # Update status to running
+
+            # Update status to running in both tracking systems
             self.execution_tracker.update_execution_progress(
                 run_id=run_id,
                 status='running'
+            )
+
+            from .pipeline_monitor import JobStatus
+            self.pipeline_monitor.update_job_status(
+                run_id=run_id,
+                status=JobStatus.RUNNING
             )
             
             # Register progress callback
@@ -248,7 +274,14 @@ class PipelineExecutionEngine:
                     documents_total=documents_total or stats.get('documents_total', stats.get('documents', 0)),
                     status='running'
                 )
-                
+
+                # Update monitoring system
+                self.pipeline_monitor.update_job_status(
+                    run_id=run_id,
+                    documents_processed=stats.get('documents_processed', stats.get('documents', 0)),
+                    documents_failed=stats.get('documents_failed', 0)
+                )
+
                 # Notify progress monitor with enhanced 2-pass stats
                 enhanced_stats = stats.copy()
                 enhanced_stats.update({
@@ -275,8 +308,8 @@ class PipelineExecutionEngine:
             
             logger.info(f"Pipeline execution completed successfully: {run_id}")
             logger.info(f"Execution stats: {stats}")
-            
-            # Update final status
+
+            # Update final status in both tracking systems
             update_result = self.execution_tracker.update_execution_progress(
                 run_id=run_id,
                 documents_processed=stats.get('documents_processed', 0),
@@ -290,9 +323,15 @@ class PipelineExecutionEngine:
                 logger.info(f"Successfully updated execution status to completed for {run_id}")
             else:
                 logger.warning(f"Failed to update execution status to completed for {run_id}")
-            
-            # Execution tracking is already updated in update_execution_progress above
-            
+
+            # Update monitoring system
+            self.pipeline_monitor.update_job_status(
+                run_id=run_id,
+                status=JobStatus.COMPLETED,
+                documents_processed=stats.get('documents_processed', 0),
+                documents_failed=stats.get('documents_failed', 0)
+            )
+
             # Notify progress monitor
             self.progress_monitor.execution_completed(run_id, stats)
             
@@ -300,17 +339,24 @@ class PipelineExecutionEngine:
             logger.error(f"Pipeline execution failed: {run_id} - {str(e)}")
             import traceback
             error_details = traceback.format_exc()
-            
-            # Update status to failed
+
+            # Update status to failed in both tracking systems
             self.execution_tracker.update_execution_progress(
                 run_id=run_id,
                 status='failed',
                 errors_count=1
             )
-            
+
+            # Update monitoring system
+            self.pipeline_monitor.update_job_status(
+                run_id=run_id,
+                status=JobStatus.FAILED,
+                last_error=str(e)
+            )
+
             # Log the detailed error for debugging
             logger.error(f"Pipeline execution error details: {error_details}")
-            
+
             # Notify progress monitor
             self.progress_monitor.execution_failed(run_id, str(e))
             

@@ -16,6 +16,7 @@ class ContentSource(ABC):
         self.config = config
         self.name = config.get("name", "unnamed-source")
         self.max_link_depth = config.get("max_link_depth", 1)
+        self.discovery_interval = config.get("discovery_interval", 300)  # 5 minutes default
 
     @abstractmethod
     def fetch_document(self, source_id: str) -> Dict[str, Any]:
@@ -53,6 +54,29 @@ class ContentSource(ABC):
             True if document has changed, False otherwise
         """
         pass
+
+    def supports_continuous_discovery(self) -> bool:
+        """
+        Check if this content source supports continuous discovery.
+
+        Returns:
+            True if source can discover new documents over time, False otherwise
+        """
+        return False
+
+    def discover_new_documents(self, last_discovery_time: Optional[float] = None) -> List[Dict[str, Any]]:
+        """
+        Discover new documents that have appeared since last discovery.
+
+        Args:
+            last_discovery_time: Unix timestamp of last discovery (None for first discovery)
+
+        Returns:
+            List of newly discovered documents
+        """
+        # Default implementation just returns all documents
+        # Override in subclasses for incremental discovery
+        return self.list_documents()
 
     def follow_links(self, content: str, source_id: str, current_depth: int = 0, global_visited_docs=None) -> List[
         Dict[str, Any]]:

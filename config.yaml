@@ -1,7 +1,3 @@
-storage:
-  backend: "sqlite"
-  path: "/Users/kennethstott/PycharmProjects/doculyzer/sequential_test.db"
-
 embedding:
   enabled: true
   provider: fastembed
@@ -10,11 +6,8 @@ embedding:
   chunk_size: 512
   overlap: 128
   contextual: true
-  window_size: 3
-  overlap_size: 1
   predecessor_count: 1
   successor_count: 1
-  ancestor_depth: 2
 
 content_sources:
 #  - name: "Company Confluence"
@@ -82,10 +75,30 @@ relationship_detection:
   cross_document_semantic:
     similarity_threshold: 0.70
 
+# Processing configuration
+processing:
+  batch_size: 100
+  max_workers: 4
+  timeout_seconds: 300
+  # Job control database for worker coordination
+  job_control:
+    backend: "sqlite"
+    path: "./job_queue.db"
+    claim_timeout: 300
+    heartbeat_interval: 30
+    max_retries: 3
+
+# Analytics outputs configuration
+analytics:
+  enabled: true
+  outputs:
+    - type: "parquet"
+      path: "./analytics-output"
+      partitioning: ["date", "source"]
+    - type: "sqlite"
+      path: "./analytics.db"
+      tables: ["documents", "elements", "relationships", "embeddings", "metrics"]
+
 logging:
   level: "INFO"
   file: "./logs/go-doc-go.log"
-
-# Path remapping configuration (new)
-path_mappings:
-  "/old/path": "/new/path"

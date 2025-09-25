@@ -52,9 +52,17 @@ class PipelineConfigDB:
         logger.info(f"Initialized pipeline configuration database: {self.db_path}")
 
     def _get_connection(self) -> sqlite3.Connection:
-        """Get database connection with row factory."""
-        conn = sqlite3.connect(self.db_path)
+        """Get database connection with row factory and proper concurrency settings."""
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row  # Enable dict-like access
+
+        # Enable WAL mode for better concurrency
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        conn.execute("PRAGMA temp_store=memory")
+        conn.execute("PRAGMA mmap_size=268435456")  # 256MB mmap
+
         return conn
 
     # Pipeline CRUD Operations
@@ -711,12 +719,33 @@ class PipelineExecutionTracker:
                         if run_id in execution_engine._active_executions:
                             active_info = execution_engine._active_executions[run_id]
                             is_actually_running = active_info['thread'].is_alive()
+                else:
+                    # Fallback: If no execution engine provided, check timestamp for stale detection
+                    from datetime import datetime, timedelta
+                    try:
+                        started_dt = datetime.fromisoformat(existing.started_at.replace('Z', '+00:00'))
+                        stale_threshold = datetime.now() - timedelta(minutes=30)  # 30 minute threshold
+                        is_actually_running = started_dt > stale_threshold
+                        if not is_actually_running:
+                            logger.warning(f"Execution {run_id} appears stale (started: {existing.started_at}) - will reset")
+                    except Exception as e:
+                        logger.warning(f"Could not parse start time for execution {run_id}: {e} - assuming not running")
+                        is_actually_running = False
 
                 if is_actually_running:
                     raise RuntimeError(f"Execution {run_id} is already {existing.status}")
                 else:
-                    # Execution is marked as running but thread is dead - reset it
-                    logger.warning(f"Execution {run_id} marked as {existing.status} but thread is dead - resetting")
+                    # Execution is marked as running but thread is dead or stale - reset it
+                    logger.warning(f"Execution {run_id} marked as {existing.status} but thread is dead or stale - resetting")
+
+            # Additional check: verify analytics files exist for this run_id
+            # If analytics files are missing, reset the execution regardless of status
+            try:
+                analytics_exist = self._check_analytics_files_exist(run_id, pipeline_id)
+                if not analytics_exist:
+                    logger.warning(f"Execution {run_id} marked as {existing.status} but analytics files are missing - resetting")
+            except Exception as e:
+                logger.warning(f"Error checking analytics files for {run_id}: {e} - proceeding with reset")
 
             # Reset completed/failed/cancelled execution or dead execution
             logger.info(f"Resetting existing execution {run_id} (was {existing.status})")
@@ -738,3 +767,54 @@ class PipelineExecutionTracker:
                 documents_total=documents_total
             )
             return execution, False
+
+    def _check_analytics_files_exist(self, run_id: str, pipeline_id: int) -> bool:
+        """
+        Check if analytics files exist for the given run_id.
+
+        Args:
+            run_id: Run ID to check
+            pipeline_id: Pipeline ID to get configuration
+
+        Returns:
+            True if analytics files exist for this run, False otherwise
+        """
+        try:
+            # Get pipeline configuration to determine analytics storage
+            pipeline = self.db.get_pipeline(pipeline_id)
+            if not pipeline:
+                logger.warning(f"Pipeline {pipeline_id} not found - cannot check analytics files")
+                return True  # Assume exists to be safe
+
+            # Parse pipeline configuration
+            import yaml
+            try:
+                pipeline_config = yaml.safe_load(pipeline.config_yaml)
+            except yaml.YAMLError as e:
+                logger.warning(f"Invalid pipeline configuration YAML: {e}")
+                return True  # Assume exists to be safe
+
+            # Create analytics storage and check if run exists
+            from ..storage_adapters.factory import StorageFactory
+            from ..config import Config
+
+            # Load analytics registry for string reference resolution
+            go_config = Config()
+            registry = go_config.list_analytics_backends()
+
+            # Create analytics storage using proper factory method
+            job_storage, analytics_storage = StorageFactory.create_from_pipeline_config(pipeline_config, registry)
+
+            # Check if analytics files exist for this run
+            if hasattr(analytics_storage, 'has_run'):
+                result = analytics_storage.has_run(run_id)
+                logger.debug(f"Analytics files exist check for {run_id}: {result}")
+                return result
+            else:
+                # If storage doesn't implement has_run, assume files exist
+                logger.debug(f"Analytics storage doesn't implement has_run method - assuming files exist")
+                return True
+
+        except Exception as e:
+            logger.warning(f"Error checking analytics files for run {run_id}: {e}")
+            return True  # Assume exists to be safe on error
