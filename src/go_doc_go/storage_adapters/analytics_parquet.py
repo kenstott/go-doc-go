@@ -79,7 +79,7 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             self.fs = None
         
         # Partitioning configuration
-        self.partitioning = config.get('partitioning', ['year', 'month', 'day', 'run_id'])
+        self.partitioning = config.get('partitioning', ['date', 'source'])
         
         # Compression settings
         self.compression = config.get('compression', 'snappy')
@@ -101,23 +101,24 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         else:
             logger.info(f"Parquet analytics storage initialized at s3://{self.s3_bucket}/{self.s3_prefix}")
     
-    def get_partition_path(self, run_id: str, data_type: str) -> str:
+    def get_partition_path(self, source_name: str, data_type: str) -> str:
         """Generate partition path based on configuration."""
         now = datetime.now()
         partition_values = {
+            'date': now.strftime('%Y-%m-%d'),
             'year': now.year,
             'month': f"{now.month:02d}",
             'day': f"{now.day:02d}",
             'hour': f"{now.hour:02d}",
-            'run_id': run_id
+            'source': source_name
         }
-        
+
         # Build partition path
         partitions = []
         for part in self.partitioning:
             if part in partition_values:
                 partitions.append(f"{part}={partition_values[part]}")
-        
+
         if self.use_s3:
             return f"s3://{self.s3_bucket}/{self.s3_prefix}/{data_type}/{'/'.join(partitions)}"
         else:
@@ -164,13 +165,15 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             logger.error(f"Error writing Parquet file {full_path}: {e}")
             raise
     
-    def append_documents(self, documents: List[Dict[str, Any]], 
+    def append_documents(self, documents: List[Dict[str, Any]],
                         run_id: str) -> int:
         """Append documents to Parquet storage."""
         if not documents:
             return 0
-        
-        path = self.get_partition_path(run_id, 'documents')
+
+        # Extract source name from first document, fallback to "unknown"
+        source_name = documents[0].get('source', 'unknown') if documents else 'unknown'
+        path = self.get_partition_path(source_name, 'documents')
         
         # Process in batches
         total_written = 0
@@ -222,7 +225,20 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         if not elements:
             return 0
 
-        path = self.get_partition_path(run_id, 'elements')
+        # Extract source name from first element's doc metadata, fallback to "unknown"
+        source_name = "unknown"
+        if elements:
+            # Try to get source from element metadata or use fallback
+            first_elem = elements[0]
+            metadata = first_elem.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = {}
+            source_name = metadata.get('source', 'unknown')
+
+        path = self.get_partition_path(source_name, 'elements')
 
         # Define consistent schema for elements
         # All elements MUST have these columns for consistent parquet schema
@@ -274,13 +290,26 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} elements to {path}")
         return total_written
     
-    def append_embeddings(self, embeddings: List[Dict[str, Any]], 
+    def append_embeddings(self, embeddings: List[Dict[str, Any]],
                          run_id: str) -> int:
         """Append embeddings to Parquet storage."""
         if not embeddings:
             return 0
-        
-        path = self.get_partition_path(run_id, 'embeddings')
+
+        # Extract source name from first embedding's metadata, fallback to "unknown"
+        source_name = "unknown"
+        if embeddings:
+            first_embedding = embeddings[0]
+            # Embeddings might have element_metadata that contains source info
+            metadata = first_embedding.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = {}
+            source_name = metadata.get('source', 'unknown')
+
+        path = self.get_partition_path(source_name, 'embeddings')
         
         # Process in batches
         total_written = 0
@@ -307,13 +336,25 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} embeddings to {path}")
         return total_written
     
-    def append_relationships(self, relationships: List[Dict[str, Any]], 
+    def append_relationships(self, relationships: List[Dict[str, Any]],
                            run_id: str) -> int:
         """Append relationships to Parquet storage."""
         if not relationships:
             return 0
-        
-        path = self.get_partition_path(run_id, 'relationships')
+
+        # Extract source name from first relationship's metadata, fallback to "unknown"
+        source_name = "unknown"
+        if relationships:
+            first_rel = relationships[0]
+            metadata = first_rel.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = {}
+            source_name = metadata.get('source', 'unknown')
+
+        path = self.get_partition_path(source_name, 'relationships')
         
         # Process in batches
         total_written = 0
@@ -385,10 +426,13 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} relationships to {path}")
         return total_written
     
-    def append_metrics(self, metrics: Dict[str, Any], 
+    def append_metrics(self, metrics: Dict[str, Any],
                       run_id: str) -> bool:
         """Append processing metrics."""
-        path = self.get_partition_path(run_id, 'metrics')
+        # Extract source name from metrics, fallback to "unknown"
+        source_name = metrics.get('source', 'unknown')
+
+        path = self.get_partition_path(source_name, 'metrics')
         
         # Add metadata
         metrics['_run_id'] = run_id
@@ -1340,6 +1384,103 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         finally:
             conn.close()
     
+    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+        """
+        Clean up all parquet files for a specific processing run.
+
+        Since parquet files are immutable, we delete entire directories
+        organized by run_id rather than attempting record-level deletion.
+
+        Args:
+            run_id: Processing run identifier to clean up
+
+        Returns:
+            Dictionary with cleanup statistics
+        """
+        import shutil
+        from pathlib import Path
+
+        stats = {
+            'files_removed': 0,
+            'directories_removed': 0,
+            'total_bytes_freed': 0,
+            'storage_type': 'parquet'
+        }
+
+        if self.use_s3:
+            logger.warning("S3 cleanup not yet implemented")
+            return stats
+
+        base_path = Path(self.base_path)
+
+        # Data types that may contain run_id partitions
+        data_types = ['documents', 'elements', 'embeddings', 'relationships', 'metrics']
+
+        for data_type in data_types:
+            data_dir = base_path / data_type
+            if not data_dir.exists():
+                continue
+
+            # Find all directories with this run_id
+            # Pattern: data_type/year=2024/month=01/day=15/run_id={run_id}/
+            for run_id_dir in data_dir.rglob(f'run_id={run_id}'):
+                if run_id_dir.is_dir():
+                    # Calculate size before deletion
+                    dir_size = sum(f.stat().st_size for f in run_id_dir.rglob('*.parquet') if f.is_file())
+                    file_count = len(list(run_id_dir.rglob('*.parquet')))
+
+                    logger.info(f"Removing run_id directory: {run_id_dir} ({file_count} files, {dir_size} bytes)")
+
+                    try:
+                        shutil.rmtree(run_id_dir)
+                        stats['directories_removed'] += 1
+                        stats['files_removed'] += file_count
+                        stats['total_bytes_freed'] += dir_size
+                    except Exception as e:
+                        logger.error(f"Failed to remove directory {run_id_dir}: {e}")
+
+        # Clean up empty parent directories after removing run_id directories
+        for data_type in data_types:
+            data_dir = base_path / data_type
+            if data_dir.exists():
+                # Remove empty year/month/day directories that may be left behind
+                for year_dir in data_dir.iterdir():
+                    if year_dir.is_dir() and year_dir.name.startswith('year='):
+                        for month_dir in year_dir.iterdir():
+                            if month_dir.is_dir() and month_dir.name.startswith('month='):
+                                for day_dir in month_dir.iterdir():
+                                    if day_dir.is_dir() and day_dir.name.startswith('day='):
+                                        # Remove day directory if empty
+                                        if not any(day_dir.iterdir()):
+                                            try:
+                                                day_dir.rmdir()
+                                                logger.debug(f"Removed empty day directory: {day_dir}")
+                                            except OSError:
+                                                pass
+                                # Remove month directory if empty
+                                if not any(month_dir.iterdir()):
+                                    try:
+                                        month_dir.rmdir()
+                                        logger.debug(f"Removed empty month directory: {month_dir}")
+                                    except OSError:
+                                        pass
+                        # Remove year directory if empty
+                        if not any(year_dir.iterdir()):
+                            try:
+                                year_dir.rmdir()
+                                logger.debug(f"Removed empty year directory: {year_dir}")
+                            except OSError:
+                                pass
+
+        # Add implementation details for UI
+        if stats['files_removed'] > 0:
+            stats['implementation_details'] = f"deleting {stats['files_removed']} parquet files in {stats['directories_removed']} directories"
+        else:
+            stats['implementation_details'] = "no parquet files found to delete"
+
+        logger.info(f"Cleanup completed for run {run_id}: {stats}")
+        return stats
+
     def close(self) -> None:
         """Close storage connections."""
         # Parquet doesn't maintain persistent connections
