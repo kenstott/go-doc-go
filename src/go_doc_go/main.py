@@ -45,11 +45,23 @@ cli.add_command(status_cmd, name='status')
 from .cli.search import main as search_cmd
 cli.add_command(search_cmd, name='search')
 
-# Note: deadletter CLI disabled - dead letter queue system was removed with old work queue
+# Dead letter queue implemented for job control system
 
 # Add the ontology-generator command from the CLI module directly as a subcommand
 from .cli.ontology_generator import main as ontology_generator_cmd
 cli.add_command(ontology_generator_cmd, name='ontology-generator')
+
+# Add the deadletter command from the CLI module directly as a subcommand
+from .cli.deadletter import main as deadletter_cmd
+cli.add_command(deadletter_cmd, name='deadletter')
+
+# Add the ontology-analytics command for analytics-driven ontology generation
+from .cli.ontology_analytics import main as ontology_analytics_cmd
+cli.add_command(ontology_analytics_cmd, name='ontology-analytics')
+
+# Add the ontology-extract command for entity extraction and graph export
+from .cli.ontology_extract import main as ontology_extract_cmd
+cli.add_command(ontology_extract_cmd, name='ontology-extract')
 
 
 # All CLI tools have been converted to Click and integrated above
