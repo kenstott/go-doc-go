@@ -1,26 +1,14 @@
 """Automatically generated __init__.py"""
-__all__ = ['Config', 'SearchEngine', 'SearchRequest', 'SearchResponse', 'SearchHit',
-           'config', 'configure_logging', 'crawl', 'crawler', 'get_vendor_path',
-           'ingest_documents', 'main', 'search_unified', 'vendor']
+__all__ = ['Config', 'config', 'configure_logging', 'get_vendor_path', 'vendor']
 
 from . import config
-from . import crawler
-from . import main
 from . import vendor
 from .config import Config
 from .configure_logging import configure_logging
-from .crawler import crawl
-from .main import ingest_documents
-# Unified search module exports
-from .search_module import SearchEngine
-from .search_module import SearchRequest
-from .search_module import SearchResponse
-from .search_module import SearchHit
-from .search_module import search as search_unified
-# Server imports removed - API server deprecated
+# Search functionality moved to CLI tools
 # Use CLI tools instead:
 #   - Search: python -m go_doc_go.cli.search
-#   - Process: python -m go_doc_go.cli.process
+#   - Worker: python -m go_doc_go.cli.worker
 #   - Status: python -m go_doc_go.cli.status
 #   - Analytics: python -m go_doc_go.cli.analytics
 from .vendor import get_vendor_path

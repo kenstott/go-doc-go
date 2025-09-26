@@ -780,7 +780,7 @@ class DomainRelationshipDetector(RelationshipDetector):
         elements_by_id = {e['element_id']: e for e in elements}
         
         # Get document ID for fetching existing entities
-        doc_id = elements[0]['doc_id'] if elements else None
+        doc_id = elements[0].get('doc_id') if elements else None
         existing_entities = {}
         if doc_id:
             # Fetch existing entities for this document

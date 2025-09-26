@@ -588,3 +588,37 @@ class Config:
         except Exception as e:
             logger.error(f"Error saving config to {path}: {str(e)}")
             raise
+
+    def get_config_hash(self) -> str:
+        """
+        Generate a consistent hash from configuration for worker coordination.
+
+        This hash is used as the run_id to ensure all workers processing
+        the same configuration coordinate their work properly.
+
+        Returns:
+            SHA-256 hash of relevant configuration sections
+        """
+        import hashlib
+        import json
+
+        # Extract configuration sections relevant to processing coordination
+        # Exclude worker-specific settings that would create different hashes
+        coord_config = {
+            "content_sources": self.get_content_sources(),
+            "processing": {
+                k: v for k, v in self.get_processing_config().items()
+                if k not in ["max_workers", "worker_id", "heartbeat_interval"]
+            },
+            "analytics": self.get_analytics_config()
+        }
+
+        # Sort keys for consistent hashing
+        config_json = json.dumps(coord_config, sort_keys=True, separators=(',', ':'))
+
+        # Generate SHA-256 hash
+        hash_obj = hashlib.sha256(config_json.encode('utf-8'))
+        config_hash = hash_obj.hexdigest()[:16]  # Use first 16 chars for readability
+
+        logger.debug(f"Generated config hash: {config_hash}")
+        return config_hash

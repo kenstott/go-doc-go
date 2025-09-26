@@ -3,9 +3,9 @@
 CLI interface for managing dead letter queue operations.
 """
 
-import argparse
 import json
 import sys
+import click
 from datetime import datetime
 from typing import Optional, List
 
@@ -206,131 +206,145 @@ def export_dead_letter_data(dlq: DeadLetterQueue, output_file: str, run_id: Opti
     print(f"✅ Exported {len(items)} dead letter items to {output_file}")
 
 
-def main():
-    """Main CLI entry point for dead letter queue management."""
-    parser = argparse.ArgumentParser(
-        description="Manage dead letter queue for failed documents",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # List all dead letter items
-  python -m go_doc_go.cli.deadletter --list
-  
-  # List items for specific run with details
-  python -m go_doc_go.cli.deadletter --list --run-id abc123 --details
-  
-  # Retry specific failed document
-  python -m go_doc_go.cli.deadletter --retry 12345
-  
-  # Retry all failures for a run
-  python -m go_doc_go.cli.deadletter --retry-run abc123
-  
-  # Analyze failure patterns
-  python -m go_doc_go.cli.deadletter --analyze
-  
-  # Purge old items (older than 30 days)
-  python -m go_doc_go.cli.deadletter --purge 30
-  
-  # Export dead letter data
-  python -m go_doc_go.cli.deadletter --export failures.json
-        """
-    )
-    
-    parser.add_argument(
-        '--config',
-        help='Path to configuration file',
-        default='config.yaml'
-    )
-    
-    # Action arguments (mutually exclusive)
-    action_group = parser.add_mutually_exclusive_group(required=True)
-    action_group.add_argument(
-        '--list',
-        action='store_true',
-        help='List dead letter items'
-    )
-    action_group.add_argument(
-        '--retry',
-        type=int,
-        metavar='QUEUE_ID',
-        help='Retry specific queue item by ID'
-    )
-    action_group.add_argument(
-        '--retry-run',
-        metavar='RUN_ID',
-        help='Retry all failed items for a specific run'
-    )
-    action_group.add_argument(
-        '--analyze',
-        action='store_true',
-        help='Analyze failure patterns'
-    )
-    action_group.add_argument(
-        '--purge',
-        type=int,
-        metavar='DAYS',
-        help='Purge items older than specified days'
-    )
-    action_group.add_argument(
-        '--export',
-        metavar='FILE',
-        help='Export dead letter data to JSON file'
-    )
-    
-    # Filter and display options
-    parser.add_argument(
-        '--run-id',
-        help='Filter by specific run ID'
-    )
-    
-    parser.add_argument(
-        '--limit',
-        type=int,
-        default=50,
-        help='Maximum number of items to display (default: 50)'
-    )
-    
-    parser.add_argument(
-        '--details',
-        action='store_true',
-        help='Show detailed information for each item'
-    )
-    
-    args = parser.parse_args()
-    
+@click.group(invoke_without_command=True)
+@click.pass_context
+@click.option('--config', default='config.yaml', help='Path to configuration file')
+def main(ctx, config):
+    """Manage dead letter queue for failed documents.
+
+    Examples:
+      # List all dead letter items
+      python -m go_doc_go.cli.deadletter list
+
+      # List items for specific run with details
+      python -m go_doc_go.cli.deadletter list --run-id abc123 --details
+
+      # Retry specific failed document
+      python -m go_doc_go.cli.deadletter retry 12345
+
+      # Retry all failures for a run
+      python -m go_doc_go.cli.deadletter retry-run abc123
+
+      # Analyze failure patterns
+      python -m go_doc_go.cli.deadletter analyze
+
+      # Purge old items (older than 30 days)
+      python -m go_doc_go.cli.deadletter purge 30
+
+      # Export dead letter data
+      python -m go_doc_go.cli.deadletter export failures.json
+    """
+    ctx.ensure_object(dict)
+    ctx.obj['config_path'] = config
+
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+@main.command()
+@click.option('--run-id', help='Filter by specific run ID')
+@click.option('--limit', type=int, default=50, help='Maximum number of items to display (default: 50)')
+@click.option('--details', is_flag=True, help='Show detailed information for each item')
+@click.pass_context
+def list(ctx, run_id, limit, details):
+    """List dead letter items."""
     try:
-        # Load configuration
-        config = Config(args.config)
-        
-        # Initialize components
+        config = Config(ctx.obj['config_path'])
         db = config.get_document_database()
         dlq = DeadLetterQueue(db)
-        processor = DeadLetterProcessor(db)
-        
-        # Execute requested operation
-        if args.list:
-            list_dead_letter_items(dlq, args.run_id, args.limit, args.details)
-        
-        elif args.retry:
-            retry_dead_letter_item(dlq, args.retry)
-        
-        elif args.retry_run:
-            retry_run_failures(dlq, args.retry_run)
-        
-        elif args.analyze:
-            analyze_failure_patterns(processor, args.run_id)
-        
-        elif args.purge:
-            purge_old_items(dlq, args.purge)
-        
-        elif args.export:
-            export_dead_letter_data(dlq, args.export, args.run_id)
-        
+
+        list_dead_letter_items(dlq, run_id, limit, details)
         db.close()
-        
     except Exception as e:
-        print(f"❌ Error: {str(e)}", file=sys.stderr)
+        click.echo(f"❌ Error: {str(e)}", err=True)
         sys.exit(1)
+
+
+@main.command()
+@click.argument('queue_id', type=int)
+@click.pass_context
+def retry(ctx, queue_id):
+    """Retry specific queue item by ID."""
+    try:
+        config = Config(ctx.obj['config_path'])
+        db = config.get_document_database()
+        dlq = DeadLetterQueue(db)
+
+        retry_dead_letter_item(dlq, queue_id)
+        db.close()
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@main.command('retry-run')
+@click.argument('run_id')
+@click.pass_context
+def retry_run(ctx, run_id):
+    """Retry all failed items for a specific run."""
+    try:
+        config = Config(ctx.obj['config_path'])
+        db = config.get_document_database()
+        dlq = DeadLetterQueue(db)
+
+        retry_run_failures(dlq, run_id)
+        db.close()
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.option('--run-id', help='Filter by specific run ID')
+@click.pass_context
+def analyze(ctx, run_id):
+    """Analyze failure patterns."""
+    try:
+        config = Config(ctx.obj['config_path'])
+        db = config.get_document_database()
+        processor = DeadLetterProcessor(db)
+
+        analyze_failure_patterns(processor, run_id)
+        db.close()
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.argument('days', type=int)
+@click.pass_context
+def purge(ctx, days):
+    """Purge items older than specified days."""
+    try:
+        config = Config(ctx.obj['config_path'])
+        db = config.get_document_database()
+        dlq = DeadLetterQueue(db)
+
+        purge_old_items(dlq, days)
+        db.close()
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.argument('file')
+@click.option('--run-id', help='Filter by specific run ID')
+@click.pass_context
+def export(ctx, file, run_id):
+    """Export dead letter data to JSON file."""
+    try:
+        config = Config(ctx.obj['config_path'])
+        db = config.get_document_database()
+        dlq = DeadLetterQueue(db)
+
+        export_dead_letter_data(dlq, file, run_id)
+        db.close()
+    except Exception as e:
+        click.echo(f"❌ Error: {str(e)}", err=True)
+        sys.exit(1)
+    
 
 
 if __name__ == '__main__':

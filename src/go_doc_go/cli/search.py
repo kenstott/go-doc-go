@@ -5,21 +5,15 @@ Provides powerful search capabilities against parquet data lakes with contextual
 information retrieval, flexible output formats, and advanced filtering options.
 """
 
-import argparse
 import json
 import sys
+import click
+import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from go_doc_go.config import Config
-from go_doc_go.shared.search_engine import (
-    ParquetSearchEngine,
-    SearchFilters,
-    ContextConfig,
-    ReconstructionConfig,
-    create_search_engine
-)
-import logging
+from go_doc_go.storage_adapters.factory import StorageFactory
 
 # Configure logging
 logging.basicConfig(
@@ -29,146 +23,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def create_parser() -> argparse.ArgumentParser:
-    """Create argument parser for search CLI."""
-    parser = argparse.ArgumentParser(
-        description="Search documents in Go-Doc-Go data lake",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-
-  # Basic text search
-  python -m go_doc_go.cli.search "quarterly revenue"
-
-  # Search with element type filtering
-  python -m go_doc_go.cli.search "financial data" --include-types paragraph,heading
-
-  # Search excluding certain types
-  python -m go_doc_go.cli.search "analysis" --exclude-types table,list_item
-
-  # Search with regex pattern
-  python -m go_doc_go.cli.search --regex "Q[1-4].*revenue"
-
-  # Search with similarity threshold
-  python -m go_doc_go.cli.search "machine learning" --similarity-threshold 0.3
-
-  # Output as JSON for programmatic use
-  python -m go_doc_go.cli.search "data science" --output json
-
-  # Reconstruct full documents as markdown
-  python -m go_doc_go.cli.search "project update" --reconstruct-docs markdown
-
-  # Search with custom config file
-  python -m go_doc_go.cli.search "analysis" --config ./custom-config.yaml
-
-  # Limit results and include more context
-  python -m go_doc_go.cli.search "strategic plan" --limit 20 --parents 3 --siblings 5
-        """
-    )
-
-    # Required arguments
-    parser.add_argument(
-        'query',
-        nargs='?',
-        help='Search query text (optional if using --regex only)'
-    )
-
-    # Configuration
-    parser.add_argument(
-        '--config', '-c',
-        type=str,
-        default='config.yaml',
-        help='Path to configuration file (default: config.yaml)'
-    )
-
-    # Filtering options
-    parser.add_argument(
-        '--include-types',
-        type=str,
-        help='Comma-separated list of element types to include (e.g., paragraph,heading)'
-    )
-
-    parser.add_argument(
-        '--exclude-types',
-        type=str,
-        help='Comma-separated list of element types to exclude (e.g., table,list_item)'
-    )
-
-    parser.add_argument(
-        '--regex',
-        type=str,
-        help='Regex pattern to filter content'
-    )
-
-    parser.add_argument(
-        '--similarity-threshold',
-        type=float,
-        default=0.0,
-        help='Minimum cosine similarity threshold (0.0 to 1.0, default: 0.0)'
-    )
-
-    parser.add_argument(
-        '--limit', '-l',
-        type=int,
-        default=10,
-        help='Maximum number of results to return (default: 10)'
-    )
-
-    # Context options
-    parser.add_argument(
-        '--parents',
-        type=int,
-        default=2,
-        help='Number of parent levels to include in context (default: 2)'
-    )
-
-    parser.add_argument(
-        '--siblings',
-        type=int,
-        default=3,
-        help='Number of sibling elements to include (default: 3)'
-    )
-
-    parser.add_argument(
-        '--semantic-rels',
-        type=int,
-        default=5,
-        help='Number of semantic relationships to include (default: 5)'
-    )
-
-    parser.add_argument(
-        '--no-doc-metadata',
-        action='store_true',
-        help='Exclude document metadata from context'
-    )
-
-    # Output options
-    parser.add_argument(
-        '--output', '-o',
-        choices=['table', 'json', 'summary'],
-        default='table',
-        help='Output format (default: table)'
-    )
-
-    parser.add_argument(
-        '--reconstruct-docs',
-        choices=['markdown', 'html', 'json'],
-        help='Reconstruct and include full documents in specified format'
-    )
-
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose logging'
-    )
-
-    parser.add_argument(
-        '--data-path',
-        type=str,
-        help='Override data lake path from config'
-    )
-
-    return parser
 
 
 def parse_element_types(types_str: Optional[str]) -> List[str]:
@@ -178,162 +32,169 @@ def parse_element_types(types_str: Optional[str]) -> List[str]:
     return [t.strip() for t in types_str.split(',') if t.strip()]
 
 
-def format_table_output(results, show_context: bool = True):
+def format_table_output_simple(results):
     """Format search results as a human-readable table."""
-    if not results.results:
-        print(f"No results found for query: '{results.query}'")
-        return
-
-    print(f"\nSearch Results for: '{results.query}'")
-    print(f"Total matches: {results.total}")
+    print(f"\nSearch Results for: '{results['query']}'")
+    print(f"Total matches: {results['total_hits']}")
     print("=" * 80)
 
-    for i, result in enumerate(results.results, 1):
-        element = result.element_data
-        similarity = result.similarity or 0.0
-
-        print(f"\n[{i}] Element: {element.get('element_id', '')[:12]}...")
-        print(f"    Type: {element.get('element_type', 'unknown')}")
-        print(f"    Similarity: {similarity:.3f}")
-        print(f"    Content: {element.get('content_preview', '')[:200]}...")
-
-        if show_context and result.context:
-            doc_info = result.context.get('document', {})
-            if doc_info.get('source'):
-                print(f"    Document: {doc_info['source']}")
-
-            parents = result.context.get('parents', [])
-            if parents:
-                print(f"    Parents: {' > '.join([p.get('element_type', 'unknown') for p in parents[:2]])}")
-
-        if result.relationships:
-            rel_count = len(result.relationships)
-            print(f"    Relationships: {rel_count} found")
-
-        if result.siblings:
-            sibling_count = len(result.siblings)
-            print(f"    Siblings: {sibling_count} found")
+    for i, hit in enumerate(results['hits'], 1):
+        print(f"\n[{i}] Element: {hit.get('element_id', 'N/A')[:12]}...")
+        print(f"    Type: {hit.get('element_type', 'unknown')}")
+        print(f"    Document: {hit.get('doc_id', 'N/A')}")
+        content = hit.get('content_preview', hit.get('content', ''))
+        print(f"    Content: {str(content)[:200]}...")
 
         print("-" * 80)
 
-    if results.materialized_documents:
-        print(f"\nReconstructed Documents: {len(results.materialized_documents)}")
-        for doc_id, content in results.materialized_documents.items():
-            print(f"\n--- Document: {doc_id} ---")
-            if isinstance(content, str):
-                print(content[:500] + ("..." if len(content) > 500 else ""))
-            else:
-                print(json.dumps(content, indent=2)[:500] + "...")
 
-
-def format_json_output(results):
-    """Format search results as JSON."""
-    print(json.dumps(results.to_dict(), indent=2, default=str))
-
-
-def format_summary_output(results):
+def format_summary_output_simple(results):
     """Format search results as a concise summary."""
-    print(f"Query: '{results.query}'")
-    print(f"Total Results: {results.total}")
+    print(f"Query: '{results['query']}'")
+    print(f"Total Results: {results['total_hits']}")
 
-    if results.results:
+    if results['hits']:
         print("\nTop Results:")
-        for i, result in enumerate(results.results[:5], 1):
-            element = result.element_data
-            similarity = result.similarity or 0.0
-            content = element.get('content_preview', '')[:100]
-            print(f"{i}. [{similarity:.3f}] {element.get('element_type', 'unknown')}: {content}...")
+        for i, hit in enumerate(results['hits'][:5], 1):
+            content = str(hit.get('content_preview', hit.get('content', '')))[:100]
+            element_type = hit.get('element_type', 'unknown')
+            print(f"{i}. {element_type}: {content}...")
 
-        if results.total > 5:
-            print(f"... and {results.total - 5} more results")
-
-    if results.materialized_documents:
-        print(f"\nReconstructed {len(results.materialized_documents)} documents")
+        if results['total_hits'] > 5:
+            print(f"... and {results['total_hits'] - 5} more results")
 
 
-def main():
-    """Main entry point for search CLI."""
-    parser = create_parser()
-    args = parser.parse_args()
+@click.command()
+@click.argument('query', required=False)
+@click.option('--config', '-c', default='config.yaml', help='Path to configuration file (default: config.yaml)')
+@click.option('--include-types', help='Comma-separated list of element types to include (e.g., paragraph,heading)')
+@click.option('--exclude-types', help='Comma-separated list of element types to exclude (e.g., table,list_item)')
+@click.option('--regex', help='Regex pattern to filter content')
+@click.option('--similarity-threshold', type=float, default=0.0, help='Minimum cosine similarity threshold (0.0 to 1.0, default: 0.0)')
+@click.option('--limit', '-l', type=int, default=10, help='Maximum number of results to return (default: 10)')
+@click.option('--output', '-o', type=click.Choice(['table', 'json', 'summary']), default='table', help='Output format (default: table)')
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose logging')
+@click.option('--data-path', help='Override data lake path from config (NOTE: currently uses default parquet backend)')
+def main(query, config, include_types, exclude_types, regex, similarity_threshold, limit, output, verbose, data_path):
+    """Search documents in Go-Doc-Go data lake.
 
+    Uses the analytics storage interface for search functionality.
+
+    Examples:
+
+      # Basic text search
+      python -m go_doc_go search "quarterly revenue"
+
+      # Search with element type filtering
+      python -m go_doc_go search "financial data" --include-types paragraph,heading
+
+      # Search with regex pattern
+      python -m go_doc_go search --regex "Q[1-4].*revenue"
+
+      # Output as JSON for programmatic use
+      python -m go_doc_go search "data science" --output json
+
+      # Search with custom config file
+      python -m go_doc_go search "analysis" --config ./custom-config.yaml
+
+      # Limit results
+      python -m go_doc_go search "strategic plan" --limit 20
+    """
     # Configure logging
-    if args.verbose:
+    if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
         logging.getLogger('go_doc_go').setLevel(logging.DEBUG)
 
     # Validate arguments
-    if not args.query and not args.regex:
-        parser.error("Must provide either a search query or --regex pattern")
+    if not query and not regex:
+        click.echo("Error: Must provide either a search query or --regex pattern")
+        sys.exit(1)
 
     try:
         # Load configuration
-        config = Config(args.config)
-        logger.debug(f"Loaded configuration from {args.config}")
+        config_obj = Config(config)
+        logger.debug(f"Loaded configuration from {config}")
 
-        # Create search engine
-        if args.data_path:
-            search_engine = ParquetSearchEngine(args.data_path)
-        else:
-            search_engine = create_search_engine(config.get_config())
+        # Get analytics configuration
+        analytics_config = config_obj.get_analytics_config()
+        if not analytics_config or not analytics_config.get('enabled'):
+            click.echo("Error: Analytics must be enabled for search functionality")
+            sys.exit(1)
+
+        # Get the first analytics output (assuming parquet for now)
+        outputs = analytics_config.get('outputs', [])
+        if not outputs:
+            click.echo("Error: No analytics outputs configured")
+            sys.exit(1)
+
+        # Use the first output for search
+        output_config = outputs[0]
+        if data_path:
+            # Override path if specified
+            output_config = output_config.copy()
+            output_config['path'] = data_path
+
+        # Create analytics storage for search
+        analytics_storage = StorageFactory.create_analytics_storage(output_config)
 
         # Build search filters
-        element_types = []
-        if args.include_types:
-            element_types.extend(parse_element_types(args.include_types))
-        if args.exclude_types:
-            exclude_types = parse_element_types(args.exclude_types)
-            element_types.extend([f"-{t}" for t in exclude_types])
+        filters = {}
+        if include_types:
+            filters['element_type'] = parse_element_types(include_types)
+        if exclude_types:
+            # TODO: Handle exclude types (not directly supported by current interface)
+            click.echo("Warning: --exclude-types not yet supported with current search interface")
 
-        search_filters = SearchFilters(
-            regex_pattern=args.regex,
-            element_types=element_types,
-            cosine_threshold=args.similarity_threshold,
-            limit=args.limit
-        )
-
-        # Build context config
-        context_config = ContextConfig(
-            parents=args.parents,
-            siblings=args.siblings,
-            semantic_relationships=args.semantic_rels,
-            include_document_metadata=not args.no_doc_metadata
-        )
-
-        # Build reconstruction config
-        reconstruction_config = None
-        if args.reconstruct_docs:
-            reconstruction_config = ReconstructionConfig(
-                format=args.reconstruct_docs,
-                include_metadata=not args.no_doc_metadata,
-                max_depth=10
+        # Execute search using analytics storage
+        logger.info(f"Executing search for query: '{query}'")
+        if query:
+            # Use text search
+            results = analytics_storage.search_text(
+                query=query,
+                limit=limit,
+                filters=filters
             )
+        elif regex:
+            # Use structured search for regex
+            filters['content_regex'] = regex
+            results = analytics_storage.search_structured(
+                criteria=filters,
+                limit=limit
+            )
+        else:
+            click.echo("Error: Must provide either a search query or --regex pattern")
+            sys.exit(1)
 
-        # Execute search
-        logger.info(f"Executing search for query: '{args.query}'")
-        results = search_engine.search(
-            query=args.query or "",
-            filters=search_filters,
-            context_config=context_config,
-            reconstruction_config=reconstruction_config
-        )
+        # Convert results to simple format for display
+        # Results from analytics storage is List[Dict[str, Any]]
+        if not results:
+            click.echo(f"No results found for query: '{query or regex}'")
+            return
+
+        # Create a simple result structure
+        search_results = {
+            'query': query or regex,
+            'total_hits': len(results),
+            'hits': results
+        }
 
         # Output results
-        if args.output == 'json':
-            format_json_output(results)
-        elif args.output == 'summary':
-            format_summary_output(results)
+        if output == 'json':
+            print(json.dumps(search_results, indent=2, default=str))
+        elif output == 'summary':
+            format_summary_output_simple(search_results)
         else:
-            format_table_output(results)
+            format_table_output_simple(search_results)
 
     except KeyboardInterrupt:
-        print("\nSearch cancelled by user.")
+        click.echo("\nSearch cancelled by user.")
         sys.exit(1)
     except FileNotFoundError as e:
-        print(f"Error: Configuration file not found: {e}")
+        click.echo(f"Error: Configuration file not found: {e}")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"Search failed: {e}", exc_info=args.verbose)
-        print(f"Error: {e}")
+        logger.error(f"Search failed: {e}", exc_info=verbose)
+        click.echo(f"Error: {e}")
         sys.exit(1)
 
 

@@ -3,234 +3,168 @@
 Command-line interface for generating domain ontologies through LLM-guided interviews.
 """
 
-import argparse
 import logging
 import os
 import sys
+import click
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-# Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Package imports (no path manipulation needed for proper package installation)
 
 from go_doc_go.llm.chat import ChatProvider, create_chat_provider
 from go_doc_go.cli.ontology_interview import OntologyInterviewer
 from go_doc_go.domain.ontology_builder import OntologyBuilder
 
 
-def main():
-    """Main entry point for the ontology generator CLI."""
-    parser = argparse.ArgumentParser(
-        description="Go-Doc-Go Ontology Generator - Interactive domain ontology creation",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Start interactive ontology creation
-  python -m go_doc_go.cli.ontology_generator
-  
-  # Use specific LLM provider
-  python -m go_doc_go.cli.ontology_generator --llm-provider openai --model gpt-4
-  
-  # Start from template
-  python -m go_doc_go.cli.ontology_generator --template financial --output my_ontology.yaml
-  
-  # Validate with sample documents
-  python -m go_doc_go.cli.ontology_generator --validate-with samples/ --output ontology.yaml
+@click.command()
+@click.option("--output", "-o", default="ontology.yaml", help="Output file path for generated ontology (default: ontology.yaml)")
+@click.option("--llm-provider", type=click.Choice(["openai", "anthropic", "ollama", "auto"]), default="auto", help="LLM provider to use for interview (default: auto-detect)")
+@click.option("--model", help="Specific model to use (e.g., gpt-4, claude-3-opus, llama2)")
+@click.option("--template", "-t", type=click.Choice(["financial", "legal", "medical", "technical", "none"]), default="none", help="Base template to start from (default: none)")
+@click.option("--validate-with", help="Directory containing sample documents for validation")
+@click.option("--non-interactive", is_flag=True, help="Run in non-interactive mode (requires --config)")
+@click.option("--config", help="Configuration file (for non-interactive mode or to load data sources)")
+@click.option("--data-config", help="Go-Doc-Go config file with data sources to analyze")
+@click.option("--log-level", "-l", type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"]), default="INFO", help="Logging level (default: INFO)")
+@click.option("--format", "-f", "output_format", type=click.Choice(["yaml", "json"]), default="yaml", help="Output format (default: yaml)")
+@click.option("--max-iterations", type=int, default=20, help="Maximum interview iterations (default: 20)")
+@click.option("--dry-run", is_flag=True, help="Preview ontology without saving")
+def main(output, llm_provider, model, template, validate_with, non_interactive, config, data_config, log_level, output_format, max_iterations, dry_run):
+    """Go-Doc-Go Ontology Generator - Interactive domain ontology creation.
 
-Environment Variables:
-  OPENAI_API_KEY: OpenAI API key for GPT models
-  ANTHROPIC_API_KEY: Anthropic API key for Claude models
-        """
-    )
-    
-    parser.add_argument(
-        "--output", "-o",
-        default="ontology.yaml",
-        help="Output file path for generated ontology (default: ontology.yaml)"
-    )
-    
-    parser.add_argument(
-        "--llm-provider",
-        choices=["openai", "anthropic", "ollama", "auto"],
-        default="auto",
-        help="LLM provider to use for interview (default: auto-detect)"
-    )
-    
-    parser.add_argument(
-        "--model",
-        help="Specific model to use (e.g., gpt-4, claude-3-opus, llama2)"
-    )
-    
-    parser.add_argument(
-        "--template", "-t",
-        choices=["financial", "legal", "medical", "technical", "none"],
-        default="none",
-        help="Base template to start from (default: none)"
-    )
-    
-    parser.add_argument(
-        "--validate-with",
-        help="Directory containing sample documents for validation"
-    )
-    
-    parser.add_argument(
-        "--non-interactive",
-        action="store_true",
-        help="Run in non-interactive mode (requires --config)"
-    )
-    
-    parser.add_argument(
-        "--config",
-        help="Configuration file (for non-interactive mode or to load data sources)"
-    )
-    
-    parser.add_argument(
-        "--data-config",
-        help="Go-Doc-Go config file with data sources to analyze"
-    )
-    
-    parser.add_argument(
-        "--log-level", "-l",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
-        help="Logging level (default: INFO)"
-    )
-    
-    parser.add_argument(
-        "--format", "-f",
-        choices=["yaml", "json"],
-        default="yaml",
-        help="Output format (default: yaml)"
-    )
-    
-    parser.add_argument(
-        "--max-iterations",
-        type=int,
-        default=20,
-        help="Maximum interview iterations (default: 20)"
-    )
-    
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview ontology without saving"
-    )
-    
-    args = parser.parse_args()
+    Generate domain ontologies through LLM-guided interviews.
+
+    Examples:
+      # Start interactive ontology creation
+      python -m go_doc_go.cli.ontology_generator
+
+      # Use specific LLM provider
+      python -m go_doc_go.cli.ontology_generator --llm-provider openai --model gpt-4
+
+      # Start from template
+      python -m go_doc_go.cli.ontology_generator --template financial --output my_ontology.yaml
+
+      # Validate with sample documents
+      python -m go_doc_go.cli.ontology_generator --validate-with samples/ --output ontology.yaml
+
+    Environment Variables:
+      OPENAI_API_KEY: OpenAI API key for GPT models
+      ANTHROPIC_API_KEY: Anthropic API key for Claude models
+    """
     
     # Configure logging
     logging.basicConfig(
-        level=getattr(logging, args.log_level),
+        level=getattr(logging, log_level),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     logger = logging.getLogger(__name__)
-    
+
     # Validate arguments
-    if args.non_interactive and not args.config:
-        parser.error("--config is required when using --non-interactive")
-    
+    if non_interactive and not config:
+        click.echo("Error: --config is required when using --non-interactive")
+        sys.exit(1)
+
     try:
         # Initialize LLM provider
-        logger.info(f"Initializing LLM provider: {args.llm_provider}")
+        logger.info(f"Initializing LLM provider: {llm_provider}")
         chat_provider = create_chat_provider(
-            provider=args.llm_provider,
-            model=args.model
+            provider=llm_provider,
+            model=model
         )
-        
+
         # Load template if specified
-        template = None
-        if args.template != "none":
-            logger.info(f"Loading template: {args.template}")
-            template = load_template(args.template)
-        
+        template_obj = None
+        if template != "none":
+            logger.info(f"Loading template: {template}")
+            template_obj = load_template(template)
+
         # Create ontology builder
-        builder = OntologyBuilder(template=template)
-        
-        if args.non_interactive:
+        builder = OntologyBuilder(template=template_obj)
+
+        if non_interactive:
             # Non-interactive mode
             logger.info("Running in non-interactive mode")
-            with open(args.config, 'r') as f:
+            with open(config, 'r') as f:
                 import yaml
-                config = yaml.safe_load(f)
-            
-            ontology = builder.build_from_config(config)
+                config_data = yaml.safe_load(f)
+
+            ontology = builder.build_from_config(config_data)
         else:
             # Interactive interview mode
             logger.info("Starting interactive ontology interview")
-            print("\n🎯 Welcome to the Go-Doc-Go Ontology Generator!")
-            print("=" * 60)
-            print("I'll help you create a domain ontology for document analysis.")
-            print("\n📋 How this works:")
-            print("  1. You provide your domain (e.g., 'financial', 'legal', 'medical')")
-            print("  2. AI suggests document types, terms, entities, and relationships")
-            print("  3. You can accept, modify, or replace any suggestions")
-            print("  4. The result is a complete ontology for document extraction")
-            print("\n💡 Tip: Press Enter to accept AI suggestions, or type your own.")
-            print("=" * 60)
-            
+            click.echo("\n🎯 Welcome to the Go-Doc-Go Ontology Generator!")
+            click.echo("=" * 60)
+            click.echo("I'll help you create a domain ontology for document analysis.")
+            click.echo("\n📋 How this works:")
+            click.echo("  1. You provide your domain (e.g., 'financial', 'legal', 'medical')")
+            click.echo("  2. AI suggests document types, terms, entities, and relationships")
+            click.echo("  3. You can accept, modify, or replace any suggestions")
+            click.echo("  4. The result is a complete ontology for document extraction")
+            click.echo("\n💡 Tip: Press Enter to accept AI suggestions, or type your own.")
+            click.echo("=" * 60)
+
             interviewer = OntologyInterviewer(
                 chat_provider=chat_provider,
                 builder=builder,
-                max_iterations=args.max_iterations,
-                data_config_path=args.data_config or args.config
+                max_iterations=max_iterations,
+                data_config_path=data_config or config
             )
-            
+
             # Run the interview
             ontology = interviewer.conduct_interview()
-            
-            print("\n✨ Interview complete!")
-        
+
+            click.echo("\n✨ Interview complete!")
+
         # Validate if requested
-        if args.validate_with:
-            logger.info(f"Validating ontology with documents in: {args.validate_with}")
-            print(f"\n🔍 Validating ontology with sample documents...")
+        if validate_with:
+            logger.info(f"Validating ontology with documents in: {validate_with}")
+            click.echo(f"\n🔍 Validating ontology with sample documents...")
             validation_results = validate_ontology(
-                ontology, 
-                Path(args.validate_with)
+                ontology,
+                Path(validate_with)
             )
             print_validation_results(validation_results)
-        
+
         # Preview or save
-        if args.dry_run:
-            print("\n📋 Generated Ontology Preview:")
-            print("=" * 60)
-            if args.format == "yaml":
-                print(builder.to_yaml(ontology))
+        if dry_run:
+            click.echo("\n📋 Generated Ontology Preview:")
+            click.echo("=" * 60)
+            if output_format == "yaml":
+                click.echo(builder.to_yaml(ontology))
             else:
                 import json
-                print(json.dumps(builder.to_dict(ontology), indent=2))
+                click.echo(json.dumps(builder.to_dict(ontology), indent=2))
         else:
             # Save to file
-            output_path = Path(args.output)
+            output_path = Path(output)
             logger.info(f"Saving ontology to: {output_path}")
-            
-            if args.format == "yaml":
+
+            if output_format == "yaml":
                 with open(output_path, 'w') as f:
                     f.write(builder.to_yaml(ontology))
             else:
                 import json
                 with open(output_path, 'w') as f:
                     json.dump(builder.to_dict(ontology), f, indent=2)
-            
-            print(f"\n✅ Ontology saved to: {output_path}")
-            print(f"📊 Summary:")
-            print(f"  - Terms: {len(ontology.get('terms', []))}")
-            print(f"  - Element Mappings: {len(ontology.get('element_entity_mappings', []))}")
-            print(f"  - Entity Relationships: {len(ontology.get('entity_relationship_rules', []))}")
-            print(f"  - Derived Entities: {len(ontology.get('derived_entities', []))}")
-        
-        return 0
-        
+
+            click.echo(f"\n✅ Ontology saved to: {output_path}")
+            click.echo(f"📊 Summary:")
+            click.echo(f"  - Terms: {len(ontology.get('terms', []))}")
+            click.echo(f"  - Element Mappings: {len(ontology.get('element_entity_mappings', []))}")
+            click.echo(f"  - Entity Relationships: {len(ontology.get('entity_relationship_rules', []))}")
+            click.echo(f"  - Derived Entities: {len(ontology.get('derived_entities', []))}")
+
     except KeyboardInterrupt:
         logger.info("Interview cancelled by user")
-        print("\n\n👋 Interview cancelled. Goodbye!")
-        return 1
-        
+        click.echo("\n\n👋 Interview cancelled. Goodbye!")
+        sys.exit(1)
+
     except Exception as e:
         logger.error(f"Ontology generation failed: {str(e)}")
         logger.debug("Exception details:", exc_info=True)
-        print(f"\n❌ Error: {str(e)}")
-        return 1
+        click.echo(f"\n❌ Error: {str(e)}")
+        sys.exit(1)
 
 
 def load_template(template_name: str) -> Dict[str, Any]:
@@ -346,4 +280,4 @@ def print_validation_results(results: Dict[str, Any]):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

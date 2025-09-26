@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
 """
-Command-line interface for analytics and reporting without database dependencies.
-Reads from configured analytics outputs (parquet files, SQLite, etc.).
+Command-line interface for analytics and reporting using AnalyticsStorage interface.
+Database-agnostic analytics that works with any configured analytics backend.
 """
 
-import argparse
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+import click
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 
-# Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Package imports (no path manipulation needed for proper package installation)
 
 from go_doc_go.config import Config
+from go_doc_go.storage_adapters.factory import StorageFactory
 
 
-def format_timestamp(timestamp: Optional[str]) -> str:
+def format_timestamp(timestamp: str) -> str:
     """Format timestamp for display."""
     if not timestamp:
         return "N/A"
     try:
         if isinstance(timestamp, datetime):
             return timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Try parsing as ISO format
         dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
@@ -33,6 +35,9 @@ def format_timestamp(timestamp: Optional[str]) -> str:
 
 def format_file_size(size_bytes: int) -> str:
     """Format file size in human-readable format."""
+    if size_bytes is None:
+        return "Unknown"
+
     for unit in ['B', 'KB', 'MB', 'GB']:
         if size_bytes < 1024.0:
             return f"{size_bytes:.1f} {unit}"
@@ -40,237 +45,51 @@ def format_file_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} TB"
 
 
-class AnalyticsManager:
-    """File-based analytics manager for document processing metrics."""
+class DatabaseAgnosticAnalyticsManager:
+    """Database-agnostic analytics manager using AnalyticsStorage interface."""
 
     def __init__(self, config: Config):
-        """Initialize analytics manager."""
+        """Initialize analytics manager with AnalyticsStorage."""
         self.config = config
-        self.analytics_config = config.get_analytics_config()
+
+        # Get analytics storage configuration
+        analytics_outputs = config.get_analytics_outputs()
+        if not analytics_outputs:
+            raise ValueError("No analytics storage configured")
+
+        # Use the first analytics output configuration
+        analytics_config = analytics_outputs[0]
+
+        # Create analytics storage using factory
+        self.analytics_storage = StorageFactory.create_analytics_storage(analytics_config)
 
     def get_analytics_summary(self) -> Dict[str, Any]:
-        """Get summary of all configured analytics outputs."""
+        """Get comprehensive analytics summary using storage interface."""
         summary = {
             "timestamp": datetime.now().isoformat(),
             "analytics_enabled": self.config.is_analytics_enabled(),
-            "outputs": [],
-            "total_outputs": 0,
-            "storage_info": self._get_storage_summary()
+            "storage_backend": "interface-based"
         }
-
-        analytics_outputs = self.config.get_analytics_outputs()
-        summary["total_outputs"] = len(analytics_outputs)
-
-        for output_config in analytics_outputs:
-            output_info = self._analyze_output(output_config)
-            summary["outputs"].append(output_info)
-
-        return summary
-
-    def _analyze_output(self, output_config: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze a single analytics output configuration."""
-        output_info = {
-            "type": output_config.get("type", "unknown"),
-            "path": output_config.get("path", ""),
-            "config": output_config,
-            "exists": False,
-            "size": 0,
-            "files": [],
-            "error": None
-        }
-
-        output_path = output_config.get("path", "")
-        if not output_path:
-            output_info["error"] = "No path configured"
-            return output_info
-
-        # Resolve relative paths
-        if not os.path.isabs(output_path):
-            output_path = os.path.abspath(output_path)
-
-        output_info["resolved_path"] = output_path
 
         try:
-            if output_config.get("type") == "parquet":
-                output_info.update(self._analyze_parquet_output(output_path))
-            elif output_config.get("type") == "sqlite":
-                output_info.update(self._analyze_sqlite_output(output_path))
-            elif output_config.get("type") == "json":
-                output_info.update(self._analyze_json_output(output_path))
-            else:
-                output_info.update(self._analyze_generic_output(output_path))
+            # Get storage summary from analytics interface
+            storage_summary = self.analytics_storage.get_storage_summary()
+            summary.update(storage_summary)
+
+            # Get table statistics
+            table_stats = self.analytics_storage.get_table_statistics()
+            summary["table_statistics"] = table_stats
+
+            # Get recent run statistics
+            run_stats = self.analytics_storage.get_run_statistics(include_details=False)
+            summary["recent_runs"] = run_stats.get("runs", [])[:5]  # Last 5 runs
+            summary["total_runs"] = run_stats.get("total_runs", 0)
 
         except Exception as e:
-            output_info["error"] = str(e)
+            summary["error"] = str(e)
+            summary["storage_health"] = "error"
 
-        return output_info
-
-    def _analyze_parquet_output(self, path: str) -> Dict[str, Any]:
-        """Analyze parquet output directory."""
-        info = {"format": "parquet"}
-
-        if os.path.exists(path):
-            info["exists"] = True
-            if os.path.isdir(path):
-                # Count parquet files
-                parquet_files = []
-                total_size = 0
-                for root, dirs, files in os.walk(path):
-                    for file in files:
-                        if file.endswith('.parquet'):
-                            file_path = os.path.join(root, file)
-                            file_size = os.path.getsize(file_path)
-                            total_size += file_size
-                            parquet_files.append({
-                                "name": file,
-                                "path": file_path,
-                                "size": file_size,
-                                "modified": datetime.fromtimestamp(
-                                    os.path.getmtime(file_path)
-                                ).isoformat()
-                            })
-
-                info["files"] = parquet_files
-                info["file_count"] = len(parquet_files)
-                info["total_size"] = total_size
-                info["type"] = "directory"
-            else:
-                # Single parquet file
-                info["size"] = os.path.getsize(path)
-                info["modified"] = datetime.fromtimestamp(
-                    os.path.getmtime(path)
-                ).isoformat()
-                info["type"] = "file"
-        else:
-            info["exists"] = False
-
-        return info
-
-    def _analyze_sqlite_output(self, path: str) -> Dict[str, Any]:
-        """Analyze SQLite output file."""
-        info = {"format": "sqlite"}
-
-        if os.path.exists(path):
-            info["exists"] = True
-            info["size"] = os.path.getsize(path)
-            info["modified"] = datetime.fromtimestamp(
-                os.path.getmtime(path)
-            ).isoformat()
-
-            # Try to get table information if sqlite3 is available
-            try:
-                import sqlite3
-                with sqlite3.connect(path) as conn:
-                    cursor = conn.execute("""
-                        SELECT name FROM sqlite_master
-                        WHERE type='table' AND name NOT LIKE 'sqlite_%'
-                    """)
-                    tables = [row[0] for row in cursor.fetchall()]
-                    info["tables"] = tables
-                    info["table_count"] = len(tables)
-
-                    # Get row counts for each table
-                    table_stats = {}
-                    for table in tables:
-                        cursor = conn.execute(f"SELECT COUNT(*) FROM {table}")
-                        row_count = cursor.fetchone()[0]
-                        table_stats[table] = row_count
-                    info["table_stats"] = table_stats
-
-            except ImportError:
-                info["note"] = "sqlite3 not available for detailed analysis"
-            except Exception as e:
-                info["sqlite_error"] = str(e)
-        else:
-            info["exists"] = False
-
-        return info
-
-    def _analyze_json_output(self, path: str) -> Dict[str, Any]:
-        """Analyze JSON output file."""
-        info = {"format": "json"}
-
-        if os.path.exists(path):
-            info["exists"] = True
-            info["size"] = os.path.getsize(path)
-            info["modified"] = datetime.fromtimestamp(
-                os.path.getmtime(path)
-            ).isoformat()
-
-            # Try to parse JSON structure
-            try:
-                with open(path, 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        info["records"] = len(data)
-                        info["structure"] = "array"
-                    elif isinstance(data, dict):
-                        info["keys"] = list(data.keys())
-                        info["structure"] = "object"
-                    else:
-                        info["structure"] = type(data).__name__
-
-            except Exception as e:
-                info["json_error"] = str(e)
-        else:
-            info["exists"] = False
-
-        return info
-
-    def _analyze_generic_output(self, path: str) -> Dict[str, Any]:
-        """Analyze generic output path."""
-        info = {"format": "generic"}
-
-        if os.path.exists(path):
-            info["exists"] = True
-            if os.path.isdir(path):
-                info["type"] = "directory"
-                # Count files in directory
-                file_count = 0
-                total_size = 0
-                for root, dirs, files in os.walk(path):
-                    file_count += len(files)
-                    for file in files:
-                        total_size += os.path.getsize(os.path.join(root, file))
-                info["file_count"] = file_count
-                info["total_size"] = total_size
-            else:
-                info["type"] = "file"
-                info["size"] = os.path.getsize(path)
-                info["modified"] = datetime.fromtimestamp(
-                    os.path.getmtime(path)
-                ).isoformat()
-        else:
-            info["exists"] = False
-
-        return info
-
-    def _get_storage_summary(self) -> Dict[str, Any]:
-        """Get summary of main storage backend."""
-        storage_path = self.config.get_storage_path()
-        storage_backend = self.config.get_storage_backend()
-
-        info = {
-            "backend": storage_backend,
-            "path": storage_path,
-            "exists": os.path.exists(storage_path) if storage_path else False
-        }
-
-        if storage_path and os.path.exists(storage_path):
-            if os.path.isfile(storage_path):
-                info["size"] = os.path.getsize(storage_path)
-                info["modified"] = datetime.fromtimestamp(
-                    os.path.getmtime(storage_path)
-                ).isoformat()
-            elif os.path.isdir(storage_path):
-                total_size = sum(
-                    os.path.getsize(os.path.join(dirpath, filename))
-                    for dirpath, dirnames, filenames in os.walk(storage_path)
-                    for filename in filenames
-                )
-                info["total_size"] = total_size
-
-        return info
+        return summary
 
 
 def display_analytics_summary(summary: Dict[str, Any], detailed: bool = False):
@@ -281,148 +100,151 @@ def display_analytics_summary(summary: Dict[str, Any], detailed: bool = False):
 
     print(f"Timestamp:           {format_timestamp(summary.get('timestamp'))}")
     print(f"Analytics Enabled:   {'✅' if summary.get('analytics_enabled') else '❌'}")
-    print(f"Output Configurations: {summary.get('total_outputs', 0)}")
 
-    # Storage backend summary
-    storage_info = summary.get('storage_info', {})
-    print(f"\nMain Storage:")
-    print(f"  Backend:           {storage_info.get('backend', 'N/A')}")
-    print(f"  Path:              {storage_info.get('path', 'N/A')}")
-    print(f"  Exists:            {'✅' if storage_info.get('exists') else '❌'}")
+    # Backend information
+    backend = summary.get('backend', 'unknown')
+    print(f"Storage Backend:     {backend}")
 
-    if storage_info.get('size'):
-        print(f"  Size:              {format_file_size(storage_info['size'])}")
-    elif storage_info.get('total_size'):
-        print(f"  Total Size:        {format_file_size(storage_info['total_size'])}")
+    if summary.get('error'):
+        print(f"❌ Error:             {summary['error']}")
+        return
 
-    # Analytics outputs
-    outputs = summary.get('outputs', [])
-    if outputs:
-        print(f"\nAnalytics Outputs:")
-        print("-" * 60)
+    # Storage health
+    health = summary.get('storage_health', 'unknown')
+    health_icon = '✅' if health == 'healthy' else '❌'
+    print(f"Storage Health:      {health_icon} {health}")
 
-        for i, output in enumerate(outputs, 1):
-            output_type = output.get('type', 'unknown')
-            path = output.get('path', 'N/A')
-            exists = '✅' if output.get('exists') else '❌'
+    # Storage details
+    if summary.get('path'):
+        print(f"Storage Path:        {summary.get('path')}")
 
-            print(f"\n{i}. {output_type.upper()} Output")
-            print(f"   Path:             {path}")
-            print(f"   Exists:           {exists}")
+    if summary.get('uri'):
+        print(f"Database URI:         {summary.get('uri')}")
 
-            if output.get('error'):
-                print(f"   Error:            {output['error']}")
-                continue
+    if summary.get('total_size') is not None:
+        if isinstance(summary['total_size'], (int, float)):
+            print(f"Total Size:          {format_file_size(summary['total_size'])}")
+        else:
+            print(f"Total Size:          {summary['total_size']}")
 
-            if output.get('size'):
-                print(f"   Size:             {format_file_size(output['size'])}")
-            elif output.get('total_size'):
-                print(f"   Total Size:       {format_file_size(output['total_size'])}")
+    # Table counts
+    table_counts = summary.get('table_counts', {})
+    if table_counts:
+        print(f"\nTable/Collection Counts:")
+        print("-" * 30)
+        for table_name, count in table_counts.items():
+            print(f"  {table_name:<15}: {count:,}")
 
-            if output.get('file_count'):
-                print(f"   Files:            {output['file_count']}")
+    # Recent runs
+    recent_runs = summary.get('recent_runs', [])
+    total_runs = summary.get('total_runs', 0)
 
-            if output.get('modified'):
-                print(f"   Modified:         {format_timestamp(output['modified'])}")
+    if total_runs > 0:
+        print(f"\nProcessing Runs:")
+        print("-" * 30)
+        print(f"Total Runs:          {total_runs}")
 
-            # Type-specific information
-            if output_type == "sqlite":
-                if output.get('table_count'):
-                    print(f"   Tables:           {output['table_count']}")
-                if detailed and output.get('table_stats'):
-                    print(f"   Table Statistics:")
-                    for table, count in output['table_stats'].items():
-                        print(f"     {table}: {count:,} records")
+        if recent_runs and detailed:
+            print(f"\nRecent Runs:")
+            for i, run in enumerate(recent_runs, 1):
+                run_id = run.get('run_id', 'unknown')[:12] + '...' if len(str(run.get('run_id', ''))) > 15 else run.get('run_id', 'unknown')
+                start_time = format_timestamp(run.get('start_time'))
+                doc_count = run.get('document_count', run.get('total_records', 0))
+                print(f"  {i}. {run_id} ({doc_count:,} records) - {start_time}")
 
-            elif output_type == "json":
-                if output.get('records'):
-                    print(f"   Records:          {output['records']:,}")
-                if output.get('structure'):
-                    print(f"   Structure:        {output['structure']}")
+    # Table statistics (detailed view)
+    if detailed and 'table_statistics' in summary:
+        table_stats = summary['table_statistics']
+        if table_stats.get('tables'):
+            print(f"\nDetailed Table Information:")
+            print("-" * 40)
 
-            elif output_type == "parquet":
-                if output.get('file_count'):
-                    print(f"   Parquet Files:    {output['file_count']}")
-                if detailed and output.get('files'):
-                    print(f"   File Details:")
-                    for file_info in output['files'][:5]:  # Show first 5 files
-                        size = format_file_size(file_info['size'])
-                        modified = format_timestamp(file_info['modified'])
-                        print(f"     {file_info['name']} ({size}, {modified})")
-                    if len(output['files']) > 5:
-                        print(f"     ... and {len(output['files']) - 5} more files")
+            for table in table_stats['tables']:
+                name = table.get('name', 'unknown')
+                table_type = table.get('type', 'unknown')
+                row_count = table.get('row_count', table.get('file_count', 0))
 
-    else:
-        print(f"\n📭 No analytics outputs configured")
+                print(f"\n{name.upper()}:")
+                print(f"  Type:              {table_type}")
+                print(f"  Records/Files:     {row_count:,}")
+
+                if 'total_size' in table:
+                    print(f"  Size:              {format_file_size(table['total_size'])}")
+
+                if 'columns' in table and table['columns']:
+                    column_count = len(table['columns'])
+                    print(f"  Columns:           {column_count}")
+
+    # Partitioning info
+    if 'partitioning_info' in summary:
+        part_info = summary['partitioning_info']
+        if part_info.get('scheme'):
+            print(f"\nPartitioning:")
+            print(f"  Scheme:            {part_info.get('scheme')}")
+            if part_info.get('compression'):
+                print(f"  Compression:       {part_info.get('compression')}")
 
 
-def main():
-    """Main entry point for the analytics CLI."""
-    parser = argparse.ArgumentParser(
-        description="Go-Doc-Go Analytics CLI",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Show analytics summary
-  python -m go_doc_go.cli.analytics
+@click.command()
+@click.option("--config", "-c", help="Path to configuration file (overrides GO_DOC_GO_CONFIG_PATH)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed analytics information including table schemas and recent runs")
+@click.option("--json", "output_json", is_flag=True, help="Output analytics summary as JSON")
+def main(config, detailed, output_json):
+    """Go-Doc-Go Database-Agnostic Analytics CLI
 
-  # Show detailed analytics with file listings
-  python -m go_doc_go.cli.analytics --detailed
+    This CLI works with any configured analytics backend (Parquet, PostgreSQL,
+    MongoDB, Elasticsearch, etc.) through the AnalyticsStorage interface.
 
-  # Use custom config file
-  python -m go_doc_go.cli.analytics --config /path/to/config.yaml
-        """
-    )
+    Examples:
+      # Show analytics summary
+      python -m go_doc_go.cli.analytics
 
-    parser.add_argument(
-        "--config", "-c",
-        help="Path to configuration file (overrides GO_DOC_GO_CONFIG_PATH)"
-    )
+      # Show detailed analytics with table information
+      python -m go_doc_go.cli.analytics --detailed
 
-    parser.add_argument(
-        "--detailed", "-d",
-        action="store_true",
-        help="Show detailed analytics information including file listings"
-    )
+      # Use custom config file
+      python -m go_doc_go.cli.analytics --config /path/to/config.yaml
 
-    parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Output analytics summary as JSON"
-    )
-
-    args = parser.parse_args()
+      # Output as JSON for programmatic use
+      python -m go_doc_go.cli.analytics --json
+    """
 
     try:
         # Load configuration
         config_path = (
-            args.config or
+            config or
             os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml")
         )
 
         if not os.path.exists(config_path):
-            print(f"❌ Configuration file not found: {config_path}")
-            return 1
+            click.echo(f"❌ Configuration file not found: {config_path}")
+            sys.exit(1)
 
-        config = Config(config_path)
-        analytics_manager = AnalyticsManager(config)
+        config_obj = Config(config_path)
+
+        # Check if analytics is enabled
+        if not config_obj.is_analytics_enabled():
+            click.echo("❌ Analytics is not enabled in configuration")
+            sys.exit(1)
+
+        analytics_manager = DatabaseAgnosticAnalyticsManager(config_obj)
 
         # Get analytics summary
         summary = analytics_manager.get_analytics_summary()
 
-        if args.json:
+        if output_json:
             # Output as JSON
-            print(json.dumps(summary, indent=2))
+            click.echo(json.dumps(summary, indent=2))
         else:
             # Display formatted summary
-            display_analytics_summary(summary, detailed=args.detailed)
-
-        return 0
+            display_analytics_summary(summary, detailed=detailed)
 
     except Exception as e:
-        print(f"❌ Analytics summary failed: {str(e)}")
-        return 1
+        click.echo(f"❌ Analytics summary failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

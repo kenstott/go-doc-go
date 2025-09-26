@@ -324,6 +324,28 @@ class MongoDBAnalyticsStorage(AnalyticsStorage):
             'implementation_details': f'TODO: Delete MongoDB documents where _run_id = {run_id}'
         }
 
+    def get_storage_summary(self) -> Dict[str, Any]:
+        """Get comprehensive storage backend summary."""
+        return {
+            "backend": "mongodb",
+            "uri": self.uri,
+            "database": self.database_name,
+            "error": "MongoDB analytics summary not yet implemented"
+        }
+
+    def get_table_statistics(self, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get detailed table/collection statistics."""
+        return {
+            "error": "MongoDB table statistics not yet implemented"
+        }
+
+    def get_run_statistics(self, run_id: Optional[str] = None,
+                          include_details: bool = False) -> Dict[str, Any]:
+        """Get processing run statistics and summaries."""
+        return {
+            "error": "MongoDB run statistics not yet implemented"
+        }
+
     def close(self) -> None:
         """Close MongoDB connection."""
         if self.client:

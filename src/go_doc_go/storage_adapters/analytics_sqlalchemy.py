@@ -462,6 +462,214 @@ class SQLAlchemyAnalyticsStorage(AnalyticsStorage):
             'implementation_details': f'TODO: Delete SQL records WHERE _run_id = {run_id}'
         }
 
+    def get_storage_summary(self) -> Dict[str, Any]:
+        """Get comprehensive storage backend summary."""
+        summary = {
+            "backend": "sqlalchemy",
+            "dialect": self.engine.dialect.name if self.engine else "unknown",
+            "uri": self.uri if hasattr(self, 'uri') else "unknown",
+            "total_size": None,  # Not easily available for SQL databases
+            "table_counts": {},
+            "last_updated": None,
+            "partitioning_info": {
+                "scheme": getattr(self, 'partitioning', []),
+                "table_prefix": self.table_prefix
+            },
+            "storage_health": "healthy"
+        }
+
+        if not self.engine:
+            summary["storage_health"] = "no_connection"
+            return summary
+
+        session = self.Session()
+        try:
+            # Get table row counts
+            for table_name, table in self.tables.items():
+                try:
+                    count = session.execute(f"SELECT COUNT(*) FROM {table.name}").scalar()
+                    summary["table_counts"][table_name] = count
+                except Exception as e:
+                    summary["table_counts"][table_name] = f"error: {str(e)}"
+
+            # Try to get database size (PostgreSQL specific)
+            if self.engine.dialect.name == 'postgresql':
+                try:
+                    size_query = """
+                    SELECT pg_size_pretty(pg_database_size(current_database()))
+                    """
+                    result = session.execute(size_query).scalar()
+                    summary["total_size"] = result
+                except:
+                    pass
+
+            summary["storage_health"] = "healthy"
+
+        except Exception as e:
+            summary["storage_health"] = f"error: {str(e)}"
+        finally:
+            session.close()
+
+        return summary
+
+    def get_table_statistics(self, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get detailed table/collection statistics."""
+        stats = {
+            "tables": [],
+            "schema_info": {},
+            "index_info": {},
+            "size_breakdown": {}
+        }
+
+        if not self.engine:
+            stats["error"] = "No database connection"
+            return stats
+
+        # Filter to specific table if requested
+        tables_to_analyze = {}
+        if table_name and table_name in self.tables:
+            tables_to_analyze[table_name] = self.tables[table_name]
+        else:
+            tables_to_analyze = self.tables
+
+        session = self.Session()
+        try:
+            for name, table in tables_to_analyze.items():
+                table_info = {
+                    "name": name,
+                    "full_name": table.name,
+                    "type": "sql_table",
+                    "columns": [],
+                    "indexes": []
+                }
+
+                # Get column information
+                for column in table.columns:
+                    table_info["columns"].append({
+                        "name": column.name,
+                        "type": str(column.type),
+                        "nullable": column.nullable,
+                        "primary_key": column.primary_key
+                    })
+
+                # Get index information
+                for index in table.indexes:
+                    table_info["indexes"].append({
+                        "name": index.name,
+                        "columns": [col.name for col in index.columns],
+                        "unique": index.unique
+                    })
+
+                # Get row count
+                try:
+                    count = session.execute(f"SELECT COUNT(*) FROM {table.name}").scalar()
+                    table_info["row_count"] = count
+                except Exception as e:
+                    table_info["row_count"] = f"error: {str(e)}"
+
+                # Schema information
+                stats["schema_info"][name] = {
+                    "columns": len(table.columns),
+                    "indexes": len(table.indexes),
+                    "constraints": len(table.constraints)
+                }
+
+                stats["tables"].append(table_info)
+
+        except Exception as e:
+            stats["error"] = str(e)
+        finally:
+            session.close()
+
+        return stats
+
+    def get_run_statistics(self, run_id: Optional[str] = None,
+                          include_details: bool = False) -> Dict[str, Any]:
+        """Get processing run statistics and summaries."""
+
+        if not self.engine:
+            return {"error": "No database connection"}
+
+        session = self.Session()
+        try:
+            # Base run statistics query
+            if run_id:
+                run_filter = f"WHERE _run_id = '{run_id}'"
+            else:
+                run_filter = ""
+
+            # Get basic run information from documents table (assuming it exists)
+            docs_table = self.tables.get('documents')
+            if docs_table:
+                run_query = f"""
+                SELECT _run_id,
+                       MIN(_written_at) as start_time,
+                       MAX(_written_at) as end_time,
+                       COUNT(*) as document_count
+                FROM {docs_table.name}
+                {run_filter}
+                GROUP BY _run_id
+                ORDER BY start_time DESC
+                """
+
+                try:
+                    results = session.execute(run_query).fetchall()
+                    runs = []
+
+                    for result in results:
+                        run_data = {
+                            "run_id": result[0],
+                            "start_time": str(result[1]) if result[1] else None,
+                            "end_time": str(result[2]) if result[2] else None,
+                            "document_count": result[3]
+                        }
+
+                        if include_details:
+                            # Get counts from all tables for this run
+                            processing_stats = {}
+                            for table_name, table in self.tables.items():
+                                try:
+                                    count_query = f"SELECT COUNT(*) FROM {table.name} WHERE _run_id = '{result[0]}'"
+                                    count = session.execute(count_query).scalar()
+                                    processing_stats[table_name] = count
+                                except:
+                                    processing_stats[table_name] = 0
+
+                            run_data["processing_stats"] = processing_stats
+
+                        runs.append(run_data)
+
+                    stats = {
+                        "runs": runs,
+                        "total_runs": len(runs),
+                        "storage_impact": {}
+                    }
+
+                    if include_details and not run_id:
+                        # Overall statistics
+                        overall_stats = {}
+                        for table_name, table in self.tables.items():
+                            try:
+                                count = session.execute(f"SELECT COUNT(*) FROM {table.name}").scalar()
+                                overall_stats[f"total_{table_name}"] = count
+                            except:
+                                overall_stats[f"total_{table_name}"] = 0
+
+                        stats["processing_stats"] = overall_stats
+
+                    return stats
+
+                except Exception as e:
+                    return {"error": f"Query failed: {str(e)}", "runs": []}
+
+            else:
+                return {"error": "Documents table not found", "runs": []}
+
+        except Exception as e:
+            return {"error": str(e), "runs": []}
+        finally:
+            session.close()
+
     def close(self) -> None:
         """Close SQLAlchemy connections."""
         if self.engine:

@@ -5,6 +5,7 @@ Parquet analytics storage adapter for OLAP operations.
 import json
 import logging
 import os
+import shutil
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -165,26 +166,24 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             logger.error(f"Error writing Parquet file {full_path}: {e}")
             raise
     
-    def append_documents(self, documents: List[Dict[str, Any]],
-                        run_id: str) -> int:
+    def append_documents(self, documents: List[Dict[str, Any]]) -> int:
         """Append documents to Parquet storage."""
         if not documents:
             return 0
 
         # Extract source name from first document, fallback to "unknown"
-        source_name = documents[0].get('source', 'unknown') if documents else 'unknown'
+        source_name = documents[0].get('source_name', 'unknown') if documents else 'unknown'
         path = self.get_partition_path(source_name, 'documents')
-        
+
         # Process in batches
         total_written = 0
         for i in range(0, len(documents), self.batch_size):
             batch = documents[i:i + self.batch_size]
-            
+
             # Prepare DataFrame
             df = pd.DataFrame(batch)
-            
+
             # Add processing metadata
-            df['_run_id'] = run_id
             df['_written_at'] = datetime.now().isoformat()
             
             # Handle nested JSON fields - standardize metadata to strings
@@ -219,24 +218,13 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} documents to {path}")
         return total_written
     
-    def append_elements(self, elements: List[Dict[str, Any]],
-                       run_id: str) -> int:
+    def append_elements(self, elements: List[Dict[str, Any]]) -> int:
         """Append elements to Parquet storage."""
         if not elements:
             return 0
 
-        # Extract source name from first element's doc metadata, fallback to "unknown"
-        source_name = "unknown"
-        if elements:
-            # Try to get source from element metadata or use fallback
-            first_elem = elements[0]
-            metadata = first_elem.get('metadata', {})
-            if isinstance(metadata, str):
-                try:
-                    metadata = json.loads(metadata)
-                except:
-                    metadata = {}
-            source_name = metadata.get('source', 'unknown')
+        # Extract source name from first element, fallback to "unknown"
+        source_name = elements[0].get('source_name', 'unknown') if elements else 'unknown'
 
         path = self.get_partition_path(source_name, 'elements')
 
@@ -272,7 +260,6 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             df = pd.DataFrame(normalized_batch)
 
             # Add processing metadata
-            df['_run_id'] = run_id
             df['_written_at'] = datetime.now().isoformat()
 
             # Handle nested JSON fields
@@ -290,24 +277,13 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} elements to {path}")
         return total_written
     
-    def append_embeddings(self, embeddings: List[Dict[str, Any]],
-                         run_id: str) -> int:
+    def append_embeddings(self, embeddings: List[Dict[str, Any]]) -> int:
         """Append embeddings to Parquet storage."""
         if not embeddings:
             return 0
 
-        # Extract source name from first embedding's metadata, fallback to "unknown"
-        source_name = "unknown"
-        if embeddings:
-            first_embedding = embeddings[0]
-            # Embeddings might have element_metadata that contains source info
-            metadata = first_embedding.get('metadata', {})
-            if isinstance(metadata, str):
-                try:
-                    metadata = json.loads(metadata)
-                except:
-                    metadata = {}
-            source_name = metadata.get('source', 'unknown')
+        # Extract source name from first embedding, fallback to "unknown"
+        source_name = embeddings[0].get('source_name', 'unknown') if embeddings else 'unknown'
 
         path = self.get_partition_path(source_name, 'embeddings')
         
@@ -320,7 +296,6 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
             df = pd.DataFrame(batch)
             
             # Add processing metadata
-            df['_run_id'] = run_id
             df['_written_at'] = datetime.now().isoformat()
             
             # Convert embedding vectors to arrays if needed
@@ -336,23 +311,13 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} embeddings to {path}")
         return total_written
     
-    def append_relationships(self, relationships: List[Dict[str, Any]],
-                           run_id: str) -> int:
+    def append_relationships(self, relationships: List[Dict[str, Any]]) -> int:
         """Append relationships to Parquet storage."""
         if not relationships:
             return 0
 
-        # Extract source name from first relationship's metadata, fallback to "unknown"
-        source_name = "unknown"
-        if relationships:
-            first_rel = relationships[0]
-            metadata = first_rel.get('metadata', {})
-            if isinstance(metadata, str):
-                try:
-                    metadata = json.loads(metadata)
-                except:
-                    metadata = {}
-            source_name = metadata.get('source', 'unknown')
+        # Extract source name from first relationship, fallback to "unknown"
+        source_name = relationships[0].get('source_name', 'unknown') if relationships else 'unknown'
 
         path = self.get_partition_path(source_name, 'relationships')
         
@@ -405,7 +370,6 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
                 df['metadata'] = '{}'
             
             # Add processing metadata
-            df['_run_id'] = run_id
             df['_written_at'] = datetime.now().isoformat()
             
             # Define standard column order
@@ -426,8 +390,7 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         logger.info(f"Appended {total_written} relationships to {path}")
         return total_written
     
-    def append_metrics(self, metrics: Dict[str, Any],
-                      run_id: str) -> bool:
+    def append_metrics(self, metrics: Dict[str, Any]) -> bool:
         """Append processing metrics."""
         # Extract source name from metrics, fallback to "unknown"
         source_name = metrics.get('source', 'unknown')
@@ -435,7 +398,6 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         path = self.get_partition_path(source_name, 'metrics')
         
         # Add metadata
-        metrics['_run_id'] = run_id
         metrics['_written_at'] = datetime.now().isoformat()
         
         # Create single-row DataFrame
@@ -1480,6 +1442,232 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
 
         logger.info(f"Cleanup completed for run {run_id}: {stats}")
         return stats
+
+    def get_storage_summary(self) -> Dict[str, Any]:
+        """Get comprehensive storage backend summary."""
+        import os
+        from pathlib import Path
+
+        summary = {
+            "backend": "parquet",
+            "path": self.base_path,
+            "total_size": 0,
+            "table_counts": {},
+            "last_updated": None,
+            "partitioning_info": {
+                "scheme": self.partitioning,
+                "compression": self.compression
+            },
+            "storage_health": "healthy"
+        }
+
+        # Calculate storage size and get file counts
+        if not self.use_s3:
+            base_path = Path(self.base_path)
+            if base_path.exists():
+                data_types = ['documents', 'elements', 'embeddings', 'relationships', 'metrics']
+
+                for data_type in data_types:
+                    data_dir = base_path / data_type
+                    if data_dir.exists():
+                        parquet_files = list(data_dir.glob('**/*.parquet'))
+                        summary["table_counts"][data_type] = len(parquet_files)
+
+                        # Calculate size for this data type
+                        type_size = sum(f.stat().st_size for f in parquet_files)
+                        summary["total_size"] += type_size
+
+                        # Get latest modification time
+                        if parquet_files:
+                            latest_modified = max(f.stat().st_mtime for f in parquet_files)
+                            if summary["last_updated"] is None or latest_modified > summary["last_updated"]:
+                                summary["last_updated"] = latest_modified
+
+                # Convert timestamp to ISO format
+                if summary["last_updated"]:
+                    summary["last_updated"] = datetime.fromtimestamp(summary["last_updated"]).isoformat()
+            else:
+                summary["storage_health"] = "path_not_found"
+        else:
+            summary["storage_health"] = "s3_summary_not_implemented"
+
+        return summary
+
+    def get_table_statistics(self, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """Get detailed table/collection statistics."""
+        from pathlib import Path
+
+        stats = {
+            "tables": [],
+            "schema_info": {},
+            "index_info": {},
+            "size_breakdown": {}
+        }
+
+        if self.use_s3:
+            stats["error"] = "S3 table statistics not yet implemented"
+            return stats
+
+        base_path = Path(self.base_path)
+        data_types = ['documents', 'elements', 'embeddings', 'relationships', 'metrics']
+
+        # Filter to specific table if requested
+        if table_name:
+            data_types = [table_name] if table_name in data_types else []
+
+        for data_type in data_types:
+            data_dir = base_path / data_type
+            if not data_dir.exists():
+                continue
+
+            parquet_files = list(data_dir.glob('**/*.parquet'))
+
+            if not parquet_files:
+                continue
+
+            # Get size information
+            total_size = sum(f.stat().st_size for f in parquet_files)
+            stats["size_breakdown"][data_type] = total_size
+
+            # Try to get schema info from first parquet file
+            try:
+                if PARQUET_AVAILABLE:
+                    first_file = parquet_files[0]
+                    parquet_file = pq.ParquetFile(first_file)
+                    schema = parquet_file.schema.to_arrow_schema()
+
+                    stats["schema_info"][data_type] = {
+                        "columns": [field.name for field in schema],
+                        "num_columns": len(schema),
+                        "schema_str": str(schema)
+                    }
+            except Exception as e:
+                stats["schema_info"][data_type] = {"error": str(e)}
+
+            # Table summary
+            stats["tables"].append({
+                "name": data_type,
+                "type": "parquet_collection",
+                "file_count": len(parquet_files),
+                "total_size": total_size,
+                "partitioning": "hive" if any("=" in str(f) for f in parquet_files) else "none"
+            })
+
+        return stats
+
+    def get_run_statistics(self, run_id: Optional[str] = None,
+                          include_details: bool = False) -> Dict[str, Any]:
+        """Get processing run statistics and summaries."""
+
+        if not DUCKDB_AVAILABLE:
+            return {"error": "DuckDB required for run statistics"}
+
+        conn = duckdb.connect(':memory:')
+        try:
+            # Register parquet files
+            documents_path = os.path.join(self.base_path, 'documents/**/*.parquet')
+            elements_path = os.path.join(self.base_path, 'elements/**/*.parquet')
+            relationships_path = os.path.join(self.base_path, 'relationships/**/*.parquet')
+            embeddings_path = os.path.join(self.base_path, 'embeddings/**/*.parquet')
+
+            try:
+                conn.execute(f"CREATE VIEW documents AS SELECT * FROM read_parquet('{documents_path}', hive_partitioning=true, union_by_name=true)")
+                conn.execute(f"CREATE VIEW elements AS SELECT * FROM read_parquet('{elements_path}', hive_partitioning=true, union_by_name=true)")
+                conn.execute(f"CREATE VIEW relationships AS SELECT * FROM read_parquet('{relationships_path}', hive_partitioning=true, union_by_name=true)")
+                conn.execute(f"CREATE VIEW embeddings AS SELECT * FROM read_parquet('{embeddings_path}', hive_partitioning=true, union_by_name=true)")
+            except Exception as e:
+                if "No files found" in str(e):
+                    return {"runs": [], "error": "No parquet data found"}
+                raise
+
+            # Base query - get all runs or specific run
+            if run_id:
+                where_clause = f"WHERE _run_id = '{run_id}'"
+            else:
+                where_clause = ""
+
+            # Get run summaries
+            run_query = f"""
+            SELECT
+                _run_id,
+                MIN(_written_at) as start_time,
+                MAX(_written_at) as end_time,
+                COUNT(*) as total_records
+            FROM (
+                SELECT _run_id, _written_at FROM documents {where_clause}
+                UNION ALL
+                SELECT _run_id, _written_at FROM elements {where_clause}
+                UNION ALL
+                SELECT _run_id, _written_at FROM relationships {where_clause}
+                UNION ALL
+                SELECT _run_id, _written_at FROM embeddings {where_clause}
+            )
+            GROUP BY _run_id
+            ORDER BY start_time DESC
+            """
+
+            run_results = conn.execute(run_query).fetchall()
+
+            runs = []
+            for result in run_results:
+                run_data = {
+                    "run_id": result[0],
+                    "start_time": result[1],
+                    "end_time": result[2],
+                    "total_records": result[3]
+                }
+
+                if include_details:
+                    # Get detailed counts per table
+                    detail_query = f"""
+                    SELECT
+                        'documents' as table_name, COUNT(*) as count FROM documents WHERE _run_id = '{result[0]}'
+                    UNION ALL
+                    SELECT
+                        'elements' as table_name, COUNT(*) as count FROM elements WHERE _run_id = '{result[0]}'
+                    UNION ALL
+                    SELECT
+                        'relationships' as table_name, COUNT(*) as count FROM relationships WHERE _run_id = '{result[0]}'
+                    UNION ALL
+                    SELECT
+                        'embeddings' as table_name, COUNT(*) as count FROM embeddings WHERE _run_id = '{result[0]}'
+                    """
+
+                    detail_results = conn.execute(detail_query).fetchall()
+                    run_data["processing_stats"] = {row[0]: row[1] for row in detail_results}
+
+                runs.append(run_data)
+
+            stats = {
+                "runs": runs,
+                "total_runs": len(runs),
+                "storage_impact": {}
+            }
+
+            if include_details and not run_id:
+                # Get overall processing statistics
+                overall_query = """
+                SELECT
+                    COUNT(DISTINCT _run_id) as total_runs,
+                    (SELECT COUNT(*) FROM documents) as total_documents,
+                    (SELECT COUNT(*) FROM elements) as total_elements,
+                    (SELECT COUNT(*) FROM relationships) as total_relationships,
+                    (SELECT COUNT(*) FROM embeddings) as total_embeddings
+                """
+
+                overall_result = conn.execute(overall_query).fetchone()
+                stats["processing_stats"] = {
+                    "total_runs": overall_result[0],
+                    "total_documents": overall_result[1],
+                    "total_elements": overall_result[2],
+                    "total_relationships": overall_result[3],
+                    "total_embeddings": overall_result[4]
+                }
+
+            return stats
+
+        finally:
+            conn.close()
 
     def close(self) -> None:
         """Close storage connections."""

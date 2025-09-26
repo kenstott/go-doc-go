@@ -170,145 +170,70 @@ class AnalyticsStorage(ABC):
         pass
     
     @abstractmethod
-    def append_documents(self, documents: List[Dict[str, Any]], 
-                        run_id: str) -> int:
+    def append_documents(self, documents: List[Dict[str, Any]]) -> int:
         """
         Append documents to analytical storage.
-        
+
         Args:
             documents: List of document records
-            run_id: Processing run identifier
-            
+
         Returns:
             Number of documents written
         """
         pass
     
     @abstractmethod
-    def append_elements(self, elements: List[Dict[str, Any]], 
-                       run_id: str) -> int:
+    def append_elements(self, elements: List[Dict[str, Any]]) -> int:
         """
         Append elements to analytical storage.
-        
+
         Args:
             elements: List of element records
-            run_id: Processing run identifier
-            
+
         Returns:
             Number of elements written
         """
         pass
     
     @abstractmethod
-    def append_embeddings(self, embeddings: List[Dict[str, Any]], 
-                         run_id: str) -> int:
+    def append_embeddings(self, embeddings: List[Dict[str, Any]]) -> int:
         """
         Append embeddings to analytical storage.
-        
+
         Args:
             embeddings: List of embedding records
-            run_id: Processing run identifier
-            
+
         Returns:
             Number of embeddings written
         """
         pass
     
     @abstractmethod
-    def append_relationships(self, relationships: List[Dict[str, Any]], 
-                           run_id: str) -> int:
+    def append_relationships(self, relationships: List[Dict[str, Any]]) -> int:
         """
         Append relationships to analytical storage.
-        
+
         Args:
             relationships: List of relationship records
-            run_id: Processing run identifier
-            
+
         Returns:
             Number of relationships written
         """
         pass
     
-    def has_run(self, run_id: str) -> bool:
-        """
-        Check if storage has data for the given run_id.
-
-        Args:
-            run_id: Run ID to check
-
-        Returns:
-            True if storage has data for this run, False otherwise
-        """
-        # Default implementation checks if we can list any data for this run
-        try:
-            # Try to get elements for this run
-            results = self.search_text(
-                query="",  # Empty query
-                filters={'_run_id': run_id},
-                limit=1
-            )
-            return len(results) > 0
-        except Exception:
-            # If search fails, assume no data
-            return False
-
     @abstractmethod
-    def append_metrics(self, metrics: Dict[str, Any],
-                      run_id: str) -> bool:
+    def append_metrics(self, metrics: Dict[str, Any]) -> bool:
         """
         Append processing metrics.
-        
+
         Args:
             metrics: Processing metrics
-            run_id: Processing run identifier
-            
+
         Returns:
             True if written successfully
         """
         pass
     
-    @abstractmethod
-    def get_partition_path(self, run_id: str, 
-                          data_type: str) -> str:
-        """
-        Get partition path for data.
-        
-        Args:
-            run_id: Processing run identifier
-            data_type: Type of data (documents, elements, etc.)
-            
-        Returns:
-            Partition path string
-        """
-        pass
-    
-    @abstractmethod
-    def list_runs(self, start_date: Optional[datetime] = None,
-                 end_date: Optional[datetime] = None) -> List[str]:
-        """
-        List processing runs in date range.
-        
-        Args:
-            start_date: Start of date range
-            end_date: End of date range
-            
-        Returns:
-            List of run identifiers
-        """
-        pass
-    
-    @abstractmethod
-    def get_run_stats(self, run_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get statistics for a processing run.
-        
-        Args:
-            run_id: Processing run identifier
-            
-        Returns:
-            Run statistics or None if not found
-        """
-        pass
     
     @abstractmethod
     def search_semantic(self, query_embedding: List[float], 
@@ -389,26 +314,40 @@ class AnalyticsStorage(ABC):
         """
         pass
 
+
     @abstractmethod
-    def cleanup_run(self, run_id: str) -> Dict[str, int]:
+    def get_storage_summary(self) -> Dict[str, Any]:
         """
-        Clean up all data for a specific processing run.
-
-        For immutable storage backends like Parquet, this removes entire
-        data files/directories organized by run_id. This is fundamentally
-        different from record-level deletion which doesn't apply to
-        immutable formats.
-
-        Args:
-            run_id: Processing run identifier to clean up
+        Get comprehensive storage backend summary.
 
         Returns:
-            Dictionary with cleanup statistics:
-            - files_removed: Number of files deleted
-            - directories_removed: Number of directories removed
-            - total_bytes_freed: Total bytes freed (if available)
+            Dictionary containing:
+            - backend: Storage backend type
+            - total_size: Total storage size in bytes
+            - table_counts: Count of records in each table/collection
+            - last_updated: Timestamp of last write operation
+            - partitioning_info: Information about data partitioning
+            - storage_health: Backend-specific health indicators
         """
         pass
+
+    @abstractmethod
+    def get_table_statistics(self, table_name: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Get detailed table/collection statistics.
+
+        Args:
+            table_name: Specific table/collection name, or None for all tables
+
+        Returns:
+            Dictionary containing:
+            - tables: List of table/collection information
+            - schema_info: Schema or structure information
+            - index_info: Index/key information (if applicable)
+            - size_breakdown: Size breakdown by table/collection
+        """
+        pass
+
 
     @abstractmethod
     def close(self) -> None:

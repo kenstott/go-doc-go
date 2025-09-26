@@ -4,17 +4,16 @@ Command-line interface for monitoring document processing status without databas
 Uses log files and file-based status tracking.
 """
 
-import argparse
 import json
 import os
 import sys
 import time
+import click
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-# Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Package imports (no path manipulation needed for proper package installation)
 
 from go_doc_go.config import Config
 
@@ -238,94 +237,63 @@ def display_status(status: Dict[str, Any], detailed: bool = False):
         print(f"❌ Storage Error: {storage_info.get('error')}")
 
 
-def main():
-    """Main entry point for the status monitoring CLI."""
-    parser = argparse.ArgumentParser(
-        description="Go-Doc-Go Status Monitoring CLI",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Show current status
-  python -m go_doc_go.cli.status
+@click.command()
+@click.option("--config", "-c", help="Path to configuration file (overrides GO_DOC_GO_CONFIG_PATH)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed status including recent log activity")
+@click.option("--follow", "-f", is_flag=True, help="Follow log file for live updates (like tail -f)")
+@click.option("--lines", "-n", type=int, default=10, help="Number of recent log lines to show when following (default: 10)")
+@click.option("--refresh", type=int, default=5, help="Refresh interval in seconds for status updates (default: 5)")
+def main(config, detailed, follow, lines, refresh):
+    """Go-Doc-Go Status Monitoring CLI
 
-  # Show detailed status with recent log activity
-  python -m go_doc_go.cli.status --detailed
+    Monitor document processing status using log files and file-based status tracking.
 
-  # Follow log file for live updates
-  python -m go_doc_go.cli.status --follow
+    Examples:
+      # Show current status
+      python -m go_doc_go.cli.status
 
-  # Follow log file showing last 20 lines first
-  python -m go_doc_go.cli.status --follow --lines 20
+      # Show detailed status with recent log activity
+      python -m go_doc_go.cli.status --detailed
 
-  # Use custom config file
-  python -m go_doc_go.cli.status --config /path/to/config.yaml
-        """
-    )
+      # Follow log file for live updates
+      python -m go_doc_go.cli.status --follow
 
-    parser.add_argument(
-        "--config", "-c",
-        help="Path to configuration file (overrides GO_DOC_GO_CONFIG_PATH)"
-    )
+      # Follow log file showing last 20 lines first
+      python -m go_doc_go.cli.status --follow --lines 20
 
-    parser.add_argument(
-        "--detailed", "-d",
-        action="store_true",
-        help="Show detailed status including recent log activity"
-    )
-
-    parser.add_argument(
-        "--follow", "-f",
-        action="store_true",
-        help="Follow log file for live updates (like tail -f)"
-    )
-
-    parser.add_argument(
-        "--lines", "-n",
-        type=int,
-        default=10,
-        help="Number of recent log lines to show when following (default: 10)"
-    )
-
-    parser.add_argument(
-        "--refresh",
-        type=int,
-        default=5,
-        help="Refresh interval in seconds for status updates (default: 5)"
-    )
-
-    args = parser.parse_args()
+      # Use custom config file
+      python -m go_doc_go.cli.status --config /path/to/config.yaml
+    """
 
     try:
         # Load configuration
         config_path = (
-            args.config or
+            config or
             os.environ.get("GO_DOC_GO_CONFIG_PATH", "./config.yaml")
         )
 
         if not os.path.exists(config_path):
-            print(f"❌ Configuration file not found: {config_path}")
-            return 1
+            click.echo(f"❌ Configuration file not found: {config_path}")
+            sys.exit(1)
 
-        config = Config(config_path)
-        monitor = StatusMonitor(config)
+        config_obj = Config(config_path)
+        monitor = StatusMonitor(config_obj)
 
-        if args.follow:
+        if follow:
             # Follow log file
-            monitor.follow_logs(args.lines)
+            monitor.follow_logs(lines)
         else:
             # Show current status
             status = monitor.get_current_status()
-            display_status(status, detailed=args.detailed)
-
-        return 0
+            display_status(status, detailed=detailed)
 
     except KeyboardInterrupt:
-        print(f"\n⏹️  Status monitoring interrupted by user")
-        return 130
+        click.echo(f"\n⏹️  Status monitoring interrupted by user")
+        sys.exit(130)
     except Exception as e:
-        print(f"❌ Status monitoring failed: {str(e)}")
-        return 1
+        click.echo(f"❌ Status monitoring failed: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

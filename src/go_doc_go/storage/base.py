@@ -950,15 +950,22 @@ class DocumentDatabase(ABC):
         else:
             raise ValueError(f"Unsupported format_type: {format_type}. Use 'text', 'markdown', or 'html'")
 
-    # # Deprecated method name for backward compatibility
-    # def reconstruct_original_document(self, doc_id: str, format_type: str = 'text') -> Optional[str]:
-    #     """
-    #     DEPRECATED: Use extract_document_content() instead.
-    #
-    #     This method name is misleading as it suggests faithful reconstruction,
-    #     which is not possible given that we only extract textual content.
-    #     """
-    #     return self.extract_document_content(doc_id, format_type)
+    def reconstruct_document(self, doc_id: str, format_type: str = 'text') -> Optional[str]:
+        """
+        Reconstruct document content from structural relationships and elements.
+
+        This method uses the stored elements and their relationships to recreate
+        a readable version of the original document, preserving structural hierarchy
+        like headers, lists, tables, and document-type-specific elements.
+
+        Args:
+            doc_id: Document ID to reconstruct
+            format_type: Output format ('text', 'markdown', 'html')
+
+        Returns:
+            Reconstructed document content or None if document not found
+        """
+        return self.extract_document_content(doc_id, format_type)
 
     def _get_element_content_with_fallback(self, element: Dict[str, Any]) -> str:
         """Get element content with smart fallback and metadata integration."""
@@ -1589,11 +1596,20 @@ class DocumentDatabase(ABC):
 
         return preview + "\n[... content truncated ...]"
 
-    # # Deprecated method name for backward compatibility
-    # def get_reconstruction_preview(self, doc_id: str, format_type: str = 'text',
-    #                                max_length: int = 1000) -> Optional[str]:
-    #     """DEPRECATED: Use get_content_extraction_preview() instead."""
-    #     return self.get_content_extraction_preview(doc_id, format_type, max_length)
+    def get_reconstruction_preview(self, doc_id: str, format_type: str = 'text',
+                                   max_length: int = 1000) -> Optional[str]:
+        """
+        Get a preview of document reconstruction using structural relationships.
+
+        Args:
+            doc_id: Document ID
+            format_type: Output format ('text', 'markdown', 'html')
+            max_length: Maximum length of preview
+
+        Returns:
+            Preview of reconstructed document content
+        """
+        return self.get_content_extraction_preview(doc_id, format_type, max_length)
 
     def validate_content_extraction_capability(self, doc_id: str) -> Dict[str, Any]:
         """
@@ -1673,10 +1689,17 @@ class DocumentDatabase(ABC):
 
         return assessment
 
-    # # Deprecated method name for backward compatibility
-    # def validate_reconstruction_capability(self, doc_id: str) -> Dict[str, Any]:
-    #     """DEPRECATED: Use validate_content_extraction_capability() instead."""
-    #     return self.validate_content_extraction_capability(doc_id)
+    def validate_reconstruction_capability(self, doc_id: str) -> Dict[str, Any]:
+        """
+        Validate how well document content can be reconstructed from structural relationships.
+
+        Args:
+            doc_id: Document ID to validate
+
+        Returns:
+            Assessment of reconstruction capability for different formats
+        """
+        return self.validate_content_extraction_capability(doc_id)
 
     def _reconstruct_as_docx_html(self, elements: List[Dict[str, Any]]) -> str:
         """Reconstruct as HTML optimized for DOCX-style documents."""
