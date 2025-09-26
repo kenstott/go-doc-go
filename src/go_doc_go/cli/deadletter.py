@@ -11,6 +11,7 @@ from typing import Optional, List
 
 from ..config import Config
 from ..queue.dead_letter import DeadLetterQueue, DeadLetterProcessor, DeadLetterItem
+from ..shared.simple_job_control.base import SimpleJobControlDB
 
 
 def format_timestamp(timestamp: Optional[str]) -> str:
@@ -250,11 +251,10 @@ def list(ctx, run_id, limit, details):
     """List dead letter items."""
     try:
         config = Config(ctx.obj['config_path'])
-        db = config.get_document_database()
+        db = SimpleJobControlDB.create(config)
         dlq = DeadLetterQueue(db)
 
         list_dead_letter_items(dlq, run_id, limit, details)
-        db.close()
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         sys.exit(1)
@@ -267,11 +267,10 @@ def retry(ctx, queue_id):
     """Retry specific queue item by ID."""
     try:
         config = Config(ctx.obj['config_path'])
-        db = config.get_document_database()
+        db = SimpleJobControlDB.create(config)
         dlq = DeadLetterQueue(db)
 
         retry_dead_letter_item(dlq, queue_id)
-        db.close()
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         sys.exit(1)
@@ -284,11 +283,10 @@ def retry_run(ctx, run_id):
     """Retry all failed items for a specific run."""
     try:
         config = Config(ctx.obj['config_path'])
-        db = config.get_document_database()
+        db = SimpleJobControlDB.create(config)
         dlq = DeadLetterQueue(db)
 
         retry_run_failures(dlq, run_id)
-        db.close()
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         sys.exit(1)
@@ -301,11 +299,10 @@ def analyze(ctx, run_id):
     """Analyze failure patterns."""
     try:
         config = Config(ctx.obj['config_path'])
-        db = config.get_document_database()
+        db = SimpleJobControlDB.create(config)
         processor = DeadLetterProcessor(db)
 
         analyze_failure_patterns(processor, run_id)
-        db.close()
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         sys.exit(1)
@@ -318,11 +315,10 @@ def purge(ctx, days):
     """Purge items older than specified days."""
     try:
         config = Config(ctx.obj['config_path'])
-        db = config.get_document_database()
+        db = SimpleJobControlDB.create(config)
         dlq = DeadLetterQueue(db)
 
         purge_old_items(dlq, days)
-        db.close()
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         sys.exit(1)
@@ -336,11 +332,10 @@ def export(ctx, file, run_id):
     """Export dead letter data to JSON file."""
     try:
         config = Config(ctx.obj['config_path'])
-        db = config.get_document_database()
+        db = SimpleJobControlDB.create(config)
         dlq = DeadLetterQueue(db)
 
         export_dead_letter_data(dlq, file, run_id)
-        db.close()
     except Exception as e:
         click.echo(f"❌ Error: {str(e)}", err=True)
         sys.exit(1)
