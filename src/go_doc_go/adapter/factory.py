@@ -148,6 +148,32 @@ class ContentResolverFactory:
         return resolver
 
     @classmethod
+    def create_all_adapters(cls, config: Config) -> Dict[str, ContentSourceAdapter]:
+        """
+        Create all content source adapters from configuration.
+
+        Args:
+            config: Configuration object
+
+        Returns:
+            Dictionary of adapters by type
+        """
+        # Extract content sources from config
+        content_sources = config.config.get('content_sources', [])
+
+        # Process content sources into dictionary if it's a list
+        sources_dict = {}
+        if isinstance(content_sources, list):
+            for source_config in content_sources:
+                source_type = source_config.get("type")
+                if source_type:
+                    sources_dict[source_type] = source_config
+        else:
+            sources_dict = content_sources
+
+        return cls.create_adapters(sources_dict)
+
+    @classmethod
     def create_resolver_from_config(cls, config: Config) -> ContentResolver:
         """
         Create a content resolver from configuration.
@@ -194,3 +220,7 @@ def create_content_resolver(config: Config) -> ContentResolver:
         ContentResolver instance
     """
     return ContentResolverFactory.create_resolver_from_config(config)
+
+
+# Alias for backward compatibility
+AdapterFactory = ContentResolverFactory
