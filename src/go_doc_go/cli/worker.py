@@ -543,7 +543,12 @@ class SimpleDocumentWorker:
             return True
 
         except Exception as e:
-            logger.error(f"Failed to process document {doc_id}: {e}")
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Failed to process document {doc_id}: {e}\n{error_details}")
+            # Store the error details for dead letter queue
+            self.last_error = str(e)
+            self.last_error_details = error_details
             return False
 
     def run(self):
@@ -601,13 +606,18 @@ class SimpleDocumentWorker:
                         self.documents_processed += 1
                         logger.info(f"Worker {self.worker_id} completed document {document_info['doc_id']} ({self.documents_processed} total)")
                     else:
+                        # Use the detailed error message if available
+                        error_msg = getattr(self, 'last_error', 'Processing failed')
                         self.job_control.complete_document(
                             document_info['doc_id'],
                             self.worker_id,
                             False,
-                            "Processing failed"
+                            error_msg
                         )
-                        logger.warning(f"Worker {self.worker_id} failed to process document {document_info['doc_id']}")
+                        logger.warning(f"Worker {self.worker_id} failed to process document {document_info['doc_id']}: {error_msg}")
+                        # Clear error details
+                        self.last_error = None
+                        self.last_error_details = None
                 else:
                     # No documents available, wait a bit
                     if self.documents_processed == 0 and not self.is_leader:
