@@ -330,7 +330,7 @@ class Config:
                         
                         if 'analytics_registry' in registry_data:
                             self._analytics_registry = registry_data['analytics_registry']
-                            logger.info(f"Loaded {len(self._analytics_registry)} analytics backends from registry")
+                            # Analytics registry is deprecated - don't log about it
                             
                             # Merge search config if present
                             if 'search' in registry_data:
