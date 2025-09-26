@@ -1,6 +1,9 @@
 import hashlib
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from go_doc_go.shared.simple_job_control import SimpleJobControl
 
 
 class ContentSource(ABC):
@@ -17,6 +20,7 @@ class ContentSource(ABC):
         self.name = config.get("name", "unnamed-source")
         self.max_link_depth = config.get("max_link_depth", 1)
         self.discovery_interval = config.get("discovery_interval", 300)  # 5 minutes default
+        self.job_control = None  # Will be injected by worker for asynchronous link queuing
 
     @abstractmethod
     def fetch_document(self, source_id: str) -> Dict[str, Any]:
@@ -77,6 +81,58 @@ class ContentSource(ABC):
         # Default implementation just returns all documents
         # Override in subclasses for incremental discovery
         return self.list_documents()
+
+    def set_job_control(self, job_control: 'SimpleJobControl'):
+        """
+        Inject job control for asynchronous link queuing.
+
+        Args:
+            job_control: Job control instance for queuing discovered links
+        """
+        self.job_control = job_control
+
+    def queue_discovered_link(self, link_url: str, source_id: str, depth: int) -> bool:
+        """
+        Queue a discovered link for asynchronous processing by other workers.
+
+        Args:
+            link_url: URL of discovered link
+            source_id: Source document that contained the link
+            depth: Current link depth
+
+        Returns:
+            True if link was queued, False if not (no job control or depth exceeded)
+        """
+        # Check if we've reached max depth BEFORE queuing
+        if not self.job_control or (depth + 1) > self.max_link_depth:
+            import logging
+            logger = logging.getLogger(__name__)
+            if (depth + 1) > self.max_link_depth:
+                logger.debug(f"Not queuing {link_url} - would exceed max_link_depth {self.max_link_depth} (current depth: {depth})")
+            return False
+
+        try:
+            # Queue the link as a new document with proper depth tracking
+            metadata = {
+                "url": link_url,
+                "parent_url": source_id,
+                "discovery_depth": depth + 1,
+                "max_link_depth": self.max_link_depth,  # Pass max depth to queued document
+                "source_name": self.name
+            }
+
+            self.job_control.enqueue_document(link_url, self.name, metadata)
+
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"Queued link {link_url} at depth {depth + 1} (max: {self.max_link_depth})")
+            return True
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to queue discovered link {link_url}: {str(e)}")
+            return False
 
     def follow_links(self, content: str, source_id: str, current_depth: int = 0, global_visited_docs=None) -> List[
         Dict[str, Any]]:

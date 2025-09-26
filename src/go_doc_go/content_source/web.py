@@ -161,17 +161,10 @@ class WebContentSource(ContentSource):
 
     def follow_links(self, content: str, source_id: str, current_depth: int = 0, global_visited_docs=None) -> List[
         Dict[str, Any]]:
-        """Extract and follow links in web content with global visited tracking."""
+        """Extract and queue links for asynchronous processing by distributed workers."""
         if current_depth >= self.max_link_depth:
             logger.debug(f"Max link depth {self.max_link_depth} reached for {source_id}")
             return []
-
-        # Initialize global visited set if not provided
-        if global_visited_docs is None:
-            global_visited_docs = set()
-
-        # Add current document to global visited set
-        global_visited_docs.add(source_id)
 
         # Parse HTML content
         logger.debug(f"Parsing content from {source_id} to extract links (depth: {current_depth})")
@@ -202,44 +195,22 @@ class WebContentSource(ContentSource):
             if self._should_include_url(absolute_url):
                 links.add(absolute_url)
 
-        logger.debug(f"Found {len(links)} unique links to follow from {source_id}")
+        logger.debug(f"Found {len(links)} unique links to extract from {source_id}")
 
-        # Follow links
-        linked_docs = []
-        link_counter = 0
-
+        # Queue links for asynchronous processing instead of processing synchronously
+        queued_count = 0
         for link in links:
-            link_counter += 1
-            # Skip if globally visited
-            if link in global_visited_docs:
-                logger.debug(f"Skipping globally visited link ({link_counter}/{len(links)}): {link}")
-                continue
+            if self.queue_discovered_link(link, source_id, current_depth):
+                queued_count += 1
+                logger.debug(f"Queued link for processing: {link}")
+            else:
+                logger.debug(f"Skipped queuing link (depth limit or no job control): {link}")
 
-            global_visited_docs.add(link)
-            logger.debug(f"Following link {link_counter}/{len(links)}: {link}")
+        logger.info(f"Queued {queued_count} links from {source_id} for distributed processing")
 
-            try:
-                # Fetch linked document
-                linked_doc = self.fetch_document(link)
-                linked_docs.append(linked_doc)
-                logger.debug(f"Successfully fetched linked document: {link}")
-
-                # Recursively follow links if not at max depth
-                if current_depth + 1 < self.max_link_depth:
-                    logger.debug(f"Recursively following links from {link} at depth {current_depth + 1}")
-                    nested_docs = self.follow_links(
-                        linked_doc["content"],
-                        link,
-                        current_depth + 1,
-                        global_visited_docs
-                    )
-                    logger.debug(f"Found {len(nested_docs)} nested documents from {link}")
-                    linked_docs.extend(nested_docs)
-            except Exception as e:
-                logger.warning(f"Error following link {link} from {source_id}: {str(e)}")
-
-        logger.debug(f"Completed following links from {source_id}: found {len(linked_docs)} linked documents")
-        return linked_docs
+        # Return empty list since we're using asynchronous processing
+        # Links will be processed by any available worker in the distributed system
+        return []
 
     @staticmethod
     def _get_last_modified(response) -> Optional[float]:

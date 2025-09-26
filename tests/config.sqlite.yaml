@@ -68,7 +68,7 @@ content_sources:
     headers:
       User-Agent: "Go-Doc-Go/1.0 (educational project; ken@kenstott.com)"
     max_link_depth: 1
-    refresh_interval: 604800  # 7 days in seconds
+    discovery_interval: 604800  # 7 days in seconds
 
 relationship_detection:
   enabled: true

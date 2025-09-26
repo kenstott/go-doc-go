@@ -4,7 +4,7 @@ Refactored document worker using SimpleJobControlDB architecture.
 Replaces the complex PostgreSQL-based worker system with a clean SQLite-based approach.
 """
 
-import argparse
+import click
 import logging
 import os
 import sys
@@ -17,8 +17,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any
 
-# Add the src directory to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Package imports (no path manipulation needed for proper package installation)
 
 from go_doc_go.config import Config
 from go_doc_go.shared.simple_job_control import SimpleJobControlDB
@@ -38,7 +37,7 @@ class SimpleDocumentWorker:
     Uses SimpleJobControlDB for document claiming and analytics outputs for storage.
     """
 
-    def __init__(self, config: Config, worker_id: Optional[str] = None, max_documents: Optional[int] = None):
+    def __init__(self, config: Config, worker_id: Optional[str] = None, max_documents: Optional[int] = None, discovery_interval: int = 60):
         """Initialize the simple document worker."""
         self.config = config
         self.worker_id = worker_id or f"worker_{uuid.uuid4().hex[:8]}"
@@ -48,17 +47,37 @@ class SimpleDocumentWorker:
         self.shutdown_requested = False
         self.is_leader = False
         self.discovery_thread = None
-        self.discovery_interval = 60  # Discovery every 60 seconds
+        self.discovery_interval = discovery_interval  # Discovery interval in seconds
+
+        # Queue monitoring for Neo4j export
+        self.last_queue_empty_time = None
+        self.neo4j_export_enabled = config.config.get('processing', {}).get('neo4j_export', {}).get('enabled', False)
+        self.neo4j_export_wait_time = config.config.get('processing', {}).get('neo4j_export', {}).get('empty_queue_wait_time', 600)  # 10 minutes
+        self.last_neo4j_export_time = None
 
         # Initialize job control database
         self.job_control = SimpleJobControlDB.create(config)
 
-        # Initialize content sources
+        # Initialize content sources with per-source discovery tracking
         self.content_sources = {}
+        self.source_discovery_intervals = {}  # Per-source discovery intervals
+        self.source_last_discovery = {}  # Track last discovery time per source
+
         for source_config in config.get_content_sources():
             source_name = source_config.get('name')
             if source_name:
-                self.content_sources[source_name] = get_content_source(source_config)
+                content_source = get_content_source(source_config)
+                # Inject job control for asynchronous link queuing
+                content_source.set_job_control(self.job_control)
+                self.content_sources[source_name] = content_source
+
+                # Set per-source discovery interval
+                # Use 'discovery_interval' consistently across all sources
+                source_interval = source_config.get('discovery_interval', self.discovery_interval)
+                self.source_discovery_intervals[source_name] = source_interval
+                self.source_last_discovery[source_name] = 0  # Will trigger immediate discovery
+
+                logger.debug(f"Source {source_name} discovery interval: {source_interval}s")
 
         # Initialize analytics storage
         self.analytics_storage = []
@@ -88,47 +107,102 @@ class SimpleDocumentWorker:
         signal.signal(signal.SIGTERM, signal_handler)
         signal.signal(signal.SIGINT, signal_handler)
 
-    def discover_and_queue_documents(self, use_continuous_discovery: bool = False):
-        """Discover documents from content sources and queue them for processing."""
-        total_queued = 0
-        import time
+    def discover_and_queue_documents_for_source(self, source_name: str, use_continuous_discovery: bool = False):
+        """Discover documents from a single content source and queue them for processing."""
+        content_source = self.content_sources.get(source_name)
+        if not content_source:
+            logger.warning(f"Source {source_name} not found")
+            return 0
 
-        for source_name, content_source in self.content_sources.items():
-            try:
-                logger.info(f"Discovering documents from source: {source_name}")
+        queued_count = 0
+        try:
+            logger.info(f"Discovering documents from source: {source_name}")
 
-                # Use continuous discovery for supported sources if requested
-                if use_continuous_discovery and hasattr(content_source, 'supports_continuous_discovery'):
-                    if content_source.supports_continuous_discovery():
-                        # Get last discovery time (simplified - in production, this would be tracked)
-                        last_discovery = getattr(self, f'_last_discovery_{source_name}', None)
-                        documents = content_source.discover_new_documents(last_discovery)
-                        setattr(self, f'_last_discovery_{source_name}', time.time())
-                        logger.debug(f"Used continuous discovery for {source_name}")
-                    else:
-                        documents = content_source.list_documents()
-                        logger.debug(f"Used standard discovery for {source_name}")
+            # Use continuous discovery for supported sources if requested
+            if use_continuous_discovery and hasattr(content_source, 'supports_continuous_discovery'):
+                if content_source.supports_continuous_discovery():
+                    # Get last discovery time
+                    last_discovery = getattr(self, f'_last_discovery_{source_name}', None)
+                    documents = content_source.discover_new_documents(last_discovery)
+                    setattr(self, f'_last_discovery_{source_name}', time.time())
+                    logger.debug(f"Used continuous discovery for {source_name}")
                 else:
                     documents = content_source.list_documents()
+                    logger.debug(f"Used standard discovery for {source_name}")
+            else:
+                documents = content_source.list_documents()
 
-                queued_count = 0
-                for doc_info in documents:
-                    doc_id = doc_info.get('id') or doc_info.get('source_id') or doc_info.get('url') or str(uuid.uuid4())
+            for doc_info in documents:
+                doc_id = doc_info.get('id') or doc_info.get('source_id') or doc_info.get('url') or str(uuid.uuid4())
 
-                    # Check if already queued
-                    if not self.job_control.is_document_queued(doc_id):
-                        self.job_control.enqueue_document(
-                            doc_id=doc_id,
-                            source=source_name,
-                            metadata=doc_info
+                # Check if document has changed using content source change detection
+                current_modified = doc_info.get('metadata', {}).get('last_modified')
+                should_process = False
+
+                # Always check if document is already queued first
+                if self.job_control.is_document_queued(doc_id):
+                    logger.debug(f"Document {doc_id} is already queued, skipping")
+                    continue
+
+                # Use job control change tracking if available
+                if hasattr(self.job_control, 'has_document_changed'):
+                    # For comprehensive change detection
+                    current_hash = None
+                    if hasattr(content_source, 'has_changed'):
+                        # Get stored metadata for comparison
+                        stored_metadata = self.job_control.get_document_metadata(doc_id)
+                        stored_modified = stored_metadata.get('last_modified') if stored_metadata else None
+
+                        # Use content source has_changed method
+                        source_changed = content_source.has_changed(doc_id, stored_modified)
+
+                        # Also check job control tracking
+                        jc_changed = self.job_control.has_document_changed(
+                            doc_id, source_name, current_modified, current_hash
                         )
-                        queued_count += 1
 
-                logger.info(f"Queued {queued_count} new documents from {source_name}")
-                total_queued += queued_count
+                        should_process = source_changed or jc_changed
+                    else:
+                        # Fallback to job control only
+                        should_process = self.job_control.has_document_changed(
+                            doc_id, source_name, current_modified, current_hash
+                        )
+                else:
+                    # Fallback to content source change detection only
+                    if hasattr(content_source, 'has_changed'):
+                        try:
+                            should_process = content_source.has_changed(doc_id, None)
+                        except Exception:
+                            # If change detection fails, process the document
+                            should_process = True
+                    else:
+                        # No change detection available, always process
+                        should_process = True
 
-            except Exception as e:
-                logger.error(f"Failed to discover documents from {source_name}: {e}")
+                if should_process:
+                    logger.debug(f"Document {doc_id} has changed or is new, queuing for processing")
+                    self.job_control.enqueue_document(
+                        doc_id=doc_id,
+                        source=source_name,
+                        metadata=doc_info
+                    )
+                    queued_count += 1
+                else:
+                    logger.debug(f"Document {doc_id} has not changed, skipping")
+
+            logger.info(f"Queued {queued_count} new documents from {source_name}")
+        except Exception as e:
+            logger.error(f"Failed to discover documents from {source_name}: {e}")
+
+        return queued_count
+
+    def discover_and_queue_documents(self, use_continuous_discovery: bool = False):
+        """Discover documents from all content sources and queue them for processing."""
+        total_queued = 0
+
+        for source_name in self.content_sources:
+            queued = self.discover_and_queue_documents_for_source(source_name, use_continuous_discovery)
+            total_queued += queued
 
         if total_queued > 0:
             logger.info(f"Total documents queued for processing: {total_queued}")
@@ -160,13 +234,40 @@ class SimpleDocumentWorker:
                 # Update leader heartbeat
                 self.job_control.update_leader_heartbeat(self.worker_id)
 
-                # Discover and queue new documents using continuous discovery
-                queued = self.discover_and_queue_documents(use_continuous_discovery=True)
-                if queued > 0:
-                    logger.info(f"Leader discovered {queued} new documents")
+                # Check each source to see if it's time for discovery
+                current_time = time.time()
+                total_queued = 0
 
-                # Sleep for discovery interval
-                for _ in range(self.discovery_interval):
+                for source_name in self.content_sources:
+                    time_since_last = current_time - self.source_last_discovery.get(source_name, 0)
+                    source_interval = self.source_discovery_intervals.get(source_name, self.discovery_interval)
+
+                    # Check if this source is due for discovery
+                    if time_since_last >= source_interval:
+                        logger.debug(f"Discovering documents from {source_name} (interval: {source_interval}s)")
+                        queued = self.discover_and_queue_documents_for_source(
+                            source_name,
+                            use_continuous_discovery=True
+                        )
+                        self.source_last_discovery[source_name] = current_time
+                        total_queued += queued
+
+                        if queued > 0:
+                            logger.info(f"Leader discovered {queued} new documents from {source_name}")
+
+                if total_queued > 0:
+                    logger.info(f"Leader discovered {total_queued} total new documents")
+
+                # Check queue status for Neo4j export
+                if self.neo4j_export_enabled:
+                    self.check_queue_for_neo4j_export()
+
+                # Sleep for a short interval before checking sources again
+                # Use the minimum of all source intervals, but cap at 60 seconds for responsiveness
+                min_interval = min(self.source_discovery_intervals.values()) if self.source_discovery_intervals else self.discovery_interval
+                sleep_interval = min(60, min_interval)
+
+                for _ in range(sleep_interval):
                     if not self.running or self.shutdown_requested:
                         break
                     time.sleep(1)
@@ -176,6 +277,78 @@ class SimpleDocumentWorker:
                 time.sleep(10)  # Wait before retrying
 
         logger.info(f"Leader {self.worker_id} stopping discovery loop")
+
+    def check_queue_for_neo4j_export(self):
+        """Check if queue is empty and trigger Neo4j export if conditions are met."""
+        try:
+            # Get current queue status
+            status = self.job_control.get_processing_status()
+            queue_status = status.get('queue_status', 'active')
+            doc_counts = status.get('documents', {})
+
+            pending_docs = doc_counts.get('pending', 0)
+            processing_docs = doc_counts.get('processing', 0)
+
+            is_queue_empty = (pending_docs == 0 and processing_docs == 0)
+
+            current_time = time.time()
+
+            if is_queue_empty:
+                if self.last_queue_empty_time is None:
+                    # Queue just became empty
+                    self.last_queue_empty_time = current_time
+                    logger.info("Queue is now empty, starting timer for Neo4j export")
+                elif current_time - self.last_queue_empty_time >= self.neo4j_export_wait_time:
+                    # Queue has been empty long enough
+                    time_since_last_export = float('inf')
+                    if self.last_neo4j_export_time:
+                        time_since_last_export = current_time - self.last_neo4j_export_time
+
+                    # Only export if it's been at least the wait time since last export
+                    if time_since_last_export >= self.neo4j_export_wait_time:
+                        logger.info("Queue has been empty long enough, triggering Neo4j export")
+                        self.trigger_neo4j_export()
+                        self.last_neo4j_export_time = current_time
+                        self.last_queue_empty_time = None  # Reset timer
+                    else:
+                        logger.debug(f"Queue empty but exported recently, waiting {self.neo4j_export_wait_time - time_since_last_export:.1f}s")
+            else:
+                # Queue is not empty, reset timer
+                if self.last_queue_empty_time is not None:
+                    logger.debug("Queue is no longer empty, resetting export timer")
+                    self.last_queue_empty_time = None
+
+        except Exception as e:
+            logger.error(f"Error checking queue for Neo4j export: {e}")
+
+    def trigger_neo4j_export(self):
+        """Trigger Neo4j graph export."""
+        try:
+            logger.info("Starting Neo4j graph export...")
+
+            # Get Neo4j export configuration
+            neo4j_config = self.config.config.get('processing', {}).get('neo4j_export', {})
+            source_analytics = neo4j_config.get('source_analytics', 'parquet')
+
+            # Import here to avoid circular imports
+            from go_doc_go.graph_export import GraphExporter
+
+            exporter = GraphExporter(self.config, source_analytics)
+            result = exporter.export_to_neo4j()
+
+            if result.get('success'):
+                exported_counts = result.get('exported', {})
+                logger.info(f"Neo4j export completed successfully: "
+                           f"docs={exported_counts.get('documents', 0)}, "
+                           f"elements={exported_counts.get('elements', 0)}, "
+                           f"relationships={exported_counts.get('relationships', 0)}")
+            else:
+                logger.error(f"Neo4j export failed: {result.get('error', 'Unknown error')}")
+
+        except ImportError:
+            logger.warning("GraphExporter not available - Neo4j export disabled")
+        except Exception as e:
+            logger.error(f"Neo4j export failed: {e}")
 
     def start_discovery_thread(self):
         """Start the discovery thread if this worker is the leader."""
@@ -222,6 +395,38 @@ class SimpleDocumentWorker:
 
             parse_result = parser.parse(doc_content)
 
+            # Extract and queue links for asynchronous processing (web content sources only)
+            current_depth = document_info.get('metadata', {}).get('discovery_depth', 0)
+            max_depth = document_info.get('metadata', {}).get('max_link_depth', content_source.max_link_depth)
+
+            # Only follow links if we haven't exceeded max depth
+            if hasattr(content_source, 'follow_links') and 'content' in doc_content and current_depth < max_depth:
+                try:
+                    # Temporarily update content source max_link_depth for this document
+                    original_max_depth = content_source.max_link_depth
+                    content_source.max_link_depth = max_depth
+
+                    content_source.follow_links(
+                        doc_content['content'],
+                        source_id,
+                        current_depth
+                    )
+
+                    # Restore original max depth
+                    content_source.max_link_depth = original_max_depth
+
+                    logger.debug(f"Link discovery completed for document {doc_id} at depth {current_depth}/{max_depth}")
+                except Exception as e:
+                    # Restore original max depth on error
+                    if 'original_max_depth' in locals():
+                        content_source.max_link_depth = original_max_depth
+                    logger.warning(f"Link discovery failed for document {doc_id}: {str(e)}")
+            else:
+                if current_depth >= max_depth:
+                    logger.debug(f"Skipping link discovery for {doc_id} - at max depth {current_depth}/{max_depth}")
+                else:
+                    logger.debug(f"Skipping link discovery for {doc_id} - not a web content source or no HTML content")
+
             # Generate embeddings if enabled
             if self.embedding_generator and 'elements' in parse_result:
                 for element in parse_result['elements']:
@@ -240,6 +445,11 @@ class SimpleDocumentWorker:
 
             # Detect relationships
             if self.relationship_detector and 'elements' in parse_result:
+                # Add doc_id to document and elements for relationship detection
+                doc_content['doc_id'] = doc_id
+                for element in parse_result['elements']:
+                    element['doc_id'] = doc_id
+
                 relationships = self.relationship_detector.detect_relationships(
                     doc_content,  # document
                     parse_result['elements']  # elements
@@ -262,21 +472,21 @@ class SimpleDocumentWorker:
                         'processed_at': datetime.now().isoformat(),
                         'element_count': len(parse_result.get('elements', [])),
                         'relationship_count': len(parse_result.get('relationships', []))
-                    }], run_id)
+                    }])
 
                     # Store elements
                     if 'elements' in parse_result:
                         for element in parse_result['elements']:
                             element['doc_id'] = doc_id
                             element['source_name'] = source_name
-                        storage.append_elements(parse_result['elements'], run_id)
+                        storage.append_elements(parse_result['elements'])
 
                     # Store relationships
                     if 'relationships' in parse_result:
                         for relationship in parse_result['relationships']:
                             relationship['doc_id'] = doc_id
                             relationship['source_name'] = source_name
-                        storage.append_relationships(parse_result['relationships'], run_id)
+                        storage.append_relationships(parse_result['relationships'])
 
                     # Store embeddings
                     embeddings = []
@@ -291,12 +501,45 @@ class SimpleDocumentWorker:
                             })
 
                     if embeddings:
-                        storage.append_embeddings(embeddings, run_id)
+                        storage.append_embeddings(embeddings)
 
                 except Exception as e:
                     logger.error(f"Failed to store results in analytics storage: {e}")
 
             logger.debug(f"Successfully processed document {doc_id}")
+
+            # Store document metadata for change tracking if supported
+            if hasattr(self.job_control, 'store_document_metadata'):
+                try:
+                    # Extract metadata from doc_content and parse_result
+                    doc_metadata = doc_content.get('metadata', {})
+                    last_modified = doc_metadata.get('last_modified')
+                    content_hash = doc_content.get('content_hash')
+                    file_size = doc_metadata.get('size') or doc_metadata.get('file_size')
+
+                    # Create processing stats
+                    processing_stats = {
+                        'element_count': len(parse_result.get('elements', [])),
+                        'relationship_count': len(parse_result.get('relationships', [])),
+                        'embedding_count': sum(1 for e in parse_result.get('elements', []) if 'embedding' in e),
+                        'processed_at': datetime.now().isoformat(),
+                        'worker_id': self.worker_id
+                    }
+
+                    self.job_control.store_document_metadata(
+                        doc_id=doc_id,
+                        source=source_name,
+                        last_modified=last_modified,
+                        content_hash=content_hash,
+                        file_size=file_size,
+                        processing_stats=processing_stats
+                    )
+
+                    logger.debug(f"Stored metadata for document {doc_id}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to store metadata for document {doc_id}: {e}")
+
             return True
 
         except Exception as e:
@@ -390,61 +633,62 @@ class SimpleDocumentWorker:
         self.running = False
 
 
-def main():
-    """Main entry point for the refactored document worker."""
-    parser = argparse.ArgumentParser(
-        description="Go-Doc-Go Simple Document Worker (New Architecture)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Run single worker with default config
-  python -m go_doc_go.cli.worker_new
+@click.command()
+@click.option(
+    "--config", "-c",
+    help="Path to configuration file (overrides GO_DOC_GO_CONFIG_PATH)"
+)
+@click.option(
+    "--worker-id",
+    help="Custom worker ID (auto-generated if not provided)"
+)
+@click.option(
+    "--log-level", "-l",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
+    default="INFO",
+    help="Logging level"
+)
+@click.option(
+    "--max-documents", "-m",
+    type=int,
+    help="Maximum number of documents to process before stopping"
+)
+@click.option(
+    "--discovery-interval", "-d",
+    type=int,
+    default=86400,  # 1 day = 86400 seconds
+    help="Default interval in seconds between discovery cycles (default: 86400 = 1 day)"
+)
+def main(config, worker_id, log_level, max_documents, discovery_interval):
+    """Go-Doc-Go Simple Document Worker (New Architecture).
 
-  # Run worker with custom config file
-  python -m go_doc_go.cli.worker_new --config /path/to/config.yaml
+    Process documents using a distributed, queue-based system with automatic
+    leader election and job coordination.
 
-  # Process limited number of documents
-  python -m go_doc_go.cli.worker_new --max-documents 10
+    \b
+    Examples:
+      # Run single worker with default config
+      python -m go_doc_go.cli.worker
 
-  # Run with custom worker ID
-  python -m go_doc_go.cli.worker_new --worker-id my-worker-01
+      # Run worker with custom config file
+      python -m go_doc_go.cli.worker --config /path/to/config.yaml
 
-Environment Variables:
-  GO_DOC_GO_CONFIG_PATH: Path to configuration file (default: ./config.yaml)
-        """
-    )
+      # Process limited number of documents
+      python -m go_doc_go.cli.worker --max-documents 10
 
-    parser.add_argument(
-        "--config", "-c",
-        help="Path to configuration file (overrides GO_DOC_GO_CONFIG_PATH)"
-    )
+      # Run with custom worker ID and debug logging
+      python -m go_doc_go.cli.worker --worker-id my-worker-01 --log-level DEBUG
 
-    parser.add_argument(
-        "--worker-id",
-        help="Custom worker ID (auto-generated if not provided)"
-    )
-
-    parser.add_argument(
-        "--log-level", "-l",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        default="INFO",
-        help="Logging level (default: INFO)"
-    )
-
-    parser.add_argument(
-        "--max-documents", "-m",
-        type=int,
-        help="Maximum number of documents to process before stopping"
-    )
-
-    args = parser.parse_args()
-
+    \b
+    Environment Variables:
+      GO_DOC_GO_CONFIG_PATH    Path to configuration file (default: ./config.yaml)
+    """
     # Configure logging
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    log_level = getattr(logging, args.log_level)
+    log_level_obj = getattr(logging, log_level.upper())
 
     logging.basicConfig(
-        level=log_level,
+        level=log_level_obj,
         format=log_format
     )
 
@@ -453,23 +697,24 @@ Environment Variables:
     try:
         # Determine config file path
         config_path = (
-            args.config or
+            config or
             os.environ.get('GO_DOC_GO_CONFIG_PATH') or
             './config.yaml'
         )
 
         if not os.path.exists(config_path):
-            logger.error(f"Configuration file not found: {config_path}")
+            click.echo(f"Error: Configuration file not found: {config_path}", err=True)
             sys.exit(1)
 
         logger.info(f"Loading configuration from: {config_path}")
-        config = Config(config_path)
+        config_obj = Config(config_path)
 
         # Create and run worker
         worker = SimpleDocumentWorker(
-            config=config,
-            worker_id=args.worker_id,
-            max_documents=args.max_documents
+            config=config_obj,
+            worker_id=worker_id,
+            max_documents=max_documents,
+            discovery_interval=discovery_interval
         )
 
         worker.run()
@@ -477,10 +722,11 @@ Environment Variables:
         logger.info("Worker completed successfully")
 
     except KeyboardInterrupt:
-        logger.info("Worker interrupted by user")
+        click.echo("\nWorker interrupted by user")
         sys.exit(0)
     except Exception as e:
         logger.error(f"Worker failed: {e}", exc_info=True)
+        click.echo(f"Error: Worker failed: {e}", err=True)
         sys.exit(1)
 
 
