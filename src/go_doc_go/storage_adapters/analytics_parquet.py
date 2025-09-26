@@ -1025,6 +1025,47 @@ class ParquetAnalyticsStorage(AnalyticsStorage):
         finally:
             conn.close()
 
+    def resolve_element_content(self, element_id: str, content_resolver: Optional[Any] = None) -> str:
+        """
+        Resolve full content for an element.
+
+        First checks if full content is stored in the analytics DB.
+        If not, uses content_location and content resolver to fetch from source.
+
+        Args:
+            element_id: The element ID to resolve content for
+            content_resolver: Optional EnhancedContentResolver instance
+
+        Returns:
+            Full content string
+        """
+        # Get element from analytics storage
+        element = self.get_element(element_id)
+        if not element:
+            return ""
+
+        # First check if full content is already stored
+        if element.get('content'):
+            return element['content']
+
+        # If no content but we have content_location, try to resolve it
+        if element.get('content_location') and content_resolver:
+            try:
+                # Parse content_location if it's a string
+                import json
+                content_location = element['content_location']
+                if isinstance(content_location, str):
+                    content_location = json.loads(content_location)
+
+                # Resolve content from source
+                resolved_content = content_resolver.resolve_content(content_location, text=True)
+                return resolved_content
+            except Exception as e:
+                logger.warning(f"Failed to resolve content from location: {e}")
+
+        # Fall back to content_preview if nothing else works
+        return element.get('content_preview', '')
+
     def get_corpus_stats(self, filters: Optional[Dict[str, Any]] = None, run_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get statistics about the corpus.
