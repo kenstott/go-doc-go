@@ -1,8 +1,0 @@
-Test Document 2
-
-This is test document number 2 created for incremental processing testing.
-It contains some sample text that can be parsed and processed.
-The document has multiple lines to create interesting elements.
-
-Created at: Tue Nov 14 17:13:22 2023
-Document ID: 2
