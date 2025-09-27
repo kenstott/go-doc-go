@@ -14,9 +14,12 @@ from go_doc_go.domain.ontology import DomainOntology, RuleType, RelationshipDire
 
 # Optional embedding support
 try:
-    from go_doc_go.embedding.client import EmbeddingClient
+    from go_doc_go.embeddings.base import EmbeddingGenerator
+    from go_doc_go.embeddings.factory import get_embedding_generator
+    EMBEDDING_AVAILABLE = True
 except ImportError:
-    EmbeddingClient = None
+    EmbeddingGenerator = None
+    EMBEDDING_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +160,12 @@ class OntologyEntityExtractor:
                 # Apply rule based on type
                 confidence = self._apply_mapping_rule(rule, element, content)
 
-                if confidence >= self.ontology.settings.default_confidence_threshold:
+                # Use rule-specific confidence threshold or default
+                rule_threshold = getattr(rule, 'confidence_threshold', None)
+                if rule_threshold is None:
+                    rule_threshold = self.ontology.settings.default_confidence_threshold
+
+                if confidence >= rule_threshold:
                     # Create extracted entity
                     entity_id = f"{term.id}_{element.get('element_id', 'unknown')}_{len(entities)}"
 
@@ -190,21 +198,40 @@ class OntologyEntityExtractor:
 
         if rule.type == RuleType.SEMANTIC:
             # Use embedding similarity for semantic matching
-            if self.embedding_client and rule.semantic_phrase:
+            if self.embedding_client and hasattr(rule, 'semantic_phrase') and rule.semantic_phrase:
                 try:
-                    similarity = self.embedding_client.compute_similarity(
-                        content, rule.semantic_phrase
-                    )
-                    return similarity
+                    # Generate embeddings for both content and semantic phrase
+                    content_embedding = self.embedding_client.generate_embeddings([content])[0]
+                    phrase_embedding = self.embedding_client.generate_embeddings([rule.semantic_phrase])[0]
+
+                    # Calculate cosine similarity
+                    import numpy as np
+                    content_vec = np.array(content_embedding)
+                    phrase_vec = np.array(phrase_embedding)
+
+                    # Normalize vectors
+                    content_norm = content_vec / np.linalg.norm(content_vec)
+                    phrase_norm = phrase_vec / np.linalg.norm(phrase_vec)
+
+                    # Calculate cosine similarity
+                    similarity = np.dot(content_norm, phrase_norm)
+                    return float(similarity)
+
                 except Exception as e:
                     logger.debug(f"Embedding similarity failed: {e}")
-                    return 0.0
+                    # Fallback to keyword matching
+                    phrase_words = set(rule.semantic_phrase.lower().split())
+                    content_words = set(content.lower().split())
+                    overlap = len(phrase_words.intersection(content_words))
+                    return overlap / len(phrase_words) if phrase_words else 0.0
             else:
-                # Fallback to keyword matching
-                phrase_words = set(rule.semantic_phrase.lower().split())
-                content_words = set(content.lower().split())
-                overlap = len(phrase_words.intersection(content_words))
-                return overlap / len(phrase_words) if phrase_words else 0.0
+                # Fallback to keyword matching when no embeddings available
+                if hasattr(rule, 'semantic_phrase') and rule.semantic_phrase:
+                    phrase_words = set(rule.semantic_phrase.lower().split())
+                    content_words = set(content.lower().split())
+                    overlap = len(phrase_words.intersection(content_words))
+                    return overlap / len(phrase_words) if phrase_words else 0.0
+                return 0.0
 
         elif rule.type == RuleType.REGEX:
             # Apply regex pattern
