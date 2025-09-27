@@ -6,6 +6,7 @@ for different document types.
 """
 
 import logging
+import os
 from typing import Dict, Any, Optional
 
 from .base import DocumentParser
@@ -20,6 +21,62 @@ from .pptx import PptxParser
 from .text import TextParser
 from .xlsx import XlsxParser
 from .xml import XmlParser
+
+# Import Go HTML parser
+try:
+    from .html_go import GoHTMLParser
+    GO_HTML_PARSER_AVAILABLE = True
+except ImportError:
+    GO_HTML_PARSER_AVAILABLE = False
+
+# Import Go JSON parser
+try:
+    from .json_go import GoJSONParser
+    GO_JSON_PARSER_AVAILABLE = True
+except ImportError:
+    GO_JSON_PARSER_AVAILABLE = False
+
+# Import Go XML parser
+try:
+    from .xml_go import GoXMLParser
+    GO_XML_PARSER_AVAILABLE = True
+except ImportError:
+    GO_XML_PARSER_AVAILABLE = False
+
+# Import Go CSV parser
+try:
+    from .csv_go import GoCSVParser
+    GO_CSV_PARSER_AVAILABLE = True
+except ImportError:
+    GO_CSV_PARSER_AVAILABLE = False
+
+# Import Go text parser
+try:
+    from .text_go import GoTextParser
+    GO_TEXT_PARSER_AVAILABLE = True
+except ImportError:
+    GO_TEXT_PARSER_AVAILABLE = False
+
+# Import Go markdown parser
+try:
+    from .markdown_go import GoMarkdownParser
+    GO_MARKDOWN_PARSER_AVAILABLE = True
+except ImportError:
+    GO_MARKDOWN_PARSER_AVAILABLE = False
+
+# Import Go PDF parser
+try:
+    from .pdf_go import GoPDFParser
+    GO_PDF_PARSER_AVAILABLE = True
+except ImportError:
+    GO_PDF_PARSER_AVAILABLE = False
+
+# Import Go XLSX parser
+try:
+    from .xlsx_go import GoXLSXParser
+    GO_XLSX_PARSER_AVAILABLE = True
+except ImportError:
+    GO_XLSX_PARSER_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -41,27 +98,75 @@ def create_parser(doc_type: str, config: Optional[Dict[str, Any]] = None) -> Doc
     config = config or {}
 
     if doc_type == "markdown":
-        return MarkdownParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_MARKDOWN_PARSER_AVAILABLE:
+            return GoMarkdownParser(config)
+        else:
+            return MarkdownParser(config)
     elif doc_type == "html":
-        return HtmlParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_HTML_PARSER_AVAILABLE:
+            return GoHTMLParser(config)
+        else:
+            return HtmlParser(config)
     elif doc_type == "xlsx":
-        return XlsxParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_XLSX_PARSER_AVAILABLE:
+            return GoXLSXParser(config)
+        else:
+            return XlsxParser(config)
     elif doc_type == "pdf":
-        return PdfParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_PDF_PARSER_AVAILABLE:
+            return GoPDFParser(config)
+        else:
+            return PdfParser(config)
     elif doc_type == "xml":
-        return XmlParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_XML_PARSER_AVAILABLE:
+            return GoXMLParser(config)
+        else:
+            return XmlParser(config)
     elif doc_type == "docx":
         return DocxParser(config)
     elif doc_type == "pptx":
         return PptxParser(config)
     elif doc_type == "csv":
-        return CsvParser(config)  # Added CSV parser support
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_CSV_PARSER_AVAILABLE:
+            return GoCSVParser(config)
+        else:
+            return CsvParser(config)
     elif doc_type == "json":
-        return JSONParser(config)  # Added JSON parser support
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_JSON_PARSER_AVAILABLE:
+            return GoJSONParser(config)
+        else:
+            return JSONParser(config)
     elif doc_type == "parquet":
         return ParquetParser(config)
     elif doc_type == "text":
-        return TextParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_TEXT_PARSER_AVAILABLE:
+            return GoTextParser(config)
+        else:
+            return TextParser(config)
     else:
         logger.warning(f"Unsupported document type: {doc_type}, falling back to text parser")
         return TextParser(config)
