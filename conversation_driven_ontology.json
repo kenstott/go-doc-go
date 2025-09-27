@@ -1,0 +1,112 @@
+{
+  "domain": {
+    "name": "Corporate Leadership and Compensation",
+    "description": "Tracks executive appointments, board composition, and compensation structures from SEC filings"
+  },
+  "terms": {
+    "executive_position": {
+      "description": "Corporate leadership roles and titles",
+      "variations": [
+        "Chief Executive Officer",
+        "CFO",
+        "President",
+        "Director",
+        "Officer",
+        "Interim [Position]",
+        "Audit Committee Chair",
+        "Compensation Committee Chair"
+      ]
+    },
+    "multiple_roles": {
+      "description": "Cases where an individual holds multiple leadership positions",
+      "variations": [
+        "dual role",
+        "also serves as",
+        "in addition to their role"
+      ]
+    },
+    "board_committee": {
+      "description": "Board-level oversight groups",
+      "variations": [
+        "Audit Committee",
+        "Compensation Committee",
+        "Committee Member",
+        "Committee Chair"
+      ]
+    },
+    "compensation_equity": {
+      "description": "Stock-based compensation components",
+      "variations": [
+        "RSUs",
+        "stock options",
+        "performance shares",
+        "equity awards",
+        "stock grants"
+      ]
+    },
+    "compensation_cash": {
+      "description": "Cash-based compensation components",
+      "variations": [
+        "base salary",
+        "cash bonus",
+        "cash compensation",
+        "incentive pay"
+      ]
+    },
+    "vesting_conditions": {
+      "description": "Performance requirements for compensation",
+      "variations": [
+        "performance-based vesting",
+        "vesting conditions",
+        "performance targets",
+        "vesting requirements"
+      ]
+    }
+  },
+  "relationships": [
+    {
+      "source": "executive_position",
+      "target": "multiple_roles",
+      "type": "can_have"
+    },
+    {
+      "source": "executive_position",
+      "target": "board_committee",
+      "type": "can_serve_on"
+    },
+    {
+      "source": "executive_position",
+      "target": "compensation_equity",
+      "type": "receives"
+    },
+    {
+      "source": "executive_position",
+      "target": "compensation_cash",
+      "type": "receives"
+    },
+    {
+      "source": "compensation_equity",
+      "target": "vesting_conditions",
+      "type": "subject_to"
+    },
+    {
+      "source": "board_committee",
+      "target": "compensation_equity",
+      "type": "oversees"
+    }
+  ],
+  "semantic_rules": [
+    {
+      "rule": "Position titles should capture both permanent and interim appointments",
+      "example": "Interim CEO, Acting Chairman"
+    },
+    {
+      "rule": "Multiple role detection should look for conjunction patterns",
+      "example": "CEO and Chairman, serves as both X and Y"
+    },
+    {
+      "rule": "Committee changes should note both joining and leaving events",
+      "example": "appointed to committee, stepping down from committee"
+    }
+  ]
+}

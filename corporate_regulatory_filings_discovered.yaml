@@ -1,0 +1,177 @@
+domain:
+  name: corporate_regulatory_filings
+  version: 1.0.0
+  description: Discovered ontology for corporate_regulatory_filings domain
+  settings:
+    default_confidence_threshold: 0.7
+    max_relationships_per_pair: 5
+    enable_transitive_inference: true
+terms:
+- id: company_name
+  label: Company Name
+  description: Name of a corporation or business entity
+  aliases:
+  - corporation
+  - company
+  - business
+  - issuer
+  - registrant
+- id: stock_symbol
+  label: Stock Symbol
+  description: Trading symbol for publicly traded securities
+  aliases:
+  - symbol
+  - ticker
+  - trading symbol
+  - stock ticker
+- id: revenue
+  label: Revenue
+  description: Total income from business operations
+  aliases:
+  - sales
+  - total revenue
+  - gross revenue
+  - turnover
+- id: executive_officer
+  label: Executive Officer
+  description: Senior management personnel of a company
+  aliases:
+  - officer
+  - executive
+  - CEO
+  - CFO
+  - president
+- id: regulatory_filing
+  label: Regulatory Filing
+  description: Official document submitted to regulatory authorities
+  aliases: &id001
+  - form
+  - report
+  - filing
+  - submission
+- id: form_type
+  label: Form Type
+  description: 'Domain-specific term: form type'
+  aliases: &id002
+  - form type
+  - Form Type
+element_mappings:
+- term_id: company_name
+  rules:
+  - type: regex
+    pattern: \b(MICROSOFT CORP|Apple Inc\.|[A-Z][a-z]+\s+(Corp|Inc|LLC))\b
+    case_sensitive: false
+    confidence: 0.85
+  - type: regex
+    pattern: <issuerName>\s*(.+)
+    element_types:
+    - xml_element
+    confidence: 0.95
+- term_id: stock_symbol
+  rules:
+  - type: regex
+    pattern: \b[A-Z]{1,5}\b
+    case_sensitive: true
+    confidence: 0.75
+  - type: regex
+    pattern: <issuerTradingSymbol>\s*([A-Z]+)
+    element_types:
+    - xml_element
+    confidence: 0.95
+- term_id: revenue
+  rules:
+  - type: regex
+    pattern: \b(Revenue|Total revenue|Net revenue|Sales)\b
+    case_sensitive: false
+    confidence: 0.85
+  - type: semantic
+    semantic_phrase: revenue, sales, income from operations
+    confidence: 0.8
+- term_id: executive_officer
+  rules:
+  - type: regex
+    pattern: \b(Chief\s+\w+\s+Officer|President|CEO|CFO|CTO)\b
+    case_sensitive: false
+    confidence: 0.9
+- term_id: regulatory_filing
+  rules:
+  - type: keywords
+    keywords: *id001
+    confidence: 0.7
+- term_id: form_type
+  rules:
+  - type: keywords
+    keywords: *id002
+    confidence: 0.7
+relationship_rules:
+- id: company_has_symbol
+  description: Company has a trading symbol
+  relationship_type: HAS_SYMBOL
+  source:
+    term_id: company_name
+    semantic_phrase: company, corporation
+    confidence_threshold: 0.8
+  target:
+    term_id: stock_symbol
+    semantic_phrase: symbol, ticker
+    confidence_threshold: 0.8
+  constraints:
+    hierarchy_level: -1
+    direction: any
+  confidence:
+    minimum: 0.75
+    calculation: average
+- id: company_reports_revenue
+  description: Company reports financial metrics
+  relationship_type: REPORTS
+  source:
+    term_id: company_name
+    semantic_phrase: company
+    confidence_threshold: 0.8
+  target:
+    term_id: revenue
+    semantic_phrase: revenue, financial metric
+    confidence_threshold: 0.85
+  constraints:
+    hierarchy_level: -1
+    direction: any
+  confidence:
+    minimum: 0.7
+    calculation: average
+metadata:
+  discovery_method: multi_step_orchestration
+  corpus_profile:
+    total_documents: 147
+    total_elements: 80501
+    element_distribution:
+    - element_type: table_cell
+      element_count: 80501
+    - element_type: paragraph
+      element_count: 64698
+    - element_type: xml_element
+      element_count: 59830
+    - element_type: table_row
+      element_count: 24076
+    - element_type: table
+      element_count: 17758
+    - element_type: div
+      element_count: 4691
+    - element_type: xml_list
+      element_count: 4459
+    - element_type: xml_object
+      element_count: 2625
+    - element_type: image
+      element_count: 2126
+    - element_type: header
+      element_count: 1513
+    - element_type: document_root
+      element_count: 756
+    - element_type: root
+      element_count: 147
+    - element_type: xml_text
+      element_count: 12
+    - element_type: body
+      element_count: 6
+    domain_assessment: regulatory_filings
+    primary_structure: mixed_html_xml
+  generated_from: analytics_database

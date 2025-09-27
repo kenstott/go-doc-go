@@ -1,0 +1,188 @@
+{
+  "run_id": "pipeline_20250927_111739",
+  "extraction_results": {
+    "run_id": "pipeline_20250927_111739",
+    "extraction_summary": {
+      "total_elements_processed": 1000,
+      "total_entities_extracted": 9,
+      "total_relationships_extracted": 0,
+      "documents_processed": 1,
+      "extraction_timestamp": "2025-09-27T11:17:39.316145"
+    },
+    "entities": [
+      {
+        "entity_id": "company_paragraph_bbef381d-e2f0-4e74-9e86-9563fb3f72c2_0",
+        "entity_type": "company",
+        "term_id": "company",
+        "source_element_id": "paragraph_bbef381d-e2f0-4e74-9e86-9563fb3f72c2",
+        "content": "This prospectus supplement, the accompanying prospectus and any free writing prospectus that we prep...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.298367"
+      },
+      {
+        "entity_id": "company_paragraph_01770399-2090-4d3f-8fb5-b87457dd5c5d_0",
+        "entity_type": "company",
+        "term_id": "company",
+        "source_element_id": "paragraph_01770399-2090-4d3f-8fb5-b87457dd5c5d",
+        "content": "We incorporate by reference in this prospectus supplement and the accompanying prospectus the docume...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.298968"
+      },
+      {
+        "entity_id": "company_paragraph_1ee0b14f-7ea0-4e4f-a67d-40b634cd316c_0",
+        "entity_type": "company",
+        "term_id": "company",
+        "source_element_id": "paragraph_1ee0b14f-7ea0-4e4f-a67d-40b634cd316c",
+        "content": "Table of Contents FORWARD-LOOKING STATEMENTS This prospectus supplement and the accompanying prospec...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.299508"
+      },
+      {
+        "entity_id": "company_paragraph_918df95d-fa83-4f5a-8f1a-cacb5c4bdbb9_0",
+        "entity_type": "company",
+        "term_id": "company",
+        "source_element_id": "paragraph_918df95d-fa83-4f5a-8f1a-cacb5c4bdbb9",
+        "content": "This prospectus supplement and the accompanying prospectus, including the documents incorporated by ...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.299579"
+      },
+      {
+        "entity_id": "company_paragraph_bc8bf039-e725-4041-9bf9-c0829a49cb98_0",
+        "entity_type": "company",
+        "term_id": "company",
+        "source_element_id": "paragraph_bc8bf039-e725-4041-9bf9-c0829a49cb98",
+        "content": "The Bank of New York Mellon Trust Company, N.A.",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.303816"
+      },
+      {
+        "entity_id": "revenue_td_6fb855ab-a229-4845-9678-ed4ff9975876_0",
+        "entity_type": "revenue",
+        "term_id": "revenue",
+        "source_element_id": "td_6fb855ab-a229-4845-9678-ed4ff9975876",
+        "content": "require us to maintain any financial ratios or specific levels of net worth, revenues, income, cash ...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "table_cell",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.304297"
+      },
+      {
+        "entity_id": "revenue_paragraph_8cdc625f-a8c7-4443-8426-727cb0d7de75_0",
+        "entity_type": "revenue",
+        "term_id": "revenue",
+        "source_element_id": "paragraph_8cdc625f-a8c7-4443-8426-727cb0d7de75",
+        "content": "require us to maintain any financial ratios or specific levels of net worth, revenues, income, cash ...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.304329"
+      },
+      {
+        "entity_id": "company_paragraph_53671638-e735-446c-9ff0-db7817121c23_0",
+        "entity_type": "company",
+        "term_id": "company",
+        "source_element_id": "paragraph_53671638-e735-446c-9ff0-db7817121c23",
+        "content": "The\nCompany may acquire the notes by means other than a redemption, whether by tender offer, open ma...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.309036"
+      },
+      {
+        "entity_id": "company_paragraph_ad77f1d1-1f55-4a87-8a7e-2d9432b20746_0",
+        "entity_type": "company",
+        "term_id": "company",
+        "source_element_id": "paragraph_ad77f1d1-1f55-4a87-8a7e-2d9432b20746",
+        "content": "This prospectus supplement and the accompanying prospectus have not been and will not be registered ...",
+        "confidence": 1.0,
+        "metadata": {
+          "rule_type": "regex",
+          "element_type": "paragraph",
+          "structural_name": null,
+          "hierarchy_depth": null,
+          "position": null,
+          "extraction_rule": "regex"
+        },
+        "doc_id": "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000119312522207773/d358144d424b2.htm",
+        "source_name": "sec-html-filings",
+        "extracted_at": "2025-09-27T11:17:39.315190"
+      }
+    ],
+    "relationships": []
+  },
+  "graph_export_results": null
+}

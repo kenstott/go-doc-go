@@ -1,0 +1,709 @@
+{
+  "frequent_patterns": {
+    "words": {
+      "september": 216,
+      "stock": 182,
+      "officer": 158,
+      "registrant": 138,
+      "net": 120,
+      "total": 112,
+      "dated": 110,
+      "form": 103,
+      "certificate": 98,
+      "including": 97,
+      "item": 94,
+      "income": 89,
+      "cash": 88,
+      "forms": 88,
+      "plan": 88,
+      "table": 81,
+      "director": 81,
+      "employee": 76,
+      "other": 71,
+      "financial": 69,
+      "notes": 68,
+      "exhibit": 65,
+      "current": 64,
+      "agreement": 64,
+      "under": 63,
+      "statements": 60,
+      "effective": 60,
+      "consolidated": 60,
+      "november": 60,
+      "award": 60,
+      "market": 58,
+      "non": 55,
+      "change": 52,
+      "global": 51,
+      "equity": 50,
+      "date": 49,
+      "apple": 48,
+      "years": 48,
+      "ended": 48,
+      "restricted": 48,
+      "august": 46,
+      "sales": 44,
+      "liabilities": 44,
+      "executive": 43,
+      "share": 42,
+      "inc": 42,
+      "securities": 42,
+      "assets": 40,
+      "balances": 40,
+      "nasdaq": 38
+    },
+    "phrases": {
+      "Employee Stock": 68,
+      "The Nasdaq": 38,
+      "Stock Market": 38,
+      "Apple Inc": 38,
+      "Restricted Stock": 36,
+      "Unit Award": 36,
+      "Consolidated Statements": 32,
+      "Performance Award": 24,
+      "Chief Financial": 22,
+      "Period End": 19,
+      "Consolidated Financial": 16,
+      "Independent Registered": 14,
+      "Public Accounting": 14,
+      "Table Table": 12,
+      "The Bank": 12,
+      "New York": 12,
+      "Luca Maestri": 12,
+      "Senior Vice": 12,
+      "Chief Executive": 11,
+      "Exhibit Description": 10
+    },
+    "xml_tags": {}
+  },
+  "ngram_patterns": {
+    "bigrams": [
+      [
+        "as of",
+        171
+      ],
+      [
+        "the registrant",
+        133
+      ],
+      [
+        "of the",
+        130
+      ],
+      [
+        "dated as",
+        110
+      ],
+      [
+        "officer s",
+        107
+      ],
+      [
+        "september september",
+        102
+      ],
+      [
+        "s certificate",
+        98
+      ],
+      [
+        "certificate of",
+        98
+      ],
+      [
+        "registrant dated",
+        98
+      ],
+      [
+        "including forms",
+        88
+      ],
+      [
+        "forms of",
+        84
+      ],
+      [
+        "stock plan",
+        72
+      ],
+      [
+        "form of",
+        70
+      ],
+      [
+        "employee stock",
+        68
+      ],
+      [
+        "award agreement",
+        60
+      ],
+      [
+        "agreement under",
+        60
+      ],
+      [
+        "under employee",
+        56
+      ],
+      [
+        "effective as",
+        53
+      ],
+      [
+        "plan effective",
+        52
+      ],
+      [
+        "of global",
+        51
+      ]
+    ],
+    "trigrams": [
+      [
+        "of the registrant",
+        115
+      ],
+      [
+        "dated as of",
+        110
+      ],
+      [
+        "officer s certificate",
+        98
+      ],
+      [
+        "s certificate of",
+        98
+      ],
+      [
+        "certificate of the",
+        98
+      ],
+      [
+        "the registrant dated",
+        98
+      ],
+      [
+        "registrant dated as",
+        98
+      ],
+      [
+        "including forms of",
+        84
+      ],
+      [
+        "employee stock plan",
+        64
+      ],
+      [
+        "award agreement under",
+        60
+      ],
+      [
+        "september september september",
+        56
+      ],
+      [
+        "agreement under employee",
+        56
+      ],
+      [
+        "under employee stock",
+        56
+      ],
+      [
+        "stock plan effective",
+        52
+      ],
+      [
+        "plan effective as",
+        49
+      ]
+    ]
+  },
+  "xml_patterns": {
+    "tag_frequency": {},
+    "tag_co_occurrence": {}
+  },
+  "co_occurrences": {
+    "matrix": {
+      "effective": {
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2,
+        "november": 2
+      },
+      "income": {
+        "effective": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2,
+        "november": 2
+      },
+      "director": {
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "award": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2,
+        "november": 2
+      },
+      "dated": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2,
+        "november": 2
+      },
+      "under": {
+        "director": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "forms": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2,
+        "november": 2
+      },
+      "consolidated": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "financial": 2,
+        "certificate": 2,
+        "november": 2
+      },
+      "financial": {
+        "director": 3,
+        "under": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "certificate": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "november": 2
+      },
+      "november": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "stock": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "plan": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "statements": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "market": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "item": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "employee": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "total": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "including": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "registrant": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "current": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "other": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "table": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "table": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "officer": 3,
+        "september": 3
+      },
+      "officer": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "september": 3
+      },
+      "notes": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "cash": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "september": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3
+      },
+      "exhibit": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3
+      },
+      "agreement": {
+        "effective": 2,
+        "income": 2,
+        "director": 2,
+        "award": 2,
+        "dated": 2,
+        "under": 2,
+        "forms": 2,
+        "consolidated": 2,
+        "financial": 2,
+        "certificate": 2
+      },
+      "form": {
+        "director": 3,
+        "under": 3,
+        "financial": 3,
+        "plan": 3,
+        "item": 3,
+        "including": 3,
+        "registrant": 3,
+        "other": 3,
+        "table": 3,
+        "officer": 3
+      }
+    },
+    "top_words": [
+      "september",
+      "stock",
+      "officer",
+      "registrant",
+      "total",
+      "dated",
+      "form",
+      "certificate",
+      "including",
+      "item",
+      "income",
+      "cash",
+      "forms",
+      "plan",
+      "table",
+      "director",
+      "employee",
+      "other",
+      "financial",
+      "notes",
+      "exhibit",
+      "current",
+      "agreement",
+      "under",
+      "statements",
+      "effective",
+      "consolidated",
+      "november",
+      "award",
+      "market"
+    ]
+  },
+  "document_clusters": {
+    "document_profiles": {
+      "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019323000106/aapl-20230930.htm": [
+        "september",
+        "stock",
+        "officer",
+        "registrant",
+        "total",
+        "dated",
+        "certificate",
+        "including",
+        "form",
+        "item"
+      ],
+      "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019324000123/aapl-20240928.htm": [
+        "stock",
+        "september",
+        "officer",
+        "registrant",
+        "total",
+        "dated",
+        "form",
+        "certificate",
+        "including",
+        "item"
+      ],
+      "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000114036125036313/ef20049219_s8.htm": [
+        "director",
+        "september",
+        "officer",
+        "kevan",
+        "parekh",
+        "accelerated",
+        "filer",
+        "exhibit",
+        "apple",
+        "principal"
+      ]
+    },
+    "similarities": {
+      "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019323000106/aapl-20230930.htm": [
+        [
+          "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019324000123/aapl-20240928.htm",
+          18
+        ],
+        [
+          "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000114036125036313/ef20049219_s8.htm",
+          3
+        ]
+      ],
+      "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019324000123/aapl-20240928.htm": [
+        [
+          "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019323000106/aapl-20230930.htm",
+          18
+        ],
+        [
+          "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000114036125036313/ef20049219_s8.htm",
+          3
+        ]
+      ],
+      "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000114036125036313/ef20049219_s8.htm": [
+        [
+          "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019323000106/aapl-20230930.htm",
+          3
+        ],
+        [
+          "/Volumes/T9/govdata-cache/sec/sec-data/0000320193/000032019324000123/aapl-20240928.htm",
+          3
+        ]
+      ]
+    }
+  },
+  "corpus_stats": {
+    "total_documents": 3,
+    "total_elements": 3666,
+    "element_types": {
+      "table_cell": "2726",
+      "table_row": "736",
+      "div": "120",
+      "table": "79",
+      "image": "5"
+    },
+    "avg_content_length": 24.0
+  }
+}

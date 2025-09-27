@@ -1,0 +1,875 @@
+domain:
+  name: sec_insider_trading_semantic_analysis
+  version: 1.0.0
+  description: Semantic-enhanced ontology for SEC insider trading analysis with robust
+    similarity matching
+  discovery_method: semantic_enhanced_interactive_insider_trading
+  user_context: "SEC regulatory filings focused on insider trading analysis:\n\nPrimary\
+    \ Documents:\n\u2022 Form 4 - Insider trading transaction reports (XML structured\
+    \ data)\n\u2022 10-K annual reports with comprehensive financial statements\n\u2022\
+    \ 10-Q quarterly reports with interim financial updates\n\u2022 8-K current reports\
+    \ for material corporate events\n\nKey Analysis Focus:\n\u2022 Insider transactions:\
+    \ buy/sell activities, transaction amounts, prices\n\u2022 Share ownership: ownership\
+    \ changes, direct/indirect ownership\n\u2022 Insider identification: executives,\
+    \ directors, officers, their roles\n\u2022 Company identification: issuer names,\
+    \ ticker symbols, CIK numbers\n\u2022 Temporal tracking: transaction dates, filing\
+    \ dates, reporting periods\n\u2022 Financial metrics: revenue, earnings, financial\
+    \ performance data\n\nData Formats:\n\u2022 XML: Structured transaction data from\
+    \ Form 4 filings\n\u2022 HTML: Human-readable financial reports and statements\n\
+    \nSEMANTIC MATCHING REQUIREMENTS:\n\u2022 Executive titles: Need to match CEO\
+    \ \u2248 Chief Executive Officer \u2248 President \u2248 Chief Operating Officer\n\
+    \u2022 Company variations: Need to match Microsoft \u2248 MSFT \u2248 Microsoft\
+    \ Corporation \u2248 Microsoft Corp\n\u2022 Transaction types: Need to match buy\
+    \ \u2248 purchase \u2248 acquisition \u2248 acquired \u2248 disposition \u2248\
+    \ sold\n\u2022 Financial terms: Need to match revenue \u2248 sales \u2248 income\
+    \ \u2248 earnings \u2248 profit\n\nThe goal is to track insider trading patterns\
+    \ with robust semantic matching that handles\nnatural language variations, abbreviations,\
+    \ and synonyms commonly found in SEC filings."
+  settings:
+    default_confidence_threshold: 0.7
+    max_relationships_per_pair: 5
+    enable_transitive_inference: true
+    insider_trading_focus: true
+    semantic_similarity_enabled: true
+    embedding_model_suggested: sentence-transformers/all-MiniLM-L6-v2
+terms:
+- id: insider
+  label: Insider
+  description: A person who has access to non-public information about a company,
+    such as an executive, director, or officer. Insiders are required to report their
+    trading activities to the SEC.
+  aliases:
+  - reportingOwner
+  - rptOwnerStateDescription
+  - ownerSignature
+  - reportingOwnerRelationship
+  - reportingOwnerId
+  semantic_variations:
+  - executive
+  - director
+  - officer
+  - CEO
+  - Chief Executive Officer
+  - President
+  - Chief Operating Officer
+  domain_context: Insiders are the key entities involved in insider trading activities
+    that are reported to the SEC.
+- id: transaction
+  label: Transaction
+  description: A trading activity performed by an insider, such as buying, selling,
+    or acquiring shares of a company's stock. Transactions are reported with details
+    like the type of transaction, number of shares, price per share, and transaction
+    date.
+  aliases:
+  - transactionAcquiredDisposedCode
+  - transactionDate
+  - transactionPricePerShare
+  - transactionCoding
+  - transactionAmounts
+  - equitySwapInvolved
+  - transactionFormType
+  semantic_variations:
+  - buy
+  - purchase
+  - acquire
+  - disposition
+  - sold
+  - trade
+  - transaction
+  domain_context: Transactions are the core events being analyzed to understand insider
+    trading patterns and activities.
+- id: ownership
+  label: Ownership
+  description: Details about an insider's ownership of a company's shares, including
+    the nature of ownership (direct or indirect), the number of shares owned before
+    and after a transaction, and the total ownership percentage.
+  aliases:
+  - ownershipNature
+  - directOrIndirectOwnership
+  - securityTitle
+  - sharesOwnedFollowingTransaction
+  - postTransactionAmounts
+  semantic_variations:
+  - shares
+  - ownership
+  - stake
+  - holdings
+  domain_context: Ownership information is crucial for understanding the impact of
+    insider trading activities and changes in insider positions.
+- id: company
+  label: Company
+  description: The issuer of the securities being traded by insiders. Companies are
+    identified by their legal names, ticker symbols, and CIK (Central Index Key) numbers
+    assigned by the SEC.
+  aliases:
+  - securityTitle
+  semantic_variations:
+  - Microsoft
+  - MSFT
+  - Microsoft Corporation
+  - Microsoft Corp
+  domain_context: The companies whose securities are being traded by insiders are
+    the primary focus of the analysis.
+- id: filing
+  label: Filing
+  description: The regulatory documents submitted to the SEC that contain information
+    about insider trading activities, such as Form 4 reports and periodic financial
+    reports (10-K, 10-Q, 8-K).
+  aliases:
+  - footnoteId
+  - transactionFormType
+  semantic_variations:
+  - Form 4
+  - 10-K
+  - 10-Q
+  - 8-K
+  - filing
+  - report
+  - disclosure
+  domain_context: Insider trading information is primarily obtained from the regulatory
+    filings submitted to the SEC.
+- id: financial
+  label: Financial Metric
+  description: Financial performance data reported by companies in their periodic
+    financial statements, such as revenue, earnings, income, and profit.
+  aliases: []
+  semantic_variations:
+  - revenue
+  - sales
+  - income
+  - earnings
+  - profit
+  - financial
+  - performance
+  domain_context: Financial metrics are important contextual information for understanding
+    the overall performance of companies whose insiders are trading.
+element_mappings:
+- term_id: insider
+  rules:
+  - type: semantic
+    semantic_phrase: executive director officer CEO president chief executive officer
+      chief operating officer chief financial officer
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+    description: Matches variations of executive titles and roles that indicate insider
+      status.
+  - type: keywords
+    keywords:
+    - reportingOwner
+    - rptOwnerStateDescription
+    - ownerSignature
+    - reportingOwnerRelationship
+    - reportingOwnerId
+    confidence: 0.7
+    element_types:
+    - xml_element
+    description: Matches exact XML tags for insider identification in Form 4 filings.
+- term_id: transaction
+  rules:
+  - type: semantic
+    semantic_phrase: buy purchase acquire acquisition disposition sold sale trading
+      transaction
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+    description: Matches various terms used to describe insider trading activities.
+  - type: regex
+    pattern: <transactionAcquiredDisposedCode>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the transaction type in Form 4 filings.
+  - type: regex
+    pattern: <transactionDate>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the transaction date in Form 4 filings.
+  - type: regex
+    pattern: <transactionPricePerShare>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the transaction price per share in Form 4
+      filings.
+  - type: regex
+    pattern: <transactionCoding>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the transaction coding in Form 4 filings.
+- term_id: ownership
+  rules:
+  - type: semantic
+    semantic_phrase: shares ownership stake holdings
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+    description: Matches various terms used to describe insider ownership of company
+      shares.
+  - type: regex
+    pattern: <ownershipNature>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the nature of insider ownership in Form 4
+      filings.
+  - type: regex
+    pattern: <directOrIndirectOwnership>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the direct or indirect nature of insider
+      ownership in Form 4 filings.
+  - type: regex
+    pattern: <securityTitle>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the security title (company name) in Form
+      4 filings.
+  - type: regex
+    pattern: <sharesOwnedFollowingTransaction>
+    confidence: 0.9
+    element_types:
+    - xml_element
+    description: Matches the XML tag for the number of shares owned following a transaction
+      in Form 4 filings.
+- term_id: company
+  rules:
+  - type: semantic
+    semantic_phrase: company corporation issuer enterprise business firm organization
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+    description: Matches various terms used to refer to the company whose securities
+      are being traded.
+  - type: keywords
+    keywords:
+    - securityTitle
+    confidence: 0.7
+    element_types:
+    - xml_element
+    description: Matches the exact XML tag for the security title (company name) in
+      Form 4 filings.
+- term_id: filing
+  rules:
+  - type: semantic
+    semantic_phrase: Form 4 10-K 10-Q 8-K filing report disclosure
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+    description: Matches various terms used to refer to the regulatory filings that
+      contain insider trading information.
+  - type: keywords
+    keywords:
+    - footnoteId
+    - transactionFormType
+    confidence: 0.7
+    element_types:
+    - xml_element
+    description: Matches the exact XML tags for filing-related information in Form
+      4 filings.
+- term_id: financial
+  rules:
+  - type: semantic
+    semantic_phrase: revenue sales income earnings profit financial performance
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+    description: Matches various financial metrics and performance indicators that
+      provide context for insider trading activities.
+relationship_rules:
+- id: insider_executes_transaction
+  relationship_type: action
+  description: Insider executes a stock transaction
+  source:
+    term_id: insider
+    semantic_phrase: (?i)(executive|director|officer|insider)
+  target:
+    term_id: transaction
+    semantic_phrase: (?i)(buy|purchase|acquisition|acquired|disposition|sold)
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+- id: insider_owns_shares
+  relationship_type: ownership
+  description: Insider owns company shares
+  source:
+    term_id: insider
+    semantic_phrase: (?i)(executive|director|officer|insider)
+  target:
+    term_id: ownership
+    semantic_phrase: (?i)(owns|ownership|shares)
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+- id: insider_works_for_company
+  relationship_type: corporate_structure
+  description: Insider works for a company
+  source:
+    term_id: insider
+    semantic_phrase: (?i)(executive|director|officer|insider)
+  target:
+    term_id: company
+    semantic_phrase: (?i)(company|corporation|inc|llc)
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+- id: transaction_involves_company
+  relationship_type: transaction
+  description: A transaction involves a company's stock
+  source:
+    term_id: transaction
+    semantic_phrase: (?i)(buy|purchase|acquisition|acquired|disposition|sold)
+  target:
+    term_id: company
+    semantic_phrase: (?i)(company|corporation|inc|llc)
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+- id: transaction_occurred_on_date
+  relationship_type: temporal
+  description: A transaction occurred on a specific date
+  source:
+    term_id: transaction
+    semantic_phrase: (?i)(buy|purchase|acquisition|acquired|disposition|sold)
+  target:
+    term_id: filing
+    semantic_phrase: (?i)(date|filed|reported)
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+- id: company_reports_financial_metrics
+  relationship_type: financial
+  description: A company reports financial metrics in its filings
+  source:
+    term_id: company
+    semantic_phrase: (?i)(company|corporation|inc|llc)
+  target:
+    term_id: financial
+    semantic_phrase: (?i)(revenue|sales|income|earnings|profit)
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+metadata:
+  hypothesized_domain: Securities and Exchange Commission (SEC) filings
+  domain_confidence: 0.95
+  domain_evidence:
+  - The XML tags indicate this is data related to insider trading and ownership of
+    securities, such as <securityTitle>, <directOrIndirectOwnership>, <sharesOwnedFollowingTransaction>,
+    <transactionDate>, <transactionPricePerShare>, <nonDerivativeTransaction>, <reportingOwner>,
+    <issuer>, etc. These are all common elements found in SEC Form 4 filings.
+  - The high frequency of tags related to transactions, ownership, and securities
+    point to this being financial regulatory reporting data.
+  - The presence of a 'Table of Contents' header is also common in SEC filings.
+  user_corrections: []
+  corpus_statistics:
+    comprehensive_stats:
+    - total_docs: 147
+      total_elements: 80501
+      element_type: table_cell
+      count: 80501
+      doc_count: 147
+      avg_content_length: 18.39324977329474
+    - total_docs: 95
+      total_elements: 64698
+      element_type: paragraph
+      count: 64698
+      doc_count: 95
+      avg_content_length: 36.6646264181273
+    - total_docs: 756
+      total_elements: 59830
+      element_type: xml_element
+      count: 59830
+      doc_count: 756
+      avg_content_length: 24.140865786394784
+    - total_docs: 147
+      total_elements: 24076
+      element_type: table_row
+      count: 24076
+      doc_count: 147
+      avg_content_length: 61.799011463698285
+    - total_docs: 147
+      total_elements: 17758
+      element_type: table
+      count: 17758
+      doc_count: 147
+      avg_content_length: 2.5
+    - total_docs: 22
+      total_elements: 4691
+      element_type: div
+      count: 4691
+      doc_count: 22
+      avg_content_length: 43.72862929013004
+    - total_docs: 756
+      total_elements: 4459
+      element_type: xml_list
+      count: 4459
+      doc_count: 756
+      avg_content_length: 20.530836510428347
+    - total_docs: 755
+      total_elements: 2625
+      element_type: xml_object
+      count: 2625
+      doc_count: 755
+      avg_content_length: 19.41752380952381
+    - total_docs: 83
+      total_elements: 2126
+      element_type: image
+      count: 2126
+      doc_count: 83
+      avg_content_length: 4.80997177798683
+    - total_docs: 16
+      total_elements: 1513
+      element_type: header
+      count: 1513
+      doc_count: 16
+      avg_content_length: 20.89887640449438
+    - total_docs: 756
+      total_elements: 756
+      element_type: document_root
+      count: 756
+      doc_count: 756
+      avg_content_length: 92.0
+    - total_docs: 147
+      total_elements: 147
+      element_type: root
+      count: 147
+      doc_count: 147
+      avg_content_length: 0.0
+    - total_docs: 12
+      total_elements: 12
+      element_type: xml_text
+      count: 12
+      doc_count: 12
+      avg_content_length: 72.58333333333333
+    - total_docs: 6
+      total_elements: 6
+      element_type: body
+      count: 6
+      doc_count: 6
+      avg_content_length: 103.0
+    xml_structure:
+    - content_preview: <footnoteId>
+      element_type: xml_element
+      frequency: 3130
+      document_spread: 651
+      avg_length: 12.0
+    - content_preview: <ownershipNature>
+      element_type: xml_element
+      frequency: 1792
+      document_spread: 756
+      avg_length: 17.0
+    - content_preview: <securityTitle>
+      element_type: xml_element
+      frequency: 1792
+      document_spread: 756
+      avg_length: 15.0
+    - content_preview: <directOrIndirectOwnership>
+      element_type: xml_element
+      frequency: 1792
+      document_spread: 756
+      avg_length: 27.0
+    - content_preview: <sharesOwnedFollowingTransaction>
+      element_type: xml_element
+      frequency: 1779
+      document_spread: 755
+      avg_length: 33.0
+    - content_preview: <transactionAcquiredDisposedCode>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 33.0
+    - content_preview: <transactionDate>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 17.0
+    - content_preview: <transactionPricePerShare>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 26.0
+    - content_preview: <transactionCoding>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 19.0
+    - content_preview: <nonDerivativeTransaction>
+      element_type: xml_element
+      frequency: 809
+      document_spread: 462
+      avg_length: 26.0
+    - content_preview: <ownerSignature>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 16.0
+    - content_preview: <rptOwnerStateDescription>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 26.0
+    - content_preview: <reportingOwner>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 16.0
+    - content_preview: <reportingOwnerRelationship>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 28.0
+    - content_preview: <reportingOwnerId>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 18.0
+    - content_preview: <reportingOwnerAddress>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 23.0
+    - content_preview: <issuer>
+      element_type: xml_element
+      frequency: 756
+      document_spread: 756
+      avg_length: 8.0
+    - content_preview: <ownershipDocument>
+      element_type: xml_element
+      frequency: 756
+      document_spread: 756
+      avg_length: 19.0
+    - content_preview: <exerciseDate>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 14.0
+    - content_preview: <conversionOrExercisePrice>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 27.0
+    - content_preview: <underlyingSecurity>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 20.0
+    - content_preview: <expirationDate>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 16.0
+    - content_preview: <underlyingSecurityTitle>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 25.0
+    - content_preview: <derivativeTransaction>
+      element_type: xml_element
+      frequency: 511
+      document_spread: 394
+      avg_length: 23.0
+    - content_preview: <nonDerivativeHolding>
+      element_type: xml_element
+      frequency: 429
+      document_spread: 344
+      avg_length: 22.0
+    - content_preview: <natureOfOwnership>
+      element_type: xml_element
+      frequency: 275
+      document_spread: 228
+      avg_length: 19.0
+    - content_preview: <rptOwnerStreet2>
+      element_type: xml_element
+      frequency: 209
+      document_spread: 206
+      avg_length: 17.0
+    - content_preview: <otherText>
+      element_type: xml_element
+      frequency: 126
+      document_spread: 126
+      avg_length: 11.0
+    - content_preview: <officerTitle>
+      element_type: xml_element
+      frequency: 62
+      document_spread: 62
+      avg_length: 14.0
+    - content_preview: <derivativeHolding>
+      element_type: xml_element
+      frequency: 43
+      document_spread: 33
+      avg_length: 19.0
+    patterns_with_context:
+    - content_preview: <footnoteId>
+      element_type: xml_element
+      frequency: 3130
+      document_spread: 651
+      avg_length: 12.0
+    - content_preview: <value> D
+      element_type: xml_element
+      frequency: 2212
+      document_spread: 755
+      avg_length: 9.0
+    - content_preview: <ownershipNature>
+      element_type: xml_element
+      frequency: 1792
+      document_spread: 756
+      avg_length: 17.0
+    - content_preview: <securityTitle>
+      element_type: xml_element
+      frequency: 1792
+      document_spread: 756
+      avg_length: 15.0
+    - content_preview: <directOrIndirectOwnership>
+      element_type: xml_element
+      frequency: 1792
+      document_spread: 756
+      avg_length: 27.0
+    - content_preview: <value> Common Stock
+      element_type: xml_element
+      frequency: 1788
+      document_spread: 754
+      avg_length: 20.0
+    - content_preview: <postTransactionAmounts>
+      element_type: xml_list
+      frequency: 1779
+      document_spread: 755
+      avg_length: 24.0
+    - content_preview: <sharesOwnedFollowingTransaction>
+      element_type: xml_element
+      frequency: 1779
+      document_spread: 755
+      avg_length: 33.0
+    - content_preview: <transactionAmounts>
+      element_type: xml_object
+      frequency: 1320
+      document_spread: 744
+      avg_length: 20.0
+    - content_preview: <transactionCoding>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 19.0
+    - content_preview: <transactionDate>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 17.0
+    - content_preview: <transactionAcquiredDisposedCode>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 33.0
+    - content_preview: <transactionPricePerShare>
+      element_type: xml_element
+      frequency: 1320
+      document_spread: 744
+      avg_length: 26.0
+    - content_preview: <equitySwapInvolved> 0
+      element_type: xml_element
+      frequency: 1319
+      document_spread: 743
+      avg_length: 22.0
+    - content_preview: <transactionFormType> 4
+      element_type: xml_element
+      frequency: 1291
+      document_spread: 732
+      avg_length: 23.0
+    - content_preview: Table of Contents
+      element_type: header
+      frequency: 1141
+      document_spread: 14
+      avg_length: 17.0
+    - content_preview: <transactionShares>
+      element_type: xml_list
+      frequency: 970
+      document_spread: 516
+      avg_length: 19.0
+    - content_preview: <nonDerivativeTransaction>
+      element_type: xml_element
+      frequency: 809
+      document_spread: 462
+      avg_length: 26.0
+    - content_preview: <reportingOwnerId>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 18.0
+    - content_preview: <rptOwnerStateDescription>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 26.0
+    - content_preview: <reportingOwnerAddress>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 23.0
+    - content_preview: <reportingOwner>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 16.0
+    - content_preview: <reportingOwnerRelationship>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 28.0
+    - content_preview: <ownerSignature>
+      element_type: xml_element
+      frequency: 759
+      document_spread: 756
+      avg_length: 16.0
+    - content_preview: <ownershipDocument>
+      element_type: xml_element
+      frequency: 756
+      document_spread: 756
+      avg_length: 19.0
+    - content_preview: <issuer>
+      element_type: xml_element
+      frequency: 756
+      document_spread: 756
+      avg_length: 8.0
+    - content_preview: <isOther> 0
+      element_type: xml_element
+      frequency: 755
+      document_spread: 755
+      avg_length: 11.0
+    - content_preview: <isTenPercentOwner> 0
+      element_type: xml_element
+      frequency: 754
+      document_spread: 754
+      avg_length: 21.0
+    - content_preview: PART I
+      element_type: paragraph
+      frequency: 753
+      document_spread: 19
+      avg_length: 6.0
+    - content_preview: <documentType> 4
+      element_type: xml_element
+      frequency: 743
+      document_spread: 743
+      avg_length: 16.0
+    - content_preview: <value> 0
+      element_type: xml_element
+      frequency: 703
+      document_spread: 572
+      avg_length: 9.0
+    - content_preview: <footnotes>
+      element_type: xml_list
+      frequency: 665
+      document_spread: 665
+      avg_length: 11.0
+    - content_preview: <value> A
+      element_type: xml_element
+      frequency: 625
+      document_spread: 552
+      avg_length: 9.0
+    - content_preview: The Nasdaq Stock Market LLC
+      element_type: table_cell
+      frequency: 587
+      document_spread: 59
+      avg_length: 27.0
+    - content_preview: <nonDerivativeTable>
+      element_type: xml_object
+      frequency: 562
+      document_spread: 562
+      avg_length: 20.0
+    - content_preview: <conversionOrExercisePrice>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 27.0
+    - content_preview: <exerciseDate>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 14.0
+    - content_preview: <underlyingSecurityShares>
+      element_type: xml_list
+      frequency: 554
+      document_spread: 412
+      avg_length: 26.0
+    - content_preview: <underlyingSecurityTitle>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 25.0
+    - content_preview: <underlyingSecurity>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 20.0
+    - content_preview: <expirationDate>
+      element_type: xml_element
+      frequency: 554
+      document_spread: 412
+      avg_length: 16.0
+    - content_preview: <rptOwnerCity> REDMOND
+      element_type: xml_element
+      frequency: 552
+      document_spread: 552
+      avg_length: 22.0
+    - content_preview: <rptOwnerState> WA
+      element_type: xml_element
+      frequency: 552
+      document_spread: 552
+      avg_length: 18.0
+    - content_preview: <issuerCik> 0000789019
+      element_type: xml_element
+      frequency: 550
+      document_spread: 550
+      avg_length: 22.0
+    - content_preview: <rptOwnerStreet1> C/O MICROSOFT CORPORATION
+      element_type: xml_element
+      frequency: 550
+      document_spread: 550
+      avg_length: 43.0
+    - content_preview: <issuerName> MICROSOFT CORP
+      element_type: xml_element
+      frequency: 550
+      document_spread: 550
+      avg_length: 27.0
+    - content_preview: <issuerTradingSymbol> MSFT
+      element_type: xml_element
+      frequency: 550
+      document_spread: 550
+      avg_length: 26.0
+    - content_preview: <rptOwnerStreet2> ONE MICROSOFT WAY
+      element_type: xml_element
+      frequency: 550
+      document_spread: 550
+      avg_length: 35.0
+    - content_preview: <transactionCode> A
+      element_type: xml_element
+      frequency: 522
+      document_spread: 458
+      avg_length: 19.0
+    - content_preview: <derivativeTransaction>
+      element_type: xml_element
+      frequency: 511
+      document_spread: 394
+      avg_length: 23.0
+  semantic_enhancement: true
+  embedding_requirements:
+    model_type: sentence_transformer
+    dimensions: 384
+    use_cases:
+    - executive_title_matching
+    - company_name_variations
+    - transaction_synonyms

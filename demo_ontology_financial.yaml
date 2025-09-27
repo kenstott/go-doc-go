@@ -1,0 +1,43 @@
+name: financial_discovery_demo
+version: 1.0.0
+domain: financial
+description: Ontology discovered from real financial domain data
+terms:
+- id: person
+  name: Person
+  definition: Entity representing person
+  semantic_variations:
+  - Trading Symbol
+  - Common Equity
+  - Related Stockholder
+- id: money
+  name: Money
+  definition: Entity representing money
+  semantic_variations:
+  - $15
+  - $9
+  - $3
+- id: role
+  name: Role
+  definition: Entity representing role
+  semantic_variations:
+  - Chief Executive Officer
+  - Director
+  - Chief Financial Officer
+element_mappings:
+- element_type: PERSON
+  patterns:
+  - type: semantic_similarity
+    semantic_phrase: Trading Symbol
+    confidence_threshold: 0.65
+- element_type: MONEY
+  patterns:
+  - type: semantic_similarity
+    semantic_phrase: $15
+    confidence_threshold: 0.65
+- element_type: ROLE
+  patterns:
+  - type: semantic_similarity
+    semantic_phrase: Chief Executive Officer
+    confidence_threshold: 0.65
+relationship_types: []
