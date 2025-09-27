@@ -63,6 +63,14 @@ cli.add_command(ontology_analytics_cmd, name='ontology-analytics')
 from .cli.ontology_extract import main as ontology_extract_cmd
 cli.add_command(ontology_extract_cmd, name='ontology-extract')
 
+# Add the steerable-discovery command for intelligent ontology discovery with checkpoints
+from .cli.steerable_discovery import main as steerable_discovery_cmd
+cli.add_command(steerable_discovery_cmd, name='steerable-discovery')
+
+# Add the demo-discovery command for automated demo of discovery process
+from .cli.demo_discovery import main as demo_discovery_cmd
+cli.add_command(demo_discovery_cmd, name='demo-discovery')
+
 
 # All CLI tools have been converted to Click and integrated above
 
