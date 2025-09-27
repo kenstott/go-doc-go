@@ -1,0 +1,341 @@
+domain:
+  name: "discovered_sec_patterns"
+  version: "1.0.0"
+  description: "SEC Filing Patterns Discovered from Analytics Database"
+  settings:
+    default_confidence_threshold: 0.70
+    max_relationships_per_pair: 5
+    enable_transitive_inference: true
+
+# Terms discovered from analytics data analysis - semantic definitions only
+terms:
+  # Company and Entity Terms
+  - id: "company_name"
+    label: "Company Name"
+    description: "Legal name of a corporation or business entity filing with SEC"
+    aliases: ["corporation", "company", "business entity", "issuer", "registrant"]
+
+  - id: "stock_symbol"
+    label: "Stock Trading Symbol"
+    description: "Stock ticker symbol used for trading on exchanges"
+    aliases: ["ticker", "trading symbol", "stock ticker"]
+
+  - id: "exchange"
+    label: "Stock Exchange"
+    description: "Market or exchange where securities are traded"
+    aliases: ["market", "trading venue", "stock market"]
+
+  # Financial Statement Terms
+  - id: "net_income"
+    label: "Net Income"
+    description: "Company's total earnings or profit after all expenses"
+    aliases: ["net earnings", "net profit", "bottom line", "earnings"]
+
+  - id: "revenue"
+    label: "Revenue"
+    description: "Total income generated from business operations"
+    aliases: ["sales", "total revenue", "gross revenue", "turnover"]
+
+  - id: "operating_income"
+    label: "Operating Income"
+    description: "Profit from business operations before interest and taxes"
+    aliases: ["operating profit", "EBIT", "operating earnings"]
+
+  - id: "total_assets"
+    label: "Total Assets"
+    description: "Sum of all company assets on balance sheet"
+    aliases: ["assets", "total company assets"]
+
+  - id: "total_liabilities"
+    label: "Total Liabilities"
+    description: "Sum of all company liabilities and obligations"
+    aliases: ["liabilities", "total debt and obligations"]
+
+  - id: "retained_earnings"
+    label: "Retained Earnings"
+    description: "Accumulated profits kept by company rather than distributed"
+    aliases: ["accumulated earnings", "undistributed profits"]
+
+  - id: "earnings_per_share"
+    label: "Earnings Per Share"
+    description: "Company earnings divided by number of outstanding shares"
+    aliases: ["EPS", "per share earnings"]
+
+  # Executive and Governance Terms
+  - id: "chief_financial_officer"
+    label: "Chief Financial Officer"
+    description: "Senior executive responsible for financial management"
+    aliases: ["CFO", "finance chief", "financial officer"]
+
+  - id: "chief_accounting_officer"
+    label: "Chief Accounting Officer"
+    description: "Senior executive responsible for accounting and financial reporting"
+    aliases: ["CAO", "accounting officer", "controller"]
+
+  - id: "director"
+    label: "Board Director"
+    description: "Member of the company's board of directors"
+    aliases: ["board member", "independent director"]
+
+  # Filing Structure Terms
+  - id: "executive_compensation_section"
+    label: "Executive Compensation Section"
+    description: "Section of filing detailing executive officer compensation"
+    aliases: ["compensation disclosure", "executive pay"]
+
+  - id: "governance_section"
+    label: "Corporate Governance Section"
+    description: "Section describing board governance and director information"
+    aliases: ["board governance", "director information"]
+
+  - id: "audit_committee_section"
+    label: "Audit Committee Section"
+    description: "Section describing audit committee matters and oversight"
+    aliases: ["audit matters", "audit oversight"]
+
+  # Document Types
+  - id: "proxy_statement"
+    label: "Proxy Statement"
+    description: "SEC filing providing information for shareholder voting"
+    aliases: ["DEF 14A", "proxy"]
+
+  - id: "form_8k"
+    label: "Form 8-K"
+    description: "SEC filing for current reports of significant events"
+    aliases: ["8-K", "current report"]
+
+  - id: "monetary_unit_indicator"
+    label: "Monetary Unit Indicator"
+    description: "Notation indicating the scale of monetary amounts"
+    aliases: ["currency scale", "amount scale", "financial scale"]
+
+# Element mappings - extraction rules for identifying terms in content
+element_mappings:
+  # Company identification
+  - term_id: "company_name"
+    rules:
+      - type: "regex"
+        pattern: "\\b(MICROSOFT CORP|Apple Inc\\.|[A-Z][A-Za-z\\s]+\\s+(CORP|INC|LLC|CORPORATION|INCORPORATED))\\b"
+        case_sensitive: false
+        confidence: 0.90
+
+      - type: "regex"
+        pattern: "<issuerName>\\s*(.+)"
+        element_types: ["xml_element"]
+        confidence: 0.95
+
+  - term_id: "stock_symbol"
+    rules:
+      - type: "regex"
+        pattern: "\\b(MSFT|AAPL|[A-Z]{1,5})\\b"
+        case_sensitive: true
+        confidence: 0.85
+
+      - type: "regex"
+        pattern: "<issuerTradingSymbol>\\s*([A-Z]+)"
+        element_types: ["xml_element"]
+        confidence: 0.95
+
+  - term_id: "exchange"
+    rules:
+      - type: "regex"
+        pattern: "\\b(The Nasdaq Stock Market LLC|NASDAQ|NYSE|New York Stock Exchange)\\b"
+        case_sensitive: false
+        confidence: 0.90
+
+  # Financial metrics
+  - term_id: "net_income"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Net income|Net earnings|Net profit)\\b"
+        confidence: 0.90
+        case_sensitive: false
+
+      - type: "semantic"
+        semantic_phrase: "net income, net earnings, net profit, bottom line"
+        confidence: 0.80
+
+  - term_id: "revenue"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Revenue|Total revenue|Net revenue|Sales)\\b"
+        confidence: 0.90
+        case_sensitive: false
+
+      - type: "semantic"
+        semantic_phrase: "revenue, sales, total revenue, gross revenue"
+        confidence: 0.80
+
+  - term_id: "operating_income"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Operating income|Operating profit|EBIT)\\b"
+        confidence: 0.90
+        case_sensitive: false
+
+  - term_id: "total_assets"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Total assets|Assets)\\b"
+        confidence: 0.85
+        case_sensitive: false
+        element_types: ["table_cell"]
+
+  - term_id: "total_liabilities"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Total liabilities|Liabilities)\\b"
+        confidence: 0.85
+        case_sensitive: false
+        element_types: ["table_cell"]
+
+  - term_id: "retained_earnings"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Retained earnings|Accumulated earnings)\\b"
+        confidence: 0.90
+        case_sensitive: false
+
+  - term_id: "earnings_per_share"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Earnings per share|EPS|Per share earnings)\\b"
+        confidence: 0.90
+        case_sensitive: false
+
+  # Executive titles
+  - term_id: "chief_financial_officer"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Chief Financial Officer|CFO)\\b"
+        confidence: 0.95
+        case_sensitive: false
+
+  - term_id: "chief_accounting_officer"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Chief Accounting Officer|CAO|Corporate Vice President.*Accounting)\\b"
+        confidence: 0.90
+        case_sensitive: false
+
+  - term_id: "director"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Director|Board member|Independent director)\\b"
+        confidence: 0.80
+        case_sensitive: false
+
+      - type: "regex"
+        pattern: "<isDirector>\\s*1"
+        confidence: 0.95
+        element_types: ["xml_element"]
+
+  # Filing sections
+  - term_id: "executive_compensation_section"
+    rules:
+      - type: "regex"
+        pattern: "\\b(NAMED EXECUTIVE OFFICER COMPENSATION|Executive Compensation)\\b"
+        confidence: 0.95
+        case_sensitive: false
+        element_types: ["table_cell", "header"]
+
+  - term_id: "governance_section"
+    rules:
+      - type: "regex"
+        pattern: "\\b(GOVERNANCE AND OUR BOARD OF DIRECTORS|Corporate Governance)\\b"
+        confidence: 0.95
+        case_sensitive: false
+        element_types: ["table_cell", "header"]
+
+  - term_id: "audit_committee_section"
+    rules:
+      - type: "regex"
+        pattern: "\\b(AUDIT COMMITTEE MATTERS|Audit Committee)\\b"
+        confidence: 0.95
+        case_sensitive: false
+        element_types: ["table_cell", "header"]
+
+  # Document types
+  - term_id: "proxy_statement"
+    rules:
+      - type: "regex"
+        pattern: "\\b(Proxy Statement|DEF 14A)\\b"
+        confidence: 0.95
+        case_sensitive: false
+
+  - term_id: "form_8k"
+    rules:
+      - type: "regex"
+        pattern: "\\b(8-K|Form 8-K|FORM 8-K)\\b"
+        confidence: 0.95
+        case_sensitive: false
+
+  - term_id: "monetary_unit_indicator"
+    rules:
+      - type: "regex"
+        pattern: "\\(In millions.*\\)|\\(In thousands.*\\)|\\(In billions.*\\)"
+        confidence: 0.90
+        case_sensitive: false
+
+# Relationship patterns discovered from element structure
+relationship_rules:
+  - id: "company_has_symbol"
+    description: "Company has a stock trading symbol"
+    relationship_type: "HAS_SYMBOL"
+    source:
+      term_id: "company_name"
+      semantic_phrase: "company, corporation, issuer"
+      confidence_threshold: 0.85
+    target:
+      term_id: "stock_symbol"
+      semantic_phrase: "ticker, symbol, trading symbol"
+      confidence_threshold: 0.85
+    constraints:
+      hierarchy_level: -1  # Same document
+      direction: "any"
+    confidence:
+      minimum: 0.80
+      calculation: "average"
+
+  - id: "company_reports_revenue"
+    description: "Company reports revenue figures"
+    relationship_type: "REPORTS"
+    source:
+      term_id: "company_name"
+      semantic_phrase: "company, corporation"
+      confidence_threshold: 0.80
+    target:
+      term_id: "revenue"
+      semantic_phrase: "revenue, sales"
+      confidence_threshold: 0.85
+    constraints:
+      hierarchy_level: -1  # Same document
+      direction: "any"
+    confidence:
+      minimum: 0.75
+      calculation: "average"
+
+  - id: "executive_works_for_company"
+    description: "Executive officer works for company"
+    relationship_type: "WORKS_FOR"
+    source:
+      term_id: "chief_financial_officer"
+      semantic_phrase: "CFO, chief financial officer"
+      confidence_threshold: 0.90
+    target:
+      term_id: "company_name"
+      semantic_phrase: "company, corporation"
+      confidence_threshold: 0.85
+    constraints:
+      hierarchy_level: -1  # Same document
+      direction: "any"
+    confidence:
+      minimum: 0.80
+      calculation: "average"
+
+# Additional configuration settings
+settings:
+  extraction_config:
+    confidence_threshold: 0.70
+    max_entities_per_document: 500
+    enable_cross_document_links: true
