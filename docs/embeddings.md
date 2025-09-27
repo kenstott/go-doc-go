@@ -499,6 +499,5 @@ embedding:
 ## Next Steps
 
 - [Configuration Reference](configuration.md) - Complete embedding configuration options
-- [API Reference](api.md) - Programmatic embedding management
 - [Storage Backends](storage.md) - Vector search configuration for different backends
 - [Scaling Guide](scaling.md) - Optimize embeddings for large-scale processing

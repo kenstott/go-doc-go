@@ -721,5 +721,4 @@ storage:
 
 - [Scaling Guide](scaling.md) - Horizontal scaling and performance optimization
 - [Configuration Reference](configuration.md) - Detailed configuration options
-- [API Reference](api.md) - Programmatic storage backend management
 - [Embeddings Guide](embeddings.md) - Vector search configuration

@@ -474,4 +474,3 @@ go-doc-go ingest config.yaml --profile --duration 60s
 - [Storage Backends](storage.md) - Optimize your storage backend for scale
 - [Configuration Reference](configuration.md) - Complete configuration options
 - [Monitoring Guide](monitoring.md) - Set up comprehensive monitoring
-- [API Reference](api.md) - Programmatic scaling management

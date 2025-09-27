@@ -992,6 +992,5 @@ def validate_config(config):
 ## Next Steps
 
 - [Storage Backends](storage.md) - Choose where to store your processed data
-- [Configuration Guide](configuration.md) - Advanced configuration options  
+- [Configuration Guide](configuration.md) - Advanced configuration options
 - [Scaling Guide](scaling.md) - Handle large-scale data ingestion
-- [API Reference](api.md) - Programmatic access to content sources

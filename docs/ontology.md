@@ -641,6 +641,5 @@ relationship_detection:
 ## Next Steps
 
 - [Examples Repository](../examples/ontologies/) - Pre-built ontologies for common domains
-- [API Reference](api.md) - Programmatic ontology management
 - [Configuration Reference](configuration.md) - Complete configuration options
 - [Embeddings Guide](embeddings.md) - Optimize semantic matching performance

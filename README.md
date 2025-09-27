@@ -259,7 +259,6 @@ PYTHONPATH=src python -m go_doc_go.cli.analytics
 - **[Ontology System](docs/ontology.md)** - Knowledge graph and entity extraction
 - **[Embeddings](docs/embeddings.md)** - GraphRAG-lite and contextual embeddings
 - **[Configuration](docs/configuration.md)** - Complete configuration reference
-- **[API Reference](docs/api.md)** - Full API documentation
 
 ## Architecture
 
