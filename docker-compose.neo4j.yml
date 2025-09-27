@@ -1,0 +1,51 @@
+services:
+  neo4j:
+    image: neo4j:5.12.0-community
+    container_name: go-doc-go-neo4j
+    environment:
+      # Authentication
+      - NEO4J_AUTH=neo4j/godocgo123
+
+      # Plugins - APOC only
+      - NEO4J_PLUGINS=["apoc"]
+
+      # APOC configuration
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+
+      # Security settings
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+
+    volumes:
+      # Data persistence
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+
+      # Import directory for data loading
+      - ./neo4j-import:/import
+
+    healthcheck:
+      test: ["CMD", "cypher-shell", "--username", "neo4j", "--password", "godocgo123", "RETURN 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  neo4j_import:
+    driver: local
+  neo4j_plugins:
+    driver: local
+
+# Neo4j Browser is included in the main neo4j image
+# Access at http://localhost:7474
