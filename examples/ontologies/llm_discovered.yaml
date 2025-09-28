@@ -1,0 +1,43 @@
+domain:
+  name: corporate_regulatory_filings
+  version: 1.0.0
+  description: Ontology for corporate_regulatory_filings discovered from analytics
+  settings:
+    default_confidence_threshold: 0.7
+    max_relationships_per_pair: 5
+    enable_transitive_inference: true
+terms: []
+element_mappings:
+- message
+relationship_rules: []
+metadata:
+  discovery_steps: 9
+  validation_metrics: {}
+  corpus_statistics:
+    domain_assessment: Based on the prevalence of table-related elements like table_cell, table_row, and table, along with
+      xml_element and paragraph, the corpus likely contains a mix of tabular data and semi-structured XML or HTML documents.
+      The presence of image elements also suggests some multimedia content. Overall, the corpus seems to span multiple domains,
+      with a focus on data-heavy sources like databases, web pages, or data exchange formats.
+    structure_insights:
+      primary_elements:
+      - table_cell
+      - paragraph
+      - xml_element
+      - table_row
+      - table
+      secondary_elements:
+      - div
+      - xml_list
+      - xml_object
+      - image
+      - header
+      document_hierarchy:
+      - document_root
+      - root
+      - body
+    next_steps:
+    - Analyze table structures and relationships between tables to understand data schema
+    - Parse xml_elements to identify common tags, attributes and data patterns
+    - Extract text from paragraphs and apply NLP to assess topics, entities and keywords
+    - OCR images and categorize them based on visual features and extracted text
+    - Trace document_root, root and body elements to recreate document hierarchy

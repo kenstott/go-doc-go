@@ -1,0 +1,139 @@
+domain:
+  name: user_discovered_sec_insider_trading
+  version: 1.0.0
+  description: Ontology discovered from data patterns and refined through user feedback
+    for SEC insider trading analysis
+  discovery_method: true_data_driven_discovery
+  settings:
+    default_confidence_threshold: 0.7
+    max_relationships_per_pair: 5
+    enable_transitive_inference: true
+    data_driven: true
+terms:
+- id: insider_person
+  label: Insider Person
+  description: Company executives, directors, officers who must report trades
+  aliases: []
+  semantic_variations:
+  - CEO
+  - president
+  - director
+  - chief executive officer
+  - officer
+- id: transaction_activity
+  label: Transaction Activity
+  description: Buy/sell activities with dates, amounts, prices
+  aliases: []
+  semantic_variations:
+  - buy
+  - purchase
+  - acquire
+  - sell
+  - dispose
+  - sale
+- id: company_entity
+  label: Company Entity
+  description: The companies whose stock is being traded
+  aliases: []
+  semantic_variations:
+  - corporation
+  - company
+  - issuer
+  - registrant
+- id: financial_data
+  label: Financial Data
+  description: Revenue, earnings, financial metrics for context
+  aliases: []
+  semantic_variations:
+  - revenue
+  - sales
+  - income
+  - earnings
+  - profit
+element_mappings:
+- term_id: insider_person
+  rules:
+  - type: semantic
+    semantic_phrase: CEO president director chief executive officer officer
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+  - type: regex
+    pattern: <insider_person>|<insider>
+    confidence: 0.9
+    element_types:
+    - xml_element
+- term_id: transaction_activity
+  rules:
+  - type: semantic
+    semantic_phrase: buy purchase acquire sell dispose sale
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+  - type: regex
+    pattern: <transaction_activity>|<transaction>
+    confidence: 0.9
+    element_types:
+    - xml_element
+- term_id: company_entity
+  rules:
+  - type: semantic
+    semantic_phrase: corporation company issuer registrant
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+  - type: regex
+    pattern: <company_entity>|<company>
+    confidence: 0.9
+    element_types:
+    - xml_element
+- term_id: financial_data
+  rules:
+  - type: semantic
+    semantic_phrase: revenue sales income earnings profit
+    confidence: 0.75
+    element_types:
+    - paragraph
+    - table_cell
+  - type: regex
+    pattern: <financial_data>|<financial>
+    confidence: 0.9
+    element_types:
+    - xml_element
+relationship_rules:
+- id: insider_executes_transaction
+  relationship_type: insider_executes_transaction
+  description: insider executes transaction
+  source:
+    term_id: insider_person
+  target:
+    term_id: transaction_activity
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+- id: insider_works_for_company
+  relationship_type: insider_works_for_company
+  description: insider works for company
+  source:
+    term_id: insider_person
+  target:
+    term_id: company_entity
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document
+- id: transaction_involves_company_stock
+  relationship_type: transaction_involves_company_stock
+  description: transaction involves company stock
+  source:
+    term_id: insider_person
+  target:
+    term_id: transaction_activity
+  confidence:
+    minimum_score: 0.8
+  constraints:
+    hierarchy_level: document

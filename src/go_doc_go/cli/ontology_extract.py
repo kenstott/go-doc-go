@@ -17,10 +17,7 @@ from go_doc_go.storage_adapters.factory import StorageFactory
 from go_doc_go.domain.ontology import DomainOntology
 from go_doc_go.ontology.entity_extractor import OntologyEntityExtractor
 # Optional embedding support
-try:
-    from go_doc_go.embedding.client import EmbeddingClient
-except ImportError:
-    EmbeddingClient = None
+from go_doc_go.embeddings.factory import get_embedding_generator
 from go_doc_go.graph_export import GraphExporter
 
 logger = logging.getLogger(__name__)
@@ -49,20 +46,19 @@ class OntologyExtractionPipeline:
 
         self.analytics_storage = StorageFactory.create_analytics_storage(analytics_outputs[0])
 
-        # Initialize embedding client if available
-        self.embedding_client = None
-        if EmbeddingClient:
+        # Initialize embedding generator if available
+        self.embedding_generator = None
+        if config.is_embedding_enabled():
             try:
-                embedding_config = config.config.get('embeddings', {})
-                if embedding_config.get('enabled', False):
-                    self.embedding_client = EmbeddingClient(config)
+                self.embedding_generator = get_embedding_generator(config)
+                logger.info("Embedding support initialized successfully")
             except Exception as e:
-                logger.warning(f"Embedding client not available: {e}")
+                logger.warning(f"Embedding generator not available: {e}")
         else:
             logger.info("Embedding support not available - using fallback matching")
 
         # Initialize entity extractor
-        self.extractor = OntologyEntityExtractor(self.ontology, self.embedding_client)
+        self.extractor = OntologyEntityExtractor(self.ontology, self.embedding_generator)
 
     def _load_ontology(self, ontology_path: str) -> DomainOntology:
         """Load ontology from YAML file."""

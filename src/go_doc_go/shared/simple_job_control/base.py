@@ -3,10 +3,32 @@ Abstract base class for simplified job control database backends.
 """
 
 import logging
+import time
+import random
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
+
+
+def retry_on_db_contention(max_retries=5, initial_delay=0.1):
+    """Database-agnostic retry decorator for concurrency conflicts"""
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(self, *args, **kwargs)
+                except Exception as e:
+                    if self._is_retryable_error(e) and attempt < max_retries - 1:
+                        delay = initial_delay * (2 ** attempt)
+                        jitter = random.uniform(0, 0.1)
+                        sleep_time = delay + jitter
+                        logger.warning(f"Database contention detected, retrying in {sleep_time:.2f}s (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                        time.sleep(sleep_time)
+                        continue
+                    raise
+        return wrapper
+    return decorator
 
 
 class SimpleJobControlDB(ABC):
@@ -27,6 +49,11 @@ class SimpleJobControlDB(ABC):
             return SQLAlchemyJobControlDB(config)
         else:
             raise ValueError(f"Unsupported job control backend: {backend}. Supported: sqlite, postgresql, mysql, mssql, oracle, sqlalchemy")
+
+    @abstractmethod
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """Determine if error is retryable for this database type"""
+        pass
 
     @abstractmethod
     def initialize_schema(self):
@@ -101,6 +128,37 @@ class SimpleJobControlDB(ABC):
     @abstractmethod
     def release_leadership(self, worker_id: str):
         """Release leadership role (for graceful shutdown)."""
+        pass
+
+    # Source-specific leadership methods
+    @abstractmethod
+    def elect_source_leader(self, source_name: str, worker_id: str, worker_info: Dict[str, Any]) -> bool:
+        """Attempt to elect this worker as leader for specific source. Returns True if successful."""
+        pass
+
+    @abstractmethod
+    def get_source_leader(self, source_name: str) -> Optional[Dict[str, Any]]:
+        """Get information about current leader for specific source."""
+        pass
+
+    @abstractmethod
+    def get_all_source_leaders(self) -> Dict[str, Dict[str, Any]]:
+        """Get all source leadership information. Returns dict of source_name -> leader_info."""
+        pass
+
+    @abstractmethod
+    def update_source_leader_heartbeat(self, source_name: str, worker_id: str):
+        """Update heartbeat for source leader."""
+        pass
+
+    @abstractmethod
+    def release_source_leadership(self, source_name: str, worker_id: str):
+        """Release leadership for specific source."""
+        pass
+
+    @abstractmethod
+    def get_worker_source_leaderships(self, worker_id: str) -> List[str]:
+        """Get all sources this worker leads."""
         pass
 
     @abstractmethod

@@ -1,0 +1,15 @@
+{
+  "run_id": "pipeline_20250927_170132",
+  "extraction_results": {
+    "run_id": "pipeline_20250927_170132",
+    "extraction_summary": {
+      "total_elements_processed": 0,
+      "total_entities_extracted": 0,
+      "total_relationships_extracted": 0,
+      "error": "No elements found in analytics storage"
+    },
+    "entities": [],
+    "relationships": []
+  },
+  "graph_export_results": null
+}

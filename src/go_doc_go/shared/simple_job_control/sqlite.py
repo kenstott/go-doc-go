@@ -4,15 +4,38 @@ SQLite implementation of simplified job control database.
 
 import json
 import logging
+import random
 import sqlite3
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
-from .base import SimpleJobControlDB
+from .base import SimpleJobControlDB, retry_on_db_contention
 
 logger = logging.getLogger(__name__)
+
+
+def retry_on_sqlite_lock(max_retries=5, initial_delay=0.1):
+    """Retry decorator for SQLite database lock errors."""
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except sqlite3.OperationalError as e:
+                    if "database is locked" in str(e) and attempt < max_retries - 1:
+                        delay = initial_delay * (2 ** attempt)  # Exponential backoff
+                        jitter = random.uniform(0, 0.1)  # Add jitter
+                        sleep_time = delay + jitter
+                        logger.warning(f"Database locked, retrying in {sleep_time:.2f}s (attempt {attempt + 1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        continue
+                    raise
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
 class SimpleSQLiteJobControlDB(SimpleJobControlDB):
@@ -26,19 +49,30 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
         self.heartbeat_interval = job_control_config.get('heartbeat_interval', 30)
         self.max_retries = job_control_config.get('max_retries', 3)
 
+        # Retry configuration for initialization
+        self.init_retries = job_control_config.get('init_retries', 5)
+        self.init_retry_delay = job_control_config.get('init_retry_delay', 0.1)
+
         # Ensure directory exists
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.initialize_schema()
 
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """SQLite-specific retryable error detection"""
+        return (isinstance(error, sqlite3.OperationalError) and
+                "database is locked" in str(error))
+
+    @retry_on_sqlite_lock(max_retries=3, initial_delay=0.1)
     def _get_connection(self):
-        """Get database connection with proper settings."""
+        """Get database connection with enhanced error handling."""
         conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 30000")  # 30 second timeout
         conn.execute("PRAGMA journal_mode = WAL")    # Better concurrency
         return conn
 
+    @retry_on_sqlite_lock(max_retries=5, initial_delay=0.1)
     def initialize_schema(self):
         """Create database schema if it doesn't exist."""
         schema_sql = """
@@ -75,6 +109,16 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
             FOREIGN KEY (worker_id) REFERENCES workers(worker_id)
         );
 
+        CREATE TABLE IF NOT EXISTS source_leaders (
+            source_name TEXT PRIMARY KEY,
+            worker_id TEXT NOT NULL,
+            elected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_discovery TIMESTAMP,
+            worker_info TEXT,
+            FOREIGN KEY (worker_id) REFERENCES workers(worker_id)
+        );
+
         CREATE TABLE IF NOT EXISTS document_metadata (
             doc_id TEXT PRIMARY KEY,
             source TEXT NOT NULL,
@@ -90,6 +134,8 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
         CREATE INDEX IF NOT EXISTS idx_worker_heartbeat ON workers(last_heartbeat);
         CREATE INDEX IF NOT EXISTS idx_document_metadata_source ON document_metadata(source);
         CREATE INDEX IF NOT EXISTS idx_document_metadata_last_modified ON document_metadata(last_modified);
+        CREATE INDEX IF NOT EXISTS idx_source_leaders_heartbeat ON source_leaders(last_heartbeat);
+        CREATE INDEX IF NOT EXISTS idx_source_leaders_worker ON source_leaders(worker_id);
         """
 
         with self._get_connection() as conn:
@@ -496,3 +542,114 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
                 'recently_processed': recent_count,
                 'documents_with_changes': docs_with_changes
             }
+
+    # Source-specific leadership methods
+
+    @retry_on_db_contention(max_retries=5, initial_delay=0.1)
+    def elect_source_leader(self, source_name: str, worker_id: str, worker_info: Dict[str, Any]) -> bool:
+        """Elect leader for specific content source"""
+        with self._get_connection() as conn:
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+
+                # Check for existing active leader
+                cursor = conn.execute("""
+                    SELECT worker_id FROM source_leaders
+                    WHERE source_name = ? AND datetime(last_heartbeat) > datetime('now', '-{} seconds')
+                """.format(self.heartbeat_interval * 3), (source_name,))
+
+                if cursor.fetchone():
+                    conn.rollback()
+                    return False  # Active leader exists
+
+                # Elect this worker as leader
+                conn.execute("""
+                    INSERT OR REPLACE INTO source_leaders
+                    (source_name, worker_id, worker_info, elected_at, last_heartbeat)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, (source_name, worker_id, json.dumps(worker_info)))
+
+                conn.commit()
+                return True
+
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Source leader election failed for {worker_id}/{source_name}: {e}")
+                return False
+
+    @retry_on_db_contention(max_retries=3, initial_delay=0.05)
+    def get_source_leader(self, source_name: str) -> Optional[Dict[str, Any]]:
+        """Get current leader for specific source"""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT worker_id, elected_at, last_heartbeat, last_discovery, worker_info
+                FROM source_leaders
+                WHERE source_name = ?
+            """, (source_name,))
+
+            row = cursor.fetchone()
+            if not row:
+                return None
+
+            return {
+                'source_name': source_name,
+                'worker_id': row['worker_id'],
+                'elected_at': row['elected_at'],
+                'last_heartbeat': row['last_heartbeat'],
+                'last_discovery': row['last_discovery'],
+                'worker_info': json.loads(row['worker_info']) if row['worker_info'] else {}
+            }
+
+    @retry_on_db_contention(max_retries=3, initial_delay=0.05)
+    def get_all_source_leaders(self) -> Dict[str, Dict[str, Any]]:
+        """Get all source leadership information"""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT source_name, worker_id, elected_at, last_heartbeat, last_discovery, worker_info
+                FROM source_leaders
+            """)
+
+            leaders = {}
+            for row in cursor.fetchall():
+                leaders[row['source_name']] = {
+                    'worker_id': row['worker_id'],
+                    'elected_at': row['elected_at'],
+                    'last_heartbeat': row['last_heartbeat'],
+                    'last_discovery': row['last_discovery'],
+                    'worker_info': json.loads(row['worker_info']) if row['worker_info'] else {}
+                }
+
+            return leaders
+
+    @retry_on_db_contention(max_retries=3, initial_delay=0.05)
+    def update_source_leader_heartbeat(self, source_name: str, worker_id: str):
+        """Update heartbeat for source leader"""
+        with self._get_connection() as conn:
+            conn.execute("""
+                UPDATE source_leaders
+                SET last_heartbeat = CURRENT_TIMESTAMP
+                WHERE source_name = ? AND worker_id = ?
+            """, (source_name, worker_id))
+            conn.commit()
+
+    @retry_on_db_contention(max_retries=3, initial_delay=0.05)
+    def release_source_leadership(self, source_name: str, worker_id: str):
+        """Release leadership for specific source"""
+        with self._get_connection() as conn:
+            conn.execute("""
+                DELETE FROM source_leaders
+                WHERE source_name = ? AND worker_id = ?
+            """, (source_name, worker_id))
+            conn.commit()
+            logger.info(f"Worker {worker_id} released leadership for source {source_name}")
+
+    @retry_on_db_contention(max_retries=3, initial_delay=0.05)
+    def get_worker_source_leaderships(self, worker_id: str) -> List[str]:
+        """Get all sources this worker leads"""
+        with self._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT source_name FROM source_leaders
+                WHERE worker_id = ?
+            """, (worker_id,))
+
+            return [row['source_name'] for row in cursor.fetchall()]

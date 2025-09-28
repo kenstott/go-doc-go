@@ -1,6 +1,6 @@
 """
-Parquet file parser for structured data including earnings calls.
-Handles SEC filing parquet files with speaker metadata.
+Parquet file parser for structured tabular data.
+Handles Parquet files with configurable metadata extraction.
 """
 
 import json
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class ParquetParser(DocumentParser):
-    """Parser for Parquet files containing structured data like earnings calls."""
+    """Parser for Parquet files containing structured tabular data."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize Parquet parser."""
@@ -26,6 +26,8 @@ class ParquetParser(DocumentParser):
         self.text_column = self.config.get('text_column', 'paragraph_text')
         self.section_column = self.config.get('section_column', 'section_type')
         self.max_content_preview = self.config.get('max_content_preview', 100)
+        # Configurable list of metadata columns to extract
+        self.metadata_columns = self.config.get('metadata_columns', [])
     
     def supports_location(self) -> bool:
         """Parquet parser doesn't support location-based content retrieval."""
@@ -61,10 +63,10 @@ class ParquetParser(DocumentParser):
             # Read parquet file
             df = pd.read_parquet(binary_path)
             
-            # Extract document metadata from first row if available
-            if not df.empty:
+            # Extract document metadata from first row if configured
+            if not df.empty and self.metadata_columns:
                 first_row = df.iloc[0]
-                for col in ['company', 'ticker', 'quarter', 'year', 'cik', 'filing_date', 'filing_type']:
+                for col in self.metadata_columns:
                     if col in df.columns and first_row[col]:
                         metadata[col] = str(first_row[col])
             

@@ -1,0 +1,95 @@
+# SEC Semantic-Enhanced Insider Trading Extraction Configuration
+# Uses semantic similarity rules for robust entity matching
+
+embedding:
+  enabled: true
+  provider: fastembed
+  model: "BAAI/bge-small-en-v1.5"  # Compatible with semantic rules
+  dimensions: 384
+  chunk_size: 512
+  overlap: 128
+  contextual: true
+  predecessor_count: 2
+  successor_count: 2
+
+embeddings:
+  enabled: true
+  provider: fastembed
+  model: "BAAI/bge-small-en-v1.5"  # Compatible with semantic rules
+  dimensions: 384
+
+content_sources:
+  - name: "sec-html-filings"
+    type: "file"
+    base_path: "/Volumes/T9/govdata-cache/sec/sec-data"
+    file_pattern: "**/*.htm"
+    include_extensions: ["htm", "html"]
+    exclude_extensions: ["xml", "txt", "pdf"]
+    watch_for_changes: false
+    max_link_depth: 1
+
+    # Metadata extraction from path
+    path_metadata:
+      cik: "/(\\d{10})/"
+      accession_number: "/(\\d{18})/"
+      filename: "/([^/]+\\.htm)$"
+
+  - name: "sec-xml-filings"
+    type: "file"
+    base_path: "/Volumes/T9/govdata-cache/sec/sec-data"
+    file_pattern: "**/*.xml"
+    include_extensions: ["xml"]
+    exclude_extensions: ["htm", "html", "txt", "pdf"]
+    watch_for_changes: false
+    max_link_depth: 1
+
+    # Metadata extraction from path
+    path_metadata:
+      cik: "/(\\d{10})/"
+      accession_number: "/(\\d{18})/"
+      filename: "/([^/]+\\.xml)$"
+
+relationship_detection:
+  enabled: true
+  structural: true
+  semantic: true
+  semantic_similarity_threshold: 0.75  # Enhanced for semantic matching
+  cross_document_semantic:
+    similarity_threshold: 0.70  # Lower threshold for semantic matching
+    max_cross_doc_relationships: 200
+
+processing:
+  batch_size: 25  # Smaller batch for better semantic processing
+  max_workers: 4
+  timeout_seconds: 900  # Longer timeout for semantic processing
+  job_control:
+    backend: "sqlite"
+    path: "/Volumes/T9/sec_semantic_insider_job_queue.db"
+    claim_timeout: 300
+    heartbeat_interval: 30
+    max_retries: 2
+
+analytics:
+  enabled: true
+  outputs:
+    - type: "parquet"
+      path: "/Volumes/T9/sec_semantic_insider_analytics"
+      partitioning: ["date", "source", "cik"]
+      compression: "snappy"
+      row_group_size: 5000
+
+# SEMANTIC-ENHANCED ONTOLOGY
+domain_ontologies:
+  - name: "sec_filing_analysis"
+    path: "./sec_filing_analysis_ontology.yaml"
+    enabled: true
+    extraction_config:
+      confidence_threshold: 0.60  # Lower threshold for semantic matching
+      max_entities_per_document: 1500
+      enable_cross_document_links: true
+      semantic_similarity_enabled: true
+      semantic_confidence_threshold: 0.70
+
+logging:
+  level: "INFO"
+  file: "/Volumes/T9/logs/sec_semantic_insider_processing.log"
