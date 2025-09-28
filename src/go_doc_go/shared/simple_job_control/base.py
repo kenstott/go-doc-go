@@ -166,6 +166,7 @@ class SimpleJobControlDB(ABC):
                                last_modified: Optional[float] = None,
                                content_hash: Optional[str] = None,
                                file_size: Optional[int] = None,
+                               discovery_depth: Optional[int] = None,
                                processing_stats: Optional[Dict[str, Any]] = None):
         """Store document metadata for change tracking."""
         pass

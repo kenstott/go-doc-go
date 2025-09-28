@@ -517,6 +517,9 @@ class SimpleDocumentWorker:
                     content_hash = doc_content.get('content_hash')
                     file_size = doc_metadata.get('size') or doc_metadata.get('file_size')
 
+                    # Extract discovery depth from document_info (for web crawled documents)
+                    discovery_depth = document_info.get('metadata', {}).get('discovery_depth', 0)
+
                     # Create processing stats
                     processing_stats = {
                         'element_count': len(parse_result.get('elements', [])),
@@ -532,6 +535,7 @@ class SimpleDocumentWorker:
                         last_modified=last_modified,
                         content_hash=content_hash,
                         file_size=file_size,
+                        discovery_depth=discovery_depth,
                         processing_stats=processing_stats
                     )
 

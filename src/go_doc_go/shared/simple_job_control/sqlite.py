@@ -125,6 +125,7 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
             last_modified REAL,
             content_hash TEXT,
             file_size INTEGER,
+            discovery_depth INTEGER DEFAULT 0,
             last_processed_at TIMESTAMP,
             processing_stats TEXT
         );
@@ -416,15 +417,17 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
                                last_modified: Optional[float] = None,
                                content_hash: Optional[str] = None,
                                file_size: Optional[int] = None,
+                               discovery_depth: Optional[int] = None,
                                processing_stats: Optional[Dict[str, Any]] = None):
         """Store document metadata for change tracking."""
         with self._get_connection() as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO document_metadata
                 (doc_id, source, last_modified, content_hash, file_size,
-                 last_processed_at, processing_stats)
-                VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+                 discovery_depth, last_processed_at, processing_stats)
+                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
             """, (doc_id, source, last_modified, content_hash, file_size,
+                  discovery_depth if discovery_depth is not None else 0,
                   json.dumps(processing_stats) if processing_stats else None))
             conn.commit()
 

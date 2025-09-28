@@ -131,6 +131,7 @@ class SQLAlchemyJobControlDB(SimpleJobControlDB):
             Column('last_modified', Float),  # Unix timestamp
             Column('content_hash', String(32)),  # MD5 hash
             Column('file_size', Integer),
+            Column('discovery_depth', Integer, default=0),  # Crawl depth for web sources
             Column('last_processed_at', DateTime),
             Column('processing_stats', json_type)
         )
@@ -578,6 +579,7 @@ class SQLAlchemyJobControlDB(SimpleJobControlDB):
                                last_modified: Optional[float] = None,
                                content_hash: Optional[str] = None,
                                file_size: Optional[int] = None,
+                               discovery_depth: Optional[int] = None,
                                processing_stats: Optional[Dict[str, Any]] = None):
         """Store document metadata for change tracking."""
         with self.Session() as session:
@@ -589,6 +591,7 @@ class SQLAlchemyJobControlDB(SimpleJobControlDB):
                     last_modified=last_modified,
                     content_hash=content_hash,
                     file_size=file_size,
+                    discovery_depth=discovery_depth if discovery_depth is not None else 0,
                     last_processed_at=func.now(),
                     processing_stats=processing_stats
                 )
@@ -599,6 +602,7 @@ class SQLAlchemyJobControlDB(SimpleJobControlDB):
                         last_modified=stmt.excluded.last_modified,
                         content_hash=stmt.excluded.content_hash,
                         file_size=stmt.excluded.file_size,
+                        discovery_depth=stmt.excluded.discovery_depth,
                         last_processed_at=stmt.excluded.last_processed_at,
                         processing_stats=stmt.excluded.processing_stats
                     )
@@ -610,6 +614,7 @@ class SQLAlchemyJobControlDB(SimpleJobControlDB):
                     last_modified=last_modified,
                     content_hash=content_hash,
                     file_size=file_size,
+                    discovery_depth=discovery_depth if discovery_depth is not None else 0,
                     last_processed_at=func.now(),
                     processing_stats=processing_stats
                 )
@@ -618,6 +623,7 @@ class SQLAlchemyJobControlDB(SimpleJobControlDB):
                     last_modified=stmt.inserted.last_modified,
                     content_hash=stmt.inserted.content_hash,
                     file_size=stmt.inserted.file_size,
+                    discovery_depth=stmt.inserted.discovery_depth,
                     last_processed_at=stmt.inserted.last_processed_at,
                     processing_stats=stmt.inserted.processing_stats
                 )
@@ -634,6 +640,7 @@ class SQLAlchemyJobControlDB(SimpleJobControlDB):
                     last_modified=last_modified,
                     content_hash=content_hash,
                     file_size=file_size,
+                    discovery_depth=discovery_depth if discovery_depth is not None else 0,
                     last_processed_at=func.now(),
                     processing_stats=processing_stats
                 )
