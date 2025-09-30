@@ -21,12 +21,11 @@ class ParquetParser(DocumentParser):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize Parquet parser."""
         super().__init__(config)
-        self.speaker_column = self.config.get('speaker_column', 'speaker_name')
-        self.role_column = self.config.get('role_column', 'speaker_role')
-        self.text_column = self.config.get('text_column', 'paragraph_text')
-        self.section_column = self.config.get('section_column', 'section_type')
+        # Generic configuration for tabular data
+        self.text_column = self.config.get('text_column', None)  # Auto-detect if not specified
+        self.group_by_column = self.config.get('group_by_column', None)  # Optional grouping
         self.max_content_preview = self.config.get('max_content_preview', 100)
-        # Configurable list of metadata columns to extract
+        # Configurable list of metadata columns to extract from first row
         self.metadata_columns = self.config.get('metadata_columns', [])
     
     def supports_location(self) -> bool:
@@ -100,76 +99,89 @@ class ParquetParser(DocumentParser):
                 'relationship_type': RelationshipType.CONTAINS.value
             })
             
-            # Group rows by section if section column exists
-            current_section_id = None
-            current_section = None
-            
+            # Determine text column if not specified
+            if not self.text_column:
+                # Auto-detect first string/object column as text column
+                for col in df.columns:
+                    if df[col].dtype == 'object' or df[col].dtype == 'string':
+                        self.text_column = col
+                        break
+
+            # Group rows by optional grouping column
+            current_group_id = None
+            current_group_value = None
+
             # Process each row
             for idx, row in df.iterrows():
-                # Check if we need to create a new section
-                if self.section_column in df.columns:
-                    section = row.get(self.section_column)
-                    if section and section != current_section:
-                        # Create new section element
-                        current_section = section
-                        current_section_id = self._generate_id('section')
+                # Check if we need to create a new group
+                if self.group_by_column and self.group_by_column in df.columns:
+                    group_value = row.get(self.group_by_column)
+                    if group_value and group_value != current_group_value:
+                        # Create new group element
+                        current_group_value = group_value
+                        current_group_id = self._generate_id('group')
                         elements.append({
-                            'element_id': current_section_id,
+                            'element_id': current_group_id,
                             'element_type': ElementType.HEADER.value,
                             'parent_id': body_id,
-                            'content_preview': f"Section: {section}",
-                            'metadata': {'section_type': section}
+                            'content_preview': f"Group: {group_value}",
+                            'metadata': {'group_value': str(group_value), 'group_column': self.group_by_column}
                         })
-                        
+
                         relationships.append({
                             'relationship_id': self._generate_id('rel'),
                             'source_id': body_id,
-                            'target_id': current_section_id,
+                            'target_id': current_group_id,
                             'relationship_type': RelationshipType.CONTAINS.value
                         })
-                
-                # Create paragraph element for this row
-                para_id = self._generate_id('para')
-                para_metadata = {
-                    'row_index': idx,
-                    'paragraph_number': row.get('paragraph_number', idx)
+
+                # Create element for this row
+                row_element_id = self._generate_id('row')
+
+                # Build metadata from all columns
+                row_metadata = {
+                    'row_index': idx
                 }
-                
-                # Add speaker metadata if available
-                if self.speaker_column in df.columns and pd.notna(row.get(self.speaker_column)):
-                    para_metadata['speaker'] = str(row[self.speaker_column])
-                
-                if self.role_column in df.columns and pd.notna(row.get(self.role_column)):
-                    para_metadata['speaker_role'] = str(row[self.role_column])
-                
-                # Add section to metadata
-                if self.section_column in df.columns and pd.notna(row.get(self.section_column)):
-                    para_metadata['section'] = str(row[self.section_column])
-                
-                # Get text content
+
+                # Add all column values to metadata
+                for col in df.columns:
+                    value = row.get(col)
+                    if pd.notna(value):
+                        # Convert to string for JSON serialization
+                        row_metadata[col] = str(value)
+
+                # Get text content for preview
                 text_content = ''
-                if self.text_column in df.columns:
+                if self.text_column and self.text_column in df.columns:
                     text_content = str(row.get(self.text_column, ''))
-                
+                elif len(df.columns) > 0:
+                    # If no text column specified, concatenate all values
+                    text_parts = []
+                    for col in df.columns:
+                        value = row.get(col)
+                        if pd.notna(value):
+                            text_parts.append(f"{col}: {value}")
+                    text_content = '; '.join(text_parts)
+
                 # Truncate content for preview
                 content_preview = text_content[:self.max_content_preview]
                 if len(text_content) > self.max_content_preview:
                     content_preview += '...'
-                
-                # Create paragraph element
-                parent_id = current_section_id if current_section_id else body_id
+
+                # Create row element
+                parent_id = current_group_id if current_group_id else body_id
                 elements.append({
-                    'element_id': para_id,
+                    'element_id': row_element_id,
                     'element_type': ElementType.PARAGRAPH.value,
                     'parent_id': parent_id,
                     'content_preview': content_preview,
-                    'metadata': para_metadata
+                    'metadata': row_metadata
                 })
-                
+
                 relationships.append({
                     'relationship_id': self._generate_id('rel'),
                     'source_id': parent_id,
-                    'target_id': para_id,
+                    'target_id': row_element_id,
                     'relationship_type': RelationshipType.CONTAINS.value
                 })
             
@@ -184,13 +196,19 @@ class ParquetParser(DocumentParser):
             document['metadata']['row_count'] = len(df)
             document['metadata']['column_count'] = len(df.columns)
             document['metadata']['columns'] = df.columns.tolist()
-            
-            # Count speakers if available
-            if self.speaker_column in df.columns:
-                unique_speakers = df[self.speaker_column].dropna().unique()
-                if len(unique_speakers) > 0:
-                    document['metadata']['speaker_count'] = len(unique_speakers)
-                    document['metadata']['speakers'] = unique_speakers.tolist()
+
+            # Add column data types for reference
+            document['metadata']['column_types'] = {col: str(df[col].dtype) for col in df.columns}
+
+            # If text column was auto-detected, include it in metadata
+            if self.text_column:
+                document['metadata']['text_column'] = self.text_column
+
+            # If grouping was used, include group statistics
+            if self.group_by_column and self.group_by_column in df.columns:
+                unique_groups = df[self.group_by_column].dropna().unique()
+                document['metadata']['group_count'] = len(unique_groups)
+                document['metadata']['group_column'] = self.group_by_column
             
             return {
                 'document': document,

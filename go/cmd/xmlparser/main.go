@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -73,18 +74,8 @@ func main() {
 	xmlParser.MaxDepth = *maxDepth
 	xmlParser.EnableCaching = *enableCaching
 
-	// Create parse request
-	request := parser.XMLParseRequest{
-		ID:      *docID,
-		Content: content,
-		Metadata: map[string]interface{}{
-			"source":   *inputFile,
-			"filename": *inputFile,
-		},
-	}
-
-	// Parse XML
-	result, err := xmlParser.Parse(request)
+	// Parse XML using new interface
+	result, err := xmlParser.Parse(*docID, content)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing XML: %v\n", err)
 		os.Exit(1)
@@ -92,34 +83,35 @@ func main() {
 
 	// Output results
 	if *jsonOutput {
-		jsonStr, err := result.ToJSON()
+		jsonBytes, err := json.Marshal(result)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error converting to JSON: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println(jsonStr)
+		fmt.Println(string(jsonBytes))
 	} else {
 		printHumanReadable(result, *verbose)
 	}
 }
 
-func printHumanReadable(result *parser.XMLParseResponse, verbose bool) {
+func printHumanReadable(result *parser.ParseResult, verbose bool) {
 	fmt.Printf("XML Document Parsing Results\n")
 	fmt.Printf("============================\n\n")
 
 	// Document info
-	fmt.Printf("Document ID: %v\n", result.Document["doc_id"])
-	fmt.Printf("Document Type: %v\n", result.Document["doc_type"])
-	fmt.Printf("Content Hash: %v\n", result.Document["content_hash"])
+	fmt.Printf("Document ID: %v\n", result.Document.ID)
+	fmt.Printf("Document Type: %v\n", result.Document.DocType)
 
 	// Show namespaces if present
-	if namespaces, ok := result.Document["namespaces"].(map[string]string); ok && len(namespaces) > 0 {
-		fmt.Printf("\nNamespaces:\n")
-		for prefix, uri := range namespaces {
-			if prefix == "" {
-				fmt.Printf("  (default): %s\n", uri)
-			} else {
-				fmt.Printf("  %s: %s\n", prefix, uri)
+	if result.Document.Metadata != nil {
+		if namespaces, ok := result.Document.Metadata["namespaces"].(map[string]string); ok && len(namespaces) > 0 {
+			fmt.Printf("\nNamespaces:\n")
+			for prefix, uri := range namespaces {
+				if prefix == "" {
+					fmt.Printf("  (default): %s\n", uri)
+				} else {
+					fmt.Printf("  %s: %s\n", prefix, uri)
+				}
 			}
 		}
 	}
@@ -158,7 +150,7 @@ func printHumanReadable(result *parser.XMLParseResponse, verbose bool) {
 		// Show summary of elements by type
 		elementTypes := make(map[string]int)
 		for _, elem := range result.Elements {
-			elementTypes[string(elem.ElementType)]++
+			elementTypes[elem.ElementType]++
 		}
 
 		fmt.Printf("\nElement Types:\n")
@@ -168,10 +160,10 @@ func printHumanReadable(result *parser.XMLParseResponse, verbose bool) {
 	}
 }
 
-func printElementTree(elements []parser.XMLElement, parentID string, indent string) {
+func printElementTree(elements []parser.Element, parentID string, indent string) {
 	for _, elem := range elements {
 		if elem.ParentID == parentID {
-			typeStr := string(elem.ElementType)
+			typeStr := elem.ElementType
 			preview := elem.ContentPreview
 			if len(preview) > 50 {
 				preview = preview[:47] + "..."

@@ -72,7 +72,14 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
         conn.execute("PRAGMA journal_mode = WAL")    # Better concurrency
         return conn
 
-    @retry_on_sqlite_lock(max_retries=5, initial_delay=0.1)
+    def _get_raw_connection(self):
+        """Get raw database connection without retry decorators for schema initialization."""
+        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 30000")  # 30 second timeout
+        conn.execute("PRAGMA journal_mode = WAL")    # Better concurrency
+        return conn
+
     def initialize_schema(self):
         """Create database schema if it doesn't exist."""
         schema_sql = """
@@ -138,9 +145,41 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
         CREATE INDEX IF NOT EXISTS idx_source_leaders_worker ON source_leaders(worker_id);
         """
 
-        with self._get_connection() as conn:
-            conn.executescript(schema_sql)
-            conn.commit()
+        # Manual retry logic for schema initialization to avoid nested decorator issues
+        for attempt in range(self.init_retries):
+            conn = None
+            try:
+                conn = self._get_raw_connection()
+                conn.executescript(schema_sql)
+                conn.commit()
+
+                # Verify the tables were created
+                cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workers'")
+                if not cursor.fetchone():
+                    raise sqlite3.OperationalError("Failed to create workers table")
+
+                logger.info(f"Successfully initialized database schema at {self.db_path}")
+                conn.close()
+                return
+
+            except sqlite3.OperationalError as e:
+                if conn:
+                    conn.close()
+                if "database is locked" in str(e) and attempt < self.init_retries - 1:
+                    delay = self.init_retry_delay * (2 ** attempt)
+                    jitter = random.uniform(0, 0.1)
+                    sleep_time = delay + jitter
+                    logger.warning(f"Database locked during schema init, retrying in {sleep_time:.2f}s (attempt {attempt + 1}/{self.init_retries})")
+                    time.sleep(sleep_time)
+                    continue
+                else:
+                    logger.error(f"Failed to initialize schema after {attempt + 1} attempts: {e}")
+                    raise
+            except Exception as e:
+                if conn:
+                    conn.close()
+                logger.error(f"Unexpected error during schema initialization: {e}")
+                raise
 
     def enqueue_document(self, doc_id: str, source: str, metadata: Dict[str, Any]):
         """Add a document to the processing queue."""
@@ -250,18 +289,39 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
 
     def register_worker(self, worker_id: str, worker_info: Dict[str, Any]):
         """Register a worker in the system."""
-        with self._get_connection() as conn:
-            conn.execute("""
-                INSERT OR REPLACE INTO workers
-                (worker_id, hostname, pid, worker_info, last_heartbeat)
-                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            """, (
-                worker_id,
-                worker_info.get('hostname', ''),
-                worker_info.get('pid', 0),
-                json.dumps(worker_info)
-            ))
-            conn.commit()
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO workers
+                    (worker_id, hostname, pid, worker_info, last_heartbeat)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (
+                    worker_id,
+                    worker_info.get('hostname', ''),
+                    worker_info.get('pid', 0),
+                    json.dumps(worker_info)
+                ))
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            if "no such table: workers" in str(e):
+                # Schema initialization may have failed, retry
+                logger.warning("Workers table not found, re-initializing schema")
+                self.initialize_schema()
+                # Retry the operation
+                with self._get_connection() as conn:
+                    conn.execute("""
+                        INSERT OR REPLACE INTO workers
+                        (worker_id, hostname, pid, worker_info, last_heartbeat)
+                        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """, (
+                        worker_id,
+                        worker_info.get('hostname', ''),
+                        worker_info.get('pid', 0),
+                        json.dumps(worker_info)
+                    ))
+                    conn.commit()
+            else:
+                raise
 
         logger.debug(f"Registered worker {worker_id}")
 

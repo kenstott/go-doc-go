@@ -54,9 +54,33 @@ class TestWorkerCLI:
         # New worker architecture doesn't need storage section - uses job control + analytics only
 
         # Override paths to use temp directory
-        config['processing']['job_control']['path'] = str(temp_test_dir / "job_queue.db")
-        config['analytics']['outputs'][0]['path'] = str(temp_test_dir / "analytics-output")
-        config['logging']['file'] = str(temp_test_dir / "logs" / "worker.log")
+        if os.getenv('USE_GO_MODULES') == 'true':
+            job_db_path = temp_test_dir / "job_queue-go.db"
+        else:
+            job_db_path = temp_test_dir / "job_queue.db"
+        config['processing']['job_control']['path'] = str(job_db_path)
+
+        # Delete existing job queue database if it exists
+        if job_db_path.exists():
+            job_db_path.unlink()
+
+        # Adjusted based on the USE_GO_MODULES environment variable
+        if os.getenv('USE_GO_MODULES') == 'true':
+            analytics_path = temp_test_dir / "analytics-output-go"
+            config['analytics']['outputs'][0]['path'] = str(analytics_path)
+            config['logging']['file'] = str(temp_test_dir / "logs" / "worker-go.log")
+
+            # Delete existing analytics output directory if it exists
+            if analytics_path.exists():
+                shutil.rmtree(analytics_path)
+        else:
+            analytics_path = temp_test_dir / "analytics-output"
+            config['analytics']['outputs'][0]['path'] = str(analytics_path)
+            config['logging']['file'] = str(temp_test_dir / "logs" / "worker.log")
+
+            # Delete existing analytics output directory if it exists
+            if analytics_path.exists():
+                shutil.rmtree(analytics_path)
 
         # Create log directory
         (temp_test_dir / "logs").mkdir(parents=True)
@@ -113,7 +137,7 @@ class TestWorkerCLI:
         cmd = [
             "python", "-m", "go_doc_go.cli.worker",
             "--config", str(isolated_config),
-            "--max-documents", "5",  # Process 5 documents then stop
+            "--max-documents", "5000",
         ]
 
         try:
@@ -123,7 +147,7 @@ class TestWorkerCLI:
                 env={**os.environ, "PYTHONPATH": "src"},
                 capture_output=True,
                 text=True,
-                timeout=30  # 30 second timeout
+                timeout=600
             )
             # If worker completed within timeout, check return code
             assert result.returncode == 0, f"Worker failed: {result.stderr}"

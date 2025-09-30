@@ -96,26 +96,20 @@ func main() {
 		metadata = make(map[string]interface{})
 	}
 
-	// Create parse request
-	request := parser.ParseRequest{
-		ID:       docID,
-		Content:  content,
-		Metadata: metadata,
-	}
-
-	// Parse the document
-	response, err := htmlParser.Parse(request)
+	// Parse the document using new interface
+	result, err := htmlParser.Parse(docID, content)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing document: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Convert to JSON
-	jsonOutput, err := response.ToJSON()
+	jsonBytes, err := json.Marshal(result)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error converting to JSON: %v\n", err)
 		os.Exit(1)
 	}
+	jsonOutput := string(jsonBytes)
 
 	// Write output
 	if outputFile != "" {

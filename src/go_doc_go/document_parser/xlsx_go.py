@@ -29,6 +29,13 @@ class GoXLSXParser(DocumentParser):
         if not self.binary_path:
             raise RuntimeError("Go XLSX parser binary not found. Please build the Go parser first.")
 
+        # Log binary info for debugging
+        import os
+        from datetime import datetime
+        stat_info = os.stat(self.binary_path)
+        mod_time = datetime.fromtimestamp(stat_info.st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+        logger.info(f"Using XLSX parser binary: {self.binary_path} (modified: {mod_time}, size: {stat_info.st_size} bytes)")
+
         # General configuration from base class
         self.max_content_preview = self.config.get("max_content_preview", 100)
 
@@ -44,11 +51,9 @@ class GoXLSXParser(DocumentParser):
 
     def _find_binary(self) -> Optional[str]:
         """Find the Go XLSX parser binary."""
-        # Look for the binary in common locations
+        # Look for the binary in standard location
         possible_paths = [
-            Path(__file__).parent.parent.parent.parent / "go" / "bin" / "xlsxparser",
             Path(__file__).parent.parent.parent.parent / "bin" / "xlsxparser",
-            Path.cwd() / "go" / "bin" / "xlsxparser",
             Path.cwd() / "bin" / "xlsxparser",
         ]
 
@@ -92,6 +97,14 @@ class GoXLSXParser(DocumentParser):
         xlsx_content = content.get("content", "")
         metadata = content.get("metadata", {})
 
+        # If content is empty but binary_path is provided, use that
+        if not xlsx_content and "binary_path" in content:
+            xlsx_content = content["binary_path"]
+            logger.debug(f"Using binary_path for content: {xlsx_content}")
+
+        # Debug logging
+        logger.debug(f"Parsing XLSX: doc_id={doc_id}, content_type={type(xlsx_content).__name__}, content_len={len(xlsx_content) if hasattr(xlsx_content, '__len__') else 'N/A'}")
+
         # Prepare command arguments
         cmd = [
             self.binary_path,
@@ -129,15 +142,22 @@ class GoXLSXParser(DocumentParser):
             # Check if content is a file path or raw bytes
             if isinstance(xlsx_content, str) and os.path.isfile(xlsx_content):
                 # File path provided
+                logger.info(f"Using file input mode for: {xlsx_content}")
                 cmd.extend(["-input", xlsx_content])
+                logger.info(f"Calling XLSX parser with command: {' '.join(cmd)}")
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     check=True
                 )
+                logger.info(f"XLSX parser stdout length: {len(result.stdout)} bytes, stderr length: {len(result.stderr)} bytes")
+                logger.debug(f"XLSX parser stdout preview: {result.stdout[:500]}")
+                if result.stderr:
+                    logger.warning(f"XLSX parser stderr: {result.stderr}")
             elif isinstance(xlsx_content, (bytes, bytearray)):
                 # Raw XLSX bytes - use stdin mode
+                logger.info(f"Using stdin mode with {len(xlsx_content)} bytes")
                 cmd.append("-stdin")
                 result = subprocess.run(
                     cmd,
@@ -150,6 +170,7 @@ class GoXLSXParser(DocumentParser):
                     result.stdout = result.stdout.decode('utf-8')
             elif isinstance(xlsx_content, str):
                 # String content (might be base64 or raw text representation)
+                logger.warning(f"Using stdin mode with string content (length={len(xlsx_content)}). This might be wrong - expected file path or bytes.")
                 cmd.append("-stdin")
                 result = subprocess.run(
                     cmd,
@@ -164,6 +185,10 @@ class GoXLSXParser(DocumentParser):
 
             # Parse JSON output
             parsed_result = json.loads(result.stdout)
+
+            # Check if parsing returned None or invalid data
+            if parsed_result is None:
+                raise ValueError(f"Go parser returned null result. Stdout was: '{result.stdout[:200]}'")
 
             # Add any Python-side metadata
             if metadata:
@@ -191,7 +216,7 @@ class GoXLSXParser(DocumentParser):
             error_msg = str(e)
             if hasattr(e, 'stderr') and e.stderr:
                 error_msg = e.stderr if isinstance(e.stderr, str) else e.stderr.decode('utf-8', errors='ignore')
-            logger.error(f"XLSX parser failed: {error_msg}")
+            logger.error(f"XLSX parser failed: {error_msg}", exc_info=True)
             # Return minimal valid structure on error
             return {
                 "document": {
@@ -207,7 +232,7 @@ class GoXLSXParser(DocumentParser):
                 "relationships": []
             }
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse XLSX parser output: {e}")
+            logger.error(f"Failed to parse XLSX parser output: {e}", exc_info=True)
             return {
                 "document": {
                     "id": doc_id,
@@ -222,7 +247,7 @@ class GoXLSXParser(DocumentParser):
                 "relationships": []
             }
         except Exception as e:
-            logger.error(f"Unexpected error in XLSX parsing: {e}")
+            logger.error(f"Unexpected error in XLSX parsing: {e}", exc_info=True)
             return {
                 "document": {
                     "id": doc_id,
@@ -258,7 +283,7 @@ class GoXLSXParser(DocumentParser):
             return True
 
         # Check content type
-        content_type = metadata.get("content_type", "") or ""
+        content_type = metadata.get("content_type", "")
         if content_type and any(xlsx_type in content_type.lower() for xlsx_type in [
             "excel", "xlsx", "spreadsheet",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"

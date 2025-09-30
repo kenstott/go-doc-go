@@ -299,6 +299,9 @@ class CsvParser(DocumentParser):
         # Initialize relationships list
         relationships = []
 
+        # Initialize element_dates dictionary for tracking date information
+        element_dates = {}
+
         # Create table container element
         table_id = self._generate_id("csv_table_")
         table_element = {
@@ -501,7 +504,9 @@ class CsvParser(DocumentParser):
                                 normalized_preview += "..."
                             # Create separate DATE elements for extracted dates
                             for date_dict in cell_processing["extracted_dates"]:
-                                element_dates[cell_id] = element_dates.get(cell_id, []) + [date_dict]
+                                if cell_id not in element_dates:
+                                    element_dates[cell_id] = []
+                                element_dates[cell_id].append(date_dict)
 
                 cell_element = {
                     "element_id": cell_id,
@@ -595,7 +600,6 @@ class CsvParser(DocumentParser):
         relationships.extend(column_relationships)
 
         # Extract dates from CSV with comprehensive temporal analysis
-        element_dates = {}
         if self.extract_dates and self.date_extractor:
             try:
                 # Extract text content from the entire CSV for date extraction

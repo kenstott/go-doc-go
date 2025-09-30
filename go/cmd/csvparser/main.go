@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -72,17 +73,8 @@ func main() {
 	// Configure max rows
 	csvParser.MaxRows = *maxRows
 
-	// Create request
-	request := parser.CSVParseRequest{
-		ID:      documentID,
-		Content: string(content),
-		Metadata: map[string]interface{}{
-			"source": documentID,
-		},
-	}
-
-	// Parse document
-	response, err := csvParser.Parse(request)
+	// Parse document using new interface
+	result, err := csvParser.Parse(documentID, string(content))
 	if err != nil {
 		log.Fatalf("Error parsing CSV: %v", err)
 	}
@@ -90,12 +82,13 @@ func main() {
 	// Format output
 	var output string
 	if *jsonOutput {
-		output, err = response.ToJSON()
+		jsonBytes, err := json.Marshal(result)
 		if err != nil {
 			log.Fatalf("Error converting to JSON: %v", err)
 		}
+		output = string(jsonBytes)
 	} else {
-		output = formatHumanReadable(response)
+		output = formatHumanReadable(result)
 	}
 
 	// Write output
@@ -109,7 +102,7 @@ func main() {
 	}
 }
 
-func formatHumanReadable(response *parser.CSVParseResponse) string {
+func formatHumanReadable(result *parser.ParseResult) string {
 	var sb strings.Builder
 
 	sb.WriteString("CSV Parse Results\n")
@@ -117,10 +110,10 @@ func formatHumanReadable(response *parser.CSVParseResponse) string {
 
 	// Document info
 	sb.WriteString("Document:\n")
-	sb.WriteString(fmt.Sprintf("  ID: %v\n", response.Document["doc_id"]))
-	sb.WriteString(fmt.Sprintf("  Type: %v\n", response.Document["doc_type"]))
+	sb.WriteString(fmt.Sprintf("  ID: %v\n", result.Document.ID))
+	sb.WriteString(fmt.Sprintf("  Type: %v\n", result.Document.DocType))
 
-	if metadata, ok := response.Document["metadata"].(map[string]interface{}); ok {
+	if metadata := result.Document.Metadata; metadata != nil {
 		if rowCount, exists := metadata["row_count"]; exists {
 			sb.WriteString(fmt.Sprintf("  Rows: %v\n", rowCount))
 		}
@@ -131,24 +124,23 @@ func formatHumanReadable(response *parser.CSVParseResponse) string {
 			sb.WriteString(fmt.Sprintf("  Has Header: %v\n", hasHeader))
 		}
 		if headers, exists := metadata["headers"]; exists {
-			if headerList, ok := headers.([]string); ok {
-				sb.WriteString(fmt.Sprintf("  Headers: %s\n", strings.Join(headerList, ", ")))
-			}
-		}
-		if columnTypes, exists := metadata["column_types"]; exists {
-			if typeList, ok := columnTypes.([]string); ok {
-				sb.WriteString(fmt.Sprintf("  Column Types: %s\n", strings.Join(typeList, ", ")))
+			if headerList, ok := headers.([]interface{}); ok {
+				headerStrs := make([]string, len(headerList))
+				for i, h := range headerList {
+					headerStrs[i] = fmt.Sprintf("%v", h)
+				}
+				sb.WriteString(fmt.Sprintf("  Headers: %s\n", strings.Join(headerStrs, ", ")))
 			}
 		}
 	}
 	sb.WriteString("\n")
 
 	// Elements summary
-	sb.WriteString(fmt.Sprintf("Elements (%d):\n", len(response.Elements)))
+	sb.WriteString(fmt.Sprintf("Elements (%d):\n", len(result.Elements)))
 
 	// Count elements by type
-	elementTypes := make(map[parser.CSVElementType]int)
-	for _, element := range response.Elements {
+	elementTypes := make(map[string]int)
+	for _, element := range result.Elements {
 		elementTypes[element.ElementType]++
 	}
 
@@ -160,9 +152,9 @@ func formatHumanReadable(response *parser.CSVParseResponse) string {
 	// Show sample elements
 	sb.WriteString("Sample Elements:\n")
 	elementCount := 0
-	for _, element := range response.Elements {
+	for _, element := range result.Elements {
 		if elementCount >= 10 {
-			sb.WriteString(fmt.Sprintf("  ... and %d more elements\n", len(response.Elements)-10))
+			sb.WriteString(fmt.Sprintf("  ... and %d more elements\n", len(result.Elements)-10))
 			break
 		}
 
@@ -174,7 +166,7 @@ func formatHumanReadable(response *parser.CSVParseResponse) string {
 		}
 
 		// Show metadata for cells
-		if element.ElementType == parser.CSVElementTypeTableCell {
+		if element.ElementType == "table_cell" {
 			if row, ok := element.Metadata["row"]; ok {
 				if col, ok := element.Metadata["col"]; ok {
 					sb.WriteString(fmt.Sprintf("      Position: Row %v, Col %v\n", row, col))
@@ -190,11 +182,11 @@ func formatHumanReadable(response *parser.CSVParseResponse) string {
 	sb.WriteString("\n")
 
 	// Relationships
-	if len(response.Relationships) > 0 {
-		sb.WriteString(fmt.Sprintf("Relationships (%d):\n", len(response.Relationships)))
-		for i, rel := range response.Relationships {
+	if len(result.Relationships) > 0 {
+		sb.WriteString(fmt.Sprintf("Relationships (%d):\n", len(result.Relationships)))
+		for i, rel := range result.Relationships {
 			if i >= 5 {
-				sb.WriteString(fmt.Sprintf("  ... and %d more relationships\n", len(response.Relationships)-5))
+				sb.WriteString(fmt.Sprintf("  ... and %d more relationships\n", len(result.Relationships)-5))
 				break
 			}
 			sb.WriteString(fmt.Sprintf("  [%d] %s -> %s (%s)\n", i,
@@ -204,11 +196,11 @@ func formatHumanReadable(response *parser.CSVParseResponse) string {
 	}
 
 	// Links
-	if len(response.Links) > 0 {
-		sb.WriteString(fmt.Sprintf("Links (%d):\n", len(response.Links)))
-		for i, link := range response.Links {
+	if len(result.Links) > 0 {
+		sb.WriteString(fmt.Sprintf("Links (%d):\n", len(result.Links)))
+		for i, link := range result.Links {
 			if i >= 10 {
-				sb.WriteString(fmt.Sprintf("  ... and %d more links\n", len(response.Links)-10))
+				sb.WriteString(fmt.Sprintf("  ... and %d more links\n", len(result.Links)-10))
 				break
 			}
 			sb.WriteString(fmt.Sprintf("  [%d] %s: %s\n", i, link.LinkType, link.LinkTarget))
@@ -218,9 +210,9 @@ func formatHumanReadable(response *parser.CSVParseResponse) string {
 
 	// Statistics
 	sb.WriteString("Statistics:\n")
-	sb.WriteString(fmt.Sprintf("  Total Elements: %d\n", len(response.Elements)))
-	sb.WriteString(fmt.Sprintf("  Total Relationships: %d\n", len(response.Relationships)))
-	sb.WriteString(fmt.Sprintf("  Total Links: %d\n", len(response.Links)))
+	sb.WriteString(fmt.Sprintf("  Total Elements: %d\n", len(result.Elements)))
+	sb.WriteString(fmt.Sprintf("  Total Relationships: %d\n", len(result.Relationships)))
+	sb.WriteString(fmt.Sprintf("  Total Links: %d\n", len(result.Links)))
 
 	return sb.String()
 }

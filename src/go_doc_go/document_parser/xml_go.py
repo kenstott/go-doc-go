@@ -72,6 +72,10 @@ class GoXMLParser(DocumentParser):
             cmd_args.append("-enable-caching=false")
 
         try:
+            # Convert bytes to string if necessary
+            if isinstance(xml_content, bytes):
+                xml_content = xml_content.decode('utf-8', errors='replace')
+
             # Call Go binary with JSON output
             result = subprocess.run(
                 cmd_args,
@@ -83,6 +87,23 @@ class GoXMLParser(DocumentParser):
 
             if result.returncode != 0:
                 error_msg = result.stderr or result.stdout
+                # Handle XML syntax errors gracefully - return valid structure with error info
+                if "XML syntax error" in str(error_msg) or "invalid character entity" in str(error_msg):
+                    return {
+                        "document": {
+                            "id": doc_id,
+                            "doc_type": "xml",
+                            "metadata": {
+                                **metadata,
+                                "error": f"XML parsing error: {error_msg}",
+                                "parser_error": True,
+                                "malformed_xml": True
+                            }
+                        },
+                        "elements": [],
+                        "relationships": [],
+                        "links": []
+                    }
                 raise RuntimeError(f"Go XML parser failed: {error_msg}")
 
             # Parse JSON response

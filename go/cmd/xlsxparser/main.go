@@ -82,6 +82,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Check for nil result
+	if result == nil {
+		fmt.Fprintf(os.Stderr, "Error: Parser returned nil result with no error\n")
+		os.Exit(1)
+	}
+
 	// Output results
 	if *jsonOutput {
 		// Convert to JSON

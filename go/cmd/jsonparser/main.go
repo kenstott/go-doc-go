@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -41,18 +42,8 @@ func main() {
 	// Create parser
 	jsonParser := parser.NewJSONParser()
 
-	// Create parse request
-	request := parser.JSONParseRequest{
-		ID:      id,
-		Content: string(content),
-		Metadata: map[string]interface{}{
-			"source":   *inputFile,
-			"filename": *inputFile,
-		},
-	}
-
-	// Parse the JSON
-	response, err := jsonParser.Parse(request)
+	// Parse the JSON using new interface
+	result, err := jsonParser.Parse(id, string(content))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing JSON: %v\n", err)
 		os.Exit(1)
@@ -61,15 +52,15 @@ func main() {
 	// Format output
 	var output string
 	if *jsonOutput {
-		jsonStr, err := response.ToJSON()
+		jsonBytes, err := json.Marshal(result)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error converting to JSON: %v\n", err)
 			os.Exit(1)
 		}
-		output = jsonStr
+		output = string(jsonBytes)
 	} else {
 		// Human-readable format
-		output = formatHumanReadable(response)
+		output = formatHumanReadable(result)
 	}
 
 	// Write output
@@ -102,19 +93,18 @@ func showHelp() {
 	fmt.Println("  jsonparser -input document.json -id my-doc")
 }
 
-func formatHumanReadable(response *parser.JSONParseResponse) string {
+func formatHumanReadable(parseResult *parser.ParseResult) string {
 	var result string
 
 	// Document info
-	result += fmt.Sprintf("Document ID: %s\n", response.Document["doc_id"])
-	result += fmt.Sprintf("Document Type: %s\n", response.Document["doc_type"])
-	result += fmt.Sprintf("Content Hash: %s\n", response.Document["content_hash"])
+	result += fmt.Sprintf("Document ID: %s\n", parseResult.Document.ID)
+	result += fmt.Sprintf("Document Type: %s\n", parseResult.Document.DocType)
 	result += "\n"
 
 	// Elements summary
-	result += fmt.Sprintf("Elements: %d\n", len(response.Elements))
-	elementTypes := make(map[parser.JSONElementType]int)
-	for _, element := range response.Elements {
+	result += fmt.Sprintf("Elements: %d\n", len(parseResult.Elements))
+	elementTypes := make(map[string]int)
+	for _, element := range parseResult.Elements {
 		elementTypes[element.ElementType]++
 	}
 
@@ -124,9 +114,9 @@ func formatHumanReadable(response *parser.JSONParseResponse) string {
 	result += "\n"
 
 	// Relationships
-	result += fmt.Sprintf("Relationships: %d\n", len(response.Relationships))
+	result += fmt.Sprintf("Relationships: %d\n", len(parseResult.Relationships))
 	relationshipTypes := make(map[string]int)
-	for _, rel := range response.Relationships {
+	for _, rel := range parseResult.Relationships {
 		relationshipTypes[rel.RelationshipType]++
 	}
 
@@ -136,9 +126,9 @@ func formatHumanReadable(response *parser.JSONParseResponse) string {
 	result += "\n"
 
 	// Links
-	result += fmt.Sprintf("Links: %d\n", len(response.Links))
+	result += fmt.Sprintf("Links: %d\n", len(parseResult.Links))
 	linkTypes := make(map[string]int)
-	for _, link := range response.Links {
+	for _, link := range parseResult.Links {
 		linkTypes[link.LinkType]++
 	}
 
@@ -149,14 +139,18 @@ func formatHumanReadable(response *parser.JSONParseResponse) string {
 
 	// Sample elements
 	result += "Sample Elements:\n"
-	for i, element := range response.Elements {
+	for i, element := range parseResult.Elements {
 		if i >= 5 { // Show first 5 elements
 			result += "  ...\n"
 			break
 		}
+		elemID := element.ElementID
+		if len(elemID) > 8 {
+			elemID = elemID[:8] + "..."
+		}
 		result += fmt.Sprintf("  [%d] %s (%s): %s\n",
 			i+1,
-			element.ElementID[:8]+"...",
+			elemID,
 			element.ElementType,
 			element.ContentPreview)
 	}

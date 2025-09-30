@@ -71,6 +71,10 @@ class GoCSVParser(DocumentParser):
         cmd_args.extend(["-id", doc_id])
 
         try:
+            # Convert bytes to string if necessary
+            if isinstance(csv_content, bytes):
+                csv_content = csv_content.decode('utf-8', errors='replace')
+
             # Call Go binary with JSON output
             result = subprocess.run(
                 cmd_args,

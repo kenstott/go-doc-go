@@ -28,6 +28,7 @@ class GoPDFParser(DocumentParser):
         self.binary_path = self._find_binary()
         if not self.binary_path:
             raise RuntimeError("Go PDF parser binary not found. Please build the Go parser first.")
+        logger.info(f"Using PDF parser binary: {self.binary_path}")
 
         # General configuration from base class
         self.max_content_preview = self.config.get("max_content_preview", 100)
@@ -38,11 +39,9 @@ class GoPDFParser(DocumentParser):
 
     def _find_binary(self) -> Optional[str]:
         """Find the Go PDF parser binary."""
-        # Look for the binary in common locations
+        # Look for the binary in standard location
         possible_paths = [
-            Path(__file__).parent.parent.parent.parent / "go" / "bin" / "pdfparser",
             Path(__file__).parent.parent.parent.parent / "bin" / "pdfparser",
-            Path.cwd() / "go" / "bin" / "pdfparser",
             Path.cwd() / "bin" / "pdfparser",
         ]
 
@@ -86,6 +85,11 @@ class GoPDFParser(DocumentParser):
         pdf_content = content.get("content", "")
         metadata = content.get("metadata", {})
 
+        # If content is empty but binary_path is provided, use that
+        if not pdf_content and "binary_path" in content:
+            pdf_content = content["binary_path"]
+            logger.debug(f"Using binary_path for content: {pdf_content}")
+
         # Prepare command arguments
         cmd = [
             self.binary_path,
@@ -106,12 +110,15 @@ class GoPDFParser(DocumentParser):
             if isinstance(pdf_content, str) and os.path.isfile(pdf_content):
                 # File path provided
                 cmd.extend(["-input", pdf_content])
+                logger.info(f"Calling PDF parser with command: {' '.join(cmd)}")
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
                     text=True,
                     check=True
                 )
+                logger.info(f"PDF parser stdout length: {len(result.stdout)} bytes")
+                logger.debug(f"PDF parser stdout preview: {result.stdout[:500]}")
             elif isinstance(pdf_content, (bytes, bytearray)):
                 # Raw PDF bytes - use stdin mode
                 cmd.append("-stdin")
@@ -141,6 +148,10 @@ class GoPDFParser(DocumentParser):
             # Parse JSON output
             parsed_result = json.loads(result.stdout)
 
+            # Check if parsing returned None or invalid data
+            if parsed_result is None:
+                raise ValueError(f"Go parser returned null result. Stdout was: '{result.stdout[:200]}'")
+
             # Add any Python-side metadata
             if metadata:
                 if "metadata" not in parsed_result:
@@ -167,7 +178,7 @@ class GoPDFParser(DocumentParser):
             error_msg = str(e)
             if hasattr(e, 'stderr') and e.stderr:
                 error_msg = e.stderr if isinstance(e.stderr, str) else e.stderr.decode('utf-8', errors='ignore')
-            logger.error(f"PDF parser failed: {error_msg}")
+            logger.error(f"PDF parser failed: {error_msg}", exc_info=True)
             # Return minimal valid structure on error
             return {
                 "document": {
@@ -183,7 +194,7 @@ class GoPDFParser(DocumentParser):
                 "relationships": []
             }
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse PDF parser output: {e}")
+            logger.error(f"Failed to parse PDF parser output: {e}", exc_info=True)
             return {
                 "document": {
                     "id": doc_id,
@@ -198,7 +209,7 @@ class GoPDFParser(DocumentParser):
                 "relationships": []
             }
         except Exception as e:
-            logger.error(f"Unexpected error in PDF parsing: {e}")
+            logger.error(f"Unexpected error in PDF parsing: {e}", exc_info=True)
             return {
                 "document": {
                     "id": doc_id,
@@ -235,7 +246,7 @@ class GoPDFParser(DocumentParser):
 
         # Check content type
         content_type = metadata.get("content_type", "")
-        if "pdf" in content_type.lower():
+        if content_type and "pdf" in content_type.lower():
             return True
 
         # Check for PDF magic bytes

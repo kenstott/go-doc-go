@@ -50,7 +50,7 @@ content_sources:
     base_path: "./assets"
 #    file_pattern: "**/*.{md,docx,xlsx,pptx,pdf,csv,xml,json}"
     file_pattern: "**/*"
-    include_extensions: ["md", "txt", "xml", "pptx", "csv", "docx", "xlsx", "pdf"]
+    include_extensions: ["md", "txt", "xml", "pptx", "csv", "docx", "xlsx", "pdf", "htm", "html"]
     watch_for_changes: true
     max_link_depth: 2
   - name: "wikipedia"
@@ -68,7 +68,7 @@ content_sources:
     headers:
       User-Agent: "Go-Doc-Go/1.0 (educational project; ken@kenstott.com)"
     max_link_depth: 1
-    discovery_interval: 604800  # 7 days in seconds
+    refresh_interval: 604800  # 7 days in seconds
 
 relationship_detection:
   enabled: true

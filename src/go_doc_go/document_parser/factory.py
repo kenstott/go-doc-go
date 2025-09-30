@@ -78,6 +78,27 @@ try:
 except ImportError:
     GO_XLSX_PARSER_AVAILABLE = False
 
+# Import Go DOCX parser
+try:
+    from .docx_go import DocxGoParser
+    GO_DOCX_PARSER_AVAILABLE = True
+except ImportError:
+    GO_DOCX_PARSER_AVAILABLE = False
+
+# Import Go PPTX parser
+try:
+    from .pptx_go import PptxGoParser
+    GO_PPTX_PARSER_AVAILABLE = True
+except ImportError:
+    GO_PPTX_PARSER_AVAILABLE = False
+
+# Import Go Parquet parser
+try:
+    from .parquet_go import ParquetGoParser
+    GO_PARQUET_PARSER_AVAILABLE = True
+except ImportError:
+    GO_PARQUET_PARSER_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -138,9 +159,21 @@ def create_parser(doc_type: str, config: Optional[Dict[str, Any]] = None) -> Doc
         else:
             return XmlParser(config)
     elif doc_type == "docx":
-        return DocxParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_DOCX_PARSER_AVAILABLE:
+            return DocxGoParser(config)
+        else:
+            return DocxParser(config)
     elif doc_type == "pptx":
-        return PptxParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_PPTX_PARSER_AVAILABLE:
+            return PptxGoParser(config)
+        else:
+            return PptxParser(config)
     elif doc_type == "csv":
         # Check if Go modules should be used
         use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
@@ -158,7 +191,13 @@ def create_parser(doc_type: str, config: Optional[Dict[str, Any]] = None) -> Doc
         else:
             return JSONParser(config)
     elif doc_type == "parquet":
-        return ParquetParser(config)
+        # Check if Go modules should be used
+        use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+
+        if use_go_modules and GO_PARQUET_PARSER_AVAILABLE:
+            return ParquetGoParser(config)
+        else:
+            return ParquetParser(config)
     elif doc_type == "text":
         # Check if Go modules should be used
         use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
@@ -185,14 +224,15 @@ def get_parser_for_content(content: Dict[str, Any], config: Optional[Dict[str, A
     """
     doc_type = content.get("doc_type")
     metadata = content.get("metadata", {})
-    if doc_type == 'text' and metadata.get('content_type', '').lower().startswith('text/'):
-        doc_type = metadata.get('content_type', '').lower().replace("text/", "")
-    if doc_type == 'text' and metadata.get('content_type', '').lower().startswith('application/'):
-        doc_type = metadata.get('content_type', '').lower().replace("application/", "")
+    content_type_value = metadata.get('content_type') or ''
+    if doc_type == 'text' and content_type_value.lower().startswith('text/'):
+        doc_type = content_type_value.lower().replace("text/", "")
+    if doc_type == 'text' and content_type_value.lower().startswith('application/'):
+        doc_type = content_type_value.lower().replace("application/", "")
 
     # If doc_type is not specified, check metadata
     if not doc_type:
-        content_type = metadata.get("content_type", "")
+        content_type = metadata.get("content_type") or ""
         filename = metadata.get("filename", "")
 
         # Check file extension first
