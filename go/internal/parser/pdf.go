@@ -2,17 +2,14 @@ package parser
 
 import (
 	"bytes"
-	"crypto/md5"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode"
 
-	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/ledongthuc/pdf"
 )
 
 // PDFParser handles PDF document parsing
@@ -27,6 +24,7 @@ type PDFParser struct {
 	MinTableRows         int
 	MinTableCols         int
 	PreserveLayout       bool
+	ExtractDates         bool
 }
 
 // TextBlock represents a block of text with position information
@@ -68,43 +66,44 @@ func NewPDFParser() *PDFParser {
 // Parse extracts text and structure from a PDF file
 func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
-	var reader io.ReadSeeker
-	var contentBytes []byte
+	var pdfReader *pdf.Reader
+	var err error
 
 	switch v := content.(type) {
 	case string:
 		// If it's a file path
-		if _, err := os.Stat(v); err == nil {
-			file, err := os.Open(v)
-			if err != nil {
-				return nil, fmt.Errorf("failed to open PDF file: %v", err)
+		if _, fileErr := os.Stat(v); fileErr == nil {
+			file, openErr := os.Open(v)
+			if openErr != nil {
+				return nil, fmt.Errorf("failed to open PDF file: %v", openErr)
 			}
 			defer file.Close()
-			reader = file
 
-			// Read for hash calculation
-			data, err := os.ReadFile(v)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read PDF file: %v", err)
+			// Get file size for the PDF reader
+			stat, statErr := file.Stat()
+			if statErr != nil {
+				return nil, fmt.Errorf("failed to get file info: %v", statErr)
 			}
-			contentBytes = data
+
+			pdfReader, err = pdf.NewReader(file, stat.Size())
+			if err != nil {
+				return nil, fmt.Errorf("failed to create PDF reader: %v", err)
+			}
 		} else {
-			// Treat as PDF content string
-			contentBytes = []byte(v)
-			reader = bytes.NewReader(contentBytes)
+			// Treat as PDF content bytes
+			contentBytes := []byte(v)
+			reader := bytes.NewReader(contentBytes)
+			pdfReader, err = pdf.NewReader(reader, int64(len(contentBytes)))
+			if err != nil {
+				return nil, fmt.Errorf("failed to create PDF reader: %v", err)
+			}
 		}
 	case []byte:
-		contentBytes = v
-		reader = bytes.NewReader(v)
-	case io.ReadSeeker:
-		reader = v
-		// Read content for hash
-		buf := new(bytes.Buffer)
-		if _, err := io.Copy(buf, reader); err != nil {
-			return nil, fmt.Errorf("failed to read PDF content: %v", err)
+		reader := bytes.NewReader(v)
+		pdfReader, err = pdf.NewReader(reader, int64(len(v)))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create PDF reader: %v", err)
 		}
-		contentBytes = buf.Bytes()
-		reader.Seek(0, io.SeekStart)
 	default:
 		return nil, fmt.Errorf("unsupported content type: %T", content)
 	}
@@ -114,7 +113,6 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 		Document: Document{
 			ID:      docID,
 			DocType: "pdf",
-			Title:   "",
 		},
 		Elements:      []Element{},
 		Relationships: []Relationship{},
@@ -123,19 +121,14 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 
 	// Create root element
 	rootID := generateID("pdf_root")
-	contentHash := fmt.Sprintf("%x", md5.Sum(contentBytes))
-
 	rootElement := Element{
 		ElementID:      rootID,
 		ElementType:    "root",
-		Content:        "",
 		ContentPreview: p.truncateContent(fmt.Sprintf("PDF Document: %s", docID)),
-		ParentID:       "",
 		Position:       0,
 		Depth:          0,
 		ContentLocation: map[string]interface{}{
-			"type":         "pdf_document",
-			"content_hash": contentHash,
+			"type": "pdf_document",
 		},
 	}
 	result.Elements = append(result.Elements, rootElement)
@@ -145,7 +138,6 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 	bodyElement := Element{
 		ElementID:      bodyID,
 		ElementType:    "body",
-		Content:        "",
 		ContentPreview: "Document Body",
 		ParentID:       rootID,
 		Position:       1,
@@ -164,39 +156,19 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 		TargetElementID:  bodyID,
 	})
 
-	// Create configuration for pdfcpu
-	conf := model.NewDefaultConfiguration()
-
-	// Read and validate PDF
-	ctx, err := api.ReadContext(reader, conf)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse PDF: %v", err)
-	}
-
-	// Extract metadata if available
-	// Note: ctx.Info is an IndirectRef in pdfcpu, not directly accessible
-	// We'll skip metadata extraction for now until we understand the API better
-	if p.ExtractMetadata {
-		// TODO: Figure out how to extract metadata with new pdfcpu API
-		result.Document.Metadata = map[string]interface{}{
-			"note": "metadata extraction pending API investigation",
-		}
-	}
-
 	// Extract text content page by page
-	pageCount := ctx.PageCount
-	if p.MaxPages > 0 && pageCount > p.MaxPages {
-		pageCount = p.MaxPages
+	numPages := pdfReader.NumPage()
+	if p.MaxPages > 0 && numPages > p.MaxPages {
+		numPages = p.MaxPages
 	}
 
 	elementPosition := 2
-	for pageNum := 1; pageNum <= pageCount; pageNum++ {
+	for pageNum := 1; pageNum <= numPages; pageNum++ {
 		// Create page element
 		pageID := generateID(fmt.Sprintf("page_%d", pageNum))
 		pageElement := Element{
 			ElementID:      pageID,
 			ElementType:    "page",
-			Content:        "",
 			ContentPreview: fmt.Sprintf("Page %d", pageNum),
 			ParentID:       bodyID,
 			Position:       elementPosition,
@@ -217,62 +189,70 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 			TargetElementID:  pageID,
 		})
 
-		// Extract structured content from page
-		structuredPage, err := p.extractStructuredPage(ctx, pageNum)
-		if err != nil {
-			// Fallback to simple text extraction
-			pageText, _ := p.extractPageText(ctx, pageNum)
-			if pageText != "" {
-				// Create a simple paragraph element
-				elemID := generateID(fmt.Sprintf("para_p%d", pageNum))
+		// Extract actual text content from the page
+		page := pdfReader.Page(pageNum)
+		if page.V.IsNull() {
+			continue
+		}
+
+		// Extract text with empty font map (GetPlainText requires fonts parameter)
+		emptyFonts := make(map[string]*pdf.Font)
+		pageText, textErr := page.GetPlainText(emptyFonts)
+		if textErr != nil {
+			// Log error but continue processing other pages
+			continue
+		}
+
+		if strings.TrimSpace(pageText) != "" {
+			// Process the page text into paragraphs
+			paragraphs := p.splitIntoParagraphs(pageText)
+
+			for i, paragraph := range paragraphs {
+				if strings.TrimSpace(paragraph) == "" {
+					continue
+				}
+
+				// Determine element type based on content
+				elemType := p.classifyTextContent(paragraph)
+
+				elemID := generateID(fmt.Sprintf("%s_p%d_%d", elemType, pageNum, i))
 				elem := Element{
 					ElementID:      elemID,
-					ElementType:    "paragraph",
-					Content:        pageText,
-					ContentPreview: p.truncateContent(pageText),
+					ElementType:    elemType,
+					Content:        paragraph,
+					ContentPreview: p.truncateContent(paragraph),
 					ParentID:       pageID,
 					Position:       elementPosition,
 					Depth:          3,
 					ContentLocation: map[string]interface{}{
-						"type":        "pdf_paragraph",
+						"type":        fmt.Sprintf("pdf_%s", elemType),
 						"page_number": pageNum,
+						"paragraph":   i,
 					},
+					Metadata: make(map[string]interface{}),
 				}
+
+				// Extract temporal metadata if enabled
+				if p.ExtractDates {
+					ProcessTemporalContent(paragraph, elem.Metadata)
+				}
+
 				result.Elements = append(result.Elements, elem)
 				elementPosition++
 
+				// Create page-element relationship
 				result.Relationships = append(result.Relationships, Relationship{
 					RelationshipID:   generateID("rel"),
 					RelationshipType: "contains",
 					SourceElementID:  pageID,
 					TargetElementID:  elemID,
 				})
-			}
-			continue
-		}
 
-		// Process structured content
-		elements := p.processStructuredPage(structuredPage, pageID)
-
-		for _, elem := range elements {
-			elem.Position = elementPosition
-			elem.ParentID = pageID
-			elem.Depth = 3
-			result.Elements = append(result.Elements, elem)
-			elementPosition++
-
-			// Create page-element relationship
-			result.Relationships = append(result.Relationships, Relationship{
-				RelationshipID:   generateID("rel"),
-				RelationshipType: "contains",
-				SourceElementID:  pageID,
-				TargetElementID:  elem.ElementID,
-			})
-
-			// Extract links from text
-			if p.ExtractLinks {
-				links := p.extractLinksFromText(elem.Content, elem.ElementID)
-				result.Links = append(result.Links, links...)
+				// Extract links from text
+				if p.ExtractLinks {
+					links := p.extractLinksFromText(paragraph, elemID)
+					result.Links = append(result.Links, links...)
+				}
 			}
 		}
 	}
@@ -280,65 +260,28 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 	return result, nil
 }
 
-// extractStructuredPage extracts structured content from a page
-func (p *PDFParser) extractStructuredPage(ctx *model.Context, pageNum int) (*StructuredPage, error) {
-	// For now, we'll use text extraction and infer structure
-	// In a production system, you'd parse the content streams to get exact positions
 
-	page := &StructuredPage{
-		PageNum: pageNum,
-		Width:   612.0,  // Default US Letter width in points
-		Height:  792.0,  // Default US Letter height in points
+// classifyTextContent determines the element type based on text content
+func (p *PDFParser) classifyTextContent(text string) string {
+	text = strings.TrimSpace(text)
+
+	// Check for headers (short text, all caps, or title case)
+	if len(text) < 100 && p.isLikelyHeader(text) {
+		return "header"
 	}
 
-	// Extract text
-	text, err := p.extractPageText(ctx, pageNum)
-	if err != nil {
-		return nil, err
+	// Check for list items
+	if p.isListItem(text) {
+		return "list_item"
 	}
 
-	// Split into lines and create text blocks
-	lines := strings.Split(text, "\n")
-	yPosition := page.Height - 50.0 // Start from top of page with margin
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			yPosition -= 20 // Empty line spacing
-			continue
-		}
-
-		// Create text block for each line
-		// In production, you'd extract actual font metrics
-		fontSize := 12.0
-		if p.isLikelyHeader(line) {
-			fontSize = 16.0
-		}
-
-		block := TextBlock{
-			Text:     line,
-			X:        50.0, // Left margin
-			Y:        yPosition,
-			Width:    page.Width - 100.0, // Account for margins
-			Height:   fontSize * 1.2,
-			FontSize: fontSize,
-			FontName: "Default",
-			PageNum:  pageNum,
-		}
-
-		page.TextBlocks = append(page.TextBlocks, block)
-		yPosition -= block.Height + 5 // Move down for next line
+	// Check for table-like content
+	if p.looksLikeTableRow(text) {
+		return "table"
 	}
 
-	return page, nil
-}
-
-// extractPageText extracts plain text from a page
-func (p *PDFParser) extractPageText(ctx *model.Context, pageNum int) (string, error) {
-	// TODO: Implement proper text extraction
-	// The pdfcpu library doesn't have a direct text extraction API
-	// For now, return a placeholder
-	return fmt.Sprintf("Page %d content (text extraction pending)", pageNum), nil
+	// Default to paragraph
+	return "paragraph"
 }
 
 // processStructuredPage converts structured page content into elements
@@ -896,3 +839,4 @@ func (p *PDFParser) truncateContent(content string) string {
 	}
 	return content[:p.MaxContentPreview-3] + "..."
 }
+

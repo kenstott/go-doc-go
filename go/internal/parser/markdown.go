@@ -361,10 +361,9 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 					links := p.extractLinks(quoteContent, element.ElementID)
 					response.Links = append(response.Links, links...)
 				}
-
-				i = newIndex
-				continue
 			}
+			i = newIndex
+			continue
 		}
 
 		// Check for lists
@@ -550,7 +549,7 @@ func (p *MarkdownParser) createListElement(docID, content string, lineNumber int
 	preview := p.truncateContent(content)
 
 	// Count list items
-	itemPattern := regexp.MustCompile(`(?m)^[\s]*[-\*\+\d\.]\s+`)
+	itemPattern := regexp.MustCompile(`(?m)^[\s]*([-\*\+]|\d+\.)\s+`)
 	itemCount := len(itemPattern.FindAllString(content, -1))
 
 	metadata := map[string]interface{}{
@@ -641,12 +640,30 @@ func (p *MarkdownParser) createTableElement(docID, content string, lineNumber in
 	lines := strings.Split(content, "\n")
 	rowCount := 0
 	colCount := 0
+	foundHeader := false
 
 	for _, line := range lines {
-		if strings.Contains(line, "|") && !strings.Contains(line, "---") {
-			rowCount++
-			if colCount == 0 {
-				colCount = strings.Count(line, "|") + 1
+		if strings.Contains(line, "|") {
+			if strings.Contains(line, "---") {
+				// This is the separator line, skip it
+				continue
+			}
+
+			if !foundHeader {
+				// First data line after potential header
+				foundHeader = true
+				// Count columns by splitting on | and removing empty entries
+				parts := strings.Split(line, "|")
+				actualCols := 0
+				for _, part := range parts {
+					if strings.TrimSpace(part) != "" {
+						actualCols++
+					}
+				}
+				colCount = actualCols
+			} else {
+				// Count data rows (excluding header)
+				rowCount++
 			}
 		}
 	}
@@ -737,9 +754,8 @@ func (p *MarkdownParser) parseBlockquote(lines []string, startIndex int) (string
 			quoteLines = append(quoteLines, cleanLine)
 			i++
 		} else if strings.TrimSpace(line) == "" {
-			// Empty lines continue the blockquote
-			quoteLines = append(quoteLines, "")
-			i++
+			// Empty line ends the blockquote
+			break
 		} else {
 			// Non-blockquote line ends the blockquote
 			break
@@ -757,17 +773,46 @@ func (p *MarkdownParser) parseList(lines []string, startIndex int) (string, int)
 	// Pattern for list items (with indentation support)
 	listPattern := regexp.MustCompile(`^(\s*)([-\*\+]|\d+\.)\s+(.+)$`)
 
+	// Determine the list type from the first line
+	firstMatch := listPattern.FindStringSubmatch(lines[startIndex])
+	if firstMatch == nil {
+		return "", startIndex
+	}
+
+	isOrdered := strings.Contains(firstMatch[2], ".")
+	baseIndent := len(firstMatch[1])
+
 	for i < len(lines) {
 		line := lines[i]
 
-		if listPattern.MatchString(line) {
+		if match := listPattern.FindStringSubmatch(line); match != nil {
+			// Check if it's the same type of list
+			currentIsOrdered := strings.Contains(match[2], ".")
+			currentIndent := len(match[1])
+
+			// If list type changes and we're at the same indentation level, stop
+			if currentIsOrdered != isOrdered && currentIndent <= baseIndent {
+				break
+			}
+
 			listLines = append(listLines, line)
 			i++
 		} else if strings.TrimSpace(line) == "" {
 			// Empty lines might be part of the list
-			if i+1 < len(lines) && listPattern.MatchString(lines[i+1]) {
-				listLines = append(listLines, line)
-				i++
+			if i+1 < len(lines) {
+				if nextMatch := listPattern.FindStringSubmatch(lines[i+1]); nextMatch != nil {
+					nextIsOrdered := strings.Contains(nextMatch[2], ".")
+					nextIndent := len(nextMatch[1])
+					// Continue if it's the same list type or nested
+					if nextIsOrdered == isOrdered || nextIndent > baseIndent {
+						listLines = append(listLines, line)
+						i++
+					} else {
+						break
+					}
+				} else {
+					break
+				}
 			} else {
 				break
 			}

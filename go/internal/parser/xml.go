@@ -8,7 +8,6 @@ import (
 	"io"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // XMLElementType represents the type of XML element
@@ -95,8 +94,38 @@ func NewXMLParser() *XMLParser {
 	}
 }
 
-// Parse parses an XML document into structured elements
-func (p *XMLParser) Parse(request XMLParseRequest) (*XMLParseResponse, error) {
+// Parse is the universal interface that converts XML content to ParseResult
+func (p *XMLParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+	// Handle different input types
+	var xmlContent string
+	switch v := content.(type) {
+	case string:
+		xmlContent = v
+	case []byte:
+		xmlContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", content)
+	}
+
+	// Create request structure for compatibility
+	request := XMLParseRequest{
+		ID:       docID,
+		Content:  xmlContent,
+		Metadata: make(map[string]interface{}),
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseXML(request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// parseXML parses an XML document into structured elements (internal implementation)
+func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error) {
 	// Initialize response
 	response := &XMLParseResponse{
 		Document: map[string]interface{}{
@@ -184,10 +213,14 @@ func (p *XMLParser) Parse(request XMLParseRequest) (*XMLParseResponse, error) {
 					attributes[attr.Name.Local] = attr.Value
 
 					// Extract namespace declarations
-					if p.ExtractNamespaces && strings.HasPrefix(attr.Name.Local, "xmlns") {
+					if p.ExtractNamespaces {
 						if attr.Name.Local == "xmlns" {
 							namespaces[""] = attr.Value
-						} else {
+						} else if attr.Name.Space == "xmlns" {
+							// xmlns:prefix="uri" format
+							namespaces[attr.Name.Local] = attr.Value
+						} else if strings.HasPrefix(attr.Name.Local, "xmlns:") {
+							// Alternative format handling
 							prefix := strings.TrimPrefix(attr.Name.Local, "xmlns:")
 							namespaces[prefix] = attr.Value
 						}
@@ -372,8 +405,7 @@ func (p *XMLParser) extractLinksFromText(text string, sourceID string, links *[]
 }
 
 func (p *XMLParser) generateID(prefix string) string {
-	timestamp := time.Now().UnixNano()
-	return fmt.Sprintf("%s%d", prefix, timestamp%1000000)
+	return generateID(prefix)
 }
 
 func (p *XMLParser) generateHash(content string) string {
@@ -400,4 +432,79 @@ func (r *XMLParseResponse) ToJSON() (string, error) {
 // FromJSON creates a ParseRequest from JSON
 func (r *XMLParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
+}
+
+// convertToParseResult converts XMLParseResponse to universal ParseResult format
+func (p *XMLParser) convertToParseResult(response *XMLParseResponse) *ParseResult {
+	result := &ParseResult{
+		Document: Document{
+			ID:      response.Document["doc_id"].(string),
+			DocType: response.Document["doc_type"].(string),
+		},
+		Elements:      make([]Element, 0, len(response.Elements)),
+		Relationships: make([]Relationship, 0, len(response.Relationships)),
+		Links:         make([]Link, 0, len(response.Links)),
+	}
+
+	// Convert metadata if present
+	if meta, ok := response.Document["metadata"]; ok {
+		result.Document.Metadata = meta.(map[string]interface{})
+	}
+
+	// Convert elements
+	for i, xmlElem := range response.Elements {
+		element := Element{
+			ElementID:       xmlElem.ElementID,
+			ElementType:     string(xmlElem.ElementType),
+			Content:         xmlElem.Content,
+			ContentPreview:  xmlElem.ContentPreview,
+			ParentID:        xmlElem.ParentID,
+			Position:        i,
+			Depth:           calculateXMLDepth(xmlElem.ElementType),
+			ContentLocation: xmlElem.ContentLocation,
+			Metadata:        xmlElem.Metadata,
+		}
+		result.Elements = append(result.Elements, element)
+	}
+
+	// Convert relationships
+	for _, xmlRel := range response.Relationships {
+		relationship := Relationship{
+			RelationshipID:   xmlRel.RelationshipID,
+			RelationshipType: xmlRel.RelationshipType,
+			SourceElementID:  xmlRel.SourceElementID,
+			TargetElementID:  xmlRel.TargetElementID,
+			Confidence:       xmlRel.Confidence,
+			Metadata:         xmlRel.Metadata,
+		}
+		result.Relationships = append(result.Relationships, relationship)
+	}
+
+	// Convert links
+	for _, xmlLink := range response.Links {
+		link := Link{
+			LinkID:          generateID("link"),
+			SourceElementID: xmlLink.SourceID,
+			LinkType:        xmlLink.LinkType,
+			LinkTarget:      xmlLink.LinkTarget,
+			LinkText:        xmlLink.LinkText,
+		}
+		result.Links = append(result.Links, link)
+	}
+
+	return result
+}
+
+// calculateXMLDepth calculates element depth based on XML element type
+func calculateXMLDepth(elementType XMLElementType) int {
+	switch elementType {
+	case XMLElementTypeRoot:
+		return 0
+	case XMLElementTypeElement, XMLElementTypeObject:
+		return 1
+	case XMLElementTypeText:
+		return 2
+	default:
+		return 1 // Default depth for unknown elements
+	}
 }

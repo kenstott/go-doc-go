@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"time"
+
+	"github.com/kennethstott/go-doc-go/internal/temporal"
 )
 
 // ElementType represents the type of JSON element
@@ -92,8 +93,38 @@ func NewJSONParser() *JSONParser {
 	}
 }
 
-// Parse parses a JSON document into structured elements
-func (p *JSONParser) Parse(request JSONParseRequest) (*JSONParseResponse, error) {
+// Parse is the universal interface that converts JSON content to ParseResult
+func (p *JSONParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+	// Handle different input types
+	var jsonContent string
+	switch v := content.(type) {
+	case string:
+		jsonContent = v
+	case []byte:
+		jsonContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", content)
+	}
+
+	// Create request structure for compatibility
+	request := JSONParseRequest{
+		ID:       docID,
+		Content:  jsonContent,
+		Metadata: make(map[string]interface{}),
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseJSON(request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// parseJSON parses a JSON document into structured elements (internal implementation)
+func (p *JSONParser) parseJSON(request JSONParseRequest) (*JSONParseResponse, error) {
 	// Parse JSON content
 	var jsonData interface{}
 	if err := json.Unmarshal([]byte(request.Content), &jsonData); err != nil {
@@ -194,6 +225,25 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 			fieldID := p.generateID("field_")
 			fieldPreview := p.getFieldPreview(key, value)
 
+			// Check for temporal values if ExtractDates is enabled
+			var temporalValue interface{}
+			var temporalMetadata map[string]interface{}
+
+			if p.ExtractDates {
+				if strValue, ok := value.(string); ok {
+					// Process field value for temporal content
+					normalizedValue, tempMeta := temporal.ProcessFieldValue(key, strValue)
+					if tempMeta != nil {
+						temporalValue = tempMeta
+						temporalMetadata = temporal.GenerateTemporalMetadata(strValue)
+						// Update the preview with normalized value if temporal
+						if normalizedStr, ok := normalizedValue.(string); ok {
+							fieldPreview = p.truncateContent(fmt.Sprintf("%s: \"%s\"", key, normalizedStr))
+						}
+					}
+				}
+			}
+
 			fieldElement := JSONElement{
 				ElementID:       fieldID,
 				DocID:          docID,
@@ -209,6 +259,14 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 					"json_path":  fieldPath,
 					"value_type": p.getValueType(value),
 				},
+				TemporalValue:   temporalValue,
+			}
+
+			// Add temporal metadata if found
+			if temporalMetadata != nil {
+				for k, v := range temporalMetadata {
+					fieldElement.Metadata[k] = v
+				}
 			}
 
 			*elements = append(*elements, fieldElement)
@@ -275,6 +333,25 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 			itemID := p.generateID("item_")
 			itemPreview := p.getItemPreview(item)
 
+			// Check for temporal values in array items if ExtractDates is enabled
+			var itemTemporalValue interface{}
+			var itemTemporalMetadata map[string]interface{}
+
+			if p.ExtractDates {
+				if strItem, ok := item.(string); ok {
+					// Process item value for temporal content
+					normalizedValue, tempMeta := temporal.ProcessFieldValue("item", strItem)
+					if tempMeta != nil {
+						itemTemporalValue = tempMeta
+						itemTemporalMetadata = temporal.GenerateTemporalMetadata(strItem)
+						// Update the preview with normalized value if temporal
+						if normalizedStr, ok := normalizedValue.(string); ok {
+							itemPreview = p.truncateContent(fmt.Sprintf("\"%s\"", normalizedStr))
+						}
+					}
+				}
+			}
+
 			itemElement := JSONElement{
 				ElementID:       itemID,
 				DocID:          docID,
@@ -290,6 +367,14 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 					"json_path":   itemPath,
 					"value_type":  p.getValueType(item),
 				},
+				TemporalValue:   itemTemporalValue,
+			}
+
+			// Add temporal metadata if found
+			if itemTemporalMetadata != nil {
+				for k, v := range itemTemporalMetadata {
+					itemElement.Metadata[k] = v
+				}
 			}
 
 			*elements = append(*elements, itemElement)
@@ -482,9 +567,7 @@ func (p *JSONParser) createContentLocation(source string, elementType JSONElemen
 
 // Helper functions
 func (p *JSONParser) generateID(prefix string) string {
-	// Use timestamp and counter for unique IDs
-	timestamp := time.Now().UnixNano()
-	return fmt.Sprintf("%s%d", prefix, timestamp%1000000)
+	return generateID(prefix)
 }
 
 func (p *JSONParser) generateHash(content string) string {
@@ -519,4 +602,79 @@ func (r *JSONParseResponse) ToJSON() (string, error) {
 // FromJSON creates a ParseRequest from JSON
 func (r *JSONParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
+}
+
+// convertToParseResult converts JSONParseResponse to universal ParseResult format
+func (p *JSONParser) convertToParseResult(response *JSONParseResponse) *ParseResult {
+	result := &ParseResult{
+		Document: Document{
+			ID:      response.Document["doc_id"].(string),
+			DocType: response.Document["doc_type"].(string),
+		},
+		Elements:      make([]Element, 0, len(response.Elements)),
+		Relationships: make([]Relationship, 0, len(response.Relationships)),
+		Links:         make([]Link, 0, len(response.Links)),
+	}
+
+	// Convert metadata if present
+	if meta, ok := response.Document["metadata"]; ok {
+		result.Document.Metadata = meta.(map[string]interface{})
+	}
+
+	// Convert elements
+	for i, jsonElem := range response.Elements {
+		element := Element{
+			ElementID:       jsonElem.ElementID,
+			ElementType:     string(jsonElem.ElementType),
+			Content:         jsonElem.Content,
+			ContentPreview:  jsonElem.ContentPreview,
+			ParentID:        jsonElem.ParentID,
+			Position:        i,
+			Depth:           calculateJSONDepth(jsonElem.ElementType),
+			ContentLocation: jsonElem.ContentLocation,
+			Metadata:        jsonElem.Metadata,
+		}
+		result.Elements = append(result.Elements, element)
+	}
+
+	// Convert relationships
+	for _, jsonRel := range response.Relationships {
+		relationship := Relationship{
+			RelationshipID:   jsonRel.RelationshipID,
+			RelationshipType: jsonRel.RelationshipType,
+			SourceElementID:  jsonRel.SourceElementID,
+			TargetElementID:  jsonRel.TargetElementID,
+			Confidence:       jsonRel.Confidence,
+			Metadata:         jsonRel.Metadata,
+		}
+		result.Relationships = append(result.Relationships, relationship)
+	}
+
+	// Convert links
+	for _, jsonLink := range response.Links {
+		link := Link{
+			LinkID:          generateID("link"),
+			SourceElementID: jsonLink.SourceID,
+			LinkType:        jsonLink.LinkType,
+			LinkTarget:      jsonLink.LinkTarget,
+			LinkText:        jsonLink.LinkText,
+		}
+		result.Links = append(result.Links, link)
+	}
+
+	return result
+}
+
+// calculateJSONDepth calculates element depth based on JSON element type
+func calculateJSONDepth(elementType JSONElementType) int {
+	switch elementType {
+	case JSONElementTypeRoot:
+		return 0
+	case JSONElementTypeObject, JSONElementTypeArray:
+		return 1
+	case JSONElementTypeField, JSONElementTypeItem:
+		return 2
+	default:
+		return 1 // Default depth for unknown elements
+	}
 }

@@ -18,6 +18,7 @@ type XLSXParser struct {
 	ExtractComments   bool
 	ExtractFormulas   bool
 	ExtractLinks      bool
+	ExtractDates      bool
 }
 
 // NewXLSXParser creates a new XLSX parser
@@ -713,6 +714,11 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 				}
 			}
 
+			// Extract temporal metadata if enabled
+			if p.ExtractDates && cellValue != "" {
+				ProcessTemporalContent(cellValue, cellElement.Metadata)
+			}
+
 			elements = append(elements, cellElement)
 			position++
 
@@ -817,6 +823,12 @@ func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID 
 						"sheet":  sheetName,
 					},
 				}
+
+				// Extract temporal metadata if enabled
+				if p.ExtractDates && cellValue != "" {
+					ProcessTemporalContent(cellValue, cellElement.Metadata)
+				}
+
 				elements = append(elements, cellElement)
 				position++
 
@@ -944,6 +956,11 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 						}
 					}
 				}
+			}
+
+			// Extract temporal metadata if enabled
+			if p.ExtractDates && cellValue != "" {
+				ProcessTemporalContent(cellValue, cellElement.Metadata)
 			}
 
 			elements = append(elements, cellElement)

@@ -9,12 +9,35 @@ import (
 	"golang.org/x/net/html"
 )
 
-// Use string literals for element and relationship types to match universal model
+// HTMLElementType represents the type of an HTML element
+type HTMLElementType string
+
+// HTML element type constants
+const (
+	HTMLElementTypeRoot        HTMLElementType = "root"
+	HTMLElementTypeHeader      HTMLElementType = "header"
+	HTMLElementTypeParagraph   HTMLElementType = "paragraph"
+	HTMLElementTypeList        HTMLElementType = "list"
+	HTMLElementTypeListItem    HTMLElementType = "list_item"
+	HTMLElementTypeTable       HTMLElementType = "table"
+	HTMLElementTypeTableRow    HTMLElementType = "table_row"
+	HTMLElementTypeTableHeader HTMLElementType = "table_header"
+	HTMLElementTypeTableCell   HTMLElementType = "table_cell"
+	HTMLElementTypeImage       HTMLElementType = "image"
+	HTMLElementTypeCodeBlock   HTMLElementType = "code_block"
+	HTMLElementTypeBlockquote  HTMLElementType = "blockquote"
+	HTMLElementTypeDiv         HTMLElementType = "div"
+	HTMLElementTypeArticle     HTMLElementType = "article"
+	HTMLElementTypeSection     HTMLElementType = "section"
+	HTMLElementTypeSpan        HTMLElementType = "span"
+	HTMLElementTypeBody        HTMLElementType = "body"
+	HTMLElementTypeText        HTMLElementType = "text"
+)
 
 // HTMLElement represents a parsed HTML element
 type HTMLElement struct {
 	ElementID       string                 `json:"element_id"`
-	ElementType     string                 `json:"element_type"`
+	ElementType     HTMLElementType        `json:"element_type"`
 	ParentID        string                 `json:"parent_id,omitempty"`
 	ContentPreview  string                 `json:"content_preview"`
 	ContentLocation map[string]interface{} `json:"content_location"`
@@ -76,8 +99,38 @@ func NewHTMLParser() *HTMLParser {
 	}
 }
 
-// Parse parses an HTML document into structured elements
-func (p *HTMLParser) Parse(request ParseRequest) (*ParseResponse, error) {
+// Parse is the universal interface that converts HTML content to ParseResult
+func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+	// Handle different input types
+	var htmlContent string
+	switch v := content.(type) {
+	case string:
+		htmlContent = v
+	case []byte:
+		htmlContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", content)
+	}
+
+	// Create request structure for compatibility
+	request := ParseRequest{
+		ID:       docID,
+		Content:  htmlContent,
+		Metadata: make(map[string]interface{}),
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseHTML(request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// parseHTML parses an HTML document into structured elements (internal implementation)
+func (p *HTMLParser) parseHTML(request ParseRequest) (*ParseResponse, error) {
 	// Parse HTML content
 	doc, err := html.Parse(strings.NewReader(request.Content))
 	if err != nil {
@@ -101,9 +154,9 @@ func (p *HTMLParser) Parse(request ParseRequest) (*ParseResponse, error) {
 	// Create root element
 	rootElement := HTMLElement{
 		ElementID:       p.generateID("root_"),
-		ElementType:     "root",
+		ElementType:     HTMLElementTypeRoot,
 		ContentPreview:  p.truncateContent(request.Content),
-		ContentLocation: p.createContentLocation(request.ID, "root", ""),
+		ContentLocation: p.createContentLocation(request.ID, string(HTMLElementTypeRoot), ""),
 		ContentHash:     p.generateHash(request.Content),
 		ElementOrder:    0,
 		DocumentOrder:   0,
@@ -178,10 +231,10 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 		if text != "" && len(text) > 1 {
 			element := HTMLElement{
 				ElementID:       p.generateID("text_"),
-				ElementType:     "text",
+				ElementType:     HTMLElementTypeText,
 				ParentID:        parentID,
 				ContentPreview:  p.truncateContent(text),
-				ContentLocation: p.createContentLocation(sourceID, "text", ""),
+				ContentLocation: p.createContentLocation(sourceID, string(HTMLElementTypeText), ""),
 				ContentHash:     p.generateHash(text),
 				ElementOrder:    *counter,
 				DocumentOrder:   *counter,
@@ -209,46 +262,46 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 }
 
 // getElementType maps HTML tag names to element types
-func (p *HTMLParser) getElementType(tagName string) string {
+func (p *HTMLParser) getElementType(tagName string) HTMLElementType {
 	switch strings.ToLower(tagName) {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
-		return "header"
+		return HTMLElementTypeHeader
 	case "p":
-		return "paragraph"
+		return HTMLElementTypeParagraph
 	case "ul", "ol":
-		return "list"
+		return HTMLElementTypeList
 	case "li":
-		return "list_item"
+		return HTMLElementTypeListItem
 	case "table":
-		return "table"
+		return HTMLElementTypeTable
 	case "tr":
-		return "table_row"
+		return HTMLElementTypeTableRow
 	case "th":
-		return "table_header"
+		return HTMLElementTypeTableHeader
 	case "td":
-		return "table_cell"
+		return HTMLElementTypeTableCell
 	case "img":
-		return "image"
+		return HTMLElementTypeImage
 	case "pre", "code":
-		return "code_block"
+		return HTMLElementTypeCodeBlock
 	case "blockquote":
-		return "blockquote"
+		return HTMLElementTypeBlockquote
 	case "div":
-		return "div"
+		return HTMLElementTypeDiv
 	case "article":
-		return "article"
+		return HTMLElementTypeArticle
 	case "section":
-		return "section"
+		return HTMLElementTypeSection
 	case "span":
-		return "span"
+		return HTMLElementTypeSpan
 	case "body":
-		return "body"
+		return HTMLElementTypeBody
 	default:
 		// Handle namespace-prefixed elements (XBRL, iXBRL, etc.)
 		if strings.Contains(tagName, ":") {
-			return strings.ReplaceAll(tagName, ":", "_")
+			return HTMLElementType(strings.ReplaceAll(tagName, ":", "_"))
 		}
-		return tagName
+		return HTMLElementType(tagName)
 	}
 }
 
@@ -363,9 +416,9 @@ func (p *HTMLParser) createContentLocation(source string, elementType string, se
 }
 
 // createContentLocationForNode creates a content location for a specific node
-func (p *HTMLParser) createContentLocationForNode(source string, elementType string, node *html.Node) map[string]interface{} {
+func (p *HTMLParser) createContentLocationForNode(source string, elementType HTMLElementType, node *html.Node) map[string]interface{} {
 	selector := p.generateCSSSelector(node)
-	return p.createContentLocation(source, elementType, selector)
+	return p.createContentLocation(source, string(elementType), selector)
 }
 
 // generateCSSSelector generates a CSS selector for an HTML node
@@ -444,9 +497,7 @@ func (p *HTMLParser) getNthOfType(node *html.Node) int {
 
 // generateID generates a unique ID with the given prefix
 func (p *HTMLParser) generateID(prefix string) string {
-	// Use a simple counter-based approach for now
-	// In production, you might want to use UUID or similar
-	return fmt.Sprintf("%s%d", prefix, len(prefix)*1000+int(strings.Count(prefix, "_")))
+	return generateID(prefix)
 }
 
 // generateHash generates an MD5 hash of the content
@@ -475,4 +526,84 @@ func (r *ParseResponse) ToJSON() (string, error) {
 // FromJSON creates a ParseRequest from JSON
 func (r *ParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
+}
+
+// convertToParseResult converts ParseResponse to universal ParseResult format
+func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult {
+	result := &ParseResult{
+		Document: Document{
+			ID:      response.Document["doc_id"].(string),
+			DocType: response.Document["doc_type"].(string),
+		},
+		Elements:      make([]Element, 0, len(response.Elements)),
+		Relationships: make([]Relationship, 0, len(response.Relationships)),
+		Links:         make([]Link, 0, len(response.Links)),
+	}
+
+	// Convert metadata if present
+	if meta, ok := response.Document["metadata"]; ok {
+		result.Document.Metadata = meta.(map[string]interface{})
+	}
+
+	// Convert elements
+	for i, htmlElem := range response.Elements {
+		element := Element{
+			ElementID:       htmlElem.ElementID,
+			ElementType:     string(htmlElem.ElementType),
+			Content:         htmlElem.Text,
+			ContentPreview:  htmlElem.ContentPreview,
+			ParentID:        htmlElem.ParentID,
+			Position:        i,
+			Depth:           calculateDepth(htmlElem.ElementType),
+			ContentLocation: htmlElem.ContentLocation,
+			Metadata:        htmlElem.Metadata,
+		}
+		result.Elements = append(result.Elements, element)
+	}
+
+	// Convert relationships
+	for _, htmlRel := range response.Relationships {
+		relationship := Relationship{
+			RelationshipID:   htmlRel.RelationshipID,
+			RelationshipType: htmlRel.RelationshipType,
+			SourceElementID:  htmlRel.SourceElementID,
+			TargetElementID:  htmlRel.TargetElementID,
+			Confidence:       htmlRel.Confidence,
+			Metadata:         htmlRel.Metadata,
+		}
+		result.Relationships = append(result.Relationships, relationship)
+	}
+
+	// Convert links
+	for _, htmlLink := range response.Links {
+		link := Link{
+			LinkID:          generateID("link"),
+			SourceElementID: htmlLink.SourceID,
+			LinkType:        htmlLink.LinkType,
+			LinkTarget:      htmlLink.LinkTarget,
+			LinkText:        htmlLink.LinkText,
+		}
+		result.Links = append(result.Links, link)
+	}
+
+	return result
+}
+
+// calculateDepth calculates element depth based on HTML element type
+func calculateDepth(elementType HTMLElementType) int {
+	switch elementType {
+	case HTMLElementTypeRoot:
+		return 0
+	case HTMLElementTypeBody:
+		return 1
+	case HTMLElementTypeHeader, HTMLElementTypeParagraph, HTMLElementTypeList, HTMLElementTypeTable,
+		 HTMLElementTypeDiv, HTMLElementTypeArticle, HTMLElementTypeSection:
+		return 2
+	case HTMLElementTypeListItem, HTMLElementTypeTableRow:
+		return 3
+	case HTMLElementTypeTableCell, HTMLElementTypeTableHeader, HTMLElementTypeSpan, HTMLElementTypeText:
+		return 4
+	default:
+		return 2 // Default depth for unknown elements
+	}
 }

@@ -369,6 +369,11 @@ func TestMarkdownParser_Blockquotes(t *testing.T) {
 	}
 
 	if len(blockquotes) != 2 {
+		// Debug output
+		t.Logf("All elements:")
+		for i, elem := range response.Elements {
+			t.Logf("  %d: Type=%s, Content preview: %s", i, elem.ElementType, elem.ContentPreview)
+		}
 		t.Errorf("Expected 2 blockquotes, got %d", len(blockquotes))
 	}
 
@@ -494,8 +499,8 @@ func TestMarkdownParser_Tables(t *testing.T) {
 	if !ok {
 		t.Fatal("Table should have column_count metadata")
 	}
-	if colCount != 4 { // 3 columns + 1 for pipe counting
-		t.Errorf("Expected 4 columns, got %d", colCount)
+	if colCount != 3 { // 3 actual columns
+		t.Errorf("Expected 3 columns, got %d", colCount)
 	}
 }
 

@@ -1,7 +1,6 @@
 package parser
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -316,7 +315,7 @@ func TestGetArrayPreview(t *testing.T) {
 	}
 }
 
-func TestLinkExtraction(t *testing.T) {
+func TestJSONLinkExtraction(t *testing.T) {
 	parser := NewJSONParser()
 
 	jsonContent := `{
@@ -360,7 +359,7 @@ func TestLinkExtraction(t *testing.T) {
 	}
 }
 
-func TestTruncateContent(t *testing.T) {
+func TestJSONTruncateContent(t *testing.T) {
 	parser := NewJSONParser()
 	parser.MaxContentPreview = 10
 
@@ -382,7 +381,7 @@ func TestTruncateContent(t *testing.T) {
 	}
 }
 
-func TestGenerateHash(t *testing.T) {
+func TestJSONGenerateHash(t *testing.T) {
 	parser := NewJSONParser()
 
 	content1 := "test content"
@@ -404,7 +403,7 @@ func TestGenerateHash(t *testing.T) {
 	}
 }
 
-func TestCreateContentLocation(t *testing.T) {
+func TestJSONCreateContentLocation(t *testing.T) {
 	parser := NewJSONParser()
 
 	location := parser.createContentLocation("source.json", JSONElementTypeField, "$.user.name")
@@ -420,7 +419,7 @@ func TestCreateContentLocation(t *testing.T) {
 	}
 }
 
-func TestJSONSerialization(t *testing.T) {
+func TestJSONElementSerialization(t *testing.T) {
 	parser := NewJSONParser()
 
 	request := JSONParseRequest{
@@ -462,7 +461,7 @@ func TestJSONSerialization(t *testing.T) {
 	}
 }
 
-func TestRelationships(t *testing.T) {
+func TestJSONRelationships(t *testing.T) {
 	parser := NewJSONParser()
 
 	jsonContent := `{

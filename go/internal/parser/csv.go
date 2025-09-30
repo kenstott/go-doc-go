@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // CSVElementType represents the type of CSV element
@@ -26,7 +25,7 @@ const (
 // CSVElement represents a parsed CSV element
 type CSVElement struct {
 	ElementID       string                 `json:"element_id"`
-	DocID          string                 `json:"doc_id"`
+	DocID           string                 `json:"doc_id"`
 	ElementType     CSVElementType         `json:"element_type"`
 	ParentID        string                 `json:"parent_id,omitempty"`
 	ContentPreview  string                 `json:"content_preview"`
@@ -76,13 +75,14 @@ type CSVParseResponse struct {
 
 // CSVParser handles CSV document parsing
 type CSVParser struct {
-	MaxContentPreview   int
-	ExtractHeader       bool
-	Delimiter           rune
-	MaxRows             int
-	MaxPreviewColumns   int
-	StripWhitespace     bool
+	MaxContentPreview    int
+	ExtractHeader        bool
+	Delimiter            rune
+	MaxRows              int
+	MaxPreviewColumns    int
+	StripWhitespace      bool
 	EnableLinkExtraction bool
+	ExtractDates         bool
 }
 
 // NewCSVParser creates a new CSV parser instance
@@ -98,8 +98,38 @@ func NewCSVParser() *CSVParser {
 	}
 }
 
-// Parse parses a CSV document into structured elements
-func (p *CSVParser) Parse(request CSVParseRequest) (*CSVParseResponse, error) {
+// Parse is the universal interface that converts CSV content to ParseResult
+func (p *CSVParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+	// Handle different input types
+	var csvContent string
+	switch v := content.(type) {
+	case string:
+		csvContent = v
+	case []byte:
+		csvContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", content)
+	}
+
+	// Create request structure for compatibility
+	request := CSVParseRequest{
+		ID:       docID,
+		Content:  csvContent,
+		Metadata: make(map[string]interface{}),
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseCSV(request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// parseCSV parses a CSV document into structured elements (internal implementation)
+func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error) {
 	// Parse CSV content
 	csvData, err := p.parseCSVContent(request.Content)
 	if err != nil {
@@ -128,7 +158,7 @@ func (p *CSVParser) Parse(request CSVParseRequest) (*CSVParseResponse, error) {
 	// Create root element
 	rootElement := CSVElement{
 		ElementID:       p.generateID("root_"),
-		DocID:          request.ID,
+		DocID:           request.ID,
 		ElementType:     CSVElementTypeRoot,
 		ContentPreview:  p.truncateContent(fmt.Sprintf("Document: %s", request.ID)),
 		ContentLocation: p.createContentLocation(request.ID, CSVElementTypeRoot, "/"),
@@ -145,7 +175,7 @@ func (p *CSVParser) Parse(request CSVParseRequest) (*CSVParseResponse, error) {
 	// Create table element
 	tableElement := CSVElement{
 		ElementID:       p.generateID("table_"),
-		DocID:          request.ID,
+		DocID:           request.ID,
 		ElementType:     CSVElementTypeTable,
 		ParentID:        rootElement.ElementID,
 		ContentPreview:  p.truncateContent(fmt.Sprintf("CSV table with %d rows", len(csvData))),
@@ -192,6 +222,24 @@ func (p *CSVParser) Parse(request CSVParseRequest) (*CSVParseResponse, error) {
 			Metadata:         map[string]interface{}{"row": 0},
 		}
 		response.Relationships = append(response.Relationships, tableToHeaderRel)
+
+		// Create header cells
+		for colIdx, cellValue := range headerRow {
+			cellElement := p.createCellElement(request.ID, headerElement.ElementID, cellValue, 0, colIdx, nil, elementCounter)
+			response.Elements = append(response.Elements, cellElement)
+			elementCounter++
+
+			// Create relationship from header row to cell
+			headerToCellRel := CSVRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  headerElement.ElementID,
+				TargetElementID:  cellElement.ElementID,
+				RelationshipType: "contains",
+				Confidence:       1.0,
+				Metadata:         map[string]interface{}{"col_index": colIdx, "is_header": true},
+			}
+			response.Relationships = append(response.Relationships, headerToCellRel)
+		}
 	}
 
 	// Process data rows
@@ -257,6 +305,7 @@ func (p *CSVParser) parseCSVContent(content string) ([][]string, error) {
 	reader := csv.NewReader(strings.NewReader(content))
 	reader.Comma = p.Delimiter
 	reader.TrimLeadingSpace = p.StripWhitespace
+	reader.FieldsPerRecord = -1
 
 	var records [][]string
 	for {
@@ -283,7 +332,7 @@ func (p *CSVParser) parseCSVContent(content string) ([][]string, error) {
 func (p *CSVParser) createEmptyResponse(request CSVParseRequest) *CSVParseResponse {
 	rootElement := CSVElement{
 		ElementID:       p.generateID("root_"),
-		DocID:          request.ID,
+		DocID:           request.ID,
 		ElementType:     CSVElementTypeRoot,
 		ContentPreview:  "Empty CSV document",
 		ContentLocation: p.createContentLocation(request.ID, CSVElementTypeRoot, "/"),
@@ -315,7 +364,7 @@ func (p *CSVParser) createHeaderRowElement(docID, parentID string, headerRow []s
 
 	return CSVElement{
 		ElementID:       p.generateID("header_"),
-		DocID:          docID,
+		DocID:           docID,
 		ElementType:     CSVElementTypeTableHeaderRow,
 		ParentID:        parentID,
 		ContentPreview:  preview,
@@ -336,7 +385,7 @@ func (p *CSVParser) createRowElement(docID, parentID string, row []string, rowId
 
 	return CSVElement{
 		ElementID:       p.generateID(fmt.Sprintf("row_%d_", rowIdx)),
-		DocID:          docID,
+		DocID:           docID,
 		ElementType:     CSVElementTypeTableRow,
 		ParentID:        parentID,
 		ContentPreview:  preview,
@@ -363,7 +412,7 @@ func (p *CSVParser) createCellElement(docID, parentID, cellValue string, rowIdx,
 
 	return CSVElement{
 		ElementID:       p.generateID(fmt.Sprintf("cell_%d_%d_", rowIdx, colIdx)),
-		DocID:          docID,
+		DocID:           docID,
 		ElementType:     CSVElementTypeTableCell,
 		ParentID:        parentID,
 		ContentPreview:  preview,
@@ -500,9 +549,9 @@ func (p *CSVParser) detectColumnType(values []string) string {
 		// Check boolean
 		lowerValue := strings.ToLower(value)
 		if lowerValue == "true" || lowerValue == "false" ||
-		   lowerValue == "yes" || lowerValue == "no" ||
-		   lowerValue == "1" || lowerValue == "0" ||
-		   lowerValue == "y" || lowerValue == "n" {
+			lowerValue == "yes" || lowerValue == "no" ||
+			lowerValue == "1" || lowerValue == "0" ||
+			lowerValue == "y" || lowerValue == "n" {
 			boolCount++
 			continue
 		}
@@ -580,8 +629,7 @@ func (p *CSVParser) getColumnCount(csvData [][]string) int {
 }
 
 func (p *CSVParser) generateID(prefix string) string {
-	timestamp := time.Now().UnixNano()
-	return fmt.Sprintf("%s%d", prefix, timestamp%1000000)
+	return generateID(prefix)
 }
 
 func (p *CSVParser) generateHash(content string) string {
@@ -608,6 +656,79 @@ func (r *CSVParseResponse) ToJSON() (string, error) {
 // FromJSON creates a ParseRequest from JSON
 func (r *CSVParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
+}
+
+// convertToParseResult converts CSVParseResponse to universal ParseResult format
+func (p *CSVParser) convertToParseResult(response *CSVParseResponse) *ParseResult {
+	result := &ParseResult{
+		Document: Document{
+			ID:      response.Document["doc_id"].(string),
+			DocType: response.Document["doc_type"].(string),
+		},
+		Elements:      make([]Element, 0, len(response.Elements)),
+		Relationships: make([]Relationship, 0, len(response.Relationships)),
+		Links:         make([]Link, 0, len(response.Links)),
+	}
+
+	// Convert metadata if present
+	if meta, ok := response.Document["metadata"]; ok {
+		result.Document.Metadata = meta.(map[string]interface{})
+	}
+
+	// Convert elements
+	for i, csvElem := range response.Elements {
+		element := Element{
+			ElementID:       csvElem.ElementID,
+			ElementType:     string(csvElem.ElementType),
+			Content:         csvElem.Content,
+			ContentPreview:  csvElem.ContentPreview,
+			ParentID:        csvElem.ParentID,
+			Position:        i,
+			Depth:           0, // Will be calculated based on hierarchy
+			ContentLocation: csvElem.ContentLocation,
+			Metadata:        csvElem.Metadata,
+		}
+
+		// Calculate depth based on parent relationships
+		if csvElem.ElementType == CSVElementTypeRoot {
+			element.Depth = 0
+		} else if csvElem.ElementType == CSVElementTypeTable {
+			element.Depth = 1
+		} else if csvElem.ElementType == CSVElementTypeTableHeaderRow || csvElem.ElementType == CSVElementTypeTableRow {
+			element.Depth = 2
+		} else if csvElem.ElementType == CSVElementTypeTableCell {
+			element.Depth = 3
+		}
+
+		result.Elements = append(result.Elements, element)
+	}
+
+	// Convert relationships
+	for _, csvRel := range response.Relationships {
+		relationship := Relationship{
+			RelationshipID:   csvRel.RelationshipID,
+			RelationshipType: csvRel.RelationshipType,
+			SourceElementID:  csvRel.SourceElementID,
+			TargetElementID:  csvRel.TargetElementID,
+			Confidence:       csvRel.Confidence,
+			Metadata:         csvRel.Metadata,
+		}
+		result.Relationships = append(result.Relationships, relationship)
+	}
+
+	// Convert links
+	for _, csvLink := range response.Links {
+		link := Link{
+			LinkID:          generateID("link"),
+			SourceElementID: csvLink.SourceID,
+			LinkType:        csvLink.LinkType,
+			LinkTarget:      csvLink.LinkTarget,
+			LinkText:        csvLink.LinkText,
+		}
+		result.Links = append(result.Links, link)
+	}
+
+	return result
 }
 
 // Utility function for min

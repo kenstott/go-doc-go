@@ -34,16 +34,16 @@ func TestParseSimpleHTML(t *testing.T) {
 		},
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
 	// Check document
-	if response.Document["doc_id"] != "test_doc" {
+	if result.Document."doc_id"] != "test_doc" {
 		t.Error("Document ID not set correctly")
 	}
-	if response.Document["doc_type"] != "html" {
+	if result.Document."doc_type"] != "html" {
 		t.Error("Document type not set correctly")
 	}
 
@@ -54,7 +54,7 @@ func TestParseSimpleHTML(t *testing.T) {
 
 	// Root element should be first
 	root := response.Elements[0]
-	if root.ElementType != ElementTypeRoot {
+	if root.ElementType != HTMLElementTypeRoot {
 		t.Error("First element should be root")
 	}
 	if root.ElementID == "" {
@@ -92,28 +92,28 @@ func TestParseHTMLElements(t *testing.T) {
 		Content: html,
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
 	// Check for different element types
-	elementTypes := make(map[ElementType]int)
+	elementTypes := make(map[HTMLElementType]int)
 	for _, element := range response.Elements {
 		elementTypes[element.ElementType]++
 	}
 
 	// Should have various element types
-	expectedTypes := []ElementType{
-		ElementTypeRoot,
-		ElementTypeHeader,
-		ElementTypeParagraph,
-		ElementTypeList,
-		ElementTypeListItem,
-		ElementTypeTable,
-		ElementTypeTableRow,
-		ElementTypeTableHeader,
-		ElementTypeTableCell,
+	expectedTypes := []HTMLElementType{
+		HTMLElementTypeRoot,
+		HTMLElementTypeHeader,
+		HTMLElementTypeParagraph,
+		HTMLElementTypeList,
+		HTMLElementTypeListItem,
+		HTMLElementTypeTable,
+		HTMLElementTypeTableRow,
+		HTMLElementTypeTableHeader,
+		HTMLElementTypeTableCell,
 	}
 
 	for _, expectedType := range expectedTypes {
@@ -128,28 +128,28 @@ func TestGetElementType(t *testing.T) {
 
 	tests := []struct {
 		tagName  string
-		expected ElementType
+		expected HTMLElementType
 	}{
-		{"h1", ElementTypeHeader},
-		{"h2", ElementTypeHeader},
-		{"h6", ElementTypeHeader},
-		{"p", ElementTypeParagraph},
-		{"ul", ElementTypeList},
-		{"ol", ElementTypeList},
-		{"li", ElementTypeListItem},
-		{"table", ElementTypeTable},
-		{"tr", ElementTypeTableRow},
-		{"th", ElementTypeTableHeader},
-		{"td", ElementTypeTableCell},
-		{"img", ElementTypeImage},
-		{"pre", ElementTypeCodeBlock},
-		{"code", ElementTypeCodeBlock},
-		{"blockquote", ElementTypeBlockquote},
-		{"div", ElementTypeDiv},
-		{"article", ElementTypeArticle},
-		{"section", ElementTypeSection},
-		{"span", ElementTypeSpan},
-		{"body", ElementTypeBody},
+		{"h1", HTMLElementTypeHeader},
+		{"h2", HTMLElementTypeHeader},
+		{"h6", HTMLElementTypeHeader},
+		{"p", HTMLElementTypeParagraph},
+		{"ul", HTMLElementTypeList},
+		{"ol", HTMLElementTypeList},
+		{"li", HTMLElementTypeListItem},
+		{"table", HTMLElementTypeTable},
+		{"tr", HTMLElementTypeTableRow},
+		{"th", HTMLElementTypeTableHeader},
+		{"td", HTMLElementTypeTableCell},
+		{"img", HTMLElementTypeImage},
+		{"pre", HTMLElementTypeCodeBlock},
+		{"code", HTMLElementTypeCodeBlock},
+		{"blockquote", HTMLElementTypeBlockquote},
+		{"div", HTMLElementTypeDiv},
+		{"article", HTMLElementTypeArticle},
+		{"section", HTMLElementTypeSection},
+		{"span", HTMLElementTypeSpan},
+		{"body", HTMLElementTypeBody},
 	}
 
 	for _, test := range tests {
@@ -166,11 +166,11 @@ func TestGetElementTypeNamespaced(t *testing.T) {
 	// Test namespace-prefixed elements (XBRL, iXBRL, etc.)
 	tests := []struct {
 		tagName  string
-		expected ElementType
+		expected HTMLElementType
 	}{
-		{"ix:nonnumeric", ElementType("ix_nonnumeric")},
-		{"xbrl:context", ElementType("xbrl_context")},
-		{"custom:element", ElementType("custom_element")},
+		{"ix:nonnumeric", HTMLElementType("ix_nonnumeric")},
+		{"xbrl:context", HTMLElementType("xbrl_context")},
+		{"custom:element", HTMLElementType("custom_element")},
 	}
 
 	for _, test := range tests {
@@ -229,7 +229,7 @@ func TestExtractLinks(t *testing.T) {
 		Content: html,
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestGenerateHash(t *testing.T) {
 func TestCreateContentLocation(t *testing.T) {
 	parser := NewHTMLParser()
 
-	location := parser.createContentLocation("source.html", ElementTypeParagraph, "p:nth-of-type(1)")
+	location := parser.createContentLocation("source.html", string(HTMLElementTypeParagraph), "p:nth-of-type(1)")
 
 	if location["source"] != "source.html" {
 		t.Error("Source not set correctly")
@@ -320,7 +320,7 @@ func TestJSONSerialization(t *testing.T) {
 		},
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestRelationships(t *testing.T) {
 		Content: html,
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -433,7 +433,7 @@ func TestComplexHTML(t *testing.T) {
 		Content: html,
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -454,18 +454,18 @@ func TestComplexHTML(t *testing.T) {
 	}
 
 	// Check that we have various element types
-	elementTypes := make(map[ElementType]bool)
+	elementTypes := make(map[HTMLElementType]bool)
 	for _, element := range response.Elements {
 		elementTypes[element.ElementType] = true
 	}
 
-	expectedTypes := []ElementType{
-		ElementTypeRoot,
-		ElementTypeHeader,
-		ElementTypeParagraph,
-		ElementTypeList,
-		ElementTypeListItem,
-		ElementTypeBlockquote,
+	expectedTypes := []HTMLElementType{
+		HTMLElementTypeRoot,
+		HTMLElementTypeHeader,
+		HTMLElementTypeParagraph,
+		HTMLElementTypeList,
+		HTMLElementTypeListItem,
+		HTMLElementTypeBlockquote,
 	}
 
 	for _, expectedType := range expectedTypes {
@@ -483,7 +483,7 @@ func TestEmptyHTML(t *testing.T) {
 		Content: "",
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestEmptyHTML(t *testing.T) {
 		t.Error("Should have at least root element")
 	}
 
-	if response.Elements[0].ElementType != ElementTypeRoot {
+	if response.Elements[0].ElementType != HTMLElementTypeRoot {
 		t.Error("First element should be root")
 	}
 
@@ -503,10 +503,10 @@ func TestEmptyHTML(t *testing.T) {
 		hasHTML := false
 		hasBody := false
 		for _, elem := range response.Elements[1:] {
-			if elem.ElementType == ElementType("html") {
+			if elem.ElementType == HTMLElementType("html") {
 				hasHTML = true
 			}
-			if elem.ElementType == ElementTypeBody {
+			if elem.ElementType == HTMLElementTypeBody {
 				hasBody = true
 			}
 		}
@@ -525,7 +525,7 @@ func TestInvalidHTML(t *testing.T) {
 		Content: "<div><p>Unclosed tags</div>",
 	}
 
-	response, err := parser.Parse(request)
+	response, err := parser.Parse("test-doc", htmlContent)
 	if err != nil {
 		t.Fatalf("Parse should handle malformed HTML: %v", err)
 	}

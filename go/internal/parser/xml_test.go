@@ -137,12 +137,16 @@ func TestParseXMLWithNamespaces(t *testing.T) {
 
 	// Check if namespaces were extracted
 	if namespaces, ok := response.Document["namespaces"].(map[string]string); ok {
+		t.Logf("Extracted namespaces: %+v", namespaces)
 		if namespaces[""] != "http://example.org/default" {
 			t.Error("Default namespace not extracted correctly")
 		}
 		if namespaces["custom"] != "http://example.org/custom" {
 			t.Error("Custom namespace not extracted correctly")
 		}
+	} else {
+		t.Logf("No namespaces found in document: %+v", response.Document)
+		t.Error("Namespaces not extracted")
 	}
 }
 
@@ -236,7 +240,7 @@ func TestParseNestedXML(t *testing.T) {
 	}
 }
 
-func TestLinkExtraction(t *testing.T) {
+func TestXMLLinkExtraction(t *testing.T) {
 	parser := NewXMLParser()
 
 	xmlContent := `<?xml version="1.0" encoding="UTF-8"?>
@@ -281,7 +285,7 @@ func TestLinkExtraction(t *testing.T) {
 	}
 }
 
-func TestContentPreviewTruncation(t *testing.T) {
+func TestXMLContentPreviewTruncation(t *testing.T) {
 	parser := NewXMLParser()
 	parser.MaxContentPreview = 20
 

@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
 )
 
 // TextElementType represents the type of text element
@@ -115,8 +116,38 @@ func NewTextParser() *TextParser {
 	}
 }
 
-// Parse parses text content and returns structured elements
-func (p *TextParser) Parse(request TextParseRequest) (*TextParseResponse, error) {
+// Parse is the universal interface that converts text content to ParseResult
+func (p *TextParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+	// Handle different input types
+	var textContent string
+	switch v := content.(type) {
+	case string:
+		textContent = v
+	case []byte:
+		textContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", content)
+	}
+
+	// Create request structure for compatibility
+	request := TextParseRequest{
+		ID:       docID,
+		Content:  textContent,
+		Metadata: make(map[string]interface{}),
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseText(request)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// parseText parses text content and returns structured elements (internal implementation)
+func (p *TextParser) parseText(request TextParseRequest) (*TextParseResponse, error) {
 	if request.ID == "" {
 		return nil, fmt.Errorf("document ID is required")
 	}
@@ -458,4 +489,80 @@ func (p *TextParser) truncateContent(content string) string {
 // isWhitespace checks if a rune is whitespace
 func isWhitespace(r rune) bool {
 	return unicode.IsSpace(r)
+}
+
+// convertToParseResult converts TextParseResponse to universal ParseResult format
+func (p *TextParser) convertToParseResult(response *TextParseResponse) *ParseResult {
+	result := &ParseResult{
+		Document: Document{
+			ID:      response.Document["doc_id"].(string),
+			DocType: response.Document["doc_type"].(string),
+		},
+		Elements:      make([]Element, 0, len(response.Elements)),
+		Relationships: make([]Relationship, 0, len(response.Relationships)),
+		Links:         make([]Link, 0, len(response.Links)),
+	}
+
+	// Convert metadata if present
+	if meta, ok := response.Document["metadata"]; ok {
+		result.Document.Metadata = meta.(map[string]interface{})
+	}
+
+	// Convert elements
+	for i, textElem := range response.Elements {
+		element := Element{
+			ElementID:       textElem.ElementID,
+			ElementType:     string(textElem.ElementType),
+			Content:         textElem.Text,
+			ContentPreview:  textElem.ContentPreview,
+			ParentID:        textElem.ParentID,
+			Position:        i,
+			Depth:           calculateTextDepth(textElem.ElementType),
+			ContentLocation: textElem.ContentLocation,
+			Metadata:        textElem.Metadata,
+		}
+		result.Elements = append(result.Elements, element)
+	}
+
+	// Convert relationships
+	for _, textRel := range response.Relationships {
+		relationship := Relationship{
+			RelationshipID:   textRel.RelationshipID,
+			RelationshipType: textRel.RelationshipType,
+			SourceElementID:  textRel.SourceElementID,
+			TargetElementID:  textRel.TargetElementID,
+			Confidence:       textRel.Confidence,
+			Metadata:         textRel.Metadata,
+		}
+		result.Relationships = append(result.Relationships, relationship)
+	}
+
+	// Convert links
+	for _, textLink := range response.Links {
+		link := Link{
+			LinkID:          textLink.LinkID,
+			SourceElementID: textLink.ElementID,
+			LinkType:        textLink.LinkType,
+			LinkTarget:      textLink.LinkTarget,
+		}
+		result.Links = append(result.Links, link)
+	}
+
+	return result
+}
+
+// calculateTextDepth calculates element depth based on text element type
+func calculateTextDepth(elementType TextElementType) int {
+	switch elementType {
+	case TextElementTypeRoot:
+		return 0
+	case TextElementTypeParagraph:
+		return 1
+	case TextElementTypeLine:
+		return 2
+	case TextElementTypeRange, TextElementTypeSubstring:
+		return 3
+	default:
+		return 1 // Default depth for unknown elements
+	}
 }
