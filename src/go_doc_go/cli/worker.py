@@ -692,7 +692,65 @@ def main(config, worker_id, log_level, max_documents, discovery_interval):
     \b
     Environment Variables:
       GO_DOC_GO_CONFIG_PATH    Path to configuration file (default: ./config.yaml)
+      USE_GO_MODULES           Set to 'true' to use Go worker instead of Python
     """
+    # Check if we should use Go worker
+    use_go_modules = os.environ.get('USE_GO_MODULES', '').lower() == 'true'
+
+    if use_go_modules:
+        # Delegate to Go worker
+        import subprocess
+        from pathlib import Path
+
+        # Find the Go worker binary
+        project_root = Path(__file__).parent.parent.parent.parent
+        go_worker_paths = [
+            project_root / "bin" / "goworker",
+            project_root / "go" / "bin" / "goworker",
+        ]
+
+        go_worker = None
+        for path in go_worker_paths:
+            if path.exists():
+                go_worker = str(path)
+                break
+
+        if not go_worker:
+            click.echo("Error: Go worker binary not found. Please build it with:", err=True)
+            click.echo("  cd go && go build -o ../bin/goworker ./cmd/worker", err=True)
+            sys.exit(1)
+
+        # Build command arguments
+        cmd = [go_worker]
+
+        if config:
+            cmd.extend(["--config", config])
+
+        if worker_id:
+            cmd.extend(["--worker-id", worker_id])
+
+        if max_documents:
+            cmd.extend(["--max-documents", str(max_documents)])
+
+        # Set log level via environment (Go uses standard logging)
+        env = os.environ.copy()
+        env['GO_LOG_LEVEL'] = log_level
+
+        click.echo(f"Delegating to Go worker: {go_worker}")
+        click.echo(f"USE_GO_MODULES=true detected, using native Go implementation")
+
+        # Run the Go worker
+        try:
+            result = subprocess.run(cmd, env=env)
+            sys.exit(result.returncode)
+        except KeyboardInterrupt:
+            click.echo("\nGo worker interrupted by user")
+            sys.exit(0)
+        except Exception as e:
+            click.echo(f"Error running Go worker: {e}", err=True)
+            sys.exit(1)
+
+    # Original Python worker implementation
     # Configure logging
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     log_level_obj = getattr(logging, log_level.upper())
