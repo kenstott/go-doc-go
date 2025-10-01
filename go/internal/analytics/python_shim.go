@@ -3,15 +3,17 @@ package analytics
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 )
 
 // PythonShimStorage implements Storage by calling Python analytics code
 type PythonShimStorage struct {
-	pythonPath string
-	scriptPath string
-	config     map[string]interface{}
+	pythonPath    string
+	scriptPath    string
+	pythonPathEnv string
+	config        map[string]interface{}
 }
 
 // NewPythonShimStorage creates a new Python shim storage
@@ -25,13 +27,23 @@ func NewPythonShimStorage(config map[string]interface{}) (*PythonShimStorage, er
 		}
 	}
 
-	// The script path will be relative to the project root
+	// Find the script path - try current directory and parent directory
 	scriptPath := filepath.Join("src", "go_doc_go", "analytics_shim.py")
+	pythonPathEnv := "src"
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		// Try parent directory (for when running from tests/)
+		scriptPath = filepath.Join("..", "src", "go_doc_go", "analytics_shim.py")
+		pythonPathEnv = "../src"
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("analytics_shim.py not found in src/ or ../src/")
+		}
+	}
 
 	return &PythonShimStorage{
-		pythonPath: pythonPath,
-		scriptPath: scriptPath,
-		config:     config,
+		pythonPath:    pythonPath,
+		scriptPath:    scriptPath,
+		pythonPathEnv: pythonPathEnv,
+		config:        config,
 	}, nil
 }
 
@@ -74,7 +86,7 @@ func (s *PythonShimStorage) callPython(operation string, data interface{}) error
 	cmd.Stdin = nil // We'll use arguments instead
 
 	// Set PYTHONPATH to include src directory
-	cmd.Env = append(cmd.Environ(), "PYTHONPATH=src")
+	cmd.Env = append(cmd.Environ(), fmt.Sprintf("PYTHONPATH=%s", s.pythonPathEnv))
 
 	// Pass JSON as argument
 	cmd.Args = append(cmd.Args, string(jsonData))

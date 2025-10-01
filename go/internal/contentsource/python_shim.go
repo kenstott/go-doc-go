@@ -3,16 +3,18 @@ package contentsource
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 )
 
 // PythonShimSource implements ContentSource by calling Python content source code
 type PythonShimSource struct {
-	pythonPath string
-	scriptPath string
-	sourceName string
-	config     map[string]interface{}
+	pythonPath    string
+	scriptPath    string
+	pythonPathEnv string
+	sourceName    string
+	config        map[string]interface{}
 }
 
 // NewPythonShimSource creates a new Python shim content source
@@ -26,14 +28,24 @@ func NewPythonShimSource(sourceName string, config map[string]interface{}) (*Pyt
 		}
 	}
 
-	// The script path will be relative to the project root
+	// Find the script path - try current directory and parent directory
 	scriptPath := filepath.Join("src", "go_doc_go", "content_source_shim.py")
+	pythonPathEnv := "src"
+	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+		// Try parent directory (for when running from tests/)
+		scriptPath = filepath.Join("..", "src", "go_doc_go", "content_source_shim.py")
+		pythonPathEnv = "../src"
+		if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+			return nil, fmt.Errorf("content_source_shim.py not found in src/ or ../src/")
+		}
+	}
 
 	return &PythonShimSource{
-		pythonPath: pythonPath,
-		scriptPath: scriptPath,
-		sourceName: sourceName,
-		config:     config,
+		pythonPath:    pythonPath,
+		scriptPath:    scriptPath,
+		pythonPathEnv: pythonPathEnv,
+		sourceName:    sourceName,
+		config:        config,
 	}, nil
 }
 
@@ -120,7 +132,7 @@ func (s *PythonShimSource) callPython(operation string, params interface{}) (map
 	cmd.Stdin = nil
 
 	// Set PYTHONPATH to include src directory
-	cmd.Env = append(cmd.Environ(), "PYTHONPATH=src")
+	cmd.Env = append(cmd.Environ(), fmt.Sprintf("PYTHONPATH=%s", s.pythonPathEnv))
 
 	// Pass JSON as argument
 	cmd.Args = append(cmd.Args, string(jsonData))
