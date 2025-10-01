@@ -4,16 +4,22 @@ Analytics storage shim for Go worker.
 Provides a bridge between Go and Python analytics storage.
 """
 
-import json
 import sys
+import warnings
+
+# Suppress all warnings FIRST, before any other imports
+warnings.filterwarnings('ignore')
+
+# Disable all logging to stdout - must be done before importing anything
 import logging
+logging.disable(logging.CRITICAL)
+
+import json
 from typing import Dict, Any, List
 from datetime import datetime
 
 from go_doc_go.storage_adapters.factory import StorageFactory
 
-# Setup minimal logging
-logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 

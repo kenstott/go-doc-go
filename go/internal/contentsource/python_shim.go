@@ -119,6 +119,9 @@ func (s *PythonShimSource) callPython(operation string, params interface{}) (map
 	cmd := exec.Command(s.pythonPath, s.scriptPath)
 	cmd.Stdin = nil
 
+	// Set PYTHONPATH to include src directory
+	cmd.Env = append(cmd.Environ(), "PYTHONPATH=src")
+
 	// Pass JSON as argument
 	cmd.Args = append(cmd.Args, string(jsonData))
 

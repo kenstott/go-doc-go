@@ -4,15 +4,21 @@ Content source shim for Go worker.
 Provides a bridge between Go and Python content sources.
 """
 
-import json
 import sys
+import warnings
+
+# Suppress all warnings FIRST, before any other imports
+warnings.filterwarnings('ignore')
+
+# Disable all logging to stdout - must be done before importing anything
 import logging
+logging.disable(logging.CRITICAL)
+
+import json
 from typing import Dict, Any
 
 from go_doc_go.content_source.factory import get_content_source
 
-# Setup minimal logging
-logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 

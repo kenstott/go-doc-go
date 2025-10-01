@@ -73,6 +73,9 @@ func (s *PythonShimStorage) callPython(operation string, data interface{}) error
 	cmd := exec.Command(s.pythonPath, s.scriptPath)
 	cmd.Stdin = nil // We'll use arguments instead
 
+	// Set PYTHONPATH to include src directory
+	cmd.Env = append(cmd.Environ(), "PYTHONPATH=src")
+
 	// Pass JSON as argument
 	cmd.Args = append(cmd.Args, string(jsonData))
 
