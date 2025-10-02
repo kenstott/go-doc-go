@@ -692,7 +692,6 @@ class DocxParser(DocumentParser):
         """
         elements = []
         relationships = []
-        section_stack = [{"id": parent_id, "level": 0}]
 
         # Extract headers and footers if enabled
         if self.extract_headers_footers:
@@ -702,6 +701,8 @@ class DocxParser(DocumentParser):
 
         # Process document body
         body_id = self._generate_id("body_")
+        # Initialize section stack with body as the base (level 0)
+        section_stack = [{"id": body_id, "level": 0}]
         body_element = {
             "element_id": body_id,
             "doc_id": doc_id,
@@ -773,14 +774,15 @@ class DocxParser(DocumentParser):
                     para_element["element_type"] = "header"
                     para_element["metadata"]["level"] = level
 
-                    # Update section stack and current parent
+                    # Update section hierarchy - pop sections at same or higher level
                     while section_stack[-1]["level"] >= level:
                         section_stack.pop()
 
+                    # Parent is the top of section stack (could be body or a parent header)
                     current_parent = section_stack[-1]["id"]
                     para_element["parent_id"] = current_parent
 
-                    # Add to section stack
+                    # Add to section stack and make it the current parent
                     section_stack.append({"id": para_element["element_id"], "level": level})
                     current_parent = para_element["element_id"]
 
@@ -822,7 +824,8 @@ class DocxParser(DocumentParser):
         # Extract comments if enabled
         if self.extract_comments:
             try:
-                comment_elements, comment_relationships = self._extract_comments(doc, doc_id, body_id, source_id)
+                # Comments container should be child of root, not body
+                comment_elements, comment_relationships = self._extract_comments(doc, doc_id, parent_id, source_id)
                 elements.extend(comment_elements)
                 relationships.extend(comment_relationships)
             except Exception as e:

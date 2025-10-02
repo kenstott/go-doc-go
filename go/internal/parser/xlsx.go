@@ -135,7 +135,7 @@ func (p *XLSXParser) Parse(docID string, content interface{}) (*ParseResult, err
 	// Process each sheet
 	for sheetIdx, sheetName := range sheetNames {
 		// Process the sheet
-		sheetElements, sheetRelationships, newPosition := p.processSheet(file, sheetName, docID, workbookID, sheetIdx, elementPosition)
+		sheetElements, sheetRelationships, newPosition := p.processSheet(file, sheetName, docID, workbookID, sheetIdx, elementPosition, &result.Links)
 		result.Elements = append(result.Elements, sheetElements...)
 		result.Relationships = append(result.Relationships, sheetRelationships...)
 		elementPosition = newPosition
@@ -145,7 +145,7 @@ func (p *XLSXParser) Parse(docID string, content interface{}) (*ParseResult, err
 }
 
 // processSheet processes a single worksheet
-func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, parentID string, sheetIdx, startPosition int) ([]Element, []Relationship, int) {
+func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, parentID string, sheetIdx, startPosition int, links *[]Link) ([]Element, []Relationship, int) {
 	var elements []Element
 	var relationships []Relationship
 	position := startPosition
@@ -214,13 +214,13 @@ func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, 
 	if maxRow > 0 && maxCol > 0 {
 		// Detect tables if enabled
 		if p.DetectTables && maxRow >= p.MinTableRows && maxCol >= p.MinTableCols {
-			tableElements, tableRelationships, newPos := p.detectAndProcessTables(file, sheetName, docID, sheetID, maxRow, maxCol, position)
+			tableElements, tableRelationships, newPos := p.detectAndProcessTables(file, sheetName, docID, sheetID, maxRow, maxCol, position, links)
 			elements = append(elements, tableElements...)
 			relationships = append(relationships, tableRelationships...)
 			position = newPos
 		} else {
 			// Process as regular rows/cells
-			rowElements, rowRelationships, newPos := p.processRows(file, sheetName, docID, sheetID, maxRow, maxCol, position)
+			rowElements, rowRelationships, newPos := p.processRows(file, sheetName, docID, sheetID, maxRow, maxCol, position, links)
 			elements = append(elements, rowElements...)
 			relationships = append(relationships, rowRelationships...)
 			position = newPos
@@ -231,7 +231,7 @@ func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, 
 }
 
 // detectAndProcessTables detects tables within the sheet using heuristics
-func (p *XLSXParser) detectAndProcessTables(file *excelize.File, sheetName, docID, sheetID string, maxRow, maxCol, startPosition int) ([]Element, []Relationship, int) {
+func (p *XLSXParser) detectAndProcessTables(file *excelize.File, sheetName, docID, sheetID string, maxRow, maxCol, startPosition int, links *[]Link) ([]Element, []Relationship, int) {
 	var elements []Element
 	var relationships []Relationship
 	position := startPosition
@@ -284,7 +284,7 @@ func (p *XLSXParser) detectAndProcessTables(file *excelize.File, sheetName, docI
 
 	// Process each detected table
 	for tableIdx, region := range tableRegions {
-		tableElements, tableRelationships, newPos := p.processTableRegion(file, sheetName, docID, dataTablesID, region, tableIdx, position)
+		tableElements, tableRelationships, newPos := p.processTableRegion(file, sheetName, docID, dataTablesID, region, tableIdx, position, links)
 		elements = append(elements, tableElements...)
 		relationships = append(relationships, tableRelationships...)
 		position = newPos
@@ -430,7 +430,7 @@ func (p *XLSXParser) detectTableRegions(cellData [][]CellData, maxRow, maxCol in
 }
 
 // processTableRegion creates elements for a detected table region
-func (p *XLSXParser) processTableRegion(file *excelize.File, sheetName, docID, parentID string, region TableRegion, tableIdx, startPosition int) ([]Element, []Relationship, int) {
+func (p *XLSXParser) processTableRegion(file *excelize.File, sheetName, docID, parentID string, region TableRegion, tableIdx, startPosition int, links *[]Link) ([]Element, []Relationship, int) {
 	var elements []Element
 	var relationships []Relationship
 	position := startPosition
@@ -509,7 +509,7 @@ func (p *XLSXParser) processTableRegion(file *excelize.File, sheetName, docID, p
 	}
 
 	for row := startRow; row <= region.MaxRow; row++ {
-		rowElements, rowRelationships, newPos := p.processTableRow(file, sheetName, docID, tableID, region, row, position)
+		rowElements, rowRelationships, newPos := p.processTableRow(file, sheetName, docID, tableID, region, row, position, links)
 		elements = append(elements, rowElements...)
 		relationships = append(relationships, rowRelationships...)
 		position = newPos
@@ -615,7 +615,7 @@ func (p *XLSXParser) processHeaderRow(file *excelize.File, sheetName, docID, tab
 }
 
 // processTableRow processes a data row in a table
-func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tableID string, region TableRegion, row, startPosition int) ([]Element, []Relationship, int) {
+func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tableID string, region TableRegion, row, startPosition int, links *[]Link) ([]Element, []Relationship, int) {
 	var elements []Element
 	var relationships []Relationship
 	position := startPosition
@@ -714,6 +714,25 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 				}
 			}
 
+			// Extract hyperlinks if enabled
+			if p.ExtractLinks {
+				hasLink, target, err := file.GetCellHyperLink(sheetName, cellAddr)
+				if err == nil && hasLink && target != "" {
+					linkID := generateID("link_")
+					link := Link{
+						LinkID:          linkID,
+						SourceElementID: cellID,
+						LinkType:        "hyperlink",
+						LinkTarget:      target,
+						LinkText:        cellValue, // Use cell value as display text
+					}
+					*links = append(*links, link)
+
+					// Add link metadata to cell
+					cellElement.Metadata["hyperlink"] = target
+				}
+			}
+
 			// Extract temporal metadata if enabled
 			if p.ExtractDates && cellValue != "" {
 				ProcessTemporalContent(cellValue, cellElement.Metadata)
@@ -736,7 +755,7 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 }
 
 // processRows processes rows without table detection (fallback)
-func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID string, maxRow, maxCol, startPosition int) ([]Element, []Relationship, int) {
+func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID string, maxRow, maxCol, startPosition int, links *[]Link) ([]Element, []Relationship, int) {
 	var elements []Element
 	var relationships []Relationship
 	position := startPosition

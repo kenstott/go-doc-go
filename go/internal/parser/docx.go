@@ -202,8 +202,9 @@ func (p *DocxParser) Parse(request DocxParseRequest) (*DocxParseResponse, error)
 	}
 	defer reader.Close()
 
-	// Find and read document.xml
+	// Find and read document.xml and relationships
 	var docXML []byte
+	var relsXML []byte
 	for _, file := range reader.File {
 		if file.Name == "word/document.xml" {
 			rc, err := file.Open()
@@ -215,12 +216,29 @@ func (p *DocxParser) Parse(request DocxParseRequest) (*DocxParseResponse, error)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read document.xml: %w", err)
 			}
-			break
+		} else if file.Name == "word/_rels/document.xml.rels" {
+			rc, err := file.Open()
+			if err != nil {
+				// Relationships file is optional
+				continue
+			}
+			relsXML, err = io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				// Just log and continue
+				continue
+			}
 		}
 	}
 
 	if docXML == nil {
 		return nil, fmt.Errorf("document.xml not found in DOCX file")
+	}
+
+	// Parse relationships to extract hyperlinks
+	hyperlinks := make(map[string]string) // relID -> target URL
+	if len(relsXML) > 0 {
+		p.parseRelationships(relsXML, hyperlinks)
 	}
 
 	// Parse XML
@@ -247,7 +265,7 @@ func (p *DocxParser) Parse(request DocxParseRequest) (*DocxParseResponse, error)
 	// Create root element
 	rootElement := DocxElement{
 		ElementID:       p.generateID("root_"),
-		ElementType:     "document_root",
+		ElementType:     "root",
 		ContentPreview:  p.truncateContent(fmt.Sprintf("Document: %s", request.ID)),
 		ContentLocation: p.createContentLocation(request.ID, "root", ""),
 		ContentHash:     p.generateHash(request.Content),
@@ -259,11 +277,64 @@ func (p *DocxParser) Parse(request DocxParseRequest) (*DocxParseResponse, error)
 
 	// Parse document elements
 	elementCounter := 1
+
+	// Create container elements (matching Python structure)
+	// 1. Headers container
+	headersElement := DocxElement{
+		ElementID:       p.generateID("headers_"),
+		ElementType:     "headers",
+		ParentID:        rootElement.ElementID,
+		ContentPreview:  "Document headers",
+		ContentLocation: p.createContentLocation(request.ID, "headers", ""),
+		ContentHash:     p.generateHash("headers"),
+		ElementOrder:    elementCounter,
+		DocumentOrder:   elementCounter,
+		Metadata:        make(map[string]interface{}),
+	}
+	response.Elements = append(response.Elements, headersElement)
+	elementCounter++
+
+	// 2. Footers container
+	footersElement := DocxElement{
+		ElementID:       p.generateID("footers_"),
+		ElementType:     "footers",
+		ParentID:        rootElement.ElementID,
+		ContentPreview:  "Document footers",
+		ContentLocation: p.createContentLocation(request.ID, "footers", ""),
+		ContentHash:     p.generateHash("footers"),
+		ElementOrder:    elementCounter,
+		DocumentOrder:   elementCounter,
+		Metadata:        make(map[string]interface{}),
+	}
+	response.Elements = append(response.Elements, footersElement)
+	elementCounter++
+
+	// 3. Parse main document body
 	p.parseWordDocument(&wordDoc, &response.Elements, &response.Links, &response.Relationships,
 		rootElement.ElementID, request.ID, &elementCounter)
 
+	// 4. Comments container
+	commentsElement := DocxElement{
+		ElementID:       p.generateID("comments_"),
+		ElementType:     "comments",
+		ParentID:        rootElement.ElementID,
+		ContentPreview:  "Document comments",
+		ContentLocation: p.createContentLocation(request.ID, "comments", ""),
+		ContentHash:     p.generateHash("comments"),
+		ElementOrder:    elementCounter,
+		DocumentOrder:   elementCounter,
+		Metadata:        make(map[string]interface{}),
+	}
+	response.Elements = append(response.Elements, commentsElement)
+	elementCounter++
+
 	// Extract document metadata
 	p.extractDocumentMetadata(&wordDoc, response.Document)
+
+	// Extract hyperlinks from relationships
+	if len(hyperlinks) > 0 {
+		p.extractHyperlinksFromText(string(docXML), hyperlinks, response)
+	}
 
 	return response, nil
 }
@@ -348,10 +419,11 @@ func (p *DocxParser) processParagraph(para *WordParagraph, index int, elements *
 		elementType = "header"
 		level = p.determineHeaderLevel(para, text)
 
-		// Update section hierarchy
+		// Update section hierarchy - pop sections at same or higher level
 		for len(*sectionStack) > 1 && (*sectionStack)[len(*sectionStack)-1]["level"].(int) >= level {
 			*sectionStack = (*sectionStack)[:len(*sectionStack)-1]
 		}
+		// Parent is the top of the section stack (could be body or a parent header)
 		*currentParent = (*sectionStack)[len(*sectionStack)-1]["id"].(string)
 	}
 
@@ -379,11 +451,12 @@ func (p *DocxParser) processParagraph(para *WordParagraph, index int, elements *
 
 	if elementType == "header" {
 		element.Metadata["level"] = level
-		// Add to section stack
+		// Add to section stack and make it the current parent
 		*sectionStack = append(*sectionStack, map[string]interface{}{
 			"id":    elementID,
 			"level": level,
 		})
+		// Headers become parents for subsequent content until a same/higher level header
 		*currentParent = elementID
 	}
 

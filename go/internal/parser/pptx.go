@@ -3,6 +3,7 @@ package parser
 import (
 	"archive/zip"
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // PptxElement represents a parsed PPTX element
@@ -347,6 +349,12 @@ func (p *PptxParser) parseSlide(slideXML []byte, slideNum int, elements *[]PptxE
 			p.processShape(&shape, shapeIdx, slideNum, elements, links, relationships,
 				slideID, sourceID, counter)
 		}
+
+		// Process tables (in graphicFrames)
+		for tableIdx, frame := range slide.CSld.SpTree.GraphicFrames {
+			p.processTable(&frame, tableIdx, slideNum, elements, links, relationships,
+				slideID, sourceID, counter)
+		}
 	}
 
 	// Extract text content for preview
@@ -411,8 +419,193 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 	}
 	*relationships = append(*relationships, relationship)
 
-	// Extract links from text
-	p.extractLinksFromText(text, shapeElementID, links)
+	// Extract individual paragraphs if there are multiple
+	if len(shape.TxBody.Paragraphs) > 1 {
+		for paraIdx, para := range shape.TxBody.Paragraphs {
+			// Extract text from paragraph
+			var paraText string
+			for _, run := range para.Runs {
+				if strings.TrimSpace(run.Text) != "" {
+					paraText += strings.TrimSpace(run.Text) + " "
+				}
+			}
+			paraText = strings.TrimSpace(paraText)
+			if paraText == "" {
+				continue // Skip empty paragraphs
+			}
+
+			// Create paragraph element
+			paraID := p.generateID(fmt.Sprintf("para_%d_%d_%d_", slideNum, shapeIdx, paraIdx))
+			paraElement := PptxElement{
+				ElementID:       paraID,
+				ElementType:     "paragraph",
+				ParentID:        shapeElementID,
+				ContentPreview:  p.truncateContent(paraText),
+				ContentLocation: p.createParagraphLocation(sourceID, slideNum, shapeIdx, paraIdx),
+				ContentHash:     p.generateHash(paraText),
+				ElementOrder:    *counter,
+				DocumentOrder:   *counter,
+				Metadata: map[string]interface{}{
+					"slide_index":     slideNum - 1,
+					"shape_index":     shapeIdx,
+					"paragraph_index": paraIdx,
+					"text":            paraText,
+				},
+			}
+			*elements = append(*elements, paraElement)
+			*counter++
+
+			// Create relationship from shape to paragraph
+			paraRel := PptxRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  shapeElementID,
+				TargetElementID:  paraID,
+				RelationshipType: "contains",
+				Confidence:       1.0,
+				Metadata:         map[string]interface{}{"paragraph_index": paraIdx},
+			}
+			*relationships = append(*relationships, paraRel)
+
+			// Extract links from paragraph text
+			p.extractLinksFromText(paraText, paraID, links)
+		}
+	} else {
+		// Single paragraph - extract links from shape text
+		p.extractLinksFromText(text, shapeElementID, links)
+	}
+}
+
+// processTable processes a table from a graphic frame
+func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, elements *[]PptxElement,
+	links *[]PptxLink, relationships *[]PptxRelationship, slideID, sourceID string, counter *int) {
+
+	table := frame.Graphic.GraphicData.Table
+	if len(table.Rows) == 0 {
+		return // Empty table
+	}
+
+	// Create table element
+	tableID := p.generateID(fmt.Sprintf("table_%d_%d_", slideNum, tableIdx))
+
+	// Extract all text from table for preview
+	var tableText string
+	for _, row := range table.Rows {
+		for _, cell := range row.Cells {
+			cellText := p.extractTextFromTextBody(&cell.TxBody)
+			if cellText != "" {
+				tableText += cellText + " | "
+			}
+		}
+		tableText += "\n"
+	}
+
+	tableElement := PptxElement{
+		ElementID:       tableID,
+		ElementType:     "table",
+		ParentID:        slideID,
+		ContentPreview:  p.truncateContent(fmt.Sprintf("Table: %s", tableText)),
+		ContentLocation: p.createTableLocation(sourceID, slideNum, tableIdx),
+		ContentHash:     p.generateHash(tableText),
+		ElementOrder:    *counter,
+		DocumentOrder:   *counter,
+		Metadata: map[string]interface{}{
+			"slide_index": slideNum - 1,
+			"table_index": tableIdx,
+			"rows":        len(table.Rows),
+			"cols":        len(table.Rows[0].Cells),
+		},
+	}
+	*elements = append(*elements, tableElement)
+	*counter++
+
+	// Create relationship from slide to table
+	relationship := PptxRelationship{
+		RelationshipID:   p.generateID("rel_"),
+		SourceElementID:  slideID,
+		TargetElementID:  tableID,
+		RelationshipType: "contains",
+		Confidence:       1.0,
+		Metadata:         map[string]interface{}{"table_index": tableIdx},
+	}
+	*relationships = append(*relationships, relationship)
+
+	// Process rows
+	for rowIdx, row := range table.Rows {
+		rowID := p.generateID(fmt.Sprintf("row_%d_%d_%d_", slideNum, tableIdx, rowIdx))
+
+		rowElement := PptxElement{
+			ElementID:       rowID,
+			ElementType:     "table_row",
+			ParentID:        tableID,
+			ContentPreview:  fmt.Sprintf("Row %d", rowIdx+1),
+			ContentLocation: p.createTableRowLocation(sourceID, slideNum, tableIdx, rowIdx),
+			ContentHash:     p.generateHash(fmt.Sprintf("row_%d_%d_%d", slideNum, tableIdx, rowIdx)),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Metadata: map[string]interface{}{
+				"slide_index": slideNum - 1,
+				"table_index": tableIdx,
+				"row_index":   rowIdx,
+			},
+		}
+		*elements = append(*elements, rowElement)
+		*counter++
+
+		// Create relationship from table to row
+		rowRel := PptxRelationship{
+			RelationshipID:   p.generateID("rel_"),
+			SourceElementID:  tableID,
+			TargetElementID:  rowID,
+			RelationshipType: "contains",
+			Confidence:       1.0,
+			Metadata:         map[string]interface{}{"row_index": rowIdx},
+		}
+		*relationships = append(*relationships, rowRel)
+
+		// Process cells
+		for cellIdx, cell := range row.Cells {
+			cellText := p.extractTextFromTextBody(&cell.TxBody)
+			if cellText == "" {
+				continue // Skip empty cells
+			}
+
+			cellID := p.generateID(fmt.Sprintf("cell_%d_%d_%d_%d_", slideNum, tableIdx, rowIdx, cellIdx))
+
+			cellElement := PptxElement{
+				ElementID:       cellID,
+				ElementType:     "table_cell",
+				ParentID:        rowID,
+				ContentPreview:  p.truncateContent(cellText),
+				ContentLocation: p.createTableCellLocation(sourceID, slideNum, tableIdx, rowIdx, cellIdx),
+				ContentHash:     p.generateHash(cellText),
+				ElementOrder:    *counter,
+				DocumentOrder:   *counter,
+				Metadata: map[string]interface{}{
+					"slide_index": slideNum - 1,
+					"table_index": tableIdx,
+					"row_index":   rowIdx,
+					"col_index":   cellIdx,
+					"text":        cellText,
+				},
+			}
+			*elements = append(*elements, cellElement)
+			*counter++
+
+			// Create relationship from row to cell
+			cellRel := PptxRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  rowID,
+				TargetElementID:  cellID,
+				RelationshipType: "contains",
+				Confidence:       1.0,
+				Metadata:         map[string]interface{}{"col_index": cellIdx},
+			}
+			*relationships = append(*relationships, cellRel)
+
+			// Extract links from cell text
+			p.extractLinksFromText(cellText, cellID, links)
+		}
+	}
 }
 
 // parseSlideNotes parses notes for a slide
@@ -493,6 +686,19 @@ func (p *PptxParser) extractSlideText(slideXML []byte) string {
 func (p *PptxParser) extractShapeText(shape *Shape) string {
 	var texts []string
 	for _, para := range shape.TxBody.Paragraphs {
+		for _, run := range para.Runs {
+			if strings.TrimSpace(run.Text) != "" {
+				texts = append(texts, strings.TrimSpace(run.Text))
+			}
+		}
+	}
+	return strings.Join(texts, " ")
+}
+
+// extractTextFromTextBody extracts text from a TextBody structure
+func (p *PptxParser) extractTextFromTextBody(txBody *TextBody) string {
+	var texts []string
+	for _, para := range txBody.Paragraphs {
 		for _, run := range para.Runs {
 			if strings.TrimSpace(run.Text) != "" {
 				texts = append(texts, strings.TrimSpace(run.Text))
@@ -663,6 +869,50 @@ func (p *PptxParser) createShapeLocation(source string, slideNum, shapeIdx int) 
 	}
 }
 
+// createParagraphLocation creates content location for a paragraph
+func (p *PptxParser) createParagraphLocation(source string, slideNum, shapeIdx, paraIdx int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":          source,
+		"type":            "paragraph",
+		"slide_index":     slideNum - 1,
+		"shape_index":     shapeIdx,
+		"paragraph_index": paraIdx,
+	}
+}
+
+// createTableLocation creates content location for a table
+func (p *PptxParser) createTableLocation(source string, slideNum, tableIdx int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":      source,
+		"type":        "table",
+		"slide_index": slideNum - 1,
+		"table_index": tableIdx,
+	}
+}
+
+// createTableRowLocation creates content location for a table row
+func (p *PptxParser) createTableRowLocation(source string, slideNum, tableIdx, rowIdx int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":      source,
+		"type":        "table_row",
+		"slide_index": slideNum - 1,
+		"table_index": tableIdx,
+		"row_index":   rowIdx,
+	}
+}
+
+// createTableCellLocation creates content location for a table cell
+func (p *PptxParser) createTableCellLocation(source string, slideNum, tableIdx, rowIdx, cellIdx int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":      source,
+		"type":        "table_cell",
+		"slide_index": slideNum - 1,
+		"table_index": tableIdx,
+		"row_index":   rowIdx,
+		"col_index":   cellIdx,
+	}
+}
+
 // createNotesLocation creates content location for slide notes
 func (p *PptxParser) createNotesLocation(source string, slideNum int) map[string]interface{} {
 	return map[string]interface{}{
@@ -676,8 +926,11 @@ func (p *PptxParser) createNotesLocation(source string, slideNum int) map[string
 
 // generateID generates a unique ID with the given prefix
 func (p *PptxParser) generateID(prefix string) string {
-	// Simple counter-based approach for now
-	return fmt.Sprintf("%s%d", prefix, len(prefix)*1000+strings.Count(prefix, "_"))
+	id := make([]byte, 4)
+	if _, err := rand.Read(id); err != nil {
+		return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%s%x", prefix, id)
 }
 
 // generateHash generates an MD5 hash of the content
@@ -692,6 +945,74 @@ func (p *PptxParser) truncateContent(content string) string {
 		return content
 	}
 	return content[:p.MaxContentPreview-3] + "..."
+}
+
+// ToParseResult converts PptxParseResponse to generic ParseResult
+func (r *PptxParseResponse) ToParseResult() *ParseResult {
+	// Convert document map to Document struct
+	doc := Document{
+		ID:       "",
+		DocType:  "pptx",
+		Metadata: make(map[string]interface{}),
+	}
+	if docID, ok := r.Document["doc_id"].(string); ok {
+		doc.ID = docID
+	}
+	if title, ok := r.Document["title"].(string); ok {
+		doc.Title = title
+	}
+	if metadata, ok := r.Document["metadata"].(map[string]interface{}); ok {
+		doc.Metadata = metadata
+	}
+
+	result := &ParseResult{
+		Document:      doc,
+		Elements:      make([]Element, 0, len(r.Elements)),
+		Links:         make([]Link, 0, len(r.Links)),
+		Relationships: make([]Relationship, 0, len(r.Relationships)),
+	}
+
+	// Convert elements
+	for _, pptxElem := range r.Elements {
+		elem := Element{
+			ElementID:       pptxElem.ElementID,
+			ElementType:     pptxElem.ElementType,
+			ParentID:        pptxElem.ParentID,
+			ContentPreview:  pptxElem.ContentPreview,
+			ContentLocation: pptxElem.ContentLocation,
+			Position:        pptxElem.ElementOrder,
+			Depth:           0, // PPTX doesn't track depth currently
+			Metadata:        pptxElem.Metadata,
+		}
+		result.Elements = append(result.Elements, elem)
+	}
+
+	// Convert links
+	for _, pptxLink := range r.Links {
+		link := Link{
+			LinkID:          generateID("link"),
+			SourceElementID: pptxLink.SourceID,
+			LinkTarget:      pptxLink.LinkTarget,
+			LinkText:        pptxLink.LinkText,
+			LinkType:        pptxLink.LinkType,
+		}
+		result.Links = append(result.Links, link)
+	}
+
+	// Convert relationships
+	for _, pptxRel := range r.Relationships {
+		rel := Relationship{
+			RelationshipID:   pptxRel.RelationshipID,
+			SourceElementID:  pptxRel.SourceElementID,
+			TargetElementID:  pptxRel.TargetElementID,
+			RelationshipType: pptxRel.RelationshipType,
+			Confidence:       pptxRel.Confidence,
+			Metadata:         pptxRel.Metadata,
+		}
+		result.Relationships = append(result.Relationships, rel)
+	}
+
+	return result
 }
 
 // ToJSON converts the parse response to JSON
