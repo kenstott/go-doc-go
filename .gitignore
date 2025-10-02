@@ -96,3 +96,66 @@ tests/test_output-go/
 # SEC HTML Document Store specific ignores
 sec_html_store.db*
 sec_analytics/
+
+# Go
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+go/bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Go build cache
+.cache/
+
+# Go module cache
+go/pkg/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+
+# Generated files and test outputs
+go/assets/
+go/models/
+go/tests/assets/
+tests/test_output/
+tests/test_output_go/
+tests/test_output_native_go/
+
+# Performance and analysis reports
+EMBEDDING_PARITY_FINDINGS.md
+EMBEDDING_PARITY_RESULTS.md
+NATIVE_ANALYTICS_IMPLEMENTATION.md
+PERFORMANCE_COMPARISON.md
+WORKER_PARALLELISM.md
+
+# Test and debug scripts
+analyze_embedding_text_format.py
+compare_contextual_text.py
+performance_test.sh
+test_embedding_fix.sh
+test_worker_env.sh
+
+# Go worker binary
+go/worker

@@ -517,8 +517,22 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 	log.Printf("DEBUG: Determined docType=%s for document %s", docType, docInfo.DocID)
 
 	// Parse the document using appropriate parser
-	// Note: DOCX and Markdown have different interfaces, to be added later
 	switch docType {
+	case "docx":
+		log.Printf("DEBUG: Parsing DOCX with BinaryPath=%s", docContent.BinaryPath)
+		docxParser := parser.NewDocxParser()
+		docxResult, docxErr := docxParser.Parse(parser.DocxParseRequest{
+			ID:      docInfo.DocID,
+			Content: docContent.BinaryPath, // DOCX parser expects file path
+		})
+		if docxErr != nil {
+			log.Printf("ERROR: DOCX parse error: %v", docxErr)
+			err = docxErr
+		} else {
+			log.Printf("DEBUG: DOCX parsed successfully: %d elements, %d relationships",
+				len(docxResult.Elements), len(docxResult.Relationships))
+			parseResult = docxResult.ToParseResult()
+		}
 	case "xlsx", "xls":
 		xlsxParser := parser.NewXLSXParser()
 		parseResult, err = xlsxParser.Parse(docInfo.DocID, contentToUse)
@@ -621,8 +635,14 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 					continue
 				}
 
+				log.Printf("DEBUG: Batch %d-%d returned %d embedding vectors for %d texts", i, end, len(embeddingVectors), len(batchTexts))
 				for j, elementID := range batchIDs {
-					embeddingMap[elementID] = embeddingVectors[j]
+					if j < len(embeddingVectors) {
+						embeddingMap[elementID] = embeddingVectors[j]
+						log.Printf("DEBUG: Stored embedding for %s (vector length: %d)", elementID, len(embeddingVectors[j]))
+					} else {
+						log.Printf("DEBUG: WARNING - No embedding vector for element %s at index %d", elementID, j)
+					}
 				}
 			}
 

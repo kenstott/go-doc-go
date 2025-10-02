@@ -3,13 +3,14 @@ package parser
 import (
 	"archive/zip"
 	"crypto/md5"
+	"crypto/rand"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"regexp"
 	"strings"
-
+	"time"
 )
 
 // DocxElement represents a parsed DOCX element
@@ -56,6 +57,65 @@ type DocxParseResponse struct {
 	Elements      []DocxElement          `json:"elements"`
 	Links         []DocxLink             `json:"links"`
 	Relationships []DocxRelationship     `json:"relationships"`
+}
+
+// ToParseResult converts DocxParseResponse to the standard ParseResult format
+func (r *DocxParseResponse) ToParseResult() *ParseResult {
+	// Convert document metadata
+	var doc Document
+	if docID, ok := r.Document["doc_id"].(string); ok {
+		doc.ID = docID
+	}
+	if title, ok := r.Document["title"].(string); ok {
+		doc.Title = title
+	}
+	if docType, ok := r.Document["doc_type"].(string); ok {
+		doc.DocType = docType
+	}
+	doc.Metadata = r.Document
+
+	// Convert elements
+	elements := make([]Element, len(r.Elements))
+	for i, docxElem := range r.Elements {
+		elements[i] = Element{
+			ElementID:       docxElem.ElementID,
+			ElementType:     docxElem.ElementType,
+			Content:         "", // DOCX elements use ContentLocation
+			ContentPreview:  docxElem.ContentPreview,
+			ParentID:        docxElem.ParentID,
+			Metadata:        docxElem.Metadata,
+			ContentLocation: docxElem.ContentLocation,
+		}
+	}
+
+	// Convert relationships
+	relationships := make([]Relationship, len(r.Relationships))
+	for i, docxRel := range r.Relationships {
+		relationships[i] = Relationship{
+			SourceElementID:  docxRel.SourceElementID,
+			TargetElementID:  docxRel.TargetElementID,
+			RelationshipType: docxRel.RelationshipType,
+			Metadata:         docxRel.Metadata,
+		}
+	}
+
+	// Convert links
+	links := make([]Link, len(r.Links))
+	for i, docxLink := range r.Links {
+		links[i] = Link{
+			SourceElementID: docxLink.SourceID,
+			LinkTarget:      docxLink.LinkTarget,
+			LinkText:        docxLink.LinkText,
+			LinkType:        docxLink.LinkType,
+		}
+	}
+
+	return &ParseResult{
+		Document:      doc,
+		Elements:      elements,
+		Relationships: relationships,
+		Links:         links,
+	}
 }
 
 // XML structures for DOCX parsing
@@ -777,8 +837,14 @@ func (p *DocxParser) createContentLocationForTableCell(source string, tableIndex
 
 // generateID generates a unique ID with the given prefix
 func (p *DocxParser) generateID(prefix string) string {
-	// Simple counter-based approach for now
-	return fmt.Sprintf("%s%d", prefix, len(prefix)*1000+strings.Count(prefix, "_"))
+	// Generate UUID-based unique ID like Python does
+	// Use random hex string (8 characters from UUID)
+	id := make([]byte, 4)
+	if _, err := rand.Read(id); err != nil {
+		// Fallback to timestamp-based ID if random fails
+		return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%s%x", prefix, id)
 }
 
 // generateHash generates an MD5 hash of the content

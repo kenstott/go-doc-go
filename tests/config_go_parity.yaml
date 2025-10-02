@@ -1,0 +1,51 @@
+embedding:
+  enabled: true
+  provider: onnx
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  model_path: "go/models/all-MiniLM-L6-v2"
+  dimensions: 384
+  chunk_size: 512
+  overlap: 128
+  contextual: true
+  predecessor_count: 1
+  successor_count: 1
+
+content_sources:
+  - name: "file-docs"
+    type: "file"
+    base_path: "./tests/assets"
+    file_pattern: "test_document_structure.md"
+    include_extensions: ["md"]
+    watch_for_changes: false
+    max_link_depth: 0
+    refresh_interval: 1
+
+relationship_detection:
+  enabled: true
+  structural: true
+  semantic: false
+
+# Processing configuration
+processing:
+  batch_size: 100
+  max_workers: 1
+  timeout_seconds: 300
+  job_control:
+    backend: "sqlite"
+    path: "./test_job_queue.db"
+    claim_timeout: 300
+    heartbeat_interval: 30
+    max_retries: 3
+
+# Analytics outputs configuration
+analytics:
+  enabled: true
+  outputs:
+    - type: "parquet"
+      path: "./tests/test_output_go_parity"
+      partitioning: ["date", "source"]
+
+logging:
+  level: "INFO"
+
+use_go_modules: true

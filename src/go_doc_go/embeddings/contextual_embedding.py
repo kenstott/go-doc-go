@@ -968,6 +968,17 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 break
 
         if current_index >= 0:
+            # Build ancestor set to avoid including ancestors as predecessors
+            ancestor_ids = set()
+            current_parent_id = element.get("parent_id")
+            while current_parent_id:
+                ancestor_ids.add(current_parent_id)
+                parent_elem = id_to_element.get(current_parent_id)
+                if parent_elem:
+                    current_parent_id = parent_elem.get("parent_id")
+                else:
+                    break
+
             # Get meaningful predecessors (elements that come before)
             pred_count = 0
             i = current_index - 1
@@ -990,10 +1001,12 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 # 1. Are root elements (including XML roots)
                 # 2. Don't have content (empty content_preview)
                 # 3. Are just container elements
+                # 4. Are ancestors of current element (NEW: hierarchy-aware filtering)
                 if (pred_element["element_type"] != "root" and
                         not is_pred_xml_root and
                         pred_element.get("content_preview") and
-                        not self._is_structural_only_container(pred_element)):
+                        not self._is_structural_only_container(pred_element) and
+                        pred_element.get("element_id") not in ancestor_ids):
                     context_ids.append(pred_element["element_id"])
                     pred_count += 1
 

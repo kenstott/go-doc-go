@@ -69,22 +69,27 @@ func (b *ContextualTextBuilder) BuildContextualText(
 	siblingTexts := b.collectSiblingTexts(element, allElements, siblingBudget)
 
 	// Combine: element first, then parents, then siblings
+	// Use a map to deduplicate context texts
 	var parts []string
+	seen := make(map[string]bool)
 
 	// Main element
 	parts = append(parts, elementProcessed)
+	seen[elementProcessed] = true
 
 	// Parents (already ordered from immediate to root)
 	for _, parentText := range parentTexts {
-		if parentText != "" {
+		if parentText != "" && !seen[parentText] {
 			parts = append(parts, parentText)
+			seen[parentText] = true
 		}
 	}
 
 	// Siblings
 	for _, siblingText := range siblingTexts {
-		if siblingText != "" {
+		if siblingText != "" && !seen[siblingText] {
 			parts = append(parts, siblingText)
+			seen[siblingText] = true
 		}
 	}
 
@@ -187,6 +192,19 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 		return siblingTexts
 	}
 
+	// Build ancestor set to avoid including ancestors as predecessors
+	ancestorIDs := make(map[string]bool)
+	currentParentID := element.ParentID
+	elementMap := buildElementMap(allElements)
+	for currentParentID != "" {
+		ancestorIDs[currentParentID] = true
+		if parent, ok := elementMap[currentParentID]; ok {
+			currentParentID = parent.ParentID
+		} else {
+			break
+		}
+	}
+
 	// Collect predecessors (elements before current in array)
 	predCount := 0
 	for i := currentIndex - 1; i >= 0 && predCount < b.predecessorCount; i-- {
@@ -199,6 +217,11 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 
 		// Skip structural-only containers (like Python)
 		if isStructuralOnlyContainer(pred) {
+			continue
+		}
+
+		// Skip ancestors (don't include parent as predecessor)
+		if ancestorIDs[pred.ElementID] {
 			continue
 		}
 
@@ -219,6 +242,10 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 	}
 
 	// Collect successors (elements after current in array)
+	// Track which elements are descendants of current element (to skip them)
+	descendantIDs := make(map[string]bool)
+	descendantIDs[element.ElementID] = true // Start with current element
+
 	succCount := 0
 	for i := currentIndex + 1; i < len(allElements) && succCount < b.successorCount; i++ {
 		succ := allElements[i]
@@ -230,6 +257,13 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 
 		// Skip structural-only containers (like Python)
 		if isStructuralOnlyContainer(succ) {
+			continue
+		}
+
+		// Skip descendants (children of current element or previously found descendants)
+		// Track descendants dynamically as we encounter them
+		if succ.ParentID != "" && descendantIDs[succ.ParentID] {
+			descendantIDs[succ.ElementID] = true // Mark as descendant for future checks
 			continue
 		}
 
@@ -321,13 +355,13 @@ func isStructuralOnlyContainer(element parser.Element) bool {
 func ShouldEmbed(element parser.Element, allElements []parser.Element) bool {
 	// Skip elements that should use their parent's embedding
 	skipTypes := map[string]bool{
-		"table_cell":   true,
-		"json_item":    true,
-		"json_field":   true,
-		"table":        true, // Always a container
-		"header":       true, // Headers are for structure, not content embedding
-		"root":         true, // Document root is not embedded
+		"table_cell":    true,
+		"json_item":     true,
+		"json_field":    true,
+		"table":         true, // Always a container
+		"root":          true, // Document root is not embedded
 		"document_root": true, // Also skip document_root
+		"body":          true, // Body container is not embedded
 	}
 
 	if skipTypes[element.ElementType] {
