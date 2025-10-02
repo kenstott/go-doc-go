@@ -175,21 +175,51 @@ func (p *HTMLParser) parseHTML(request ParseRequest) (*ParseResponse, error) {
 	return response, nil
 }
 
-// parseNode recursively parses HTML nodes
+// parseNode recursively parses HTML nodes and returns the ID of the element created (if any)
 func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *[]HTMLLink,
-	relationships *[]HTMLRelationship, parentID, sourceID string, counter *int) {
+	relationships *[]HTMLRelationship, parentID, sourceID string, counter *int) string {
 
 	if node.Type == html.DocumentNode {
 		// Document node - recurse into children without creating element
+		// Track siblings for sequential relationships
+		var previousChildID string
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
+			currentChildID := p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
+
+			// If an element was created and we have a previous sibling, create sequential relationships
+			if currentChildID != "" && previousChildID != "" {
+				// Create bidirectional sequential relationships
+				nextRel := HTMLRelationship{
+					RelationshipID:   p.generateID("rel_"),
+					SourceElementID:  previousChildID,
+					TargetElementID:  currentChildID,
+					RelationshipType: "next",
+					Confidence:       1.0,
+					Metadata:         make(map[string]interface{}),
+				}
+				prevRel := HTMLRelationship{
+					RelationshipID:   p.generateID("rel_"),
+					SourceElementID:  currentChildID,
+					TargetElementID:  previousChildID,
+					RelationshipType: "previous",
+					Confidence:       1.0,
+					Metadata:         make(map[string]interface{}),
+				}
+				*relationships = append(*relationships, nextRel, prevRel)
+			}
+
+			// Update previous element ID if new element was created
+			if currentChildID != "" {
+				previousChildID = currentChildID
+			}
 		}
+		return ""
 	} else if node.Type == html.ElementNode {
 		elementType := p.getElementType(node.Data)
 
 		// Skip script, style, and other non-content elements
 		if p.shouldSkipElement(node.Data) {
-			return
+			return ""
 		}
 
 		// Create element
@@ -221,10 +251,40 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 			*relationships = append(*relationships, relationship)
 		}
 
-		// Recursively parse children
+		// Recursively parse children with sequential relationship tracking
+		var previousChildID string
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			p.parseNode(child, elements, links, relationships, element.ElementID, sourceID, counter)
+			currentChildID := p.parseNode(child, elements, links, relationships, element.ElementID, sourceID, counter)
+
+			// If an element was created and we have a previous sibling, create sequential relationships
+			if currentChildID != "" && previousChildID != "" {
+				// Create bidirectional sequential relationships
+				nextRel := HTMLRelationship{
+					RelationshipID:   p.generateID("rel_"),
+					SourceElementID:  previousChildID,
+					TargetElementID:  currentChildID,
+					RelationshipType: "next",
+					Confidence:       1.0,
+					Metadata:         make(map[string]interface{}),
+				}
+				prevRel := HTMLRelationship{
+					RelationshipID:   p.generateID("rel_"),
+					SourceElementID:  currentChildID,
+					TargetElementID:  previousChildID,
+					RelationshipType: "previous",
+					Confidence:       1.0,
+					Metadata:         make(map[string]interface{}),
+				}
+				*relationships = append(*relationships, nextRel, prevRel)
+			}
+
+			// Update previous element ID if new element was created
+			if currentChildID != "" {
+				previousChildID = currentChildID
+			}
 		}
+
+		return element.ElementID
 	} else if node.Type == html.TextNode {
 		// Handle text nodes with meaningful content
 		text := strings.TrimSpace(node.Data)
@@ -257,8 +317,11 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 				}
 				*relationships = append(*relationships, relationship)
 			}
+
+			return element.ElementID
 		}
 	}
+	return ""
 }
 
 // getElementType maps HTML tag names to element types

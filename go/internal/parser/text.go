@@ -178,6 +178,8 @@ func (p *TextParser) parseText(request TextParseRequest) (*TextParseResponse, er
 
 	// Split content into paragraphs and create elements
 	paragraphs := p.splitIntoParagraphs(content)
+	var previousElementID string
+
 	for i, paragraph := range paragraphs {
 		if len(paragraph) < p.MinParagraphLength {
 			continue
@@ -187,9 +189,21 @@ func (p *TextParser) parseText(request TextParseRequest) (*TextParseResponse, er
 		paragraphElement := p.createParagraphElement(request.ID, paragraph, i, rootElement.ElementID)
 		response.Elements = append(response.Elements, paragraphElement)
 
-		// Create relationship
+		// Create hierarchical relationship (contains)
 		relationship := p.createRelationship(rootElement.ElementID, paragraphElement.ElementID, "contains")
 		response.Relationships = append(response.Relationships, relationship)
+
+		// Create sequential relationships (next/previous) for reading order
+		if previousElementID != "" {
+			// Create 'next' relationship from previous to current
+			nextRel := p.createRelationship(previousElementID, paragraphElement.ElementID, "next")
+			response.Relationships = append(response.Relationships, nextRel)
+
+			// Create 'previous' relationship from current to previous (bidirectional)
+			prevRel := p.createRelationship(paragraphElement.ElementID, previousElementID, "previous")
+			response.Relationships = append(response.Relationships, prevRel)
+		}
+		previousElementID = paragraphElement.ElementID
 
 		// Extract links from paragraph
 		if p.EnableLinkExtraction {
