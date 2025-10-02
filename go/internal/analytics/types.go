@@ -20,6 +20,7 @@ type Element struct {
 	DocID             string                 `json:"doc_id"`
 	SourceName        string                 `json:"source_name"`
 	ElementType       string                 `json:"element_type"`
+	ElementCategory   string                 `json:"element_category"`            // Universal Document Model category
 	Content           string                 `json:"content,omitempty"`           // Full content
 	ContentPreview    string                 `json:"content_preview"`
 	ContentLocation   map[string]interface{} `json:"content_location,omitempty"`  // Source location info

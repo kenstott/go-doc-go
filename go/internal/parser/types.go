@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"os"
+	"sync"
 	"time"
 )
 
@@ -22,6 +24,7 @@ type Document struct {
 type Element struct {
 	ElementID       string                 `json:"element_id"`
 	ElementType     string                 `json:"element_type"`
+	ElementCategory string                 `json:"element_category"`
 	Content         string                 `json:"content,omitempty"`
 	ContentPreview  string                 `json:"content_preview"`
 	ParentID        string                 `json:"parent_id,omitempty"`
@@ -81,6 +84,92 @@ const (
 	LinkTypeCitation = "citation"
 	LinkTypeFootnote = "footnote"
 )
+
+// Element categories for Universal Document Model
+const (
+	CategoryContainer = "container"
+	CategoryContent   = "content"
+	CategoryStructure = "structure"
+	CategoryComponent = "component"
+	CategoryMetadata  = "metadata"
+)
+
+// ElementTaxonomy represents the structure of the element_taxonomy.json file
+type ElementTaxonomy struct {
+	Version     string `json:"version"`
+	Description string `json:"description"`
+	Categories  map[string]struct {
+		Description  string   `json:"description"`
+		ElementTypes []string `json:"element_types"`
+	} `json:"categories"`
+	DefaultCategory string `json:"default_category"`
+}
+
+var (
+	taxonomyOnce     sync.Once
+	taxonomy         *ElementTaxonomy
+	typeToCategoryMap map[string]string
+)
+
+// loadTaxonomy loads the element taxonomy from JSON file
+func loadTaxonomy() {
+	taxonomyOnce.Do(func() {
+		// Find the taxonomy file - look in project root
+		possiblePaths := []string{
+			"element_taxonomy.json",
+			"../element_taxonomy.json",
+			"../../element_taxonomy.json",
+			"../../../element_taxonomy.json",
+		}
+
+		var taxonomyData []byte
+		var err error
+
+		for _, path := range possiblePaths {
+			taxonomyData, err = os.ReadFile(path)
+			if err == nil {
+				break
+			}
+		}
+
+		if err != nil {
+			// Fallback to default if file not found
+			taxonomy = &ElementTaxonomy{DefaultCategory: CategoryComponent}
+			typeToCategoryMap = make(map[string]string)
+			return
+		}
+
+		taxonomy = &ElementTaxonomy{}
+		if err := json.Unmarshal(taxonomyData, taxonomy); err != nil {
+			taxonomy = &ElementTaxonomy{DefaultCategory: CategoryComponent}
+			typeToCategoryMap = make(map[string]string)
+			return
+		}
+
+		// Build reverse map: element_type -> category
+		typeToCategoryMap = make(map[string]string)
+		for categoryName, categoryData := range taxonomy.Categories {
+			for _, elementType := range categoryData.ElementTypes {
+				typeToCategoryMap[elementType] = categoryName
+			}
+		}
+	})
+}
+
+// GetElementCategory returns the category for a given element type
+func GetElementCategory(elementType string) string {
+	loadTaxonomy()
+
+	if category, exists := typeToCategoryMap[elementType]; exists {
+		return category
+	}
+
+	// Return default category for unknown types
+	if taxonomy != nil && taxonomy.DefaultCategory != "" {
+		return taxonomy.DefaultCategory
+	}
+	return CategoryComponent
+}
 
 // Helper functions
 

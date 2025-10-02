@@ -298,6 +298,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		{Name: "doc_id", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "source_name", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "element_type", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "element_category", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "content", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "content_preview", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "content_hash", Type: arrow.BinaryTypes.String, Nullable: true},
@@ -312,6 +313,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 	docIDBuilder := array.NewStringBuilder(s.allocator)
 	sourceNameBuilder := array.NewStringBuilder(s.allocator)
 	elementTypeBuilder := array.NewStringBuilder(s.allocator)
+	elementCategoryBuilder := array.NewStringBuilder(s.allocator)
 	contentBuilder := array.NewStringBuilder(s.allocator)
 	contentPreviewBuilder := array.NewStringBuilder(s.allocator)
 	contentHashBuilder := array.NewStringBuilder(s.allocator)
@@ -323,6 +325,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 	defer docIDBuilder.Release()
 	defer sourceNameBuilder.Release()
 	defer elementTypeBuilder.Release()
+	defer elementCategoryBuilder.Release()
 	defer contentBuilder.Release()
 	defer contentPreviewBuilder.Release()
 	defer contentHashBuilder.Release()
@@ -336,6 +339,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		docIDBuilder.Append(elem.DocID)
 		sourceNameBuilder.Append(elem.SourceName)
 		elementTypeBuilder.Append(elem.ElementType)
+		elementCategoryBuilder.Append(elem.ElementCategory)
 
 		if elem.Content != "" {
 			contentBuilder.Append(elem.Content)
@@ -367,6 +371,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		docIDBuilder.NewArray(),
 		sourceNameBuilder.NewArray(),
 		elementTypeBuilder.NewArray(),
+		elementCategoryBuilder.NewArray(),
 		contentBuilder.NewArray(),
 		contentPreviewBuilder.NewArray(),
 		contentHashBuilder.NewArray(),

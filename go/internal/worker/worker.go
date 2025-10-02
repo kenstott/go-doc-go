@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -533,11 +534,27 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 				len(docxResult.Elements), len(docxResult.Relationships))
 			parseResult = docxResult.ToParseResult()
 		}
+	case "pptx", "ppt":
+		log.Printf("DEBUG: Parsing PPTX with BinaryPath=%s", docContent.BinaryPath)
+		pptxParser := parser.NewPptxParser()
+		pptxResult, pptxErr := pptxParser.Parse(parser.PptxParseRequest{
+			ID:      docInfo.DocID,
+			Content: docContent.BinaryPath, // PPTX parser expects file path
+		})
+		if pptxErr != nil {
+			log.Printf("ERROR: PPTX parse error: %v", pptxErr)
+			err = pptxErr
+		} else {
+			log.Printf("DEBUG: PPTX parsed successfully: %d elements, %d relationships",
+				len(pptxResult.Elements), len(pptxResult.Relationships))
+			parseResult = pptxResult.ToParseResult()
+		}
 	case "xlsx", "xls":
 		xlsxParser := parser.NewXLSXParser()
 		parseResult, err = xlsxParser.Parse(docInfo.DocID, contentToUse)
 	case "pdf":
-		pdfParser := parser.NewPDFParser()
+		// Use Python shim for PDF parsing (PyMuPDF has better table extraction)
+		pdfParser := parser.NewPDFPythonShimParser()
 		parseResult, err = pdfParser.Parse(docInfo.DocID, contentToUse)
 	case "csv":
 		csvParser := parser.NewCSVParser()
@@ -696,6 +713,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 				DocID:            docInfo.DocID,
 				SourceName:       docInfo.Source,
 				ElementType:      elem.ElementType,
+				ElementCategory:  parser.GetElementCategory(elem.ElementType), // Enrich with category
 				Content:          elem.Content,
 				ContentPreview:   elem.ContentPreview,
 				ContentHash:      contentHash,
@@ -755,13 +773,10 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		}
 	}
 
-	// Extract and queue links from HTML/web documents
+	// Queue links from parseResult (works for all document types including HTML, DOCX, PDF, etc.)
 	sourceConfig, hasConfig := w.contentSourceConfigs[docInfo.Source]
-	if hasConfig && (docType == "html" || docType == "htm") {
-		// Check if this is a web source
-		if sourceType, ok := sourceConfig["type"].(string); ok && sourceType == "web" {
-			w.extractAndQueueLinks(docInfo, docContent.Content, sourceConfig)
-		}
+	if parseResult != nil && len(parseResult.Links) > 0 && hasConfig {
+		w.queueLinksFromParseResult(docInfo, parseResult, sourceConfig)
 	}
 
 	log.Printf("Successfully processed document %s", docInfo.DocID)
@@ -1153,6 +1168,124 @@ func (w *Worker) extractAndQueueLinks(docInfo *jobcontrol.DocumentInfo, htmlCont
 	if queued > 0 {
 		log.Printf("Queued %d links from %s for processing", queued, docInfo.DocID)
 	}
+}
+
+// queueLinksFromParseResult queues links from parseResult.Links via job control
+func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, parseResult *parser.ParseResult, sourceConfig map[string]interface{}) {
+	if sourceConfig == nil {
+		// No source config, can't determine depth or filtering
+		return
+	}
+
+	// Get current depth from metadata
+	currentDepth := 0
+	if depth, ok := docInfo.Metadata["discovery_depth"].(float64); ok {
+		currentDepth = int(depth)
+	}
+
+	// Get max depth from source config
+	maxDepth := 1 // default
+	if configDepth, ok := sourceConfig["max_link_depth"].(int); ok {
+		maxDepth = configDepth
+	} else if configDepth, ok := sourceConfig["max_link_depth"].(float64); ok {
+		maxDepth = int(configDepth)
+	}
+
+	// Check if we've reached max depth
+	if currentDepth >= maxDepth {
+		log.Printf("Not extracting links from %s - at max depth %d", docInfo.DocID, maxDepth)
+		return
+	}
+
+	// Queue each link
+	queued := 0
+	for _, link := range parseResult.Links {
+		// Skip empty links
+		if link.LinkTarget == "" {
+			continue
+		}
+
+		// Skip wiki, mailto, and image links (not processable as documents)
+		if link.LinkType == "wiki" || link.LinkType == "email" || link.LinkType == "image" ||
+		   strings.HasPrefix(link.LinkTarget, "mailto:") {
+			continue
+		}
+
+		// Skip links to common image file extensions
+		lowerTarget := strings.ToLower(link.LinkTarget)
+		if strings.HasSuffix(lowerTarget, ".png") || strings.HasSuffix(lowerTarget, ".jpg") ||
+		   strings.HasSuffix(lowerTarget, ".jpeg") || strings.HasSuffix(lowerTarget, ".gif") ||
+		   strings.HasSuffix(lowerTarget, ".bmp") || strings.HasSuffix(lowerTarget, ".svg") ||
+		   strings.HasSuffix(lowerTarget, ".webp") || strings.HasSuffix(lowerTarget, ".ico") {
+			continue
+		}
+
+		// Resolve relative links to absolute URLs
+		targetURL := link.LinkTarget
+		hasProtocol := strings.Contains(targetURL, "://")
+
+		if !hasProtocol {
+			// This is a relative link - resolve it against the parent document URL
+			resolvedURL := w.resolveRelativeLink(docInfo.DocID, targetURL)
+			if resolvedURL != "" {
+				targetURL = resolvedURL
+			}
+		}
+
+		// Apply filters if this is a URL with a protocol (http://, https://, s3://, file://, sharepoint://, etc.)
+		if strings.Contains(targetURL, "://") {
+			if !w.shouldIncludeLink(targetURL, sourceConfig) {
+				continue
+			}
+		}
+
+		metadata := map[string]interface{}{
+			"url":             targetURL,
+			"parent_url":      docInfo.DocID,
+			"discovery_depth": currentDepth + 1,
+			"source_name":     docInfo.Source,
+			"link_type":       link.LinkType,
+		}
+
+		if err := w.jobControl.EnqueueDocument(targetURL, docInfo.Source, metadata); err != nil {
+			log.Printf("Failed to enqueue link %s: %v", targetURL, err)
+		} else {
+			queued++
+		}
+	}
+
+	if queued > 0 {
+		log.Printf("Queued %d links from %s parseResult for processing", queued, docInfo.DocID)
+	}
+}
+
+// resolveRelativeLink converts a relative link to an absolute URL based on the parent document
+func (w *Worker) resolveRelativeLink(parentDocID, relativeLink string) string {
+	// If parent doesn't have a protocol, it's a file path - resolve relative to its directory
+	if !strings.Contains(parentDocID, "://") {
+		// File path - resolve relative to parent directory
+		parentDir := filepath.Dir(parentDocID)
+		resolvedPath := filepath.Join(parentDir, relativeLink)
+		return resolvedPath
+	}
+
+	// Parse parent URL
+	baseURL, err := url.Parse(parentDocID)
+	if err != nil {
+		log.Printf("Failed to parse parent URL %s: %v", parentDocID, err)
+		return relativeLink
+	}
+
+	// Parse relative URL
+	relURL, err := url.Parse(relativeLink)
+	if err != nil {
+		log.Printf("Failed to parse relative URL %s: %v", relativeLink, err)
+		return relativeLink
+	}
+
+	// Resolve relative URL against base URL
+	resolvedURL := baseURL.ResolveReference(relURL)
+	return resolvedURL.String()
 }
 
 // shouldIncludeLink checks if a link should be included based on config patterns
