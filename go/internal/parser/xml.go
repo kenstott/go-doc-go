@@ -14,7 +14,7 @@ import (
 type XMLElementType string
 
 const (
-	XMLElementTypeRoot    XMLElementType = "document_root"
+	XMLElementTypeRoot    XMLElementType = "root"
 	XMLElementTypeElement XMLElementType = "xml_element"
 	XMLElementTypeText    XMLElementType = "xml_text"
 	XMLElementTypeList    XMLElementType = "xml_list"
@@ -262,47 +262,78 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 			// Process text content
 			text := strings.TrimSpace(string(t))
 			if text != "" && len(elementStack) > 0 {
-				textID := p.generateID("text_")
 				parentID := elementStack[len(elementStack)-1]
-				path := ""
-				if len(pathStack) > 0 {
-					path = pathStack[len(pathStack)-1]
+
+				// Find the parent element to check its type
+				// Only create separate text nodes for container elements (xml_list, xml_object)
+				// For xml_element, aggregate text into the parent element
+				shouldCreateTextNode := false
+				for i := len(response.Elements) - 1; i >= 0; i-- {
+					if response.Elements[i].ElementID == parentID {
+						parentType := response.Elements[i].ElementType
+						// Only create text nodes for container types
+						if parentType == XMLElementTypeList || parentType == XMLElementTypeObject {
+							shouldCreateTextNode = true
+						} else {
+							// For xml_element, add text to the element itself
+							response.Elements[i].Text = text
+							response.Elements[i].Content = text
+							// Update content preview to include text
+							if response.Elements[i].Metadata != nil {
+								if tagName, ok := response.Elements[i].Metadata["tag_name"].(string); ok {
+									preview := fmt.Sprintf("<%s> %s", tagName, text)
+									response.Elements[i].ContentPreview = p.truncateContent(preview)
+								}
+							}
+							// Extract links from text
+							p.extractLinksFromText(text, parentID, &response.Links)
+						}
+						break
+					}
 				}
 
-				textElement := XMLElement{
-					ElementID:       textID,
-					DocID:          request.ID,
-					ElementType:     XMLElementTypeText,
-					ParentID:        parentID,
-					ContentPreview:  p.truncateContent(text),
-					ContentLocation: p.createContentLocation(request.ID, XMLElementTypeText, path),
-					ContentHash:     p.generateHash(text),
-					ElementOrder:    elementCounter,
-					DocumentOrder:   elementCounter,
-					Text:            text,
-					Content:         text,
-					Metadata: map[string]interface{}{
-						"xml_path": path,
-						"is_text":  true,
-					},
+				if shouldCreateTextNode {
+					textID := p.generateID("text_")
+					path := ""
+					if len(pathStack) > 0 {
+						path = pathStack[len(pathStack)-1]
+					}
+
+					textElement := XMLElement{
+						ElementID:       textID,
+						DocID:          request.ID,
+						ElementType:     XMLElementTypeText,
+						ParentID:        parentID,
+						ContentPreview:  p.truncateContent(text),
+						ContentLocation: p.createContentLocation(request.ID, XMLElementTypeText, path),
+						ContentHash:     p.generateHash(text),
+						ElementOrder:    elementCounter,
+						DocumentOrder:   elementCounter,
+						Text:            text,
+						Content:         text,
+						Metadata: map[string]interface{}{
+							"xml_path": path,
+							"is_text":  true,
+						},
+					}
+
+					response.Elements = append(response.Elements, textElement)
+					elementCounter++
+
+					// Create relationship
+					relationship := XMLRelationship{
+						RelationshipID:   p.generateID("rel_"),
+						SourceElementID:  parentID,
+						TargetElementID:  textID,
+						RelationshipType: "contains",
+						Confidence:       1.0,
+						Metadata:         make(map[string]interface{}),
+					}
+					response.Relationships = append(response.Relationships, relationship)
+
+					// Extract links from text
+					p.extractLinksFromText(text, textID, &response.Links)
 				}
-
-				response.Elements = append(response.Elements, textElement)
-				elementCounter++
-
-				// Create relationship
-				relationship := XMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  parentID,
-					TargetElementID:  textID,
-					RelationshipType: "contains",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				response.Relationships = append(response.Relationships, relationship)
-
-				// Extract links from text
-				p.extractLinksFromText(text, textID, &response.Links)
 			}
 		}
 	}
