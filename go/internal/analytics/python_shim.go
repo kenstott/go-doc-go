@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -136,6 +137,13 @@ func (s *PythonShimStorage) callPython(operation string, data interface{}) error
 }
 
 // Close closes the storage
+// AppendLinks writes links (not yet implemented for Python shim)
+func (s *PythonShimStorage) AppendLinks(links []Link) error {
+	// Not yet implemented for Python shim - links are stored via native Go Parquet
+	log.Printf("WARNING: AppendLinks not implemented for Python shim - skipping %d links", len(links))
+	return nil
+}
+
 func (s *PythonShimStorage) Close() error {
 	// Nothing to close for Python shim
 	return nil

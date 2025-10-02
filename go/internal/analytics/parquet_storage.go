@@ -142,6 +142,25 @@ func (s *ParquetStorage) AppendEmbeddings(embeddings []Embedding) error {
 	return nil
 }
 
+// AppendLinks writes links to Parquet files
+func (s *ParquetStorage) AppendLinks(links []Link) error {
+	if len(links) == 0 {
+		return nil
+	}
+
+	// Group links by partition keys
+	partitioned := s.partitionLinks(links)
+
+	for partKey, lnks := range partitioned {
+		if err := s.writeLinksToParquet(partKey, lnks); err != nil {
+			return fmt.Errorf("failed to write links partition %s: %w", partKey, err)
+		}
+	}
+
+	log.Printf("ANALYTICS: Wrote %d links to Parquet (native Go)", len(links))
+	return nil
+}
+
 // Close closes the storage (no-op for Parquet)
 func (s *ParquetStorage) Close() error {
 	log.Println("Closing Parquet storage")
@@ -529,6 +548,90 @@ func (s *ParquetStorage) writeEmbeddingsToParquet(partKey string, embeddings []E
 	defer record.Release()
 
 	log.Printf("Writing %d embeddings (dimension: %d) to %s", len(embeddings), embeddingDim, filepath)
+	return s.writeRecordToFile(filepath, schema, record)
+}
+
+// partitionLinks groups links by partition keys
+func (s *ParquetStorage) partitionLinks(links []Link) map[string][]Link {
+	partitioned := make(map[string][]Link)
+	for _, link := range links {
+		key := s.getPartitionKey(time.Now(), link.SourceName)
+		partitioned[key] = append(partitioned[key], link)
+	}
+	return partitioned
+}
+
+// writeLinksToParquet writes links to a Parquet file
+func (s *ParquetStorage) writeLinksToParquet(partKey string, links []Link) error {
+	// Create partition directory
+	partPath := s.getPartitionPath("links", partKey)
+	if err := os.MkdirAll(partPath, 0755); err != nil {
+		return fmt.Errorf("failed to create partition directory: %w", err)
+	}
+
+	// Generate unique filename
+	filename := fmt.Sprintf("links_%s.parquet", generateRandomHex(8))
+	filepath := filepath.Join(partPath, filename)
+
+	// Define schema
+	fields := []arrow.Field{
+		{Name: "link_id", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "source_element_id", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "doc_id", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "source_name", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "link_type", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "link_target", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "link_text", Type: arrow.BinaryTypes.String, Nullable: true},
+	}
+	schema := arrow.NewSchema(fields, nil)
+
+	// Create builders
+	linkIDBuilder := array.NewStringBuilder(s.allocator)
+	sourceElementIDBuilder := array.NewStringBuilder(s.allocator)
+	docIDBuilder := array.NewStringBuilder(s.allocator)
+	sourceNameBuilder := array.NewStringBuilder(s.allocator)
+	linkTypeBuilder := array.NewStringBuilder(s.allocator)
+	linkTargetBuilder := array.NewStringBuilder(s.allocator)
+	linkTextBuilder := array.NewStringBuilder(s.allocator)
+
+	defer linkIDBuilder.Release()
+	defer sourceElementIDBuilder.Release()
+	defer docIDBuilder.Release()
+	defer sourceNameBuilder.Release()
+	defer linkTypeBuilder.Release()
+	defer linkTargetBuilder.Release()
+	defer linkTextBuilder.Release()
+
+	// Append data
+	for _, link := range links {
+		linkIDBuilder.Append(link.LinkID)
+		sourceElementIDBuilder.Append(link.SourceElementID)
+		docIDBuilder.Append(link.DocID)
+		sourceNameBuilder.Append(link.SourceName)
+		linkTypeBuilder.Append(link.LinkType)
+		linkTargetBuilder.Append(link.LinkTarget)
+		linkTextBuilder.Append(link.LinkText)
+	}
+
+	// Build record
+	columns := []arrow.Array{
+		linkIDBuilder.NewArray(),
+		sourceElementIDBuilder.NewArray(),
+		docIDBuilder.NewArray(),
+		sourceNameBuilder.NewArray(),
+		linkTypeBuilder.NewArray(),
+		linkTargetBuilder.NewArray(),
+		linkTextBuilder.NewArray(),
+	}
+	defer func() {
+		for _, col := range columns {
+			col.Release()
+		}
+	}()
+
+	record := array.NewRecord(schema, columns, int64(len(links)))
+	defer record.Release()
+
 	return s.writeRecordToFile(filepath, schema, record)
 }
 

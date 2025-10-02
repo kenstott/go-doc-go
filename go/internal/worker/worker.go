@@ -750,6 +750,27 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 			}
 		}
 
+		// Store links
+		if parseResult != nil && len(parseResult.Links) > 0 {
+			var links []analytics.Link
+			for _, link := range parseResult.Links {
+				links = append(links, analytics.Link{
+					LinkID:          link.LinkID,
+					SourceElementID: link.SourceElementID,
+					DocID:           docInfo.DocID,
+					SourceName:      docInfo.Source,
+					LinkType:        link.LinkType,
+					LinkTarget:      link.LinkTarget,
+					LinkText:        link.LinkText,
+				})
+			}
+
+			if err := storage.AppendLinks(links); err != nil {
+				log.Printf("Failed to store links: %v", err)
+				// Don't return false - links are optional
+			}
+		}
+
 		// Store embeddings
 		if embeddingMap != nil && len(embeddingMap) > 0 {
 			var embeddingsToStore []analytics.Embedding

@@ -51,11 +51,23 @@ type Embedding struct {
 	Text       string    `json:"text"` // Contextual text used for embedding (with parents/siblings)
 }
 
+// Link represents an extracted link
+type Link struct {
+	LinkID          string `json:"link_id"`
+	SourceElementID string `json:"source_element_id"`
+	DocID           string `json:"doc_id"`
+	SourceName      string `json:"source_name"`
+	LinkType        string `json:"link_type"`
+	LinkTarget      string `json:"link_target"`
+	LinkText        string `json:"link_text,omitempty"`
+}
+
 // Storage defines the interface for analytics storage
 type Storage interface {
 	AppendDocuments(documents []Document) error
 	AppendElements(elements []Element) error
 	AppendRelationships(relationships []Relationship) error
 	AppendEmbeddings(embeddings []Embedding) error
+	AppendLinks(links []Link) error
 	Close() error
 }
