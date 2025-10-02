@@ -91,7 +91,7 @@ GOOGLE_DRIVE_SETUP_STATUS.md
 
 # Deprecated UI code (preserved for reference)
 deprecated/frontend_*
-tests/test_output/
+tests/test_output-go/
 
 # SEC HTML Document Store specific ignores
 sec_html_store.db*

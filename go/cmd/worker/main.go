@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kennethstott/go-doc-go/internal/embeddings"
 	"github.com/kennethstott/go-doc-go/internal/jobcontrol"
 	"github.com/kennethstott/go-doc-go/internal/worker"
 	"gopkg.in/yaml.v3"
@@ -27,6 +28,7 @@ type YAMLConfig struct {
 		Enabled bool                     `yaml:"enabled"`
 		Outputs []map[string]interface{} `yaml:"outputs"`
 	} `yaml:"analytics"`
+	Embedding *embeddings.Config `yaml:"embedding"`
 }
 
 func main() {
@@ -35,11 +37,25 @@ func main() {
 		configFile     = flag.String("config", "", "Path to configuration file")
 		workerID       = flag.String("worker-id", "", "Custom worker ID (auto-generated if not provided)")
 		maxDocuments   = flag.Int("max-documents", 0, "Maximum number of documents to process (0 = unlimited)")
-		numWorkers     = flag.Int("workers", 1, "Number of concurrent goroutine workers (default: 1)")
+		numWorkers     = flag.Int("workers", 0, "Number of concurrent goroutine workers (0 = use NUM_WORKERS env var, default: 1)")
 		batchClaimSize = flag.Int("batch-claim-size", 10, "Number of documents to claim at once (default: 10)")
 	)
 
 	flag.Parse()
+
+	// Get workers from environment variable if not specified via CLI
+	if *numWorkers == 0 {
+		if envWorkers := os.Getenv("NUM_WORKERS"); envWorkers != "" {
+			if parsed, err := fmt.Sscanf(envWorkers, "%d", numWorkers); err == nil && parsed == 1 {
+				log.Printf("Using NUM_WORKERS from environment: %d", *numWorkers)
+			} else {
+				log.Printf("Warning: Invalid NUM_WORKERS value '%s', using default: 1", envWorkers)
+				*numWorkers = 1
+			}
+		} else {
+			*numWorkers = 1
+		}
+	}
 
 	// Determine config file path
 	configPath := *configFile
@@ -86,6 +102,7 @@ func main() {
 		},
 		ContentSources:    config.ContentSources,
 		AnalyticsConfigs:  config.Analytics.Outputs,
+		EmbeddingConfig:   config.Embedding,
 		MaxDocuments:      *maxDocuments,
 		DiscoveryInterval: 60,
 	}
@@ -98,12 +115,20 @@ func main() {
 	defer w.Close()
 
 	// Run worker
-	log.Printf("Starting worker: %s", *workerID)
+	log.Printf("========================================")
+	log.Printf("STARTING WORKER: %s", *workerID)
+	log.Printf("  Max documents: %d", *maxDocuments)
+	log.Printf("  Goroutine workers: %d", *numWorkers)
+	log.Printf("  Batch claim size: %d", *batchClaimSize)
+	log.Printf("========================================")
+
 	if err := w.Run(); err != nil {
 		log.Fatalf("Worker failed: %v", err)
 	}
 
-	log.Println("Worker completed successfully")
+	log.Println("========================================")
+	log.Println("WORKER COMPLETED SUCCESSFULLY")
+	log.Println("========================================")
 }
 
 func loadConfig(path string) (*YAMLConfig, error) {
@@ -117,6 +142,12 @@ func loadConfig(path string) (*YAMLConfig, error) {
 	var config YAMLConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	// Debug: Log embedding config
+	if config.Embedding != nil {
+		log.Printf("DEBUG: Loaded embedding config - Contextual: %v, Predecessor: %d, Successor: %d",
+			config.Embedding.Contextual, config.Embedding.PredecessorCount, config.Embedding.SuccessorCount)
 	}
 
 	// Set defaults
