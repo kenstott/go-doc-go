@@ -21,6 +21,12 @@ type JobControl interface {
 	UpdateLeaderHeartbeat(workerID string) error
 	ReleaseLeadership(workerID string) error
 
+	// Per-Source Leader Election
+	ElectSourceLeader(sourceName, workerID, info string) (bool, error)
+	GetSourceLeader(sourceName string) (string, error)
+	UpdateSourceLeaderHeartbeat(sourceName, workerID string) error
+	ReleaseSourceLeadership(sourceName, workerID string) error
+
 	// Change Tracking
 	HasDocumentChanged(docID, source string, currentModified *time.Time, currentHash string) (bool, error)
 	StoreDocumentMetadata(docID, source string, lastModified *time.Time, contentHash string, fileSize *int64, processingStats map[string]interface{}) error

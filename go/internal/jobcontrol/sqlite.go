@@ -107,6 +107,14 @@ func (jc *SQLiteJobControl) initializeSchema() error {
 		last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
+	CREATE TABLE IF NOT EXISTS source_leaders (
+		source_name TEXT PRIMARY KEY,
+		worker_id TEXT NOT NULL,
+		info TEXT,
+		elected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE TABLE IF NOT EXISTS document_metadata (
 		doc_id TEXT PRIMARY KEY,
 		source TEXT NOT NULL,
@@ -251,12 +259,12 @@ func (jc *SQLiteJobControl) CompleteDocument(docID, workerID string, success boo
 	return err
 }
 
-// IsDocumentQueued checks if a document is already in the queue
+// IsDocumentQueued checks if a document is already in the queue (any status)
 func (jc *SQLiteJobControl) IsDocumentQueued(docID string) (bool, error) {
 	var count int
 	err := jc.db.QueryRow(`
 		SELECT COUNT(*) FROM document_queue
-		WHERE doc_id = ? AND status IN ('pending', 'processing')
+		WHERE doc_id = ?
 	`, docID).Scan(&count)
 	return count > 0, err
 }
@@ -441,6 +449,86 @@ func (jc *SQLiteJobControl) ReleaseLeadership(workerID string) error {
 	_, err := jc.db.Exec(`
 		DELETE FROM leader WHERE worker_id = ?
 	`, workerID)
+	return err
+}
+
+// ElectSourceLeader attempts to become leader for a specific content source
+// Returns true if successfully elected, false if another worker is already leader
+func (jc *SQLiteJobControl) ElectSourceLeader(sourceName, workerID, info string) (bool, error) {
+	// First, clean up stale leaders (heartbeat older than claim timeout)
+	// This allows new workers to take over from crashed/stopped workers
+	staleThreshold := time.Now().Add(-time.Duration(jc.claimTimeout) * time.Second)
+	result, err := jc.db.Exec(`
+		DELETE FROM source_leaders
+		WHERE source_name = ?
+		AND last_heartbeat < ?
+	`, sourceName, staleThreshold)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to cleanup stale source leaders: %w", err)
+	}
+
+	rowsDeleted, _ := result.RowsAffected()
+	if rowsDeleted > 0 {
+		log.Printf("Cleaned up %d stale source leaders for %s", rowsDeleted, sourceName)
+	}
+
+	// Try to insert this worker as leader for this source
+	_, err = jc.db.Exec(`
+		INSERT INTO source_leaders (source_name, worker_id, info, elected_at, last_heartbeat)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		ON CONFLICT(source_name) DO NOTHING
+	`, sourceName, workerID, info)
+
+	if err != nil {
+		log.Printf("ERROR: Failed to insert source leader for %s: %v", sourceName, err)
+		return false, err
+	}
+
+	// Check if we are the leader for this source
+	var currentLeaderID string
+	err = jc.db.QueryRow(`
+		SELECT worker_id FROM source_leaders WHERE source_name = ?
+	`, sourceName).Scan(&currentLeaderID)
+
+	if err != nil {
+		log.Printf("ERROR: Failed to query source leader for %s: %v", sourceName, err)
+		return false, err
+	}
+
+	isLeader := currentLeaderID == workerID
+	log.Printf("Source leader election for %s: current=%s, candidate=%s, elected=%v", sourceName, currentLeaderID, workerID, isLeader)
+	return isLeader, nil
+}
+
+// GetSourceLeader returns the current leader for a specific content source
+func (jc *SQLiteJobControl) GetSourceLeader(sourceName string) (string, error) {
+	var leaderID string
+	err := jc.db.QueryRow(`
+		SELECT worker_id FROM source_leaders WHERE source_name = ?
+	`, sourceName).Scan(&leaderID)
+
+	if err == sql.ErrNoRows {
+		return "", nil // No leader for this source
+	}
+	return leaderID, err
+}
+
+// ReleaseSourceLeadership releases leadership for this worker for a specific source
+func (jc *SQLiteJobControl) ReleaseSourceLeadership(sourceName, workerID string) error {
+	_, err := jc.db.Exec(`
+		DELETE FROM source_leaders WHERE source_name = ? AND worker_id = ?
+	`, sourceName, workerID)
+	return err
+}
+
+// UpdateSourceLeaderHeartbeat updates the heartbeat timestamp for source leader
+func (jc *SQLiteJobControl) UpdateSourceLeaderHeartbeat(sourceName, workerID string) error {
+	_, err := jc.db.Exec(`
+		UPDATE source_leaders
+		SET last_heartbeat = CURRENT_TIMESTAMP
+		WHERE source_name = ? AND worker_id = ?
+	`, sourceName, workerID)
 	return err
 }
 
