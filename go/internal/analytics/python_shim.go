@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -81,20 +82,41 @@ func (s *PythonShimStorage) callPython(operation string, data interface{}) error
 		return fmt.Errorf("failed to marshal data: %w", err)
 	}
 
-	// Call Python script with JSON input
+	// Call Python script with JSON input via stdin (to avoid "argument list too long")
 	cmd := exec.Command(s.pythonPath, s.scriptPath)
-	cmd.Stdin = nil // We'll use arguments instead
 
 	// Set PYTHONPATH to include src directory
 	cmd.Env = append(cmd.Environ(), fmt.Sprintf("PYTHONPATH=%s", s.pythonPathEnv))
 
-	// Pass JSON as argument
-	cmd.Args = append(cmd.Args, string(jsonData))
-
-	output, err := cmd.CombinedOutput()
+	// Use stdin pipe to send data
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("python call failed: %w, output: %s", err, string(output))
+		return fmt.Errorf("failed to create stdin pipe: %w", err)
 	}
+
+	// Capture stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start python: %w", err)
+	}
+
+	// Write data to stdin
+	if _, err := stdin.Write(jsonData); err != nil {
+		stdin.Close()
+		return fmt.Errorf("failed to write to stdin: %w", err)
+	}
+	stdin.Close()
+
+	// Wait for completion
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("python call failed: %w, stdout: %s, stderr: %s", err, stdout.String(), stderr.String())
+	}
+
+	output := stdout.Bytes()
 
 	// Check result
 	var result map[string]interface{}
