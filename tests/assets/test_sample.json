@@ -1,0 +1,17 @@
+{
+  "person": {
+    "name": "John Doe",
+    "age": 30,
+    "email": "john@example.com",
+    "address": {
+      "street": "123 Main St",
+      "city": "San Francisco",
+      "state": "CA"
+    },
+    "skills": ["Python", "Go", "JavaScript"]
+  },
+  "metadata": {
+    "created": "2024-01-15",
+    "updated": "2024-01-20"
+  }
+}
