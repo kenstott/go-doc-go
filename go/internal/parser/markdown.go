@@ -91,6 +91,65 @@ func (r *MarkdownParseResponse) ToJSON() (string, error) {
 	return string(data), nil
 }
 
+// ToParseResult converts MarkdownParseResponse to the standard ParseResult format
+func (r *MarkdownParseResponse) ToParseResult() *ParseResult {
+	// Convert document metadata
+	var doc Document
+	if docID, ok := r.Document["doc_id"].(string); ok {
+		doc.ID = docID
+	}
+	if title, ok := r.Document["title"].(string); ok {
+		doc.Title = title
+	}
+	if contentType, ok := r.Document["content_type"].(string); ok {
+		doc.DocType = contentType
+	}
+	doc.Metadata = r.Document
+
+	// Convert elements
+	elements := make([]Element, len(r.Elements))
+	for i, mdElem := range r.Elements {
+		elements[i] = Element{
+			ElementID:       mdElem.ElementID,
+			ElementType:     string(mdElem.ElementType),
+			Content:         mdElem.Text,
+			ContentPreview:  mdElem.ContentPreview,
+			ParentID:        mdElem.ParentID,
+			Metadata:        mdElem.Metadata,
+			ContentLocation: mdElem.ContentLocation,
+		}
+	}
+
+	// Convert relationships
+	relationships := make([]Relationship, len(r.Relationships))
+	for i, mdRel := range r.Relationships {
+		relationships[i] = Relationship{
+			SourceElementID:  mdRel.SourceElementID,
+			TargetElementID:  mdRel.TargetElementID,
+			RelationshipType: mdRel.RelationshipType,
+			Metadata:         mdRel.Metadata,
+		}
+	}
+
+	// Convert links
+	links := make([]Link, len(r.Links))
+	for i, mdLink := range r.Links {
+		links[i] = Link{
+			SourceElementID: mdLink.ElementID,
+			LinkTarget:      mdLink.LinkTarget,
+			LinkText:        mdLink.LinkText,
+			LinkType:        mdLink.LinkType,
+		}
+	}
+
+	return &ParseResult{
+		Document:      doc,
+		Elements:      elements,
+		Relationships: relationships,
+		Links:         links,
+	}
+}
+
 // MarkdownParser handles parsing of markdown documents
 type MarkdownParser struct {
 	MaxContentPreview     int
@@ -297,6 +356,16 @@ func (p *MarkdownParser) createFrontMatterElement(docID string, frontMatter map[
 // parseMarkdownContent parses markdown content into elements
 func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID string, response *MarkdownParseResponse) {
 	i := 0
+	var previousElementID string // Track previous element for sibling relationships
+
+	// Track section hierarchy for proper parent-child relationships (like Python)
+	currentParent := parentID
+	type section struct {
+		id    string
+		level int
+	}
+	sectionStack := []section{{id: parentID, level: 0}}
+
 	for i < len(lines) && len(response.Elements) < p.MaxElements {
 		line := lines[i]
 
@@ -312,12 +381,36 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 
 		// Check for headers
 		if match := regexp.MustCompile(`^(#{1,6})\s+(.+)$`).FindStringSubmatch(line); match != nil {
-			element := p.createHeaderElement(docID, match[2], len(match[1]), i, parentID)
+			level := len(match[1])
+
+			// Pop stack until we find a header with lower level (like Python does)
+			for len(sectionStack) > 1 && sectionStack[len(sectionStack)-1].level >= level {
+				sectionStack = sectionStack[:len(sectionStack)-1]
+			}
+
+			// Current parent is the top of the stack
+			currentParent = sectionStack[len(sectionStack)-1].id
+
+			element := p.createHeaderElement(docID, match[2], level, i, currentParent)
 			response.Elements = append(response.Elements, element)
 
-			// Create relationship
-			relationship := p.createRelationship(parentID, element.ElementID, "contains")
+			// Create parent-child relationship
+			relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 			response.Relationships = append(response.Relationships, relationship)
+
+			// Push this header onto the stack and make it the new current parent
+			sectionStack = append(sectionStack, section{id: element.ElementID, level: level})
+			currentParent = element.ElementID
+
+			// Create sibling relationships
+			if previousElementID != "" {
+				prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
+				response.Relationships = append(response.Relationships, prevSibRel)
+
+				nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
+				response.Relationships = append(response.Relationships, nextSibRel)
+			}
+			previousElementID = element.ElementID
 
 			// Extract links from header
 			if p.EnableLinkExtraction {
@@ -333,12 +426,22 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 		if strings.HasPrefix(line, "```") {
 			codeContent, language, newIndex := p.parseCodeBlock(lines, i)
 			if codeContent != "" {
-				element := p.createCodeBlockElement(docID, codeContent, language, i, parentID)
+				element := p.createCodeBlockElement(docID, codeContent, language, i, currentParent)
 				response.Elements = append(response.Elements, element)
 
-				// Create relationship
-				relationship := p.createRelationship(parentID, element.ElementID, "contains")
+				// Create parent-child relationship
+				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
+
+				// Create sibling relationships
+				if previousElementID != "" {
+					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
+					response.Relationships = append(response.Relationships, prevSibRel)
+
+					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
+					response.Relationships = append(response.Relationships, nextSibRel)
+				}
+				previousElementID = element.ElementID
 
 				i = newIndex
 				continue
@@ -349,12 +452,22 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 		if strings.HasPrefix(line, ">") {
 			quoteContent, newIndex := p.parseBlockquote(lines, i)
 			if quoteContent != "" {
-				element := p.createBlockquoteElement(docID, quoteContent, i, parentID)
+				element := p.createBlockquoteElement(docID, quoteContent, i, currentParent)
 				response.Elements = append(response.Elements, element)
 
-				// Create relationship
-				relationship := p.createRelationship(parentID, element.ElementID, "contains")
+				// Create parent-child relationship
+				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
+
+				// Create sibling relationships
+				if previousElementID != "" {
+					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
+					response.Relationships = append(response.Relationships, prevSibRel)
+
+					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
+					response.Relationships = append(response.Relationships, nextSibRel)
+				}
+				previousElementID = element.ElementID
 
 				// Extract links from blockquote
 				if p.EnableLinkExtraction {
@@ -370,12 +483,22 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 		if match := regexp.MustCompile(`^(\s*)([-\*\+]|\d+\.)\s+(.+)$`).FindStringSubmatch(line); match != nil {
 			listContent, newIndex := p.parseList(lines, i)
 			if listContent != "" {
-				element := p.createListElement(docID, listContent, i, parentID)
+				element := p.createListElement(docID, listContent, i, currentParent)
 				response.Elements = append(response.Elements, element)
 
-				// Create relationship
-				relationship := p.createRelationship(parentID, element.ElementID, "contains")
+				// Create parent-child relationship
+				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
+
+				// Create sibling relationships
+				if previousElementID != "" {
+					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
+					response.Relationships = append(response.Relationships, prevSibRel)
+
+					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
+					response.Relationships = append(response.Relationships, nextSibRel)
+				}
+				previousElementID = element.ElementID
 
 				// Extract links from list
 				if p.EnableLinkExtraction {
@@ -392,12 +515,22 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 		if strings.Contains(line, "|") && i+1 < len(lines) && strings.Contains(lines[i+1], "|") {
 			tableContent, newIndex := p.parseTable(lines, i)
 			if tableContent != "" {
-				element := p.createTableElement(docID, tableContent, i, parentID)
+				element := p.createTableElement(docID, tableContent, i, currentParent)
 				response.Elements = append(response.Elements, element)
 
 				// Create relationship
-				relationship := p.createRelationship(parentID, element.ElementID, "contains")
+				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
+
+				// Create sibling relationships
+				if previousElementID != "" {
+					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
+					response.Relationships = append(response.Relationships, prevSibRel)
+
+					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
+					response.Relationships = append(response.Relationships, nextSibRel)
+				}
+				previousElementID = element.ElementID
 
 				// Extract links from table
 				if p.EnableLinkExtraction {
@@ -413,12 +546,22 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 		// Default: treat as paragraph
 		paragraphContent, newIndex := p.parseParagraph(lines, i)
 		if paragraphContent != "" && len(paragraphContent) >= p.ParagraphThreshold {
-			element := p.createParagraphElement(docID, paragraphContent, i, parentID)
+			element := p.createParagraphElement(docID, paragraphContent, i, currentParent)
 			response.Elements = append(response.Elements, element)
 
 			// Create relationship
-			relationship := p.createRelationship(parentID, element.ElementID, "contains")
+			relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 			response.Relationships = append(response.Relationships, relationship)
+
+			// Create sibling relationships
+			if previousElementID != "" {
+				prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
+				response.Relationships = append(response.Relationships, prevSibRel)
+
+				nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
+				response.Relationships = append(response.Relationships, nextSibRel)
+			}
+			previousElementID = element.ElementID
 
 			// Extract links from paragraph
 			if p.EnableLinkExtraction {
