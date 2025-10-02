@@ -69,27 +69,22 @@ func (b *ContextualTextBuilder) BuildContextualText(
 	siblingTexts := b.collectSiblingTexts(element, allElements, siblingBudget)
 
 	// Combine: element first, then parents, then siblings
-	// Use a map to deduplicate context texts
 	var parts []string
-	seen := make(map[string]bool)
 
 	// Main element
 	parts = append(parts, elementProcessed)
-	seen[elementProcessed] = true
 
 	// Parents (already ordered from immediate to root)
 	for _, parentText := range parentTexts {
-		if parentText != "" && !seen[parentText] {
+		if parentText != "" {
 			parts = append(parts, parentText)
-			seen[parentText] = true
 		}
 	}
 
 	// Siblings
 	for _, siblingText := range siblingTexts {
-		if siblingText != "" && !seen[siblingText] {
+		if siblingText != "" {
 			parts = append(parts, siblingText)
-			seen[siblingText] = true
 		}
 	}
 
@@ -121,7 +116,7 @@ func (b *ContextualTextBuilder) collectParentTexts(
 		}
 
 		// Skip root elements (like Python does)
-		if parent.ElementType == "root" || parent.ElementType == "document_root" {
+		if parent.ElementType == "root" {
 			currentID = parent.ParentID
 			continue
 		}
@@ -192,23 +187,16 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 		return siblingTexts
 	}
 
-	// Build ancestor set to avoid including ancestors as predecessors
-	ancestorIDs := make(map[string]bool)
-	currentParentID := element.ParentID
-	elementMap := buildElementMap(allElements)
-	for currentParentID != "" {
-		ancestorIDs[currentParentID] = true
-		if parent, ok := elementMap[currentParentID]; ok {
-			currentParentID = parent.ParentID
-		} else {
-			break
-		}
-	}
-
 	// Collect predecessors (elements before current in array)
+	// Stop immediately when we hit the parent - all earlier elements will be ancestors
 	predCount := 0
 	for i := currentIndex - 1; i >= 0 && predCount < b.predecessorCount; i-- {
 		pred := allElements[i]
+
+		// If we hit the parent, stop - all earlier elements are ancestors
+		if pred.ElementID == element.ParentID {
+			break
+		}
 
 		// Filter like Python: skip roots and elements without content
 		if pred.ElementType == "root" || pred.ContentPreview == "" {
@@ -217,11 +205,6 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 
 		// Skip structural-only containers (like Python)
 		if isStructuralOnlyContainer(pred) {
-			continue
-		}
-
-		// Skip ancestors (don't include parent as predecessor)
-		if ancestorIDs[pred.ElementID] {
 			continue
 		}
 
@@ -355,13 +338,12 @@ func isStructuralOnlyContainer(element parser.Element) bool {
 func ShouldEmbed(element parser.Element, allElements []parser.Element) bool {
 	// Skip elements that should use their parent's embedding
 	skipTypes := map[string]bool{
-		"table_cell":    true,
-		"json_item":     true,
-		"json_field":    true,
-		"table":         true, // Always a container
-		"root":          true, // Document root is not embedded
-		"document_root": true, // Also skip document_root
-		"body":          true, // Body container is not embedded
+		"table_cell": true,
+		"json_item":  true,
+		"json_field": true,
+		"table":      true, // Always a container
+		"root":       true, // Document root is not embedded
+		"body":       true, // Body container is not embedded
 	}
 
 	if skipTypes[element.ElementType] {

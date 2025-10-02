@@ -968,23 +968,18 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 break
 
         if current_index >= 0:
-            # Build ancestor set to avoid including ancestors as predecessors
-            ancestor_ids = set()
-            current_parent_id = element.get("parent_id")
-            while current_parent_id:
-                ancestor_ids.add(current_parent_id)
-                parent_elem = id_to_element.get(current_parent_id)
-                if parent_elem:
-                    current_parent_id = parent_elem.get("parent_id")
-                else:
-                    break
-
             # Get meaningful predecessors (elements that come before)
+            # Stop immediately when we hit the parent - all earlier elements are ancestors
             pred_count = 0
             i = current_index - 1
+            parent_id = element.get("parent_id")
 
             while i >= 0 and pred_count < self.predecessor_count:
                 pred_element = all_elements[i]
+
+                # If we hit the parent, stop - all earlier elements are ancestors
+                if pred_element.get("element_id") == parent_id:
+                    break
 
                 # Check if predecessor is an XML root element
                 pred_content_loc = pred_element.get('content_location', {})
@@ -1001,12 +996,10 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 # 1. Are root elements (including XML roots)
                 # 2. Don't have content (empty content_preview)
                 # 3. Are just container elements
-                # 4. Are ancestors of current element (NEW: hierarchy-aware filtering)
                 if (pred_element["element_type"] != "root" and
                         not is_pred_xml_root and
                         pred_element.get("content_preview") and
-                        not self._is_structural_only_container(pred_element) and
-                        pred_element.get("element_id") not in ancestor_ids):
+                        not self._is_structural_only_container(pred_element)):
                     context_ids.append(pred_element["element_id"])
                     pred_count += 1
 
