@@ -50,17 +50,19 @@ def append_embeddings(storage, data: List[Dict[str, Any]]) -> None:
 
 def main():
     """Main entry point for analytics shim."""
-    if len(sys.argv) < 2:
-        result = {
-            "success": False,
-            "error": "No input data provided"
-        }
-        print(json.dumps(result))
-        sys.exit(1)
-
     try:
+        # Read input from stdin (to avoid "argument list too long" errors)
+        input_json = sys.stdin.read()
+        if not input_json:
+            result = {
+                "success": False,
+                "error": "No input data provided on stdin"
+            }
+            print(json.dumps(result))
+            sys.exit(1)
+
         # Parse input JSON
-        input_data = json.loads(sys.argv[1])
+        input_data = json.loads(input_json)
 
         operation = input_data.get("operation")
         config = input_data.get("config", {})

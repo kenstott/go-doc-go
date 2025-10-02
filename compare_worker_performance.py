@@ -124,7 +124,7 @@ def main():
     print("DOCUMENT PROCESSING DETAILS:")
 
     # Check the test output for document counts
-    test_output_dir = Path("tests/test_output/worker_cli_test")
+    test_output_dir = Path("tests/test_output-go/worker_cli_test")
     if test_output_dir.exists():
         # Count files in analytics output
         analytics_dir = test_output_dir / "analytics-output"

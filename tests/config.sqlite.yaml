@@ -1,7 +1,8 @@
 embedding:
   enabled: true
-  provider: fastembed
+  provider: onnx  # Use native Go ONNX Runtime for parallel inference
   model: "sentence-transformers/all-MiniLM-L6-v2"
+  model_path: "go/models/all-MiniLM-L6-v2"  # Path to exported ONNX model
   dimensions: 384
   chunk_size: 512
   overlap: 128
@@ -53,6 +54,7 @@ content_sources:
     include_extensions: ["md", "txt", "xml", "pptx", "csv", "docx", "xlsx", "pdf", "htm", "html"]
     watch_for_changes: true
     max_link_depth: 2
+    refresh_interval: 300  # 5 minutes in seconds
   - name: "wikipedia"
     type: "web"
     base_url: "https://en.wikipedia.org"

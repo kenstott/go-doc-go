@@ -137,7 +137,7 @@ class TestWorkerCLI:
         cmd = [
             "python", "-m", "go_doc_go.cli.worker",
             "--config", str(isolated_config),
-            "--max-documents", "5000",
+            "--max-documents", "5000"
         ]
 
         try:

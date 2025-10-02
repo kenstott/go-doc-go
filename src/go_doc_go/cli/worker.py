@@ -429,19 +429,36 @@ class SimpleDocumentWorker:
 
             # Generate embeddings if enabled
             if self.embedding_generator and 'elements' in parse_result:
-                for element in parse_result['elements']:
-                    if element.get('content_preview'):
-                        # Use generate method for ContextualEmbeddingGenerator
-                        if hasattr(self.embedding_generator, 'generate'):
-                            embedding = self.embedding_generator.generate(
-                                element['content_preview']
-                            )
-                        else:
-                            embedding = self.embedding_generator.generate_embedding(
-                                element['content_preview']
-                            )
-                        if embedding:
-                            element['embedding'] = embedding
+                # Use batch contextual embedding generation if available
+                if hasattr(self.embedding_generator, 'generate_from_elements'):
+                    # Contextual embedding generator - includes parent/sibling context
+                    embeddings_dict = self.embedding_generator.generate_from_elements(
+                        parse_result['elements']
+                    )
+                    # embeddings_dict = {element_id: {'embedding': [...], 'embedding_text': '...'}}
+                    for element in parse_result['elements']:
+                        element_id = element.get('element_id')
+                        if element_id and element_id in embeddings_dict:
+                            emb_data = embeddings_dict[element_id]
+                            element['embedding'] = emb_data['embedding']
+                            element['embedding_text'] = emb_data['embedding_text']
+                else:
+                    # Fallback for non-contextual generators
+                    for element in parse_result['elements']:
+                        if element.get('content_preview'):
+                            # Use generate method for ContextualEmbeddingGenerator
+                            if hasattr(self.embedding_generator, 'generate'):
+                                embedding = self.embedding_generator.generate(
+                                    element['content_preview']
+                                )
+                            else:
+                                embedding = self.embedding_generator.generate_embedding(
+                                    element['content_preview']
+                                )
+                            if embedding:
+                                element['embedding'] = embedding
+                                # Store the text that was embedded
+                                element['embedding_text'] = element.get('content_preview', '')
 
             # Detect relationships
             if self.relationship_detector and 'elements' in parse_result:
@@ -497,7 +514,8 @@ class SimpleDocumentWorker:
                                 'doc_id': doc_id,
                                 'source_name': source_name,
                                 'embedding': element['embedding'],
-                                'text': element.get('content_preview', '')
+                                # Store the contextual text used for embedding (with parents/siblings)
+                                'text': element.get('embedding_text', element.get('content_preview', ''))
                             })
 
                     if embeddings:
@@ -669,7 +687,13 @@ class SimpleDocumentWorker:
     default=86400,  # 1 day = 86400 seconds
     help="Default interval in seconds between discovery cycles (default: 86400 = 1 day)"
 )
-def main(config, worker_id, log_level, max_documents, discovery_interval):
+@click.option(
+    "--workers", "-w",
+    type=int,
+    default=None,
+    help="Number of concurrent workers: Go uses goroutines within one process, Python spawns separate processes (0 = use NUM_WORKERS env var, default: 1)"
+)
+def main(config, worker_id, log_level, max_documents, discovery_interval, workers):
     """Go-Doc-Go Simple Document Worker (New Architecture).
 
     Process documents using a distributed, queue-based system with automatic
@@ -689,11 +713,22 @@ def main(config, worker_id, log_level, max_documents, discovery_interval):
       # Run with custom worker ID and debug logging
       python -m go_doc_go.cli.worker --worker-id my-worker-01 --log-level DEBUG
 
+      # Run with multiple independent worker processes
+      python -m go_doc_go.cli.worker --workers 5
+
+      # Or use environment variable
+      NUM_WORKERS=5 python -m go_doc_go.cli.worker
+
     \b
     Environment Variables:
       GO_DOC_GO_CONFIG_PATH    Path to configuration file (default: ./config.yaml)
+      NUM_WORKERS              Number of worker processes to spawn (default: 1)
       USE_GO_MODULES           Set to 'true' to use Go worker instead of Python
     """
+    # Get workers from environment variable if not specified
+    if workers is None or workers == 0:
+        workers = int(os.environ.get('NUM_WORKERS', '1'))
+
     # Check if we should use Go worker
     use_go_modules = os.environ.get('USE_GO_MODULES', '').lower() == 'true'
 
@@ -732,12 +767,16 @@ def main(config, worker_id, log_level, max_documents, discovery_interval):
         if max_documents:
             cmd.extend(["--max-documents", str(max_documents)])
 
+        if workers and workers > 1:
+            cmd.extend(["--workers", str(workers)])
+
         # Set log level via environment (Go uses standard logging)
         env = os.environ.copy()
         env['GO_LOG_LEVEL'] = log_level
 
         click.echo(f"Delegating to Go worker: {go_worker}")
         click.echo(f"USE_GO_MODULES=true detected, using native Go implementation")
+        click.echo(f"Command: {' '.join(cmd)}")
 
         # Run the Go worker
         try:
@@ -750,7 +789,76 @@ def main(config, worker_id, log_level, max_documents, discovery_interval):
             click.echo(f"Error running Go worker: {e}", err=True)
             sys.exit(1)
 
-    # Original Python worker implementation
+    # Python worker - spawn multiple independent processes if workers > 1
+    if workers and workers > 1:
+        import subprocess
+        import time
+
+        click.echo(f"Starting {workers} independent Python worker processes...")
+        processes = []
+
+        try:
+            for i in range(workers):
+                # Generate unique worker ID for each process
+                process_worker_id = f"{worker_id or 'worker'}_{i}" if worker_id else None
+
+                # Build command for subprocess
+                cmd = [sys.executable, "-m", "go_doc_go.cli.worker"]
+
+                if config:
+                    cmd.extend(["--config", config])
+                if process_worker_id:
+                    cmd.extend(["--worker-id", process_worker_id])
+                if log_level:
+                    cmd.extend(["--log-level", log_level])
+                if max_documents:
+                    cmd.extend(["--max-documents", str(max_documents)])
+                if discovery_interval:
+                    cmd.extend(["--discovery-interval", str(discovery_interval)])
+                # Don't pass --workers to subprocess (avoid recursive spawning)
+
+                click.echo(f"Starting worker process {i+1}/{workers}: {process_worker_id}")
+
+                # Spawn subprocess
+                process = subprocess.Popen(cmd)
+                processes.append(process)
+
+            click.echo(f"All {workers} worker processes started")
+
+            # Wait for all processes
+            while True:
+                time.sleep(1)
+                # Check if any process has died
+                for i, proc in enumerate(processes):
+                    if proc.poll() is not None:
+                        click.echo(f"Worker process {i+1} exited with code {proc.returncode}")
+
+        except KeyboardInterrupt:
+            click.echo("\nShutting down worker processes...")
+            for proc in processes:
+                proc.terminate()
+
+            # Wait for graceful shutdown
+            time.sleep(2)
+
+            # Force kill if still running
+            for proc in processes:
+                if proc.poll() is None:
+                    proc.kill()
+
+            click.echo("All worker processes stopped")
+            sys.exit(0)
+
+        except Exception as e:
+            click.echo(f"Error managing worker processes: {e}", err=True)
+            for proc in processes:
+                try:
+                    proc.kill()
+                except:
+                    pass
+            sys.exit(1)
+
+    # Original Python worker implementation (single process)
     # Configure logging
     log_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     log_level_obj = getattr(logging, log_level.upper())
