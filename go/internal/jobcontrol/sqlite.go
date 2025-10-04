@@ -135,11 +135,29 @@ func (jc *SQLiteJobControl) initializeSchema() error {
 }
 
 // EnqueueDocument adds a document to the processing queue
+// Only resets documents that are in 'failed' status or don't exist
+// NEVER resets completed, pending, or processing documents
 func (jc *SQLiteJobControl) EnqueueDocument(docID, source string, metadata map[string]interface{}) error {
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
+
+	// First check if document exists and what status it has
+	var existingStatus string
+	err = jc.db.QueryRow(`SELECT status FROM document_queue WHERE doc_id = ?`, docID).Scan(&existingStatus)
+
+	if err == nil {
+		// Document exists - only re-enqueue if it's failed
+		if existingStatus == "completed" || existingStatus == "pending" || existingStatus == "processing" {
+			// Don't re-enqueue - document is already completed or being processed
+			return nil
+		}
+		// Status is 'failed' - allow re-queue by continuing
+	} else if err != sql.ErrNoRows {
+		return fmt.Errorf("failed to check document status: %w", err)
+	}
+	// If sql.ErrNoRows, document doesn't exist - proceed to insert
 
 	query := `
 		INSERT INTO document_queue (doc_id, source, metadata, status, created_at)
@@ -152,14 +170,18 @@ func (jc *SQLiteJobControl) EnqueueDocument(docID, source string, metadata map[s
 			claimed_at = NULL,
 			retry_count = 0,
 			error_message = NULL
+		WHERE document_queue.status = 'failed'
 	`
 
-	_, err = jc.db.Exec(query, docID, source, string(metadataJSON))
+	result, err := jc.db.Exec(query, docID, source, string(metadataJSON))
 	if err != nil {
 		return fmt.Errorf("failed to enqueue document: %w", err)
 	}
 
-	log.Printf("Enqueued document: %s from source: %s", docID, source)
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		log.Printf("Enqueued document: %s from source: %s", docID, source)
+	}
 	return nil
 }
 
@@ -259,12 +281,14 @@ func (jc *SQLiteJobControl) CompleteDocument(docID, workerID string, success boo
 	return err
 }
 
-// IsDocumentQueued checks if a document is already in the queue (any status)
+// IsDocumentQueued checks if a document is already in the queue
+// Returns true for pending, processing, or completed documents
+// Only returns false for documents that don't exist or have failed
 func (jc *SQLiteJobControl) IsDocumentQueued(docID string) (bool, error) {
 	var count int
 	err := jc.db.QueryRow(`
 		SELECT COUNT(*) FROM document_queue
-		WHERE doc_id = ?
+		WHERE doc_id = ? AND status IN ('pending', 'processing', 'completed')
 	`, docID).Scan(&count)
 	return count > 0, err
 }

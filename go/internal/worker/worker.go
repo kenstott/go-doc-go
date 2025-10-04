@@ -553,8 +553,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		xlsxParser := parser.NewXLSXParser()
 		parseResult, err = xlsxParser.Parse(docInfo.DocID, contentToUse)
 	case "pdf":
-		// Use Python shim for PDF parsing (PyMuPDF has better table extraction)
-		pdfParser := parser.NewPDFPythonShimParser()
+		pdfParser := parser.NewPDFParser()
 		parseResult, err = pdfParser.Parse(docInfo.DocID, contentToUse)
 	case "csv":
 		csvParser := parser.NewCSVParser()
