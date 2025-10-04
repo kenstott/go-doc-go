@@ -4,8 +4,11 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 )
 
@@ -88,6 +91,7 @@ type HTMLParser struct {
 	MaxContentPreview int
 	ExtractDates      bool
 	EnableCaching     bool
+	StoreFullContent  bool // If true, populate Content field with full (untruncated) text
 }
 
 // NewHTMLParser creates a new HTML parser instance
@@ -95,6 +99,7 @@ func NewHTMLParser() *HTMLParser {
 	return &HTMLParser{
 		MaxContentPreview: 100,
 		ExtractDates:      true,
+		StoreFullContent:  false, // Default: don't store full content
 		EnableCaching:     true,
 	}
 }
@@ -259,7 +264,7 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 		}
 
 		// Extract text content for this element
-		textContent := p.extractTextContent(node)
+		textContent := p.extractTextContent(node) // Truncated preview
 
 		// NOTE: We create elements even if they have no direct text content
 		// Structural elements (ul, ol, section, nav, etc.) are important for hierarchy
@@ -271,12 +276,20 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 			ElementID:       p.generateID(fmt.Sprintf("%s_", strings.ToLower(string(elementType)))),
 			ElementType:     elementType,
 			ParentID:        parentID,
-			ContentPreview:  textContent,
+			ContentPreview:  textContent, // Always populate with truncated preview
 			ContentLocation: p.createContentLocationForNode(sourceID, elementType, node),
 			ContentHash:     p.generateHash(textContent),
 			ElementOrder:    *counter,
 			DocumentOrder:   *counter,
 			Metadata:        p.extractMetadata(node),
+		}
+
+		// Optionally populate Content field with full (untruncated) text
+		if p.StoreFullContent {
+			fullText := p.extractFullTextContent(node)
+			if fullText != "" {
+				element.Content = fullText
+			}
 		}
 
 		*elements = append(*elements, element)
@@ -462,6 +475,39 @@ func (p *HTMLParser) extractTextContent(node *html.Node) string {
 
 	content := strings.TrimSpace(text.String())
 	return p.truncateContent(content)
+}
+
+// extractFullTextContent extracts untruncated text content from an HTML node
+// Used when StoreFullContent is true to populate the Content field
+func (p *HTMLParser) extractFullTextContent(node *html.Node) string {
+	tagName := strings.ToLower(node.Data)
+
+	// For specific element types, include all descendant text
+	includeAllText := map[string]bool{
+		"p": true, "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+		"li": true, "th": true, "td": true, "blockquote": true, "pre": true, "code": true,
+	}
+
+	var text strings.Builder
+	if includeAllText[tagName] {
+		// Get all text from descendants
+		p.extractTextRecursive(node, &text)
+	} else {
+		// Get only direct text children
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if child.Type == html.TextNode {
+				textContent := strings.TrimSpace(child.Data)
+				if textContent != "" {
+					if text.Len() > 0 {
+						text.WriteString(" ")
+					}
+					text.WriteString(textContent)
+				}
+			}
+		}
+	}
+
+	return strings.TrimSpace(text.String())
 }
 
 // extractTextRecursive recursively extracts text from HTML nodes
@@ -744,4 +790,103 @@ func calculateDepth(elementType HTMLElementType) int {
 	default:
 		return 2 // Default depth for unknown elements
 	}
+}
+
+// SupportsLocation checks if this parser can resolve the given content location
+func (p *HTMLParser) SupportsLocation(contentLocation map[string]interface{}) bool {
+	if contentLocation == nil {
+		return false
+	}
+
+	// Check if source field exists
+	source, ok := contentLocation["source"].(string)
+	if !ok || source == "" {
+		return false
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(source); os.IsNotExist(err) {
+		return false
+	}
+
+	// Check if it's an HTML file
+	ext := strings.ToLower(filepath.Ext(source))
+	return ext == ".html" || ext == ".htm"
+}
+
+// resolveElementSelection is a helper that finds an element using content_location
+// Returns the goquery selection for the element
+func (p *HTMLParser) resolveElementSelection(contentLocation map[string]interface{}) (*goquery.Selection, error) {
+	if contentLocation == nil {
+		return nil, fmt.Errorf("content_location is nil")
+	}
+
+	// Get source file path
+	source, ok := contentLocation["source"].(string)
+	if !ok || source == "" {
+		return nil, fmt.Errorf("missing or invalid 'source' field in content_location")
+	}
+
+	// Get CSS selector - must be specific
+	selector, ok := contentLocation["selector"].(string)
+	if !ok || selector == "" {
+		return nil, fmt.Errorf("missing or invalid 'selector' field in content_location")
+	}
+
+	// Read source file
+	fileContent, err := os.ReadFile(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read source file %s: %w", source, err)
+	}
+
+	// Parse HTML
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(fileContent)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse HTML: %w", err)
+	}
+
+	// Find element using CSS selector
+	selection := doc.Find(selector)
+
+	// Ensure selector resolves to exactly one element
+	if selection.Length() == 0 {
+		return nil, fmt.Errorf("selector '%s' matched no elements", selector)
+	}
+	if selection.Length() > 1 {
+		return nil, fmt.Errorf("selector '%s' matched %d elements (must match exactly 1)", selector, selection.Length())
+	}
+
+	return selection, nil
+}
+
+// ResolveElementContent extracts raw HTML content for a specific element using content_location
+func (p *HTMLParser) ResolveElementContent(contentLocation map[string]interface{}, sourceContent string) (string, error) {
+	selection, err := p.resolveElementSelection(contentLocation)
+	if err != nil {
+		return "", err
+	}
+
+	// Get HTML content of the element
+	html, err := selection.Html()
+	if err != nil {
+		return "", fmt.Errorf("failed to extract HTML: %w", err)
+	}
+
+	return html, nil
+}
+
+// ResolveElementText extracts plain text for a specific element using content_location
+func (p *HTMLParser) ResolveElementText(contentLocation map[string]interface{}, sourceContent string) (string, error) {
+	selection, err := p.resolveElementSelection(contentLocation)
+	if err != nil {
+		return "", err
+	}
+
+	// Extract text content
+	text := selection.Text()
+
+	// Clean up whitespace
+	text = strings.TrimSpace(text)
+
+	return text, nil
 }

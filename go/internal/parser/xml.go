@@ -6,8 +6,12 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/antchfx/xmlquery"
 )
 
 // XMLElementType represents the type of XML element
@@ -538,4 +542,82 @@ func calculateXMLDepth(elementType XMLElementType) int {
 	default:
 		return 1 // Default depth for unknown elements
 	}
+}
+
+// SupportsLocation checks if this parser can resolve the given content location
+func (p *XMLParser) SupportsLocation(contentLocation map[string]interface{}) bool {
+	if contentLocation == nil {
+		return false
+	}
+
+	// Check if source exists and is an XML file
+	source, ok := contentLocation["source"].(string)
+	if !ok || source == "" {
+		return false
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(source); os.IsNotExist(err) {
+		return false
+	}
+
+	// Check if it's an XML file by extension
+	ext := strings.ToLower(filepath.Ext(source))
+	return ext == ".xml"
+}
+
+// resolveElementByXPath reads XML file and finds element by XPath
+func (p *XMLParser) resolveElementByXPath(contentLocation map[string]interface{}) (*xmlquery.Node, error) {
+	source, _ := contentLocation["source"].(string)
+	path, ok := contentLocation["path"].(string)
+	if !ok || path == "" {
+		return nil, fmt.Errorf("missing or invalid 'path' in content_location")
+	}
+
+	// Read XML file
+	fileContent, err := os.ReadFile(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read XML file: %w", err)
+	}
+
+	// Parse XML document
+	doc, err := xmlquery.Parse(strings.NewReader(string(fileContent)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse XML: %w", err)
+	}
+
+	// Find element using XPath
+	nodes := xmlquery.Find(doc, path)
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("XPath '%s' matched no elements", path)
+	}
+	if len(nodes) > 1 {
+		return nil, fmt.Errorf("XPath '%s' matched %d elements (must match exactly 1)", path, len(nodes))
+	}
+
+	return nodes[0], nil
+}
+
+// ResolveElementText extracts plain text for a specific element using content_location
+func (p *XMLParser) ResolveElementText(contentLocation map[string]interface{}, sourceContent string) (string, error) {
+	node, err := p.resolveElementByXPath(contentLocation)
+	if err != nil {
+		return "", err
+	}
+
+	// Extract text content from the node
+	text := node.InnerText()
+	return strings.TrimSpace(text), nil
+}
+
+// ResolveElementContent extracts raw content for a specific element using content_location
+func (p *XMLParser) ResolveElementContent(contentLocation map[string]interface{}, sourceContent string) (string, error) {
+	node, err := p.resolveElementByXPath(contentLocation)
+	if err != nil {
+		return "", err
+	}
+
+	// Extract XML content (including tags)
+	content := node.OutputXML(true)
+	return strings.TrimSpace(content), nil
 }
