@@ -366,7 +366,5 @@ func ShouldEmbed(element parser.Element, allElements []parser.Element) bool {
 		}
 	}
 
-	// Python resolves content later and checks then, so we don't check here
-	// Content will be resolved in BuildContextualText if needed
 	return true
 }
