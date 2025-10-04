@@ -21,8 +21,6 @@ func NewContentSource(config map[string]interface{}) (ContentSource, error) {
 	case "s3":
 		return NewS3ContentSource(config)
 	default:
-		// Fall back to Python shim for unsupported types
-		name, _ := config["name"].(string)
-		return NewPythonShimSource(name, config)
+		return nil, fmt.Errorf("unsupported content source type: %s", sourceType)
 	}
 }

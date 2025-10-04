@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -146,46 +147,107 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		modelConfig.ModelType, embeddingDimension, maxSeqLength)
 
 	// Fixed dimensions for session reuse
-	// CRITICAL: Batching causes ONNX Runtime to hang - use batch size 1
+	// Use batch_size=1 for optimal CoreML performance (batching at ONNX level slower than parallel single items)
 	const fixedBatchSize = 1
 	fixedSeqLength := int64(maxSeqLength)
 
 	// Create session pool with pre-allocated sessions and tensors
 	// This is THE KEY to performance - sessions are expensive to create with CoreML
-	poolSize := 4
+	poolSize := config.PoolSize
+	if poolSize == 0 {
+		poolSize = 4 // Default to 4 if not specified
+	}
 	sessionPool := make(chan *SessionWrapper, poolSize)
 
 	log.Printf("Creating session pool with %d reusable ONNX sessions (batch_size=%d, seq_length=%d)...",
 		poolSize, fixedBatchSize, fixedSeqLength)
 
 	for i := 0; i < poolSize; i++ {
-		// Create session options with CoreML
+		// Create session options with platform-specific GPU acceleration
 		sessionOptions, err := ort.NewSessionOptions()
 		if err != nil {
 			return nil, fmt.Errorf("failed to create session options: %w", err)
 		}
 
-		// Enable CoreML with proper configuration to use GPU/Neural Engine
-		// Match configuration from onnxruntime_go test suite that works with CoreML
-		coreMLOptions := map[string]string{
-			"ModelFormat":                        "NeuralNetwork", // Use NeuralNetwork format (not MLProgram) for compatibility
-			"MLComputeUnits":                     "ALL",           // Enable all compute units (CPU, GPU, Neural Engine)
-			"RequireStaticInputShapes":           "0",             // Allow dynamic shapes (important for BERT)
-			"EnableOnSubgraphs":                  "0",             // Don't enable on subgraphs
-			"AllowLowPrecisionAccumulationOnGPU": "1",             // Enable low precision acceleration
-		}
-
+		// Enable GPU acceleration based on platform
 		if i == 0 {
-			log.Printf("Attempting to enable CoreML execution provider with MLComputeUnits=ALL...")
-			if err := sessionOptions.AppendExecutionProviderCoreMLV2(coreMLOptions); err != nil {
-				log.Printf("WARNING: CoreML execution provider NOT available: %v", err)
-				log.Printf("INFO: Falling back to CPU execution provider (no GPU acceleration)")
+			// Log GPU setup only for first session to avoid spam
+			if runtime.GOOS == "darwin" {
+				// macOS - use CoreML for Apple Silicon GPU/Neural Engine
+				coreMLOptions := map[string]string{
+					"ModelFormat":                        "NeuralNetwork", // Use NeuralNetwork format for stability
+					"MLComputeUnits":                     "ALL",           // Enable all compute units (CPU, GPU, Neural Engine)
+					"RequireStaticInputShapes":           "0",             // Allow dynamic shapes (important for BERT)
+					"EnableOnSubgraphs":                  "0",             // Don't enable on subgraphs
+					"AllowLowPrecisionAccumulationOnGPU": "1",             // Enable low precision acceleration
+				}
+				log.Printf("Attempting to enable CoreML execution provider (macOS GPU/Neural Engine)...")
+				if err := sessionOptions.AppendExecutionProviderCoreMLV2(coreMLOptions); err != nil {
+					log.Printf("WARNING: CoreML execution provider NOT available: %v", err)
+					log.Printf("INFO: Falling back to CPU execution provider (no GPU acceleration)")
+				} else {
+					log.Printf("SUCCESS: CoreML execution provider enabled with GPU/Neural Engine (MLComputeUnits=ALL)")
+				}
+			} else if runtime.GOOS == "linux" {
+				// Linux - try CUDA for NVIDIA GPU acceleration
+				log.Printf("Attempting to enable CUDA execution provider (NVIDIA GPU)...")
+				cudaProviderOptions, err := ort.NewCUDAProviderOptions()
+				if err != nil {
+					log.Printf("WARNING: Failed to create CUDA provider options: %v", err)
+					log.Printf("INFO: Falling back to CPU execution provider (no GPU acceleration)")
+				} else {
+					cudaSettings := map[string]string{
+						"device_id":                       "0",  // Use first GPU
+						"gpu_mem_limit":                   "0",  // No memory limit (use all available)
+						"arena_extend_strategy":           "kSameAsRequested",
+						"cudnn_conv_algo_search":          "EXHAUSTIVE",
+						"do_copy_in_default_stream":       "1",
+						"cudnn_conv_use_max_workspace":    "1",
+					}
+					if err := cudaProviderOptions.Update(cudaSettings); err != nil {
+						log.Printf("WARNING: Failed to update CUDA options: %v", err)
+						cudaProviderOptions.Destroy()
+					} else if err := sessionOptions.AppendExecutionProviderCUDA(cudaProviderOptions); err != nil {
+						log.Printf("WARNING: CUDA execution provider NOT available: %v", err)
+						log.Printf("INFO: Falling back to CPU execution provider (no GPU acceleration)")
+						log.Printf("INFO: To enable GPU on Linux, install CUDA toolkit and ONNX Runtime with CUDA support")
+						cudaProviderOptions.Destroy()
+					} else {
+						log.Printf("SUCCESS: CUDA execution provider enabled (NVIDIA GPU acceleration)")
+						cudaProviderOptions.Destroy()
+					}
+				}
 			} else {
-				log.Printf("SUCCESS: CoreML execution provider enabled with GPU/Neural Engine (MLComputeUnits=ALL)")
+				// Other platforms - CPU only
+				log.Printf("Platform %s - using CPU execution provider", runtime.GOOS)
 			}
 		} else {
-			// Silently enable CoreML for remaining sessions
-			sessionOptions.AppendExecutionProviderCoreMLV2(coreMLOptions)
+			// Silently enable GPU for remaining sessions
+			if runtime.GOOS == "darwin" {
+				coreMLOptions := map[string]string{
+					"ModelFormat":                        "NeuralNetwork",
+					"MLComputeUnits":                     "ALL",
+					"RequireStaticInputShapes":           "0",
+					"EnableOnSubgraphs":                  "0",
+					"AllowLowPrecisionAccumulationOnGPU": "1",
+				}
+				sessionOptions.AppendExecutionProviderCoreMLV2(coreMLOptions)
+			} else if runtime.GOOS == "linux" {
+				cudaProviderOptions, err := ort.NewCUDAProviderOptions()
+				if err == nil {
+					cudaSettings := map[string]string{
+						"device_id":                       "0",
+						"gpu_mem_limit":                   "0",
+						"arena_extend_strategy":           "kSameAsRequested",
+						"cudnn_conv_algo_search":          "EXHAUSTIVE",
+						"do_copy_in_default_stream":       "1",
+						"cudnn_conv_use_max_workspace":    "1",
+					}
+					cudaProviderOptions.Update(cudaSettings)
+					sessionOptions.AppendExecutionProviderCUDA(cudaProviderOptions)
+					cudaProviderOptions.Destroy()
+				}
+			}
 		}
 
 		// Pre-allocate tensors with FIXED shapes
@@ -398,25 +460,40 @@ func (g *OnnxEmbeddingGenerator) GenerateBatch(texts []string) ([][]float64, err
 		return [][]float64{}, nil
 	}
 
-	originalCount := len(texts)
 	fixedBatchSize := int(g.fixedBatchSize)
 
-	// Handle batches larger than fixed size by splitting into chunks
+	// Handle batches larger than fixed size by processing sequentially
+	// Each worker goroutine already provides parallelism - no need to spawn more goroutines here
 	if len(texts) > fixedBatchSize {
-		results := make([][]float64, 0, len(texts))
+		// Split into chunks and process sequentially (worker-level parallelism is enough)
+		allResults := make([][]float64, 0, len(texts))
+
 		for i := 0; i < len(texts); i += fixedBatchSize {
 			end := i + fixedBatchSize
 			if end > len(texts) {
 				end = len(texts)
 			}
-			chunkResults, err := g.GenerateBatch(texts[i:end])
+
+			// Process this chunk sequentially (no additional goroutines)
+			chunkVectors, err := g.generateBatchSingle(texts[i:end])
 			if err != nil {
 				return nil, err
 			}
-			results = append(results, chunkResults...)
+
+			allResults = append(allResults, chunkVectors...)
 		}
-		return results, nil
+
+		return allResults, nil
 	}
+
+	// Single chunk - process directly
+	return g.generateBatchSingle(texts)
+}
+
+// generateBatchSingle processes a single batch (size <= fixedBatchSize) using one session from the pool
+func (g *OnnxEmbeddingGenerator) generateBatchSingle(texts []string) ([][]float64, error) {
+	originalCount := len(texts)
+	fixedBatchSize := int(g.fixedBatchSize)
 
 	// Get a session wrapper from the pool (blocks if all in use)
 	wrapper := <-g.sessionPool

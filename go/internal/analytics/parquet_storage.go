@@ -7,8 +7,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/apache/arrow/go/v18/arrow"
 	"github.com/apache/arrow/go/v18/arrow/array"
@@ -521,7 +523,7 @@ func (s *ParquetStorage) writeEmbeddingsToParquet(partKey string, embeddings []E
 		elementIDBuilder.Append(emb.ElementID)
 		docIDBuilder.Append(emb.DocID)
 		sourceNameBuilder.Append(emb.SourceName)
-		textBuilder.Append(emb.Text)
+		textBuilder.Append(sanitizeUTF8(emb.Text))
 
 		// Append embedding vector
 		embeddingBuilder.Append(true)
@@ -643,6 +645,15 @@ func generateRandomHex(length int) string {
 		return fmt.Sprintf("%08x", time.Now().UnixNano()&0xFFFFFFFF)[:length]
 	}
 	return hex.EncodeToString(bytes)[:length]
+}
+
+// sanitizeUTF8 removes invalid UTF-8 sequences from a string
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	// Replace invalid UTF-8 sequences with replacement character
+	return strings.ToValidUTF8(s, "�")
 }
 
 // writeRecordToFile writes an Arrow record to a Parquet file

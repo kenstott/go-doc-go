@@ -31,5 +31,6 @@ type Config struct {
 	PredecessorCount int               `json:"predecessor_count" yaml:"predecessor_count"`
 	SuccessorCount   int               `json:"successor_count" yaml:"successor_count"`
 	CacheDir         string            `json:"cache_dir,omitempty" yaml:"cache_dir,omitempty"`
+	PoolSize         int               `json:"pool_size,omitempty" yaml:"pool_size,omitempty"` // ONNX session pool size (matches worker count)
 	AdditionalConfig map[string]interface{} `json:"-" yaml:"-"`
 }
