@@ -147,9 +147,9 @@ class TestWorkerCLI:
                 env={**os.environ, "PYTHONPATH": "src"},
                 capture_output=True,
                 text=True,
-                timeout=600
+                timeout=390
             )
-            # If worker completed within timeout, check return code
+            # If a worker completed within timeout, check the return code
             assert result.returncode == 0, f"Worker failed: {result.stderr}"
         except subprocess.TimeoutExpired as e:
             # Timeout is expected for workers - check if it started and ran properly
@@ -186,7 +186,7 @@ class TestWorkerCLI:
                 text=True,
                 timeout=20
             )
-            # If worker completed within timeout, check return code
+            # If a worker completed within timeout, check the return code
             assert result.returncode == 0, f"Worker failed: {result.stderr}"
         except subprocess.TimeoutExpired as e:
             # Timeout is expected - check for leader election messages
@@ -208,7 +208,7 @@ class TestWorkerCLI:
 
     def test_multiple_workers_coordination(self, isolated_config, temp_test_dir):
         """Test that worker can coordinate via work queue (single worker test for new architecture)."""
-        # In new architecture, each worker is a separate process
+        # In the new architecture, each worker is a separate process
         # This test verifies a single worker can coordinate via the job control DB
         cmd = [
             "python", "-m", "go_doc_go.cli.worker",
