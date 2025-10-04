@@ -222,14 +222,58 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 			return ""
 		}
 
-		// Create element
+		// Check if this tag should get a dedicated element (semantic tags only)
+		// This matches Python's selective element creation in html.py:942-944
+		if !p.shouldCreateElement(node.Data) {
+			// Don't create element, but process children with same parent
+			var previousChildID string
+			for child := node.FirstChild; child != nil; child = child.NextSibling {
+				currentChildID := p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
+
+				// Track sequential relationships among children
+				if currentChildID != "" && previousChildID != "" {
+					nextRel := HTMLRelationship{
+						RelationshipID:   p.generateID("rel_"),
+						SourceElementID:  previousChildID,
+						TargetElementID:  currentChildID,
+						RelationshipType: "next",
+						Confidence:       1.0,
+						Metadata:         make(map[string]interface{}),
+					}
+					prevRel := HTMLRelationship{
+						RelationshipID:   p.generateID("rel_"),
+						SourceElementID:  currentChildID,
+						TargetElementID:  previousChildID,
+						RelationshipType: "previous",
+						Confidence:       1.0,
+						Metadata:         make(map[string]interface{}),
+					}
+					*relationships = append(*relationships, nextRel, prevRel)
+				}
+
+				if currentChildID != "" {
+					previousChildID = currentChildID
+				}
+			}
+			return ""
+		}
+
+		// Extract text content for this element
+		textContent := p.extractTextContent(node)
+
+		// NOTE: We create elements even if they have no direct text content
+		// Structural elements (ul, ol, section, nav, etc.) are important for hierarchy
+		// The embedding system will skip empty ancestors when building context
+		// This is the CORRECT behavior - Python's filtering at html.py:1050 is a bug
+
+		// Create element for all whitelisted semantic tags
 		element := HTMLElement{
 			ElementID:       p.generateID(fmt.Sprintf("%s_", strings.ToLower(string(elementType)))),
 			ElementType:     elementType,
 			ParentID:        parentID,
-			ContentPreview:  p.extractTextContent(node),
+			ContentPreview:  textContent,
 			ContentLocation: p.createContentLocationForNode(sourceID, elementType, node),
-			ContentHash:     p.generateHash(p.extractTextContent(node)),
+			ContentHash:     p.generateHash(textContent),
 			ElementOrder:    *counter,
 			DocumentOrder:   *counter,
 			Metadata:        p.extractMetadata(node),
@@ -286,40 +330,10 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 
 		return element.ElementID
 	} else if node.Type == html.TextNode {
-		// Handle text nodes with meaningful content
-		text := strings.TrimSpace(node.Data)
-		if text != "" && len(text) > 1 {
-			element := HTMLElement{
-				ElementID:       p.generateID("text_"),
-				ElementType:     HTMLElementTypeText,
-				ParentID:        parentID,
-				ContentPreview:  p.truncateContent(text),
-				ContentLocation: p.createContentLocation(sourceID, string(HTMLElementTypeText), ""),
-				ContentHash:     p.generateHash(text),
-				ElementOrder:    *counter,
-				DocumentOrder:   *counter,
-				Metadata:        make(map[string]interface{}),
-				Text:            text,
-			}
-
-			*elements = append(*elements, element)
-			*counter++
-
-			// Create parent-child relationship
-			if parentID != "" {
-				relationship := HTMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  parentID,
-					TargetElementID:  element.ElementID,
-					RelationshipType: "contains",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				*relationships = append(*relationships, relationship)
-			}
-
-			return element.ElementID
-		}
+		// Don't create separate text node elements
+		// Text is captured by parent semantic elements via extractTextContent
+		// This matches Python's approach which aggregates text into parent elements
+		return ""
 	}
 	return ""
 }
@@ -371,20 +385,81 @@ func (p *HTMLParser) getElementType(tagName string) HTMLElementType {
 // shouldSkipElement determines if an element should be skipped during parsing
 func (p *HTMLParser) shouldSkipElement(tagName string) bool {
 	skipTags := map[string]bool{
-		"script": true,
-		"style":  true,
+		"script":   true,
+		"style":    true,
 		"noscript": true,
-		"meta":   true,
-		"link":   true,
-		"title":  true,
+		"meta":     true,
+		"link":     true,
+		"title":    true,
+		"head":     true,
 	}
 	return skipTags[strings.ToLower(tagName)]
 }
 
+// shouldCreateElement determines if we should create a dedicated element for this tag
+// This includes all semantic content tags AND structural/container tags for hierarchy
+// NOTE: This is the CORRECT design - Python has bugs where it:
+//   1. Doesn't create li elements
+//   2. Filters out empty container elements (ul, ol, section, nav)
+// We create ALL whitelisted elements for proper hierarchy tracking
+func (p *HTMLParser) shouldCreateElement(tagName string) bool {
+	// Whitelist of semantic tags that should get dedicated elements
+	// Based on Python's whitelist in html.py:942-944 but ADDS 'li' (bug fix)
+	semanticTags := map[string]bool{
+		// Headers
+		"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+		// Text content
+		"p": true,
+		// Lists - containers AND items
+		"ul": true, "ol": true, "li": true,
+		// Code blocks
+		"pre": true, "code": true,
+		// Quotes
+		"blockquote": true,
+		// Tables - ONLY table container, NOT tr/td/th (those are handled in processTable)
+		"table": true,
+		// Media
+		"img": true,
+		// Structural/container elements (important for hierarchy)
+		"body": true, "div": true, "article": true, "section": true, "nav": true, "aside": true, "figure": true,
+	}
+	return semanticTags[strings.ToLower(tagName)]
+}
+
 // extractTextContent extracts text content from an HTML node
+// This matches Python's approach in html.py:1033-1047:
+// - Get only DIRECT text content for most elements (prevents container pollution)
+// - Get ALL text for specific elements like p, h1-h6, li, th, td, blockquote, pre, code
 func (p *HTMLParser) extractTextContent(node *html.Node) string {
+	tagName := strings.ToLower(node.Data)
+
+	// For specific element types, include all descendant text
+	// This matches Python's list at html.py:1044
+	includeAllText := map[string]bool{
+		"p": true, "h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+		"li": true, "th": true, "td": true, "blockquote": true, "pre": true, "code": true,
+	}
+
 	var text strings.Builder
-	p.extractTextRecursive(node, &text)
+	if includeAllText[tagName] {
+		// Get all text from descendants
+		p.extractTextRecursive(node, &text)
+	} else {
+		// Get only direct text children (not from deeper descendants)
+		// This matches Python's approach at html.py:1035-1041
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if child.Type == html.TextNode {
+				textContent := strings.TrimSpace(child.Data)
+				if textContent != "" {
+					if text.Len() > 0 {
+						text.WriteString(" ")
+					}
+					text.WriteString(textContent)
+				}
+			}
+		}
+	}
+
 	content := strings.TrimSpace(text.String())
 	return p.truncateContent(content)
 }
@@ -613,7 +688,7 @@ func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult 
 		element := Element{
 			ElementID:       htmlElem.ElementID,
 			ElementType:     string(htmlElem.ElementType),
-			Content:         htmlElem.Text,
+			Content:         "", // Leave empty - rely on ContentLocation resolution for HTML
 			ContentPreview:  htmlElem.ContentPreview,
 			ParentID:        htmlElem.ParentID,
 			Position:        i,
