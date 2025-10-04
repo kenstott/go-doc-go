@@ -182,12 +182,40 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
                 raise
 
     def enqueue_document(self, doc_id: str, source: str, metadata: Dict[str, Any]):
-        """Add a document to the processing queue."""
+        """Add a document to the processing queue.
+
+        Only enqueues new documents or re-queues failed documents.
+        NEVER re-enqueues completed, pending, or processing documents.
+        """
         with self._get_connection() as conn:
+            # Check if document exists and its status
+            cursor = conn.execute(
+                "SELECT status FROM document_queue WHERE doc_id = ?",
+                (doc_id,)
+            )
+            row = cursor.fetchone()
+
+            if row:
+                existing_status = row[0]
+                # Don't re-enqueue if completed, pending, or processing
+                if existing_status in ('completed', 'pending', 'processing'):
+                    return
+                # Status is 'failed' - allow re-queue by continuing
+
+            # Insert new document or update failed document
             conn.execute("""
-                INSERT OR REPLACE INTO document_queue
+                INSERT INTO document_queue
                 (doc_id, source, metadata, status, retry_count)
                 VALUES (?, ?, ?, 'pending', 0)
+                ON CONFLICT(doc_id) DO UPDATE SET
+                    source = excluded.source,
+                    metadata = excluded.metadata,
+                    status = 'pending',
+                    retry_count = 0,
+                    claimed_by = NULL,
+                    claimed_at = NULL,
+                    error_message = NULL
+                WHERE document_queue.status = 'failed'
             """, (doc_id, source, json.dumps(metadata)))
             conn.commit()
 
@@ -378,10 +406,16 @@ class SimpleSQLiteJobControlDB(SimpleJobControlDB):
                 logger.info(f"Released {count} stale document claims")
 
     def is_document_queued(self, doc_id: str) -> bool:
-        """Check if document is already in the queue."""
+        """Check if document is already in the queue.
+
+        Returns True for pending, processing, or completed documents.
+        Returns False for failed or non-existent documents (these can be enqueued).
+        """
         with self._get_connection() as conn:
             cursor = conn.execute("""
-                SELECT 1 FROM document_queue WHERE doc_id = ?
+                SELECT 1 FROM document_queue
+                WHERE doc_id = ?
+                AND status IN ('pending', 'processing', 'completed')
             """, (doc_id,))
             return cursor.fetchone() is not None
 

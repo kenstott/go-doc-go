@@ -688,12 +688,12 @@ class SimpleDocumentWorker:
     help="Default interval in seconds between discovery cycles (default: 86400 = 1 day)"
 )
 @click.option(
-    "--workers", "-w",
+    "--instances", "-i",
     type=int,
     default=None,
-    help="Number of concurrent workers: Go uses goroutines within one process, Python spawns separate processes (0 = use NUM_WORKERS env var, default: 1)"
+    help="Number of separate worker processes to spawn (0 = use NUM_INSTANCES env var, default: 1, Python multiprocessing style)"
 )
-def main(config, worker_id, log_level, max_documents, discovery_interval, workers):
+def main(config, worker_id, log_level, max_documents, discovery_interval, instances):
     """Go-Doc-Go Simple Document Worker (New Architecture).
 
     Process documents using a distributed, queue-based system with automatic
@@ -714,20 +714,20 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, worker
       python -m go_doc_go.cli.worker --worker-id my-worker-01 --log-level DEBUG
 
       # Run with multiple independent worker processes
-      python -m go_doc_go.cli.worker --workers 5
+      python -m go_doc_go.cli.worker --instances 5
 
       # Or use environment variable
-      NUM_WORKERS=5 python -m go_doc_go.cli.worker
+      NUM_INSTANCES=5 python -m go_doc_go.cli.worker
 
     \b
     Environment Variables:
       GO_DOC_GO_CONFIG_PATH    Path to configuration file (default: ./config.yaml)
-      NUM_WORKERS              Number of worker processes to spawn (default: 1)
+      NUM_INSTANCES            Number of worker processes to spawn (default: 1)
       USE_GO_MODULES           Set to 'true' to use Go worker instead of Python
     """
-    # Get workers from environment variable if not specified
-    if workers is None or workers == 0:
-        workers = int(os.environ.get('NUM_WORKERS', '1'))
+    # Get instances from environment variable if not specified
+    if instances is None or instances == 0:
+        instances = int(os.environ.get('NUM_INSTANCES', '1'))
 
     # Check if we should use Go worker
     use_go_modules = os.environ.get('USE_GO_MODULES', '').lower() == 'true'
@@ -767,8 +767,8 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, worker
         if max_documents:
             cmd.extend(["--max-documents", str(max_documents)])
 
-        if workers and workers > 1:
-            cmd.extend(["--workers", str(workers)])
+        if instances and instances > 1:
+            cmd.extend(["--instances", str(instances)])
 
         # Set log level via environment (Go uses standard logging)
         env = os.environ.copy()
@@ -789,16 +789,16 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, worker
             click.echo(f"Error running Go worker: {e}", err=True)
             sys.exit(1)
 
-    # Python worker - spawn multiple independent processes if workers > 1
-    if workers and workers > 1:
+    # Python worker - spawn multiple independent processes if instances > 1
+    if instances and instances > 1:
         import subprocess
         import time
 
-        click.echo(f"Starting {workers} independent Python worker processes...")
+        click.echo(f"Starting {instances} independent Python worker processes...")
         processes = []
 
         try:
-            for i in range(workers):
+            for i in range(instances):
                 # Generate unique worker ID for each process
                 process_worker_id = f"{worker_id or 'worker'}_{i}" if worker_id else None
 
@@ -815,15 +815,17 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, worker
                     cmd.extend(["--max-documents", str(max_documents)])
                 if discovery_interval:
                     cmd.extend(["--discovery-interval", str(discovery_interval)])
-                # Don't pass --workers to subprocess (avoid recursive spawning)
+                # Don't pass --instances to subprocess (avoid recursive spawning)
 
-                click.echo(f"Starting worker process {i+1}/{workers}: {process_worker_id}")
+                click.echo(f"Starting worker process {i+1}/{instances}: {process_worker_id}")
 
-                # Spawn subprocess
-                process = subprocess.Popen(cmd)
+                # Spawn subprocess with cleared NUM_INSTANCES to prevent recursive spawning
+                env = os.environ.copy()
+                env.pop('NUM_INSTANCES', None)  # Remove NUM_INSTANCES from child environment
+                process = subprocess.Popen(cmd, env=env)
                 processes.append(process)
 
-            click.echo(f"All {workers} worker processes started")
+            click.echo(f"All {instances} worker processes started")
 
             # Wait for all processes
             while True:

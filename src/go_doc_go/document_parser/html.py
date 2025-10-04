@@ -939,9 +939,10 @@ class HtmlParser(DocumentParser):
 
             # Create an element for this tag
             # Include standard HTML tags only (removed namespace-prefixed tag processing)
-            if child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol',
+            # NOTE: Added 'li' and 'body' to capture full hierarchy
+            if child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li',
                                'pre', 'code', 'blockquote', 'table', 'img', 'div',
-                               'article', 'section', 'nav', 'aside', 'figure']:
+                               'article', 'section', 'nav', 'aside', 'figure', 'body']:
 
                 # Create an element
                 element = self._create_element_for_tag(child, doc_id, parent_id, source_id, element_dates)
@@ -996,12 +997,9 @@ class HtmlParser(DocumentParser):
                         elements.extend(table_elements)
                         links.extend(table_links)
                         relationships.extend(table_relationships)
-                    elif child.name in ['ul', 'ol']:
-                        list_elements, list_links, list_relationships = self._process_list(
-                            child, doc_id, element_id, source_id, element_dates)
-                        elements.extend(list_elements)
-                        links.extend(list_links)
-                        relationships.extend(list_relationships)
+                    # NOTE: Removed special _process_list() handling for ul/ol
+                    # Lists and list items are now processed through normal whitelist processing
+                    # This prevents duplicate list/list_item creation
 
                     # Process this tag's children recursively
                     child_elements, child_links, child_relationships = self._process_tag_children(
@@ -1046,9 +1044,10 @@ class HtmlParser(DocumentParser):
             # and we want all their text content
             content_text = tag.get_text(separator=' ', strip=True)
 
-        # Skip empty elements
-        if not content_text and tag.name not in ['img', 'table']:
-            return None
+        # NOTE: We create elements even if they have no direct text content
+        # Structural elements (ul, ol, section, nav, etc.) are important for hierarchy
+        # The embedding system will skip empty ancestors when building context
+        # Empty elements will have empty content_preview but still exist in the model
 
         element_id = self._generate_id(f"{element_type}_")
 
