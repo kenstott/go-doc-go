@@ -19,6 +19,7 @@ import (
 	"github.com/kennethstott/go-doc-go/internal/embeddings"
 	"github.com/kennethstott/go-doc-go/internal/jobcontrol"
 	"github.com/kennethstott/go-doc-go/internal/parser"
+	"github.com/kennethstott/go-doc-go/internal/resolver"
 	"golang.org/x/net/html"
 )
 
@@ -122,7 +123,18 @@ func NewWorker(config Config) (*Worker, error) {
 
 		// Create contextual text builder if contextual mode enabled
 		if config.EmbeddingConfig.Contextual {
-			contextualBuilder = embeddings.NewContextualTextBuilder(*config.EmbeddingConfig)
+			// Create parsers for content resolution
+			htmlParser := parser.NewHTMLParser()
+			xmlParser := parser.NewXMLParser()
+
+			// Create content resolver with both HTML and XML parsers
+			parserResolvers := map[string]resolver.ParserResolver{
+				"html": htmlParser,
+				"xml":  xmlParser,
+			}
+			contentResolver := resolver.NewContentResolver(parserResolvers)
+
+			contextualBuilder = embeddings.NewContextualTextBuilder(*config.EmbeddingConfig, contentResolver)
 			log.Printf("Contextual embeddings enabled (predecessors: %d, successors: %d)",
 				config.EmbeddingConfig.PredecessorCount, config.EmbeddingConfig.SuccessorCount)
 		}

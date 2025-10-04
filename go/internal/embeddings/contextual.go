@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/kennethstott/go-doc-go/internal/parser"
+	"github.com/kennethstott/go-doc-go/internal/resolver"
 )
 
 // ContextualTextBuilder builds context-aware text for embeddings
@@ -12,6 +13,7 @@ type ContextualTextBuilder struct {
 	successorCount   int
 	maxTokens        int
 	safeMaxTokens    int
+	resolver         resolver.ContentResolver
 
 	// Token budget ratios
 	elementRatio  float64
@@ -21,7 +23,7 @@ type ContextualTextBuilder struct {
 }
 
 // NewContextualTextBuilder creates a new contextual text builder
-func NewContextualTextBuilder(config Config) *ContextualTextBuilder {
+func NewContextualTextBuilder(config Config, contentResolver resolver.ContentResolver) *ContextualTextBuilder {
 	maxTokens := 16384 // Default
 	if config.ChunkSize > 0 {
 		maxTokens = config.ChunkSize
@@ -32,11 +34,31 @@ func NewContextualTextBuilder(config Config) *ContextualTextBuilder {
 		successorCount:   config.SuccessorCount,
 		maxTokens:        maxTokens,
 		safeMaxTokens:    int(float64(maxTokens) * 0.95),
+		resolver:         contentResolver,
 		elementRatio:     0.40,
 		parentsRatio:     0.25,
 		siblingsRatio:    0.20,
 		childrenRatio:    0.15,
 	}
+}
+
+// getElementText implements the 3-part waterfall: Content → Resolver → ContentPreview
+func (b *ContextualTextBuilder) getElementText(element parser.Element) string {
+	// 1. Try Content field first
+	if element.Content != "" {
+		return element.Content
+	}
+
+	// 2. Try content resolver with content_location
+	if element.ContentLocation != nil && b.resolver != nil {
+		resolved, err := b.resolver.ResolveContent(element.ContentLocation, true)
+		if err == nil && resolved != "" {
+			return resolved
+		}
+	}
+
+	// 3. Fall back to ContentPreview
+	return element.ContentPreview
 }
 
 // BuildContextualText creates a context-enriched text string for an element
@@ -48,11 +70,8 @@ func (b *ContextualTextBuilder) BuildContextualText(
 	// Build element map (for parent traversal)
 	elementMap := buildElementMap(allElements)
 
-	// Get element's full content
-	elementText := element.ContentPreview
-	if element.Content != "" {
-		elementText = element.Content
-	}
+	// Get element's full content using 3-part waterfall
+	elementText := b.getElementText(element)
 
 	// Calculate token budgets
 	elementBudget := int(float64(b.safeMaxTokens) * b.elementRatio)
@@ -133,10 +152,7 @@ func (b *ContextualTextBuilder) collectParentTexts(
 			continue
 		}
 
-		parentText := parent.ContentPreview
-		if parent.Content != "" {
-			parentText = parent.Content
-		}
+		parentText := b.getElementText(parent)
 
 		tokens := b.countTokens(parentText)
 		if usedTokens+tokens <= budget {
@@ -208,10 +224,7 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 			continue
 		}
 
-		predText := pred.ContentPreview
-		if pred.Content != "" {
-			predText = pred.Content
-		}
+		predText := b.getElementText(pred)
 
 		tokens := b.countTokens(predText)
 		if usedTokens+tokens <= budget {
@@ -250,10 +263,7 @@ func (b *ContextualTextBuilder) collectSiblingTexts(
 			continue
 		}
 
-		succText := succ.ContentPreview
-		if succ.Content != "" {
-			succText = succ.Content
-		}
+		succText := b.getElementText(succ)
 
 		tokens := b.countTokens(succText)
 		if usedTokens+tokens <= budget {
