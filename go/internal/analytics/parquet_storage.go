@@ -3,6 +3,7 @@ package analytics
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -322,6 +323,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		{Name: "element_category", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "content", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "content_preview", Type: arrow.BinaryTypes.String, Nullable: true},
+		{Name: "content_location", Type: arrow.BinaryTypes.String, Nullable: true}, // JSON string
 		{Name: "content_hash", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "parent_id", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "element_order", Type: arrow.PrimitiveTypes.Float64, Nullable: true},
@@ -337,6 +339,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 	elementCategoryBuilder := array.NewStringBuilder(s.allocator)
 	contentBuilder := array.NewStringBuilder(s.allocator)
 	contentPreviewBuilder := array.NewStringBuilder(s.allocator)
+	contentLocationBuilder := array.NewStringBuilder(s.allocator)
 	contentHashBuilder := array.NewStringBuilder(s.allocator)
 	parentIDBuilder := array.NewStringBuilder(s.allocator)
 	elementOrderBuilder := array.NewFloat64Builder(s.allocator)
@@ -349,6 +352,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 	defer elementCategoryBuilder.Release()
 	defer contentBuilder.Release()
 	defer contentPreviewBuilder.Release()
+	defer contentLocationBuilder.Release()
 	defer contentHashBuilder.Release()
 	defer parentIDBuilder.Release()
 	defer elementOrderBuilder.Release()
@@ -369,6 +373,19 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		}
 
 		contentPreviewBuilder.Append(elem.ContentPreview)
+
+		// Serialize content_location as JSON string
+		if elem.ContentLocation != nil {
+			contentLocationJSON, err := json.Marshal(elem.ContentLocation)
+			if err != nil {
+				log.Printf("WARNING: Failed to marshal content_location for element %s: %v", elem.ElementID, err)
+				contentLocationBuilder.AppendNull()
+			} else {
+				contentLocationBuilder.Append(string(contentLocationJSON))
+			}
+		} else {
+			contentLocationBuilder.AppendNull()
+		}
 
 		if elem.ContentHash != "" {
 			contentHashBuilder.Append(elem.ContentHash)
@@ -395,6 +412,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		elementCategoryBuilder.NewArray(),
 		contentBuilder.NewArray(),
 		contentPreviewBuilder.NewArray(),
+		contentLocationBuilder.NewArray(),
 		contentHashBuilder.NewArray(),
 		parentIDBuilder.NewArray(),
 		elementOrderBuilder.NewArray(),
