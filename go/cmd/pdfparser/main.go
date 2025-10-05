@@ -43,7 +43,7 @@ func main() {
 	}
 
 	// Create parser with configuration
-	pdfParser := parser.NewSimplePDFParser()
+	pdfParser := parser.NewPDFParser()
 	pdfParser.MaxContentPreview = *maxPreview
 	pdfParser.MaxPages = *maxPages
 	pdfParser.ExtractLinks = *extractLinks

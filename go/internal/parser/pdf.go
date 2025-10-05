@@ -3,112 +3,75 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
-	"sort"
 	"strings"
-	"unicode"
 
-	"github.com/ledongthuc/pdf"
+	pdf "github.com/ledongthuc/pdf"
 )
 
-// PDFParser handles PDF document parsing
+// PDFParser handles PDF document parsing with text extraction
 type PDFParser struct {
-	MaxContentPreview    int
-	ExtractMetadata      bool
-	ExtractLinks         bool
-	DetectHeaders        bool
-	MinHeaderFontSize    float64
-	MaxPages             int
-	ExtractTables        bool
-	MinTableRows         int
-	MinTableCols         int
-	PreserveLayout       bool
-	ExtractDates         bool
+	MaxContentPreview int
+	MaxPages          int
+	ExtractLinks      bool
 }
 
-// TextBlock represents a block of text with position information
-type TextBlock struct {
-	Text     string
-	X        float64
-	Y        float64
-	Width    float64
-	Height   float64
-	FontSize float64
-	FontName string
-	PageNum  int
-}
-
-// StructuredPage represents a page with structured content
-type StructuredPage struct {
-	PageNum     int
-	TextBlocks  []TextBlock
-	Width       float64
-	Height      float64
-}
-
-// NewPDFParser creates a new PDF parser instance
+// NewPDFParser creates a new PDF parser
 func NewPDFParser() *PDFParser {
 	return &PDFParser{
 		MaxContentPreview: 100,
-		ExtractMetadata:   true,
-		ExtractLinks:      true,
-		DetectHeaders:     true,
-		MinHeaderFontSize: 12.0,
 		MaxPages:          1000,
-		ExtractTables:     true,
-		MinTableRows:      2,
-		MinTableCols:      2,
-		PreserveLayout:    true,
+		ExtractLinks:      true,
 	}
 }
 
-// Parse extracts text and structure from a PDF file
+// Parse parses PDF content
 func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, error) {
-	// Handle different input types
-	var pdfReader *pdf.Reader
-	var err error
+	var reader io.ReaderAt
+	var size int64
 
+	// Handle different input types
 	switch v := content.(type) {
 	case string:
-		// If it's a file path
-		if _, fileErr := os.Stat(v); fileErr == nil {
-			file, openErr := os.Open(v)
-			if openErr != nil {
-				return nil, fmt.Errorf("failed to open PDF file: %v", openErr)
-			}
-			defer file.Close()
-
-			// Get file size for the PDF reader
-			stat, statErr := file.Stat()
-			if statErr != nil {
-				return nil, fmt.Errorf("failed to get file info: %v", statErr)
-			}
-
-			pdfReader, err = pdf.NewReader(file, stat.Size())
-			if err != nil {
-				return nil, fmt.Errorf("failed to create PDF reader: %v", err)
-			}
-		} else {
-			// Treat as PDF content bytes
-			contentBytes := []byte(v)
-			reader := bytes.NewReader(contentBytes)
-			pdfReader, err = pdf.NewReader(reader, int64(len(contentBytes)))
-			if err != nil {
-				return nil, fmt.Errorf("failed to create PDF reader: %v", err)
-			}
-		}
-	case []byte:
-		reader := bytes.NewReader(v)
-		pdfReader, err = pdf.NewReader(reader, int64(len(v)))
+		// File path
+		file, err := os.Open(v)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create PDF reader: %v", err)
+			return nil, fmt.Errorf("failed to open PDF file: %v", err)
 		}
+		defer file.Close()
+
+		stat, err := file.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("failed to stat PDF file: %v", err)
+		}
+		size = stat.Size()
+		reader = file
+
+	case []byte:
+		// Raw bytes
+		reader = bytes.NewReader(v)
+		size = int64(len(v))
+
+	case io.ReaderAt:
+		// Already a reader
+		reader = v
+		// Try to determine size
+		if seeker, ok := v.(io.Seeker); ok {
+			currentPos, _ := seeker.Seek(0, io.SeekCurrent)
+			size, _ = seeker.Seek(0, io.SeekEnd)
+			seeker.Seek(currentPos, io.SeekStart)
+		} else {
+			// Default size if we can't determine it
+			size = 1 << 20 // 1MB default
+		}
+
 	default:
 		return nil, fmt.Errorf("unsupported content type: %T", content)
 	}
 
-	// Create result structure
+	// Initialize result
 	result := &ParseResult{
 		Document: Document{
 			ID:      docID,
@@ -119,22 +82,25 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 		Links:         []Link{},
 	}
 
+	// Parse PDF
+	pdfReader, err := pdf.NewReader(reader, size)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse PDF: %v", err)
+	}
+
 	// Create root element
-	rootID := generateID("pdf_root")
+	rootID := generateID("root_")
 	rootElement := Element{
 		ElementID:      rootID,
 		ElementType:    "root",
-		ContentPreview: p.truncateContent(fmt.Sprintf("PDF Document: %s", docID)),
+		ContentPreview: "PDF Document",
 		Position:       0,
 		Depth:          0,
-		ContentLocation: map[string]interface{}{
-			"type": "pdf_document",
-		},
 	}
 	result.Elements = append(result.Elements, rootElement)
 
 	// Create body element
-	bodyID := generateID("pdf_body")
+	bodyID := generateID("body_")
 	bodyElement := Element{
 		ElementID:      bodyID,
 		ElementType:    "body",
@@ -142,30 +108,33 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 		ParentID:       rootID,
 		Position:       1,
 		Depth:          1,
-		ContentLocation: map[string]interface{}{
-			"type": "pdf_body",
-		},
 	}
 	result.Elements = append(result.Elements, bodyElement)
 
-	// Create root-body relationship
+	// Add root->body relationship
 	result.Relationships = append(result.Relationships, Relationship{
-		RelationshipID:   generateID("rel"),
+		RelationshipID:   generateID("rel_"),
 		RelationshipType: "contains",
 		SourceElementID:  rootID,
 		TargetElementID:  bodyID,
 	})
 
-	// Extract text content page by page
-	numPages := pdfReader.NumPage()
-	if p.MaxPages > 0 && numPages > p.MaxPages {
-		numPages = p.MaxPages
+	// Process pages
+	pageCount := pdfReader.NumPage()
+	if p.MaxPages > 0 && pageCount > p.MaxPages {
+		pageCount = p.MaxPages
 	}
 
 	elementPosition := 2
-	for pageNum := 1; pageNum <= numPages; pageNum++ {
+	for pageNum := 1; pageNum <= pageCount; pageNum++ {
+		// Get the page
+		page := pdfReader.Page(pageNum)
+		if page.V.IsNull() {
+			continue
+		}
+
 		// Create page element
-		pageID := generateID(fmt.Sprintf("page_%d", pageNum))
+		pageID := generateID(fmt.Sprintf("page_%d_", pageNum))
 		pageElement := Element{
 			ElementID:      pageID,
 			ElementType:    "page",
@@ -174,85 +143,62 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 			Position:       elementPosition,
 			Depth:          2,
 			ContentLocation: map[string]interface{}{
-				"type":        "pdf_page",
 				"page_number": pageNum,
 			},
 		}
 		result.Elements = append(result.Elements, pageElement)
 		elementPosition++
 
-		// Create body-page relationship
+		// Add body->page relationship
 		result.Relationships = append(result.Relationships, Relationship{
-			RelationshipID:   generateID("rel"),
+			RelationshipID:   generateID("rel_"),
 			RelationshipType: "contains",
 			SourceElementID:  bodyID,
 			TargetElementID:  pageID,
 		})
 
-		// Extract actual text content from the page
-		page := pdfReader.Page(pageNum)
-		if page.V.IsNull() {
+		// Extract text from page
+		pageText := p.extractPageText(page)
+		if pageText == "" {
 			continue
 		}
 
-		// Extract text with empty font map (GetPlainText requires fonts parameter)
-		emptyFonts := make(map[string]*pdf.Font)
-		pageText, textErr := page.GetPlainText(emptyFonts)
-		if textErr != nil {
-			// Log error but continue processing other pages
-			continue
-		}
+		// Split into paragraphs
+		paragraphs := p.splitIntoParagraphs(pageText)
+		for _, para := range paragraphs {
+			if strings.TrimSpace(para) == "" {
+				continue
+			}
 
-		if strings.TrimSpace(pageText) != "" {
-			// Process the page text into paragraphs
-			paragraphs := p.splitIntoParagraphs(pageText)
+			// Create paragraph element
+			paraID := generateID("para_")
+			paraElement := Element{
+				ElementID:      paraID,
+				ElementType:    "paragraph",
+				Content:        para,
+				ContentPreview: p.truncateText(para, p.MaxContentPreview),
+				ParentID:       pageID,
+				Position:       elementPosition,
+				Depth:          3,
+				ContentLocation: map[string]interface{}{
+					"page_number": pageNum,
+				},
+			}
+			result.Elements = append(result.Elements, paraElement)
+			elementPosition++
 
-			for i, paragraph := range paragraphs {
-				if strings.TrimSpace(paragraph) == "" {
-					continue
-				}
+			// Add page->paragraph relationship
+			result.Relationships = append(result.Relationships, Relationship{
+				RelationshipID:   generateID("rel_"),
+				RelationshipType: "contains",
+				SourceElementID:  pageID,
+				TargetElementID:  paraID,
+			})
 
-				// Determine element type based on content
-				elemType := p.classifyTextContent(paragraph)
-
-				elemID := generateID(fmt.Sprintf("%s_p%d_%d", elemType, pageNum, i))
-				elem := Element{
-					ElementID:      elemID,
-					ElementType:    elemType,
-					Content:        paragraph,
-					ContentPreview: p.truncateContent(paragraph),
-					ParentID:       pageID,
-					Position:       elementPosition,
-					Depth:          3,
-					ContentLocation: map[string]interface{}{
-						"type":        fmt.Sprintf("pdf_%s", elemType),
-						"page_number": pageNum,
-						"paragraph":   i,
-					},
-					Metadata: make(map[string]interface{}),
-				}
-
-				// Extract temporal metadata if enabled
-				if p.ExtractDates {
-					ProcessTemporalContent(paragraph, elem.Metadata)
-				}
-
-				result.Elements = append(result.Elements, elem)
-				elementPosition++
-
-				// Create page-element relationship
-				result.Relationships = append(result.Relationships, Relationship{
-					RelationshipID:   generateID("rel"),
-					RelationshipType: "contains",
-					SourceElementID:  pageID,
-					TargetElementID:  elemID,
-				})
-
-				// Extract links from text
-				if p.ExtractLinks {
-					links := p.extractLinksFromText(paragraph, elemID)
-					result.Links = append(result.Links, links...)
-				}
+			// Extract links
+			if p.ExtractLinks {
+				links := p.extractLinks(para, paraID)
+				result.Links = append(result.Links, links...)
 			}
 		}
 	}
@@ -260,398 +206,145 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 	return result, nil
 }
 
+// extractPageText extracts text from a PDF page
+func (p *PDFParser) extractPageText(page pdf.Page) string {
+	var textParts []string
 
-// classifyTextContent determines the element type based on text content
-func (p *PDFParser) classifyTextContent(text string) string {
-	text = strings.TrimSpace(text)
+	// Get page content
+	content := page.Content()
 
-	// Check for headers (short text, all caps, or title case)
-	if len(text) < 100 && p.isLikelyHeader(text) {
-		return "header"
+	// Extract all text objects first
+	for _, text := range content.Text {
+		if text.S != "" {
+			textParts = append(textParts, text.S)
+		}
 	}
 
-	// Check for list items
-	if p.isListItem(text) {
-		return "list_item"
-	}
-
-	// Check for table-like content
-	if p.looksLikeTableRow(text) {
-		return "table"
-	}
-
-	// Default to paragraph
-	return "paragraph"
+	// Join all text parts and clean up
+	fullText := strings.Join(textParts, "")
+	return p.cleanCharacterSpacing(fullText)
 }
 
-// processStructuredPage converts structured page content into elements
-func (p *PDFParser) processStructuredPage(page *StructuredPage, pageID string) []Element {
-	var elements []Element
+// cleanCharacterSpacing fixes character spacing issues in PDF text
+func (p *PDFParser) cleanCharacterSpacing(text string) string {
+	// Many PDFs extract with spaces between every character like "h e l l o"
+	// This function attempts to fix that
 
-	if len(page.TextBlocks) == 0 {
-		return elements
+	// Split text into tokens (by spaces)
+	tokens := strings.Fields(text)
+	if len(tokens) == 0 {
+		return text
 	}
 
-	// Detect columns and reading order
-	columns := p.detectColumns(page.TextBlocks, page.Width)
+	var result strings.Builder
+	var currentWord strings.Builder
 
-	// Sort blocks by reading order (column-aware)
-	sort.Slice(page.TextBlocks, func(i, j int) bool {
-		blockI := page.TextBlocks[i]
-		blockJ := page.TextBlocks[j]
-
-		// First, check if blocks are in different columns
-		colI := p.getColumnIndex(blockI.X, columns)
-		colJ := p.getColumnIndex(blockJ.X, columns)
-
-		if colI != colJ {
-			// If multi-column, read left column first (for LTR languages)
-			return colI < colJ
-		}
-
-		// Within same column, sort by Y position (top to bottom)
-		if abs(blockI.Y-blockJ.Y) > 5 {
-			return blockI.Y > blockJ.Y // Inverted because PDF Y starts from bottom
-		}
-
-		// If on same line, sort by X position
-		return blockI.X < blockJ.X
-	})
-
-	// Group blocks into logical elements
-	currentGroup := []TextBlock{}
-	groupType := ""
-
-	for i, block := range page.TextBlocks {
-		// Determine block type
-		blockType := p.classifyTextBlock(block)
-
-		// Check if we should start a new group
-		shouldStartNewGroup := false
-		if i == 0 {
-			shouldStartNewGroup = true
-			groupType = blockType
+	for i, token := range tokens {
+		// Check if this token is a single character (likely part of a spaced word)
+		if len(token) == 1 {
+			currentWord.WriteString(token)
 		} else {
-			prevBlock := page.TextBlocks[i-1]
-			// Start new group if type changes or there's a significant gap
-			if blockType != groupType || p.hasSignificantGap(prevBlock, block) {
-				shouldStartNewGroup = true
+			// Multi-character token - finish current word and add this token
+			if currentWord.Len() > 0 {
+				if result.Len() > 0 {
+					result.WriteString(" ")
+				}
+				result.WriteString(currentWord.String())
+				currentWord.Reset()
+			}
+
+			if result.Len() > 0 {
+				result.WriteString(" ")
+			}
+			result.WriteString(token)
+		}
+
+		// Check if next token looks like it starts a new word
+		if currentWord.Len() > 0 && i < len(tokens)-1 {
+			nextToken := tokens[i+1]
+			// If next token is punctuation or looks like start of new word, finish current word
+			if len(nextToken) > 1 || p.isPunctuation(nextToken) || p.isWordBoundary(token, nextToken) {
+				if result.Len() > 0 {
+					result.WriteString(" ")
+				}
+				result.WriteString(currentWord.String())
+				currentWord.Reset()
 			}
 		}
+	}
 
-		if shouldStartNewGroup && len(currentGroup) > 0 {
-			// Create element from current group
-			elem := p.createElementFromBlocks(currentGroup, groupType, page.PageNum)
-			elements = append(elements, elem)
-			currentGroup = []TextBlock{}
+	// Add any remaining word
+	if currentWord.Len() > 0 {
+		if result.Len() > 0 {
+			result.WriteString(" ")
 		}
-
-		currentGroup = append(currentGroup, block)
-		groupType = blockType
+		result.WriteString(currentWord.String())
 	}
 
-	// Don't forget the last group
-	if len(currentGroup) > 0 {
-		elem := p.createElementFromBlocks(currentGroup, groupType, page.PageNum)
-		elements = append(elements, elem)
-	}
+	finalText := result.String()
 
-	// Detect and mark tables
-	elements = p.detectTables(elements, page)
+	// Clean up multiple spaces
+	finalText = regexp.MustCompile(`\s+`).ReplaceAllString(finalText, " ")
+	finalText = strings.TrimSpace(finalText)
 
-	// Detect lists
-	elements = p.detectLists(elements)
+	// Add intelligent spacing for readability
+	finalText = p.addIntelligentSpacing(finalText)
 
-	return elements
+	return finalText
 }
 
-// classifyTextBlock determines the type of a text block
-func (p *PDFParser) classifyTextBlock(block TextBlock) string {
-	text := block.Text
+// addIntelligentSpacing adds spaces in logical places for readability
+func (p *PDFParser) addIntelligentSpacing(text string) string {
+	// Add spaces before certain patterns to improve readability
 
-	// Check for footnote/endnote characteristics
-	if p.isLikelyFootnote(block) {
-		return "footnote"
-	}
+	// Add space before uppercase letters that follow lowercase (camelCase)
+	text = regexp.MustCompile(`([a-z])([A-Z])`).ReplaceAllString(text, "$1 $2")
 
-	// Check for header characteristics
-	if block.FontSize >= p.MinHeaderFontSize && p.isLikelyHeader(text) {
-		return "header"
-	}
+	// Add space before opening parentheses
+	text = regexp.MustCompile(`([a-zA-Z0-9])(\()`).ReplaceAllString(text, "$1 $2")
 
-	// Check for list items
-	if p.isListItem(text) {
-		return "list_item"
-	}
+	// Add space after closing parentheses if followed by letter
+	text = regexp.MustCompile(`(\))([a-zA-Z])`).ReplaceAllString(text, "$1 $2")
 
-	// Default to paragraph
-	return "paragraph"
+	// Add space before numbers that follow letters (like "VARCHAR255" -> "VARCHAR 255")
+	text = regexp.MustCompile(`([a-zA-Z])(\d)`).ReplaceAllString(text, "$1 $2")
+
+	// Add space after numbers that are followed by letters (like "255first" -> "255 first")
+	text = regexp.MustCompile(`(\d)([a-zA-Z])`).ReplaceAllString(text, "$1 $2")
+
+	// Clean up any double spaces created
+	text = regexp.MustCompile(`\s+`).ReplaceAllString(text, " ")
+
+	return strings.TrimSpace(text)
 }
 
-// hasSignificantGap checks if there's a significant gap between blocks
-func (p *PDFParser) hasSignificantGap(block1, block2 TextBlock) bool {
-	// Vertical gap
-	yGap := abs(block1.Y - block2.Y)
-	if yGap > block1.Height*2 {
-		return true
-	}
+// isPunctuation checks if a token is punctuation
+func (p *PDFParser) isPunctuation(token string) bool {
+	punctuation := ".,!?;:()[]{}\"'-"
+	return len(token) == 1 && strings.Contains(punctuation, token)
+}
 
-	// Check for column break (significant X difference on similar Y)
-	if abs(block1.Y-block2.Y) < block1.Height {
-		xGap := abs(block1.X - block2.X)
-		if xGap > 100 { // More than 100 points suggests column break
+// isWordBoundary determines if there should be a word boundary between two tokens
+func (p *PDFParser) isWordBoundary(current, next string) bool {
+	// Heuristics for word boundaries:
+	// - Current token is punctuation
+	// - Next token is uppercase (might start new sentence)
+	// - Pattern changes (like from letters to numbers)
+
+	if len(current) == 1 && len(next) == 1 {
+		// Check if we're transitioning from letter to number or vice versa
+		currentIsLetter := (current >= "a" && current <= "z") || (current >= "A" && current <= "Z")
+		currentIsDigit := current >= "0" && current <= "9"
+		nextIsLetter := (next >= "a" && next <= "z") || (next >= "A" && next <= "Z")
+		nextIsDigit := next >= "0" && next <= "9"
+
+		// Word boundary if transitioning between letters and digits
+		if (currentIsLetter && nextIsDigit) || (currentIsDigit && nextIsLetter) {
 			return true
 		}
-	}
 
-	return false
-}
-
-// createElementFromBlocks creates an element from grouped text blocks
-func (p *PDFParser) createElementFromBlocks(blocks []TextBlock, elemType string, pageNum int) Element {
-	// Combine text from blocks
-	var texts []string
-	for _, block := range blocks {
-		texts = append(texts, block.Text)
-	}
-	content := strings.Join(texts, " ")
-
-	// Create element
-	elem := Element{
-		ElementID:      generateID(fmt.Sprintf("%s_p%d", elemType, pageNum)),
-		ElementType:    elemType,
-		Content:        content,
-		ContentPreview: p.truncateContent(content),
-		ContentLocation: map[string]interface{}{
-			"type":        fmt.Sprintf("pdf_%s", elemType),
-			"page_number": pageNum,
-		},
-	}
-
-	// Add position information
-	if len(blocks) > 0 {
-		elem.ContentLocation["x"] = blocks[0].X
-		elem.ContentLocation["y"] = blocks[0].Y
-		elem.ContentLocation["width"] = blocks[0].Width
-		elem.ContentLocation["height"] = blocks[0].Height
-	}
-
-	return elem
-}
-
-// detectTables identifies table structures in elements
-func (p *PDFParser) detectTables(elements []Element, page *StructuredPage) []Element {
-	// Simple heuristic: look for elements with tab-separated or aligned content
-	var result []Element
-
-	for i, elem := range elements {
-		if elem.ElementType != "paragraph" {
-			result = append(result, elem)
-			continue
-		}
-
-		// Check if content looks like a table row
-		if p.looksLikeTableRow(elem.Content) {
-			// Look ahead and behind for more table rows
-			tableElements := []Element{elem}
-
-			// Look ahead
-			for j := i + 1; j < len(elements) && j < i+20; j++ {
-				if elements[j].ElementType == "paragraph" && p.looksLikeTableRow(elements[j].Content) {
-					tableElements = append(tableElements, elements[j])
-				} else {
-					break
-				}
-			}
-
-			// If we found multiple rows, create a table
-			if len(tableElements) >= p.MinTableRows {
-				tableElem := p.createTableElement(tableElements, page.PageNum)
-				result = append(result, tableElem)
-
-				// Skip the elements we've consumed
-				i += len(tableElements) - 1
-			} else {
-				result = append(result, elem)
-			}
-		} else {
-			result = append(result, elem)
-		}
-	}
-
-	return result
-}
-
-// looksLikeTableRow checks if text looks like a table row
-func (p *PDFParser) looksLikeTableRow(text string) bool {
-	// Check for multiple tab-separated or pipe-separated values
-	tabs := strings.Count(text, "\t")
-	pipes := strings.Count(text, "|")
-
-	if tabs >= p.MinTableCols-1 || pipes >= p.MinTableCols {
-		return true
-	}
-
-	// Check for multiple numbers or dates in a row (common in tables)
-	numberPattern := regexp.MustCompile(`\d+[\.\,]?\d*`)
-	matches := numberPattern.FindAllString(text, -1)
-	if len(matches) >= p.MinTableCols {
-		return true
-	}
-
-	return false
-}
-
-// createTableElement creates a table element from row elements
-func (p *PDFParser) createTableElement(rows []Element, pageNum int) Element {
-	var content strings.Builder
-	for i, row := range rows {
-		content.WriteString(row.Content)
-		if i < len(rows)-1 {
-			content.WriteString("\n")
-		}
-	}
-
-	return Element{
-		ElementID:      generateID(fmt.Sprintf("table_p%d", pageNum)),
-		ElementType:    "table",
-		Content:        content.String(),
-		ContentPreview: p.truncateContent(content.String()),
-		ContentLocation: map[string]interface{}{
-			"type":        "pdf_table",
-			"page_number": pageNum,
-			"row_count":   len(rows),
-		},
-	}
-}
-
-// detectLists identifies list structures in elements
-func (p *PDFParser) detectLists(elements []Element) []Element {
-	var result []Element
-
-	for _, elem := range elements {
-		if elem.ElementType == "list_item" {
-			elem.ElementType = "list_item"
-			// Could group consecutive list items into a list element
-		}
-		result = append(result, elem)
-	}
-
-	return result
-}
-
-// isListItem checks if text is a list item
-func (p *PDFParser) isListItem(text string) bool {
-	// Numbered lists
-	if matched, _ := regexp.MatchString(`^\d+[\.\)]\s+`, text); matched {
-		return true
-	}
-
-	// Lettered lists
-	if matched, _ := regexp.MatchString(`^[a-zA-Z][\.\)]\s+`, text); matched {
-		return true
-	}
-
-	// Bullet points
-	if matched, _ := regexp.MatchString(`^[•·▪▫◦‣⁃\-\*]\s+`, text); matched {
-		return true
-	}
-
-	return false
-}
-
-// abs returns absolute value for float64
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
-
-// detectColumns detects column boundaries in text blocks
-func (p *PDFParser) detectColumns(blocks []TextBlock, pageWidth float64) []float64 {
-	// Simple column detection: look for vertical gaps in X positions
-	var xPositions []float64
-	for _, block := range blocks {
-		xPositions = append(xPositions, block.X)
-	}
-
-	sort.Float64s(xPositions)
-
-	// Find significant gaps that might indicate column boundaries
-	var columns []float64
-	columns = append(columns, 0) // Start of page
-
-	for i := 1; i < len(xPositions); i++ {
-		gap := xPositions[i] - xPositions[i-1]
-		// If gap is more than 50 points, might be a column boundary
-		if gap > 50 {
-			columns = append(columns, xPositions[i])
-		}
-	}
-
-	columns = append(columns, pageWidth) // End of page
-
-	// If we only have start and end, it's single column
-	if len(columns) == 2 {
-		return columns
-	}
-
-	// Merge columns that are too close
-	var merged []float64
-	merged = append(merged, columns[0])
-	for i := 1; i < len(columns)-1; i++ {
-		if columns[i]-merged[len(merged)-1] > 100 { // Minimum column width
-			merged = append(merged, columns[i])
-		}
-	}
-	merged = append(merged, columns[len(columns)-1])
-
-	return merged
-}
-
-// getColumnIndex returns which column a given X position falls into
-func (p *PDFParser) getColumnIndex(x float64, columns []float64) int {
-	for i := 0; i < len(columns)-1; i++ {
-		if x >= columns[i] && x < columns[i+1] {
-			return i
-		}
-	}
-	return len(columns) - 2 // Last column
-}
-
-// isLikelyFootnote checks if a text block is likely a footnote
-func (p *PDFParser) isLikelyFootnote(block TextBlock) bool {
-	// Footnotes are typically:
-	// 1. At the bottom of the page (Y < 150 points from bottom)
-	// 2. Smaller font size (< 10 points)
-	// 3. Start with a superscript number or special character
-
-	// Check position (near bottom of page)
-	if block.Y > 150 { // More than 150 points from bottom
-		return false
-	}
-
-	// Check font size
-	if block.FontSize >= 10 {
-		return false
-	}
-
-	// Check if starts with footnote marker
-	text := strings.TrimSpace(block.Text)
-
-	// Common footnote patterns
-	footnotePatterns := []string{
-		`^\d+\.?\s`,           // Starts with number
-		`^\[\d+\]`,            // [1] style
-		`^\*+\s`,              // *, **, *** style
-		`^[†‡§¶]\s`,          // Special footnote symbols
-		`^\(\d+\)`,            // (1) style
-		`^[a-z]\.\s`,          // a. b. c. style
-	}
-
-	for _, pattern := range footnotePatterns {
-		if matched, _ := regexp.MatchString(pattern, text); matched {
+		// Word boundary if next is uppercase (could be start of new word)
+		if nextIsLetter && next >= "A" && next <= "Z" {
 			return true
 		}
 	}
@@ -661,42 +354,37 @@ func (p *PDFParser) isLikelyFootnote(block TextBlock) bool {
 
 // splitIntoParagraphs splits text into paragraphs
 func (p *PDFParser) splitIntoParagraphs(text string) []string {
-	// Split by double newlines or significant whitespace
-	paragraphs := []string{}
-
-	// Normalize line endings
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	text = strings.ReplaceAll(text, "\r", "\n")
-
 	// Split by double newlines
-	blocks := strings.Split(text, "\n\n")
+	parts := strings.Split(text, "\n\n")
+	var paragraphs []string
 
-	for _, block := range blocks {
-		block = strings.TrimSpace(block)
-		if block != "" {
-			// Also split single newlines if they look like separate paragraphs
-			lines := strings.Split(block, "\n")
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			// Also handle single newlines as paragraph breaks if they look like separate thoughts
+			lines := strings.Split(trimmed, "\n")
 			currentPara := ""
 
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
 				if line == "" {
-					if currentPara != "" {
-						paragraphs = append(paragraphs, currentPara)
-						currentPara = ""
-					}
+					continue
+				}
+
+				// Check if line looks like a new paragraph (starts with capital, previous ended with period)
+				if currentPara != "" &&
+				   strings.HasSuffix(currentPara, ".") &&
+				   len(line) > 0 &&
+				   strings.ToUpper(line[:1]) == line[:1] {
+					// Save current paragraph and start new one
+					paragraphs = append(paragraphs, currentPara)
+					currentPara = line
 				} else {
+					// Continue building current paragraph
 					if currentPara != "" {
-						// Check if this looks like a continuation or new paragraph
-						if p.looksLikeNewParagraph(line) {
-							paragraphs = append(paragraphs, currentPara)
-							currentPara = line
-						} else {
-							currentPara += " " + line
-						}
-					} else {
-						currentPara = line
+						currentPara += " "
 					}
+					currentPara += line
 				}
 			}
 
@@ -709,97 +397,19 @@ func (p *PDFParser) splitIntoParagraphs(text string) []string {
 	return paragraphs
 }
 
-// looksLikeNewParagraph checks if a line looks like it starts a new paragraph
-func (p *PDFParser) looksLikeNewParagraph(line string) bool {
-	// Simple heuristics
-	if len(line) == 0 {
-		return false
-	}
-
-	// Starts with number (numbered list)
-	if matched, _ := regexp.MatchString(`^\d+\.?\s+`, line); matched {
-		return true
-	}
-
-	// Starts with bullet
-	if matched, _ := regexp.MatchString(`^[•·▪▫◦‣⁃]\s+`, line); matched {
-		return true
-	}
-
-	// Starts with uppercase and previous didn't end with period
-	// (would need context from previous line for this)
-
-	// All caps (likely header)
-	if strings.ToUpper(line) == line && len(line) > 3 {
-		return true
-	}
-
-	return false
-}
-
-// isLikelyHeader determines if text is likely a header
-func (p *PDFParser) isLikelyHeader(text string) bool {
-	// Simple heuristics for header detection
-
-	// Short text (less than 100 chars) might be header
-	if len(text) > 100 {
-		return false
-	}
-
-	// All uppercase
-	if strings.ToUpper(text) == text && len(text) > 3 {
-		return true
-	}
-
-	// Numbered sections (1., 1.1, etc.)
-	if matched, _ := regexp.MatchString(`^\d+(\.\d+)*\.?\s+\w+`, text); matched {
-		return true
-	}
-
-	// Common header patterns
-	headerPatterns := []string{
-		`^(Chapter|Section|Part)\s+\d+`,
-		`^(Introduction|Conclusion|Abstract|Summary|References)$`,
-		`^(Table of Contents|List of Figures|List of Tables)`,
-	}
-
-	for _, pattern := range headerPatterns {
-		if matched, _ := regexp.MatchString("(?i)"+pattern, text); matched {
-			return true
-		}
-	}
-
-	// Title case (most words capitalized)
-	words := strings.Fields(text)
-	if len(words) > 0 {
-		capitalizedCount := 0
-		for _, word := range words {
-			if len(word) > 0 && unicode.IsUpper(rune(word[0])) {
-				capitalizedCount++
-			}
-		}
-		if float64(capitalizedCount)/float64(len(words)) > 0.7 {
-			return true
-		}
-	}
-
-	return false
-}
-
-// extractLinksFromText finds URLs and email addresses in text
-func (p *PDFParser) extractLinksFromText(text string, sourceID string) []Link {
+// extractLinks extracts URLs and emails from text
+func (p *PDFParser) extractLinks(text string, sourceID string) []Link {
 	var links []Link
 
 	// URL pattern
-	urlPattern := regexp.MustCompile(`https?://[^\s<>"{}|\\^` + "`" + `\[\]]+`)
+	urlPattern := regexp.MustCompile(`https?://[^\s]+`)
 	urls := urlPattern.FindAllString(text, -1)
 	for _, url := range urls {
 		links = append(links, Link{
-			LinkID:          generateID("link"),
+			LinkID:          generateID("link_"),
 			SourceElementID: sourceID,
 			LinkType:        "url",
 			LinkTarget:      url,
-			Context:         p.truncateContent(text),
 		})
 	}
 
@@ -808,35 +418,20 @@ func (p *PDFParser) extractLinksFromText(text string, sourceID string) []Link {
 	emails := emailPattern.FindAllString(text, -1)
 	for _, email := range emails {
 		links = append(links, Link{
-			LinkID:          generateID("link"),
+			LinkID:          generateID("link_"),
 			SourceElementID: sourceID,
 			LinkType:        "email",
 			LinkTarget:      email,
-			Context:         p.truncateContent(text),
-		})
-	}
-
-	// File path pattern (PDFs often reference other documents)
-	filePattern := regexp.MustCompile(`[A-Za-z]:[\\\/](?:[^\\\/\s:*?"<>|]+[\\\/])*[^\\\/\s:*?"<>|]+\.\w+`)
-	files := filePattern.FindAllString(text, -1)
-	for _, file := range files {
-		links = append(links, Link{
-			LinkID:          generateID("link"),
-			SourceElementID: sourceID,
-			LinkType:        LinkTypeFile,
-			LinkTarget:      file,
-			Context:         p.truncateContent(text),
 		})
 	}
 
 	return links
 }
 
-// truncateContent truncates content for preview
-func (p *PDFParser) truncateContent(content string) string {
-	if len(content) <= p.MaxContentPreview {
-		return content
+// truncateText truncates text to specified length
+func (p *PDFParser) truncateText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
 	}
-	return content[:p.MaxContentPreview-3] + "..."
+	return text[:maxLen-3] + "..."
 }
-
