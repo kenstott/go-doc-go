@@ -186,37 +186,8 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 
 	if node.Type == html.DocumentNode {
 		// Document node - recurse into children without creating element
-		// Track siblings for sequential relationships
-		var previousChildID string
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			currentChildID := p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
-
-			// If an element was created and we have a previous sibling, create sequential relationships
-			if currentChildID != "" && previousChildID != "" {
-				// Create bidirectional sequential relationships
-				nextRel := HTMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  previousChildID,
-					TargetElementID:  currentChildID,
-					RelationshipType: "next",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				prevRel := HTMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  currentChildID,
-					TargetElementID:  previousChildID,
-					RelationshipType: "previous",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				*relationships = append(*relationships, nextRel, prevRel)
-			}
-
-			// Update previous element ID if new element was created
-			if currentChildID != "" {
-				previousChildID = currentChildID
-			}
+			p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
 		}
 		return ""
 	} else if node.Type == html.ElementNode {
@@ -231,34 +202,8 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 		// This matches Python's selective element creation in html.py:942-944
 		if !p.shouldCreateElement(node.Data) {
 			// Don't create element, but process children with same parent
-			var previousChildID string
 			for child := node.FirstChild; child != nil; child = child.NextSibling {
-				currentChildID := p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
-
-				// Track sequential relationships among children
-				if currentChildID != "" && previousChildID != "" {
-					nextRel := HTMLRelationship{
-						RelationshipID:   p.generateID("rel_"),
-						SourceElementID:  previousChildID,
-						TargetElementID:  currentChildID,
-						RelationshipType: "next",
-						Confidence:       1.0,
-						Metadata:         make(map[string]interface{}),
-					}
-					prevRel := HTMLRelationship{
-						RelationshipID:   p.generateID("rel_"),
-						SourceElementID:  currentChildID,
-						TargetElementID:  previousChildID,
-						RelationshipType: "previous",
-						Confidence:       1.0,
-						Metadata:         make(map[string]interface{}),
-					}
-					*relationships = append(*relationships, nextRel, prevRel)
-				}
-
-				if currentChildID != "" {
-					previousChildID = currentChildID
-				}
+				p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
 			}
 			return ""
 		}
@@ -295,50 +240,38 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 		*elements = append(*elements, element)
 		*counter++
 
-		// Create parent-child relationship
+		// Create bidirectional parent-child relationships
 		if parentID != "" {
-			relationship := HTMLRelationship{
+			// Determine relationship type - use contains_text for paragraph tags
+			relType := "contains"
+			if node.Data == "p" {
+				relType = "contains_text"
+			}
+
+			// Parent contains child
+			containsRel := HTMLRelationship{
 				RelationshipID:   p.generateID("rel_"),
 				SourceElementID:  parentID,
 				TargetElementID:  element.ElementID,
-				RelationshipType: "contains",
+				RelationshipType: relType,
 				Confidence:       1.0,
 				Metadata:         make(map[string]interface{}),
 			}
-			*relationships = append(*relationships, relationship)
+			// Child contained by parent
+			containedByRel := HTMLRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  element.ElementID,
+				TargetElementID:  parentID,
+				RelationshipType: "contained_by",
+				Confidence:       1.0,
+				Metadata:         make(map[string]interface{}),
+			}
+			*relationships = append(*relationships, containsRel, containedByRel)
 		}
 
-		// Recursively parse children with sequential relationship tracking
-		var previousChildID string
+		// Recursively parse children
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			currentChildID := p.parseNode(child, elements, links, relationships, element.ElementID, sourceID, counter)
-
-			// If an element was created and we have a previous sibling, create sequential relationships
-			if currentChildID != "" && previousChildID != "" {
-				// Create bidirectional sequential relationships
-				nextRel := HTMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  previousChildID,
-					TargetElementID:  currentChildID,
-					RelationshipType: "next",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				prevRel := HTMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  currentChildID,
-					TargetElementID:  previousChildID,
-					RelationshipType: "previous",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				*relationships = append(*relationships, nextRel, prevRel)
-			}
-
-			// Update previous element ID if new element was created
-			if currentChildID != "" {
-				previousChildID = currentChildID
-			}
+			p.parseNode(child, elements, links, relationships, element.ElementID, sourceID, counter)
 		}
 
 		return element.ElementID
