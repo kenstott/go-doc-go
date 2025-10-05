@@ -236,9 +236,10 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 			response.Elements = append(response.Elements, element)
 			elementCounter++
 
-			// Create parent-child relationship
+			// Create bidirectional parent-child relationships
 			if parentID != "" {
-				relationship := XMLRelationship{
+				// Parent contains child
+				containsRel := XMLRelationship{
 					RelationshipID:   p.generateID("rel_"),
 					SourceElementID:  parentID,
 					TargetElementID:  elementID,
@@ -246,7 +247,16 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 					Confidence:       1.0,
 					Metadata:         make(map[string]interface{}),
 				}
-				response.Relationships = append(response.Relationships, relationship)
+				// Child contained by parent
+				containedByRel := XMLRelationship{
+					RelationshipID:   p.generateID("rel_"),
+					SourceElementID:  elementID,
+					TargetElementID:  parentID,
+					RelationshipType: "contained_by",
+					Confidence:       1.0,
+					Metadata:         make(map[string]interface{}),
+				}
+				response.Relationships = append(response.Relationships, containsRel, containedByRel)
 			}
 
 			// Update stacks
@@ -324,16 +334,24 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 					response.Elements = append(response.Elements, textElement)
 					elementCounter++
 
-					// Create relationship
-					relationship := XMLRelationship{
+					// Create bidirectional parent-text relationships
+					containsTextRel := XMLRelationship{
 						RelationshipID:   p.generateID("rel_"),
 						SourceElementID:  parentID,
 						TargetElementID:  textID,
-						RelationshipType: "contains",
+						RelationshipType: "contains_text",
 						Confidence:       1.0,
 						Metadata:         make(map[string]interface{}),
 					}
-					response.Relationships = append(response.Relationships, relationship)
+					containedByRel := XMLRelationship{
+						RelationshipID:   p.generateID("rel_"),
+						SourceElementID:  textID,
+						TargetElementID:  parentID,
+						RelationshipType: "contained_by",
+						Confidence:       1.0,
+						Metadata:         make(map[string]interface{}),
+					}
+					response.Relationships = append(response.Relationships, containsTextRel, containedByRel)
 
 					// Extract links from text
 					p.extractLinksFromText(text, textID, &response.Links)

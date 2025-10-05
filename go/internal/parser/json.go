@@ -4,9 +4,13 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 
 	"github.com/kennethstott/go-doc-go/internal/temporal"
+	"github.com/oliveagle/jsonpath"
 )
 
 // ElementType represents the type of JSON element
@@ -206,9 +210,9 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 		*elements = append(*elements, objectElement)
 		*counter++
 
-		// Create parent-child relationship
+		// Create bidirectional parent-child relationships
 		if parentID != "" {
-			relationship := JSONRelationship{
+			containsRel := JSONRelationship{
 				RelationshipID:   p.generateID("rel_"),
 				SourceElementID:  parentID,
 				TargetElementID:  objectID,
@@ -216,7 +220,15 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 				Confidence:       1.0,
 				Metadata:         make(map[string]interface{}),
 			}
-			*relationships = append(*relationships, relationship)
+			containedByRel := JSONRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  objectID,
+				TargetElementID:  parentID,
+				RelationshipType: "contained_by",
+				Confidence:       1.0,
+				Metadata:         make(map[string]interface{}),
+			}
+			*relationships = append(*relationships, containsRel, containedByRel)
 		}
 
 		// Parse object fields
@@ -272,8 +284,8 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 			*elements = append(*elements, fieldElement)
 			*counter++
 
-			// Create parent-child relationship
-			relationship := JSONRelationship{
+			// Create bidirectional parent-child relationships
+			containsRel := JSONRelationship{
 				RelationshipID:   p.generateID("rel_"),
 				SourceElementID:  objectID,
 				TargetElementID:  fieldID,
@@ -281,7 +293,15 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 				Confidence:       1.0,
 				Metadata:         make(map[string]interface{}),
 			}
-			*relationships = append(*relationships, relationship)
+			containedByRel := JSONRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  fieldID,
+				TargetElementID:  objectID,
+				RelationshipType: "contained_by",
+				Confidence:       1.0,
+				Metadata:         make(map[string]interface{}),
+			}
+			*relationships = append(*relationships, containsRel, containedByRel)
 
 			// Recursively parse field value
 			if p.isComplexType(value) {
@@ -314,9 +334,9 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 		*elements = append(*elements, arrayElement)
 		*counter++
 
-		// Create parent-child relationship
+		// Create bidirectional parent-child relationships
 		if parentID != "" {
-			relationship := JSONRelationship{
+			containsRel := JSONRelationship{
 				RelationshipID:   p.generateID("rel_"),
 				SourceElementID:  parentID,
 				TargetElementID:  arrayID,
@@ -324,7 +344,15 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 				Confidence:       1.0,
 				Metadata:         make(map[string]interface{}),
 			}
-			*relationships = append(*relationships, relationship)
+			containedByRel := JSONRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  arrayID,
+				TargetElementID:  parentID,
+				RelationshipType: "contained_by",
+				Confidence:       1.0,
+				Metadata:         make(map[string]interface{}),
+			}
+			*relationships = append(*relationships, containsRel, containedByRel)
 		}
 
 		// Parse array items
@@ -380,16 +408,24 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 			*elements = append(*elements, itemElement)
 			*counter++
 
-			// Create parent-child relationship
-			relationship := JSONRelationship{
+			// Create bidirectional parent-child relationships
+			containsRel := JSONRelationship{
 				RelationshipID:   p.generateID("rel_"),
 				SourceElementID:  arrayID,
 				TargetElementID:  itemID,
-				RelationshipType: "contains",
+				RelationshipType: "contains_array_item",
 				Confidence:       1.0,
 				Metadata:         make(map[string]interface{}),
 			}
-			*relationships = append(*relationships, relationship)
+			containedByRel := JSONRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  itemID,
+				TargetElementID:  arrayID,
+				RelationshipType: "contained_by",
+				Confidence:       1.0,
+				Metadata:         make(map[string]interface{}),
+			}
+			*relationships = append(*relationships, containsRel, containedByRel)
 
 			// Recursively parse item value
 			if p.isComplexType(item) {
@@ -676,5 +712,113 @@ func calculateJSONDepth(elementType JSONElementType) int {
 		return 2
 	default:
 		return 1 // Default depth for unknown elements
+	}
+}
+
+// SupportsLocation checks if this parser can resolve the given content location
+func (p *JSONParser) SupportsLocation(contentLocation map[string]interface{}) bool {
+	if contentLocation == nil {
+		return false
+	}
+
+	// Check if source file exists and is a JSON file
+	source, ok := contentLocation["source"].(string)
+	if !ok || source == "" {
+		return false
+	}
+
+	if _, err := os.Stat(source); os.IsNotExist(err) {
+		return false
+	}
+
+	ext := strings.ToLower(filepath.Ext(source))
+	return ext == ".json"
+}
+
+// ResolveElementText extracts plain text for a specific element using JSONPath
+func (p *JSONParser) ResolveElementText(contentLocation map[string]interface{}, sourceContent string) (string, error) {
+	value, err := p.resolveElementValue(contentLocation)
+	if err != nil {
+		return "", err
+	}
+
+	// Convert value to text representation
+	return p.valueToText(value), nil
+}
+
+// ResolveElementContent extracts raw JSON content for a specific element using JSONPath
+func (p *JSONParser) ResolveElementContent(contentLocation map[string]interface{}, sourceContent string) (string, error) {
+	value, err := p.resolveElementValue(contentLocation)
+	if err != nil {
+		return "", err
+	}
+
+	// Serialize value to JSON string
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize JSON value: %w", err)
+	}
+
+	return string(bytes), nil
+}
+
+// resolveElementValue resolves a JSON element using JSONPath
+func (p *JSONParser) resolveElementValue(contentLocation map[string]interface{}) (interface{}, error) {
+	source, _ := contentLocation["source"].(string)
+	path, ok := contentLocation["path"].(string)
+	if !ok || path == "" {
+		return nil, fmt.Errorf("missing or invalid 'path' in content_location")
+	}
+
+	// Read JSON file
+	fileContent, err := os.ReadFile(source)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read JSON file: %w", err)
+	}
+
+	// Parse JSON
+	var jsonData interface{}
+	if err := json.Unmarshal(fileContent, &jsonData); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	// Handle root path specially
+	if path == "$" {
+		return jsonData, nil
+	}
+
+	// Compile and execute JSONPath
+	compiled, err := jsonpath.Compile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile JSONPath '%s': %w", path, err)
+	}
+
+	result, err := compiled.Lookup(jsonData)
+	if err != nil {
+		return nil, fmt.Errorf("JSONPath '%s' failed: %w", path, err)
+	}
+
+	return result, nil
+}
+
+// valueToText converts a JSON value to plain text
+func (p *JSONParser) valueToText(value interface{}) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case float64, int, int64, bool:
+		return fmt.Sprintf("%v", v)
+	case nil:
+		return ""
+	case map[string]interface{}:
+		// For objects, return JSON representation
+		bytes, _ := json.Marshal(v)
+		return string(bytes)
+	case []interface{}:
+		// For arrays, return JSON representation
+		bytes, _ := json.Marshal(v)
+		return string(bytes)
+	default:
+		return fmt.Sprintf("%v", v)
 	}
 }

@@ -191,7 +191,7 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 	}
 	response.Elements = append(response.Elements, tableElement)
 
-	// Create relationship from root to table
+	// Create bidirectional relationship from root to table
 	rootToTableRel := CSVRelationship{
 		RelationshipID:   p.generateID("rel_"),
 		SourceElementID:  rootElement.ElementID,
@@ -200,7 +200,15 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 		Confidence:       1.0,
 		Metadata:         make(map[string]interface{}),
 	}
-	response.Relationships = append(response.Relationships, rootToTableRel)
+	tableToRootRel := CSVRelationship{
+		RelationshipID:   p.generateID("rel_"),
+		SourceElementID:  tableElement.ElementID,
+		TargetElementID:  rootElement.ElementID,
+		RelationshipType: "contained_by",
+		Confidence:       1.0,
+		Metadata:         make(map[string]interface{}),
+	}
+	response.Relationships = append(response.Relationships, rootToTableRel, tableToRootRel)
 
 	elementCounter := 2
 
@@ -212,7 +220,7 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 		response.Elements = append(response.Elements, headerElement)
 		elementCounter++
 
-		// Create relationship from table to header
+		// Create bidirectional relationship from table to header
 		tableToHeaderRel := CSVRelationship{
 			RelationshipID:   p.generateID("rel_"),
 			SourceElementID:  tableElement.ElementID,
@@ -221,7 +229,15 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 			Confidence:       1.0,
 			Metadata:         map[string]interface{}{"row": 0},
 		}
-		response.Relationships = append(response.Relationships, tableToHeaderRel)
+		headerToTableRel := CSVRelationship{
+			RelationshipID:   p.generateID("rel_"),
+			SourceElementID:  headerElement.ElementID,
+			TargetElementID:  tableElement.ElementID,
+			RelationshipType: "contained_by",
+			Confidence:       1.0,
+			Metadata:         map[string]interface{}{"row": 0},
+		}
+		response.Relationships = append(response.Relationships, tableToHeaderRel, headerToTableRel)
 
 		// Create header cells
 		for colIdx, cellValue := range headerRow {
@@ -229,7 +245,7 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 			response.Elements = append(response.Elements, cellElement)
 			elementCounter++
 
-			// Create relationship from header row to cell
+			// Create bidirectional relationship from header row to cell
 			headerToCellRel := CSVRelationship{
 				RelationshipID:   p.generateID("rel_"),
 				SourceElementID:  headerElement.ElementID,
@@ -238,7 +254,15 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 				Confidence:       1.0,
 				Metadata:         map[string]interface{}{"col_index": colIdx, "is_header": true},
 			}
-			response.Relationships = append(response.Relationships, headerToCellRel)
+			cellToHeaderRel := CSVRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  cellElement.ElementID,
+				TargetElementID:  headerElement.ElementID,
+				RelationshipType: "contained_by",
+				Confidence:       1.0,
+				Metadata:         map[string]interface{}{"col_index": colIdx, "is_header": true},
+			}
+			response.Relationships = append(response.Relationships, headerToCellRel, cellToHeaderRel)
 		}
 	}
 
@@ -257,7 +281,7 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 		response.Elements = append(response.Elements, rowElement)
 		elementCounter++
 
-		// Create relationship from table to row
+		// Create bidirectional relationship from table to row
 		tableToRowRel := CSVRelationship{
 			RelationshipID:   p.generateID("rel_"),
 			SourceElementID:  tableElement.ElementID,
@@ -266,7 +290,15 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 			Confidence:       1.0,
 			Metadata:         map[string]interface{}{"row_index": rowIdx},
 		}
-		response.Relationships = append(response.Relationships, tableToRowRel)
+		rowToTableRel := CSVRelationship{
+			RelationshipID:   p.generateID("rel_"),
+			SourceElementID:  rowElement.ElementID,
+			TargetElementID:  tableElement.ElementID,
+			RelationshipType: "contained_by",
+			Confidence:       1.0,
+			Metadata:         map[string]interface{}{"row_index": rowIdx},
+		}
+		response.Relationships = append(response.Relationships, tableToRowRel, rowToTableRel)
 
 		// Process cells in this row
 		for colIdx, cellValue := range row {
@@ -274,7 +306,7 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 			response.Elements = append(response.Elements, cellElement)
 			elementCounter++
 
-			// Create relationship from row to cell
+			// Create bidirectional relationship from row to cell
 			rowToCellRel := CSVRelationship{
 				RelationshipID:   p.generateID("rel_"),
 				SourceElementID:  rowElement.ElementID,
@@ -283,7 +315,15 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 				Confidence:       1.0,
 				Metadata:         map[string]interface{}{"col_index": colIdx},
 			}
-			response.Relationships = append(response.Relationships, rowToCellRel)
+			cellToRowRel := CSVRelationship{
+				RelationshipID:   p.generateID("rel_"),
+				SourceElementID:  cellElement.ElementID,
+				TargetElementID:  rowElement.ElementID,
+				RelationshipType: "contained_by",
+				Confidence:       1.0,
+				Metadata:         map[string]interface{}{"col_index": colIdx},
+			}
+			response.Relationships = append(response.Relationships, rowToCellRel, cellToRowRel)
 
 			// Extract links from cell if enabled
 			if p.EnableLinkExtraction {
