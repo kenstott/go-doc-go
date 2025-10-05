@@ -38,14 +38,14 @@ func NewXLSXParser() *XLSXParser {
 
 // CellData represents information about a cell
 type CellData struct {
-	Value    string
-	IsEmpty  bool
-	IsBold   bool
-	HasFill  bool
-	Formula  string
-	Address  string
-	Row      int
-	Col      int
+	Value   string
+	IsEmpty bool
+	IsBold  bool
+	HasFill bool
+	Formula string
+	Address string
+	Row     int
+	Col     int
 }
 
 // TableRegion represents a detected table area
@@ -122,13 +122,8 @@ func (p *XLSXParser) Parse(docID string, content interface{}) (*ParseResult, err
 	}
 	result.Elements = append(result.Elements, workbookElement)
 
-	// Add root->workbook relationship
-	result.Relationships = append(result.Relationships, Relationship{
-		RelationshipID:   generateID("rel_"),
-		RelationshipType: "contains",
-		SourceElementID:  rootID,
-		TargetElementID:  workbookID,
-	})
+	// Add bidirectional root->workbook relationships
+	result.Relationships = append(result.Relationships, createBidirectionalRelationship(rootID, workbookID)...)
 
 	elementPosition := 2
 
@@ -202,13 +197,8 @@ func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, 
 	elements = append(elements, sheetElement)
 	position++
 
-	// Add workbook->sheet relationship
-	relationships = append(relationships, Relationship{
-		RelationshipID:   generateID("rel_"),
-		RelationshipType: "contains",
-		SourceElementID:  parentID,
-		TargetElementID:  sheetID,
-	})
+	// Add bidirectional workbook->sheet relationships
+	relationships = append(relationships, createBidirectionalRelationship(parentID, sheetID)...)
 
 	// Process sheet content if not empty
 	if maxRow > 0 && maxCol > 0 {
@@ -225,6 +215,93 @@ func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, 
 			relationships = append(relationships, rowRelationships...)
 			position = newPos
 		}
+	}
+
+	// Extract comments if enabled
+	if p.ExtractComments {
+		commentElements, commentRelationships, newPos := p.processComments(file, sheetName, docID, sheetID, position)
+		elements = append(elements, commentElements...)
+		relationships = append(relationships, commentRelationships...)
+		position = newPos
+	}
+
+	return elements, relationships, position
+}
+
+// processComments extracts comments from a sheet
+func (p *XLSXParser) processComments(file *excelize.File, sheetName, docID, sheetID string, startPosition int) ([]Element, []Relationship, int) {
+	var elements []Element
+	var relationships []Relationship
+	position := startPosition
+
+	// Get comments for the sheet
+	comments, err := file.GetComments(sheetName)
+	if err != nil || len(comments) == 0 {
+		return elements, relationships, position
+	}
+
+	// Create comments container element
+	commentsID := generateID("comments_")
+	commentsElement := Element{
+		ElementID:      commentsID,
+		ElementType:    "comments",
+		ContentPreview: fmt.Sprintf("Comments in sheet '%s'", sheetName),
+		ParentID:       sheetID,
+		Position:       position,
+		Depth:          3,
+		ContentLocation: map[string]interface{}{
+			"sheet_name": sheetName,
+			"type":       "comments",
+		},
+		Metadata: map[string]interface{}{
+			"sheet": sheetName,
+			"count": len(comments),
+		},
+	}
+	elements = append(elements, commentsElement)
+	position++
+
+	// Add bidirectional sheet->comments relationships
+	relationships = append(relationships, createBidirectionalRelationship(sheetID, commentsID)...)
+
+	// Process individual comments
+	for commentIdx, comment := range comments {
+		commentID := generateID(fmt.Sprintf("comment_%d_", commentIdx))
+
+		// Extract comment text and author
+		text := comment.Text
+		author := comment.Author
+
+		// Create content preview
+		contentPreview := fmt.Sprintf("Comment by %s: %s", author, text)
+		if len(contentPreview) > 100 {
+			contentPreview = contentPreview[:97] + "..."
+		}
+
+		commentElement := Element{
+			ElementID:      commentID,
+			ElementType:    "comment",
+			ContentPreview: contentPreview,
+			ParentID:       commentsID,
+			Position:       position,
+			Depth:          4,
+			ContentLocation: map[string]interface{}{
+				"sheet_name": sheetName,
+				"cell":       comment.Cell,
+				"type":       "comment",
+			},
+			Metadata: map[string]interface{}{
+				"cell":   comment.Cell,
+				"author": author,
+				"text":   text,
+				"sheet":  sheetName,
+			},
+		}
+		elements = append(elements, commentElement)
+		position++
+
+		// Add bidirectional comments->comment relationships
+		relationships = append(relationships, createBidirectionalRelationship(commentsID, commentID)...)
 	}
 
 	return elements, relationships, position
@@ -274,13 +351,8 @@ func (p *XLSXParser) detectAndProcessTables(file *excelize.File, sheetName, docI
 	elements = append(elements, dataTablesElement)
 	position++
 
-	// Add sheet->data_tables relationship
-	relationships = append(relationships, Relationship{
-		RelationshipID:   generateID("rel_"),
-		RelationshipType: "contains",
-		SourceElementID:  sheetID,
-		TargetElementID:  dataTablesID,
-	})
+	// Add bidirectional sheet->data_tables relationships
+	relationships = append(relationships, createBidirectionalRelationship(sheetID, dataTablesID)...)
 
 	// Process each detected table
 	for tableIdx, region := range tableRegions {
@@ -291,7 +363,7 @@ func (p *XLSXParser) detectAndProcessTables(file *excelize.File, sheetName, docI
 	}
 
 	// Process merged cells (if any)
-	if p.ExtractFormulas {  // Use existing flag to control merged cell extraction
+	if p.ExtractFormulas { // Use existing flag to control merged cell extraction
 		mergedElements, mergedRelationships, newPos := p.processMergedCells(file, sheetName, docID, sheetID, position)
 		elements = append(elements, mergedElements...)
 		relationships = append(relationships, mergedRelationships...)
@@ -486,13 +558,8 @@ func (p *XLSXParser) processTableRegion(file *excelize.File, sheetName, docID, p
 	elements = append(elements, tableElement)
 	position++
 
-	// Add parent->table relationship
-	relationships = append(relationships, Relationship{
-		RelationshipID:   generateID("rel_"),
-		RelationshipType: "contains",
-		SourceElementID:  parentID,
-		TargetElementID:  tableID,
-	})
+	// Add bidirectional parent->table relationships
+	relationships = append(relationships, createBidirectionalRelationship(parentID, tableID)...)
 
 	// Process header row if present
 	if region.HasHeader {
@@ -560,13 +627,8 @@ func (p *XLSXParser) processHeaderRow(file *excelize.File, sheetName, docID, tab
 	elements = append(elements, headerRowElement)
 	position++
 
-	// Add table->header_row relationship
-	relationships = append(relationships, Relationship{
-		RelationshipID:   generateID("rel_"),
-		RelationshipType: "contains",
-		SourceElementID:  tableID,
-		TargetElementID:  headerRowID,
-	})
+	// Add bidirectional table->header_row relationships
+	relationships = append(relationships, createBidirectionalRelationship(tableID, headerRowID)...)
 
 	// Process individual header cells
 	for col := region.MinCol; col <= region.MaxCol; col++ {
@@ -601,13 +663,8 @@ func (p *XLSXParser) processHeaderRow(file *excelize.File, sheetName, docID, tab
 			elements = append(elements, headerCellElement)
 			position++
 
-			// Add header_row->header_cell relationship
-			relationships = append(relationships, Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contains",
-				SourceElementID:  headerRowID,
-				TargetElementID:  headerCellID,
-			})
+			// Add bidirectional header_row->header_cell relationships
+			relationships = append(relationships, createBidirectionalRelationship(headerRowID, headerCellID, "contains_table_header")...)
 		}
 	}
 
@@ -666,13 +723,8 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 	elements = append(elements, rowElement)
 	position++
 
-	// Add table->row relationship
-	relationships = append(relationships, Relationship{
-		RelationshipID:   generateID("rel_"),
-		RelationshipType: "contains",
-		SourceElementID:  tableID,
-		TargetElementID:  rowID,
-	})
+	// Add bidirectional table->row relationships
+	relationships = append(relationships, createBidirectionalRelationship(tableID, rowID)...)
 
 	// Process individual cells
 	for col := region.MinCol; col <= region.MaxCol; col++ {
@@ -741,13 +793,8 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 			elements = append(elements, cellElement)
 			position++
 
-			// Add row->cell relationship
-			relationships = append(relationships, Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contains",
-				SourceElementID:  rowID,
-				TargetElementID:  cellID,
-			})
+			// Add bidirectional row->cell relationships
+			relationships = append(relationships, createBidirectionalRelationship(rowID, cellID, "contains_table_cell")...)
 		}
 	}
 
@@ -798,13 +845,8 @@ func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID 
 		elements = append(elements, rowElement)
 		position++
 
-		// Add sheet->row relationship
-		relationships = append(relationships, Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contains",
-			SourceElementID:  sheetID,
-			TargetElementID:  rowID,
-		})
+		// Add bidirectional sheet->row relationships
+		relationships = append(relationships, createBidirectionalRelationship(sheetID, rowID)...)
 
 		// Process cells
 		for col := 1; col <= maxCol; col++ {
@@ -851,13 +893,8 @@ func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID 
 				elements = append(elements, cellElement)
 				position++
 
-				// Add row->cell relationship
-				relationships = append(relationships, Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contains",
-					SourceElementID:  rowID,
-					TargetElementID:  cellID,
-				})
+				// Add bidirectional row->cell relationships
+				relationships = append(relationships, createBidirectionalRelationship(rowID, cellID, "contains_table_cell")...)
 			}
 		}
 	}
@@ -897,13 +934,8 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 		elements = append(elements, rowElement)
 		position++
 
-		// Add sheet->row relationship
-		relationships = append(relationships, Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contains",
-			SourceElementID:  sheetID,
-			TargetElementID:  rowID,
-		})
+		// Add bidirectional sheet->row relationships
+		relationships = append(relationships, createBidirectionalRelationship(sheetID, rowID)...)
 
 		// Process each cell in the row
 		for col := 1; col <= maxCol; col++ {
@@ -985,13 +1017,8 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 			elements = append(elements, cellElement)
 			position++
 
-			// Add row->cell relationship
-			relationships = append(relationships, Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contains",
-				SourceElementID:  rowID,
-				TargetElementID:  cellID,
-			})
+			// Add bidirectional row->cell relationships
+			relationships = append(relationships, createBidirectionalRelationship(rowID, cellID, "contains_table_cell")...)
 		}
 	}
 
@@ -1031,13 +1058,8 @@ func (p *XLSXParser) processMergedCells(file *excelize.File, sheetName, docID, s
 	elements = append(elements, mergedCellsElement)
 	position++
 
-	// Add sheet->merged_cells relationship
-	relationships = append(relationships, Relationship{
-		RelationshipID:   generateID("rel_"),
-		RelationshipType: "contains",
-		SourceElementID:  sheetID,
-		TargetElementID:  mergedCellsID,
-	})
+	// Add bidirectional sheet->merged_cells relationships
+	relationships = append(relationships, createBidirectionalRelationship(sheetID, mergedCellsID)...)
 
 	// Process each merged cell range
 	for i, mergedCell := range mergedCells {
@@ -1082,16 +1104,37 @@ func (p *XLSXParser) processMergedCells(file *excelize.File, sheetName, docID, s
 		elements = append(elements, mergedElement)
 		position++
 
-		// Add merged_cells->merged_cell relationship
-		relationships = append(relationships, Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contains",
-			SourceElementID:  mergedCellsID,
-			TargetElementID:  mergedID,
-		})
+		// Add bidirectional merged_cells->merged_cell relationships
+		relationships = append(relationships, createBidirectionalRelationship(mergedCellsID, mergedID)...)
 	}
 
 	return elements, relationships, position
+}
+
+// createBidirectionalRelationship creates both forward and inverse relationships
+// If relType is empty, defaults to "contains"/"contained_by"
+func createBidirectionalRelationship(parentID, childID string, relType ...string) []Relationship {
+	forwardType := "contains"
+	if len(relType) > 0 && relType[0] != "" {
+		forwardType = relType[0]
+	}
+
+	return []Relationship{
+		{
+			RelationshipID:   generateID("rel_"),
+			SourceElementID:  parentID,
+			TargetElementID:  childID,
+			RelationshipType: forwardType,
+			Confidence:       1.0,
+		},
+		{
+			RelationshipID:   generateID("rel_"),
+			SourceElementID:  childID,
+			TargetElementID:  parentID,
+			RelationshipType: "contained_by",
+			Confidence:       1.0,
+		},
+	}
 }
 
 // isCellInTableRegion checks if a cell is covered by any table region
