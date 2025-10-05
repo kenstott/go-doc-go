@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional, Union
 from .base import DocumentParser
 from .extract_dates import DateExtractor
 from ..storage import ElementType
+from ..relationships.structural import RelationshipType
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +312,9 @@ class TextParser(DocumentParser):
         paragraph_elements = self._create_paragraph_elements(paragraphs, doc_id, root_id, source_id)
         elements.extend(paragraph_elements)
 
+        # Create relationships
+        relationships = self._create_relationships(root_id, paragraph_elements)
+
         # Extract links from content
         links = self._extract_links(content, root_id)
 
@@ -361,7 +365,7 @@ class TextParser(DocumentParser):
             "document": document,
             "elements": elements,
             "links": links,
-            "relationships": []
+            "relationships": relationships
         }
 
         # Add dates if any were extracted
@@ -427,17 +431,19 @@ class TextParser(DocumentParser):
         # Normalize line endings
         normalized_content = content.replace('\r\n', '\n').replace('\r', '\n')
 
-        # Normalize whitespace if configured
-        if self.normalize_whitespace:
-            normalized_content = re.sub(r'\s+', ' ', normalized_content)
-            normalized_content = re.sub(r'\n\s+', '\n', normalized_content)
-
-        # Split by the configured paragraph separator
+        # Split by the configured paragraph separator BEFORE normalizing whitespace
         paragraphs = normalized_content.split(self.paragraph_separator)
 
         # Filter and clean paragraphs
         cleaned_paragraphs = []
         for paragraph in paragraphs:
+            # Normalize whitespace within each paragraph if configured
+            if self.normalize_whitespace:
+                # Replace multiple spaces with single space within the paragraph
+                paragraph = re.sub(r'[ \t]+', ' ', paragraph)
+                # Replace single newlines with spaces (within paragraph)
+                paragraph = re.sub(r'\n', ' ', paragraph)
+
             if self.strip_whitespace:
                 paragraph = paragraph.strip()
 
@@ -446,6 +452,96 @@ class TextParser(DocumentParser):
                 cleaned_paragraphs.append(paragraph)
 
         return cleaned_paragraphs
+
+    def _create_root_element(self, doc_id: str, source_id: str) -> Dict[str, Any]:
+        """
+        Create the root element for the text document.
+
+        Args:
+            doc_id: Document ID
+            source_id: Source identifier
+
+        Returns:
+            Root element dictionary
+        """
+        element_id = self._generate_id("txt_root_")
+
+        return {
+            "element_id": element_id,
+            "doc_id": doc_id,
+            "element_type": ElementType.ROOT.value,
+            "content_preview": f"Text document: {source_id}",
+            "content_location": json.dumps({
+                "source": source_id,
+                "type": "full_document"
+            }),
+            "content_hash": "",  # Will be set by caller if needed
+            "metadata": {
+                "element_type": ElementType.ROOT.value,
+                "source": source_id
+            }
+        }
+
+    def _create_relationships(self, root_id: str, paragraph_elements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Create relationships between text elements.
+
+        Args:
+            root_id: Root element ID
+            paragraph_elements: List of paragraph elements
+
+        Returns:
+            List of relationships
+        """
+        relationships = []
+
+        # Create hierarchical relationships (root contains paragraphs)
+        for para_element in paragraph_elements:
+            # Contains relationship (root → paragraph)
+            relationships.append({
+                "relationship_id": self._generate_id("rel_"),
+                "source_element_id": root_id,
+                "target_element_id": para_element["element_id"],
+                "relationship_type": RelationshipType.CONTAINS.value,
+                "confidence": 1.0,
+                "metadata": {}
+            })
+
+            # Contained_by relationship (paragraph → root)
+            relationships.append({
+                "relationship_id": self._generate_id("rel_"),
+                "source_element_id": para_element["element_id"],
+                "target_element_id": root_id,
+                "relationship_type": RelationshipType.CONTAINED_BY.value,
+                "confidence": 1.0,
+                "metadata": {}
+            })
+
+        # Create sequential relationships (next/previous)
+        for i in range(len(paragraph_elements)):
+            if i > 0:
+                # Previous relationship (current → previous)
+                relationships.append({
+                    "relationship_id": self._generate_id("rel_"),
+                    "source_element_id": paragraph_elements[i]["element_id"],
+                    "target_element_id": paragraph_elements[i - 1]["element_id"],
+                    "relationship_type": RelationshipType.PREVIOUS.value,
+                    "confidence": 1.0,
+                    "metadata": {}
+                })
+
+            if i < len(paragraph_elements) - 1:
+                # Next relationship (current → next)
+                relationships.append({
+                    "relationship_id": self._generate_id("rel_"),
+                    "source_element_id": paragraph_elements[i]["element_id"],
+                    "target_element_id": paragraph_elements[i + 1]["element_id"],
+                    "relationship_type": RelationshipType.NEXT.value,
+                    "confidence": 1.0,
+                    "metadata": {}
+                })
+
+        return relationships
 
     def _create_paragraph_elements(self, paragraphs: List[str], doc_id: str, parent_id: str, source_id: str) -> List[
         Dict[str, Any]]:
@@ -490,7 +586,8 @@ class TextParser(DocumentParser):
                     "word_count": len(re.findall(r'\b\w+\b', paragraph)),
                     "has_urls": bool(re.search(r'https?://\S+', paragraph)) if self.extract_urls else False,
                     "has_emails": bool(re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-                                                 paragraph)) if self.extract_email_addresses else False
+                                                 paragraph)) if self.extract_email_addresses else False,
+                    "text": paragraph  # Full text for embeddings
                 }
             }
 
