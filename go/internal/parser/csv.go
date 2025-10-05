@@ -450,6 +450,16 @@ func (p *CSVParser) createCellElement(docID, parentID, cellValue string, rowIdx,
 		headerName = headerRow[colIdx]
 	}
 
+	metadata := map[string]interface{}{
+		"row":    rowIdx,
+		"col":    colIdx,
+		"header": headerName,
+		"value":  cellValue,
+	}
+
+	// Extract temporal metadata from cell value
+	ProcessTemporalContent(cellValue, metadata)
+
 	return CSVElement{
 		ElementID:       p.generateID(fmt.Sprintf("cell_%d_%d_", rowIdx, colIdx)),
 		DocID:           docID,
@@ -462,12 +472,7 @@ func (p *CSVParser) createCellElement(docID, parentID, cellValue string, rowIdx,
 		DocumentOrder:   order,
 		Text:            cellValue,
 		Content:         cellValue,
-		Metadata: map[string]interface{}{
-			"row":    rowIdx,
-			"col":    colIdx,
-			"header": headerName,
-			"value":  cellValue,
-		},
+		Metadata:        metadata,
 	}
 }
 

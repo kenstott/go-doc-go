@@ -291,7 +291,10 @@ func (p *TextParser) createParagraphElement(docID, content string, index int, pa
 		"line_count":       strings.Count(content, "\n") + 1,
 	}
 
-	// Add date extraction if enabled
+	// Extract temporal metadata using helper function
+	ProcessTemporalContent(content, metadata)
+
+	// Add date extraction if enabled (legacy)
 	if p.ExtractDates {
 		dates := p.extractDates(content)
 		if len(dates) > 0 {

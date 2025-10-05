@@ -299,6 +299,8 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 									response.Elements[i].ContentPreview = p.truncateContent(preview)
 								}
 							}
+							// Extract temporal metadata from text
+							ProcessTemporalContent(text, response.Elements[i].Metadata)
 							// Extract links from text
 							p.extractLinksFromText(text, parentID, &response.Links)
 						}
@@ -330,6 +332,9 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 							"is_text":  true,
 						},
 					}
+
+					// Extract temporal metadata from text
+					ProcessTemporalContent(text, textElement.Metadata)
 
 					response.Elements = append(response.Elements, textElement)
 					elementCounter++

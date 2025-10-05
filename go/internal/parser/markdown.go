@@ -615,7 +615,10 @@ func (p *MarkdownParser) createHeaderElement(docID, text string, level, lineNumb
 		"length":       utf8.RuneCountInString(text),
 	}
 
-	// Add date extraction if enabled
+	// Extract temporal metadata using helper function
+	ProcessTemporalContent(text, metadata)
+
+	// Add date extraction if enabled (legacy)
 	if p.ExtractDates {
 		dates := p.extractDates(text)
 		if len(dates) > 0 {
@@ -657,7 +660,10 @@ func (p *MarkdownParser) createParagraphElement(docID, text string, lineNumber i
 		"word_count":   len(strings.Fields(text)),
 	}
 
-	// Add date extraction if enabled
+	// Extract temporal metadata using helper function
+	ProcessTemporalContent(text, metadata)
+
+	// Add date extraction if enabled (legacy)
 	if p.ExtractDates {
 		dates := p.extractDates(text)
 		if len(dates) > 0 {
@@ -730,7 +736,10 @@ func (p *MarkdownParser) createListElement(docID, content string, lineNumber int
 		"item_count":   itemCount,
 	}
 
-	// Add date extraction if enabled
+	// Extract temporal metadata using helper function
+	ProcessTemporalContent(content, metadata)
+
+	// Add date extraction if enabled (legacy)
 	if p.ExtractDates {
 		dates := p.extractDates(content)
 		if len(dates) > 0 {
@@ -772,7 +781,10 @@ func (p *MarkdownParser) createBlockquoteElement(docID, content string, lineNumb
 		"word_count":   len(strings.Fields(content)),
 	}
 
-	// Add date extraction if enabled
+	// Extract temporal metadata using helper function
+	ProcessTemporalContent(content, metadata)
+
+	// Add date extraction if enabled (legacy)
 	if p.ExtractDates {
 		dates := p.extractDates(content)
 		if len(dates) > 0 {
@@ -847,7 +859,10 @@ func (p *MarkdownParser) createTableElement(docID, content string, lineNumber in
 		"column_count": colCount,
 	}
 
-	// Add date extraction if enabled
+	// Extract temporal metadata using helper function
+	ProcessTemporalContent(content, metadata)
+
+	// Add date extraction if enabled (legacy)
 	if p.ExtractDates {
 		dates := p.extractDates(content)
 		if len(dates) > 0 {

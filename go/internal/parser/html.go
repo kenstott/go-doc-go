@@ -217,6 +217,23 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 		// This is the CORRECT behavior - Python's filtering at html.py:1050 is a bug
 
 		// Create element for all whitelisted semantic tags
+		metadata := p.extractMetadata(node)
+
+		// Optionally get full text for temporal extraction
+		fullText := ""
+		if p.StoreFullContent {
+			fullText = p.extractFullTextContent(node)
+		}
+
+		// Extract temporal metadata from text content (use full text if available, otherwise preview)
+		contentForTemporal := textContent
+		if fullText != "" {
+			contentForTemporal = fullText
+		}
+		if contentForTemporal != "" {
+			ProcessTemporalContent(contentForTemporal, metadata)
+		}
+
 		element := HTMLElement{
 			ElementID:       p.generateID(fmt.Sprintf("%s_", strings.ToLower(string(elementType)))),
 			ElementType:     elementType,
@@ -226,15 +243,12 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 			ContentHash:     p.generateHash(textContent),
 			ElementOrder:    *counter,
 			DocumentOrder:   *counter,
-			Metadata:        p.extractMetadata(node),
+			Metadata:        metadata,
 		}
 
 		// Optionally populate Content field with full (untruncated) text
-		if p.StoreFullContent {
-			fullText := p.extractFullTextContent(node)
-			if fullText != "" {
-				element.Content = fullText
-			}
+		if fullText != "" {
+			element.Content = fullText
 		}
 
 		*elements = append(*elements, element)

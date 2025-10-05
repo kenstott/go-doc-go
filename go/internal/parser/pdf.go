@@ -197,6 +197,13 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 			blockType = "header"
 		}
 
+		metadata := map[string]interface{}{
+			"page_number": pageNum + 1,
+		}
+
+		// Extract temporal metadata from block text
+		ProcessTemporalContent(block.Text, metadata)
+
 		blockElement := Element{
 			ElementID:      blockID,
 			ElementType:    blockType,
@@ -205,9 +212,8 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 			ParentID:       pageID,
 			Position:       *elementPosition,
 			Depth:          3,
-			ContentLocation: map[string]interface{}{
-				"page_number": pageNum + 1,
-			},
+			ContentLocation: metadata,
+			Metadata:       metadata,
 		}
 		elements = append(elements, blockElement)
 		*elementPosition++
@@ -458,6 +464,16 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				headerCellID := generateID(fmt.Sprintf("table_header_%d_%d_", tableIdx, colIdx))
 				cellText := table.Cells[0][colKey]
 
+				headerMetadata := map[string]interface{}{
+					"page_number": pageNum + 1,
+					"table_index": tableIdx,
+					"row":         0,
+					"col":         colKey,
+				}
+
+				// Extract temporal metadata from header cell text
+				ProcessTemporalContent(cellText, headerMetadata)
+
 				headerCellElement := Element{
 					ElementID:      headerCellID,
 					ElementType:    "table_header",
@@ -466,12 +482,8 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 					ParentID:       headerRowID,
 					Position:       *elementPosition,
 					Depth:          5,
-					ContentLocation: map[string]interface{}{
-						"page_number": pageNum + 1,
-						"table_index": tableIdx,
-						"row":         0,
-						"col":         colKey,
-					},
+					ContentLocation: headerMetadata,
+					Metadata:       headerMetadata,
 				}
 				elements = append(elements, headerCellElement)
 				*elementPosition++
@@ -558,6 +570,16 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				cellID := generateID(fmt.Sprintf("table_cell_%d_%d_%d_", tableIdx, row, colIdx))
 				cellText := table.Cells[row][col]
 
+				cellMetadata := map[string]interface{}{
+					"page_number": pageNum + 1,
+					"table_index": tableIdx,
+					"row":         row,
+					"col":         col,
+				}
+
+				// Extract temporal metadata from cell text
+				ProcessTemporalContent(cellText, cellMetadata)
+
 				cellElement := Element{
 					ElementID:      cellID,
 					ElementType:    "table_cell",
@@ -566,12 +588,8 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 					ParentID:       rowID,
 					Position:       *elementPosition,
 					Depth:          5,
-					ContentLocation: map[string]interface{}{
-						"page_number": pageNum + 1,
-						"table_index": tableIdx,
-						"row":         row,
-						"col":         col,
-					},
+					ContentLocation: cellMetadata,
+					Metadata:       cellMetadata,
 				}
 				elements = append(elements, cellElement)
 				*elementPosition++
