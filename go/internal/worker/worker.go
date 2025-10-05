@@ -126,11 +126,13 @@ func NewWorker(config Config) (*Worker, error) {
 			// Create parsers for content resolution
 			htmlParser := parser.NewHTMLParser()
 			xmlParser := parser.NewXMLParser()
+			jsonParser := parser.NewJSONParser()
 
-			// Create content resolver with both HTML and XML parsers
+			// Create content resolver with HTML, XML, and JSON parsers
 			parserResolvers := map[string]resolver.ParserResolver{
 				"html": htmlParser,
 				"xml":  xmlParser,
+				"json": jsonParser,
 			}
 			contentResolver := resolver.NewContentResolver(parserResolvers)
 
@@ -603,6 +605,11 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		log.Printf("Failed to parse document %s: %v", docInfo.DocID, err)
 		return false
 	}
+
+	// Create sequential (sibling) relationships between elements with the same parent
+	// This matches Python's StructuralRelationshipDetector behavior
+	sequentialRels := parser.CreateSequentialRelationships(parseResult.Elements)
+	parseResult.Relationships = append(parseResult.Relationships, sequentialRels...)
 
 	// Generate embeddings if enabled
 	var embeddingMap map[string][]float64
