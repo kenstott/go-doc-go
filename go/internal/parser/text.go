@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/kennethstott/go-doc-go/internal/temporal"
 )
 
 // TextElementType represents the type of text element
@@ -279,24 +280,36 @@ func (p *TextParser) createRootElement(docID, content string) TextElement {
 // createParagraphElement creates a paragraph element
 func (p *TextParser) createParagraphElement(docID, content string, index int, parentID string) TextElement {
 	elementID := p.generateElementID("txt_para")
-	contentHash := p.calculateContentHash(content)
-	preview := p.truncateContent(content)
+
+	// Normalize temporal patterns in content
+	normalizedContent, temporalMeta := temporal.ProcessFieldValue("paragraph", content)
+
+	// Use normalized content for storage
+	contentHash := p.calculateContentHash(normalizedContent)
+	preview := p.truncateContent(normalizedContent)
 
 	// Extract metadata
 	metadata := map[string]interface{}{
 		"element_type":     "paragraph",
 		"paragraph_index":  index,
-		"length":           utf8.RuneCountInString(content),
-		"word_count":       len(strings.Fields(content)),
-		"line_count":       strings.Count(content, "\n") + 1,
+		"length":           utf8.RuneCountInString(normalizedContent),
+		"word_count":       len(strings.Fields(normalizedContent)),
+		"line_count":       strings.Count(normalizedContent, "\n") + 1,
 	}
 
-	// Extract temporal metadata using helper function
-	ProcessTemporalContent(content, metadata)
+	// Add temporal normalization metadata
+	if temporalMeta != nil {
+		for k, v := range temporalMeta {
+			metadata[k] = v
+		}
+	}
+
+	// Extract temporal metadata using helper function (for additional analysis)
+	ProcessTemporalContent(normalizedContent, metadata)
 
 	// Add date extraction if enabled (legacy)
 	if p.ExtractDates {
-		dates := p.extractDates(content)
+		dates := p.extractDates(normalizedContent)
 		if len(dates) > 0 {
 			metadata["dates"] = dates
 		}
@@ -304,7 +317,7 @@ func (p *TextParser) createParagraphElement(docID, content string, index int, pa
 
 	// Add number extraction if enabled
 	if p.ExtractNumbers {
-		numbers := p.extractNumbers(content)
+		numbers := p.extractNumbers(normalizedContent)
 		if len(numbers) > 0 {
 			metadata["numbers"] = numbers
 		}
@@ -314,7 +327,7 @@ func (p *TextParser) createParagraphElement(docID, content string, index int, pa
 		ElementID:       elementID,
 		DocumentID:      docID,
 		ElementType:     TextElementTypeParagraph,
-		Text:            content,
+		Text:            normalizedContent,
 		ContentPreview:  preview,
 		ContentLocation: map[string]interface{}{"type": "paragraph", "index": index},
 		ContentHash:     contentHash,

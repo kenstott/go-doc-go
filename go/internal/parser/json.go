@@ -249,9 +249,7 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 						temporalValue = tempMeta
 						temporalMetadata = temporal.GenerateTemporalMetadata(strValue)
 						// Update the preview with normalized value if temporal
-						if normalizedStr, ok := normalizedValue.(string); ok {
-							fieldPreview = p.truncateContent(fmt.Sprintf("%s: \"%s\"", key, normalizedStr))
-						}
+						fieldPreview = p.truncateContent(fmt.Sprintf("%s: \"%s\"", key, normalizedValue))
 					}
 				}
 			}
@@ -373,9 +371,7 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 						itemTemporalValue = tempMeta
 						itemTemporalMetadata = temporal.GenerateTemporalMetadata(strItem)
 						// Update the preview with normalized value if temporal
-						if normalizedStr, ok := normalizedValue.(string); ok {
-							itemPreview = p.truncateContent(fmt.Sprintf("\"%s\"", normalizedStr))
-						}
+						itemPreview = p.truncateContent(fmt.Sprintf("\"%s\"", normalizedValue))
 					}
 				}
 			}

@@ -250,31 +250,174 @@ func addTimeRangeParts(temporalValue map[string]interface{}, rangeStr string) {
 	temporalValue["parts"] = parts
 }
 
+// TemporalMatch represents a temporal pattern found in text
+type TemporalMatch struct {
+	Start      int
+	End        int
+	Original   string
+	Normalized string
+	Type       TemporalType
+}
+
 // NormalizeDatesInText finds and normalizes all dates in text
 func NormalizeDatesInText(text string) string {
-	// This is a simplified version - in production you'd want more comprehensive detection
-	// For now, just return the original text
-	return text
+	if text == "" {
+		return text
+	}
+
+	// Find all temporal patterns
+	matches := findTemporalMatches(text)
+	if len(matches) == 0 {
+		return text
+	}
+
+	// Sort by position (reverse) to maintain positions during replacement
+	// Replace from end to beginning
+	result := text
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		if match.Start >= 0 && match.End > match.Start && match.End <= len(result) {
+			result = result[:match.Start] + match.Normalized + result[match.End:]
+		}
+	}
+
+	return result
+}
+
+// findTemporalMatches finds all temporal patterns in text with their positions
+func findTemporalMatches(text string) []TemporalMatch {
+	var matches []TemporalMatch
+
+	// Split into words and check each word/phrase
+	words := strings.Fields(text)
+	position := 0
+
+	for i := 0; i < len(words); i++ {
+		// Find the start position of this word in the original text
+		wordStart := strings.Index(text[position:], words[i])
+		if wordStart == -1 {
+			continue
+		}
+		wordStart += position
+
+		// Clean the word of common punctuation for detection
+		cleanWord := strings.Trim(words[i], ".,;:!?()[]{}\"'")
+
+		// Check single word
+		if tempType := DetectTemporalType(cleanWord); tempType != TemporalTypeNone {
+			normalized := NormalizeTemporal(cleanWord, tempType)
+			matches = append(matches, TemporalMatch{
+				Start:      wordStart,
+				End:        wordStart + len(words[i]),
+				Original:   words[i],
+				Normalized: normalized,
+				Type:       tempType,
+			})
+			position = wordStart + len(words[i])
+			continue
+		}
+
+		// Check two-word patterns (e.g., "Q1 2024", "Jan 15")
+		if i < len(words)-1 {
+			nextWord := words[i+1]
+			cleanNext := strings.Trim(nextWord, ".,;:!?()[]{}\"'")
+			twoWords := cleanWord + " " + cleanNext
+
+			if tempType := DetectTemporalType(twoWords); tempType != TemporalTypeNone {
+				// Find the span of both words
+				nextStart := strings.Index(text[wordStart:], nextWord)
+				if nextStart != -1 {
+					endPos := wordStart + nextStart + len(nextWord)
+					normalized := NormalizeTemporal(twoWords, tempType)
+					matches = append(matches, TemporalMatch{
+						Start:      wordStart,
+						End:        endPos,
+						Original:   text[wordStart:endPos],
+						Normalized: normalized,
+						Type:       tempType,
+					})
+					position = endPos
+					i++ // Skip next word since we processed it
+					continue
+				}
+			}
+		}
+
+		// Check three-word patterns (e.g., "Jan 15, 2024")
+		if i < len(words)-2 {
+			word2 := words[i+1]
+			word3 := words[i+2]
+			clean2 := strings.Trim(word2, ".,;:!?()[]{}\"'")
+			clean3 := strings.Trim(word3, ".,;:!?()[]{}\"'")
+			threeWords := cleanWord + " " + clean2 + " " + clean3
+
+			if tempType := DetectTemporalType(threeWords); tempType != TemporalTypeNone {
+				// Find the span of all three words
+				word3Start := strings.Index(text[wordStart:], word3)
+				if word3Start != -1 {
+					endPos := wordStart + word3Start + len(word3)
+					normalized := NormalizeTemporal(threeWords, tempType)
+					matches = append(matches, TemporalMatch{
+						Start:      wordStart,
+						End:        endPos,
+						Original:   text[wordStart:endPos],
+						Normalized: normalized,
+						Type:       tempType,
+					})
+					position = endPos
+					i += 2 // Skip next two words
+					continue
+				}
+			}
+		}
+
+		position = wordStart + len(words[i])
+	}
+
+	return matches
 }
 
 // ProcessFieldValue processes a field value to detect and normalize temporal data
-func ProcessFieldValue(fieldName, fieldValue string) (interface{}, map[string]interface{}) {
-	// Detect temporal type
-	temporalType := DetectTemporalType(fieldValue)
-
-	if temporalType == TemporalTypeNone {
+// Strategy:
+//  1. Short fields (≤50 chars): Detect if 100% temporal, normalize entire value
+//  2. Long fields (>50 chars): Extract embedded dates, replace with normalized forms
+func ProcessFieldValue(fieldName, fieldValue string) (string, map[string]interface{}) {
+	if fieldValue == "" {
 		return fieldValue, nil
 	}
 
-	// Create temporal value
-	temporalValue := CreateTemporalValue(fieldValue, temporalType)
+	trimmed := strings.TrimSpace(fieldValue)
 
-	// Return normalized value and metadata
-	if normalized, ok := temporalValue["normalized"].(string); ok {
-		return normalized, temporalValue
+	// SHORT FIELD: Check if 100% temporal
+	if len(trimmed) <= 50 {
+		temporalType := DetectTemporalType(trimmed)
+		if temporalType != TemporalTypeNone {
+			// Entire field is temporal - normalize it
+			normalized := NormalizeTemporal(trimmed, temporalType)
+			temporalValue := CreateTemporalValue(trimmed, temporalType)
+
+			return normalized, map[string]interface{}{
+				"treatment":      "short_temporal",
+				"temporal_value": temporalValue,
+			}
+		}
+		// Not temporal, return as-is
+		return fieldValue, nil
 	}
 
-	return fieldValue, temporalValue
+	// LONG FIELD: Check for embedded dates
+	normalizedText := NormalizeDatesInText(trimmed)
+
+	// If normalization changed the text, we found temporal content
+	if normalizedText != trimmed {
+		return normalizedText, map[string]interface{}{
+			"treatment":       "long_with_dates",
+			"normalized_text": normalizedText,
+		}
+	}
+
+	// No temporal content found
+	return fieldValue, nil
 }
 
 // Helper function to get temporal type name

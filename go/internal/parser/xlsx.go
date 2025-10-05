@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kennethstott/go-doc-go/internal/temporal"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -738,11 +739,24 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 				cellPreview = cellPreview[:97] + "..."
 			}
 
+			// Normalize temporal patterns in cell value
+			normalizedValue := cellValue
+			var temporalMeta map[string]interface{}
+			if p.ExtractDates && cellValue != "" {
+				normalizedValue, temporalMeta = temporal.ProcessFieldValue(cellAddr, cellValue)
+			}
+
+			// Use normalized value for preview
+			normalizedPreview := normalizedValue
+			if len(normalizedPreview) > 100 {
+				normalizedPreview = normalizedPreview[:97] + "..."
+			}
+
 			cellElement := Element{
 				ElementID:      cellID,
 				ElementType:    "table_cell",
-				Content:        cellValue,
-				ContentPreview: cellPreview,
+				Content:        normalizedValue,
+				ContentPreview: normalizedPreview,
 				ParentID:       rowID,
 				Position:       position,
 				Depth:          6,
@@ -753,9 +767,16 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 				Metadata: map[string]interface{}{
 					"row":    row,
 					"column": col,
-					"value":  cellValue,
+					"value":  normalizedValue,
 					"sheet":  sheetName,
 				},
+			}
+
+			// Add temporal normalization metadata
+			if temporalMeta != nil {
+				for k, v := range temporalMeta {
+					cellElement.Metadata[k] = v
+				}
 			}
 
 			// Add formula if present
@@ -776,7 +797,7 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 						SourceElementID: cellID,
 						LinkType:        "hyperlink",
 						LinkTarget:      target,
-						LinkText:        cellValue, // Use cell value as display text
+						LinkText:        normalizedValue,
 					}
 					*links = append(*links, link)
 
@@ -785,9 +806,9 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 				}
 			}
 
-			// Extract temporal metadata if enabled
-			if p.ExtractDates && cellValue != "" {
-				ProcessTemporalContent(cellValue, cellElement.Metadata)
+			// Extract additional temporal metadata if enabled
+			if p.ExtractDates && normalizedValue != "" {
+				ProcessTemporalContent(normalizedValue, cellElement.Metadata)
 			}
 
 			elements = append(elements, cellElement)
@@ -865,11 +886,24 @@ func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID 
 					elementType = "table_header"
 				}
 
+				// Normalize temporal patterns in cell value
+				normalizedValue := cellValue
+				var temporalMeta map[string]interface{}
+				if p.ExtractDates && cellValue != "" {
+					normalizedValue, temporalMeta = temporal.ProcessFieldValue(cellAddr, cellValue)
+				}
+
+				// Use normalized value for preview
+				normalizedPreview := normalizedValue
+				if len(normalizedPreview) > 100 {
+					normalizedPreview = normalizedPreview[:97] + "..."
+				}
+
 				cellElement := Element{
 					ElementID:      cellID,
 					ElementType:    elementType,
-					Content:        cellValue,
-					ContentPreview: cellPreview,
+					Content:        normalizedValue,
+					ContentPreview: normalizedPreview,
 					ParentID:       rowID,
 					Position:       position,
 					Depth:          4,
@@ -880,14 +914,21 @@ func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID 
 					Metadata: map[string]interface{}{
 						"row":    row,
 						"column": col,
-						"value":  cellValue,
+						"value":  normalizedValue,
 						"sheet":  sheetName,
 					},
 				}
 
-				// Extract temporal metadata if enabled
-				if p.ExtractDates && cellValue != "" {
-					ProcessTemporalContent(cellValue, cellElement.Metadata)
+				// Add temporal normalization metadata
+				if temporalMeta != nil {
+					for k, v := range temporalMeta {
+						cellElement.Metadata[k] = v
+					}
+				}
+
+				// Extract additional temporal metadata if enabled
+				if p.ExtractDates && normalizedValue != "" {
+					ProcessTemporalContent(normalizedValue, cellElement.Metadata)
 				}
 
 				elements = append(elements, cellElement)
@@ -970,11 +1011,24 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 				cellPreview = cellPreview[:p.MaxContentPreview-3] + "..."
 			}
 
+			// Normalize temporal patterns in cell value
+			normalizedValue := cellValue
+			var temporalMeta map[string]interface{}
+			if p.ExtractDates && cellValue != "" {
+				normalizedValue, temporalMeta = temporal.ProcessFieldValue(cellAddr, cellValue)
+			}
+
+			// Use normalized value for preview
+			normalizedPreview := normalizedValue
+			if len(normalizedPreview) > p.MaxContentPreview {
+				normalizedPreview = normalizedPreview[:p.MaxContentPreview-3] + "..."
+			}
+
 			cellElement := Element{
 				ElementID:      cellID,
 				ElementType:    elementType,
-				Content:        cellValue,
-				ContentPreview: cellPreview,
+				Content:        normalizedValue,
+				ContentPreview: normalizedPreview,
 				ParentID:       rowID,
 				Position:       position,
 				Depth:          4,
@@ -987,10 +1041,17 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 				Metadata: map[string]interface{}{
 					"row":    row,
 					"column": col,
-					"value":  cellValue,
+					"value":  normalizedValue,
 					"sheet":  sheetName,
 					"cell":   cellAddr,
 				},
+			}
+
+			// Add temporal normalization metadata
+			if temporalMeta != nil {
+				for k, v := range temporalMeta {
+					cellElement.Metadata[k] = v
+				}
 			}
 
 			// Add formula if available and enabled
@@ -1009,9 +1070,9 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 				}
 			}
 
-			// Extract temporal metadata if enabled
-			if p.ExtractDates && cellValue != "" {
-				ProcessTemporalContent(cellValue, cellElement.Metadata)
+			// Extract additional temporal metadata if enabled
+			if p.ExtractDates && normalizedValue != "" {
+				ProcessTemporalContent(normalizedValue, cellElement.Metadata)
 			}
 
 			elements = append(elements, cellElement)
