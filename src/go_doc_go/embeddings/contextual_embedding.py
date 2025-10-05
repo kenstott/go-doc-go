@@ -637,9 +637,10 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
         # Batch processing arrays
         batch_element_ids = []
         batch_combined_texts = []
-        child_exceptions = {"table_header_row", "table_row"}
+        # Match Go's ShouldEmbed logic: no exceptions for elements with children
+        child_exceptions = {}
 
-        for element in elements:
+        for idx, element in enumerate(elements):
             # Safety check: ensure element is a dictionary
             if not isinstance(element, dict):
                 skipped_elements += 1
@@ -655,7 +656,8 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 continue
 
             # Also skip certain elements that should use their parent
-            if element.get("element_type") in {'table_cell', 'json_item', 'json_field'}:
+            # Match Go's ShouldEmbed logic: skip table_cell AND table_header
+            if element.get("element_type") in {'table_cell', 'table_header', 'json_item', 'json_field'}:
                 skipped_elements += 1
                 continue
 
@@ -691,6 +693,10 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             # Get full text content for all elements using the resolver
             t0 = time.time()
             content = resolver.resolve_content(element.get('content_location'), text=True)
+
+            # Fallback to content_preview if resolution failed
+            if not content:
+                content = element.get('content_preview', '')
 
             # Special handling for table rows - aggregate their cells AND headers
             if element.get("element_type") == "table_row":
@@ -785,8 +791,8 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
             batch_element_ids.append(element_id)
             batch_combined_texts.append(combined_text)
 
-            # Process batch when full or at end
-            if len(batch_element_ids) >= BATCH_SIZE or element == elements[-1]:
+            # Process batch when full
+            if len(batch_element_ids) >= BATCH_SIZE:
                 if batch_combined_texts:
                     # Generate embeddings for batch
                     t_batch_start = time.time()
@@ -827,6 +833,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                           f"Resolutions: {content_resolutions} ({avg_resolutions_per_elem:.1f}/elem)")
 
         # Process any remaining batch
+        logger.info(f"Post-loop batch: {len(batch_combined_texts)} items in batch")
         if batch_combined_texts:
             t_batch_start = time.time()
             if hasattr(self.base_generator, 'generate_batch'):
@@ -1027,7 +1034,7 @@ class ContextualEmbeddingGenerator(EmbeddingGenerator):
                 # Same filtering as for predecessors
                 if (succ_element["element_type"] != "root" and
                         not is_succ_xml_root and
-                        not succ_element.get("parent_id") in parent_ids and
+                        succ_element.get("parent_id") not in parent_ids and
                         succ_element.get("content_preview") and
                         not self._is_structural_only_container(succ_element)):
                     context_ids.append(succ_element["element_id"])
