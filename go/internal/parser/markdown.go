@@ -17,16 +17,16 @@ import (
 type MarkdownElementType string
 
 const (
-	MarkdownElementTypeRoot       MarkdownElementType = "root"
-	MarkdownElementTypeHeader     MarkdownElementType = "header"
-	MarkdownElementTypeParagraph  MarkdownElementType = "paragraph"
-	MarkdownElementTypeCodeBlock  MarkdownElementType = "code_block"
-	MarkdownElementTypeList       MarkdownElementType = "list"
-	MarkdownElementTypeListItem   MarkdownElementType = "list_item"
-	MarkdownElementTypeBlockquote MarkdownElementType = "blockquote"
-	MarkdownElementTypeTable      MarkdownElementType = "table"
-	MarkdownElementTypeTableRow   MarkdownElementType = "table_row"
-	MarkdownElementTypeTableCell  MarkdownElementType = "table_cell"
+	MarkdownElementTypeRoot        MarkdownElementType = "root"
+	MarkdownElementTypeHeader      MarkdownElementType = "header"
+	MarkdownElementTypeParagraph   MarkdownElementType = "paragraph"
+	MarkdownElementTypeCodeBlock   MarkdownElementType = "code_block"
+	MarkdownElementTypeList        MarkdownElementType = "list"
+	MarkdownElementTypeListItem    MarkdownElementType = "list_item"
+	MarkdownElementTypeBlockquote  MarkdownElementType = "blockquote"
+	MarkdownElementTypeTable       MarkdownElementType = "table"
+	MarkdownElementTypeTableRow    MarkdownElementType = "table_row"
+	MarkdownElementTypeTableCell   MarkdownElementType = "table_cell"
 	MarkdownElementTypeFrontMatter MarkdownElementType = "front_matter"
 )
 
@@ -226,6 +226,10 @@ func (p *MarkdownParser) Parse(request MarkdownParseRequest) (*MarkdownParseResp
 		// Create relationship
 		relationship := p.createRelationship(rootElement.ElementID, frontMatterElement.ElementID, "contains")
 		response.Relationships = append(response.Relationships, relationship)
+
+		// Create reverse contained_by relationship
+		containedByRel := p.createRelationship(frontMatterElement.ElementID, rootElement.ElementID, "contained_by")
+		response.Relationships = append(response.Relationships, containedByRel)
 	}
 
 	// Parse markdown content into elements
@@ -398,6 +402,10 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 			relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 			response.Relationships = append(response.Relationships, relationship)
 
+			// Create reverse contained_by relationship
+			containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
+			response.Relationships = append(response.Relationships, containedByRel)
+
 			// Push this header onto the stack and make it the new current parent
 			sectionStack = append(sectionStack, section{id: element.ElementID, level: level})
 			currentParent = element.ElementID
@@ -433,6 +441,10 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
 
+				// Create reverse contained_by relationship
+				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
+				response.Relationships = append(response.Relationships, containedByRel)
+
 				// Create sibling relationships
 				if previousElementID != "" {
 					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
@@ -458,6 +470,10 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 				// Create parent-child relationship
 				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
+
+				// Create reverse contained_by relationship
+				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
+				response.Relationships = append(response.Relationships, containedByRel)
 
 				// Create sibling relationships
 				if previousElementID != "" {
@@ -489,6 +505,10 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 				// Create parent-child relationship
 				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
+
+				// Create reverse contained_by relationship
+				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
+				response.Relationships = append(response.Relationships, containedByRel)
 
 				// Create sibling relationships
 				if previousElementID != "" {
@@ -522,6 +542,10 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 				response.Relationships = append(response.Relationships, relationship)
 
+				// Create reverse contained_by relationship
+				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
+				response.Relationships = append(response.Relationships, containedByRel)
+
 				// Create sibling relationships
 				if previousElementID != "" {
 					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
@@ -552,6 +576,10 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 			// Create relationship
 			relationship := p.createRelationship(currentParent, element.ElementID, "contains")
 			response.Relationships = append(response.Relationships, relationship)
+
+			// Create reverse contained_by relationship
+			containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
+			response.Relationships = append(response.Relationships, containedByRel)
 
 			// Create sibling relationships
 			if previousElementID != "" {
@@ -1140,12 +1168,12 @@ func (p *MarkdownParser) extractDates(content string) []string {
 
 	// Common date patterns
 	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`),                    // YYYY-MM-DD
-		regexp.MustCompile(`\b\d{2}/\d{2}/\d{4}\b`),                    // MM/DD/YYYY
-		regexp.MustCompile(`\b\d{2}-\d{2}-\d{4}\b`),                    // MM-DD-YYYY
-		regexp.MustCompile(`\b\d{1,2}/\d{1,2}/\d{4}\b`),               // M/D/YYYY
-		regexp.MustCompile(`\b[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\b`),    // Month DD, YYYY
-		regexp.MustCompile(`\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b`),     // DD Month YYYY
+		regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`),                // YYYY-MM-DD
+		regexp.MustCompile(`\b\d{2}/\d{2}/\d{4}\b`),                // MM/DD/YYYY
+		regexp.MustCompile(`\b\d{2}-\d{2}-\d{4}\b`),                // MM-DD-YYYY
+		regexp.MustCompile(`\b\d{1,2}/\d{1,2}/\d{4}\b`),            // M/D/YYYY
+		regexp.MustCompile(`\b[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\b`), // Month DD, YYYY
+		regexp.MustCompile(`\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b`),  // DD Month YYYY
 	}
 
 	for _, pattern := range patterns {
@@ -1230,4 +1258,3 @@ func (p *MarkdownParser) truncateContent(content string) string {
 
 	return truncated + "..."
 }
-

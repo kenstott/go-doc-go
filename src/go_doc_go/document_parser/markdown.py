@@ -823,6 +823,7 @@ class MarkdownParser(DocumentParser):
         # Track element positions for document reconstruction
         parent_element_counts = {}  # Track element count per parent for element_order
         global_document_position = 0  # Track global position in document
+        previous_element_id = None  # Track previous element for sibling relationships
 
         # Process each element in order
         for tag in soup.body.children if soup.body else []:
@@ -906,6 +907,28 @@ class MarkdownParser(DocumentParser):
                 }
                 relationships.append(contained_by_relationship)
 
+                # Create sibling relationships
+                if previous_element_id:
+                    prev_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": element_id,
+                        "target_id": previous_element_id,
+                        "relationship_type": "previous_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(prev_sibling_rel)
+
+                    next_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": previous_element_id,
+                        "target_id": element_id,
+                        "relationship_type": "next_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(next_sibling_rel)
+
+                previous_element_id = element_id
+
                 # Update section stack
                 section_stack.append({"id": element_id, "level": level})
                 current_parent = element_id
@@ -969,7 +992,7 @@ class MarkdownParser(DocumentParser):
                     "relationship_id": self._generate_id("rel_"),
                     "source_id": current_parent,
                     "target_id": element_id,
-                    "relationship_type": RelationshipType.CONTAINS_TEXT.value,
+                    "relationship_type": RelationshipType.CONTAINS.value,
                     "metadata": {
                         "confidence": 1.0
                     }
@@ -987,6 +1010,28 @@ class MarkdownParser(DocumentParser):
                     }
                 }
                 relationships.append(contained_by_relationship)
+
+                # Create sibling relationships
+                if previous_element_id:
+                    prev_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": element_id,
+                        "target_id": previous_element_id,
+                        "relationship_type": "previous_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(prev_sibling_rel)
+
+                    next_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": previous_element_id,
+                        "target_id": element_id,
+                        "relationship_type": "next_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(next_sibling_rel)
+
+                previous_element_id = element_id
 
                 # Extract links from paragraph
                 for a in tag.find_all('a', href=True):
@@ -1050,6 +1095,28 @@ class MarkdownParser(DocumentParser):
                     }
                 }
                 relationships.append(contained_by_relationship)
+
+                # Create sibling relationships
+                if previous_element_id:
+                    prev_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": list_id,
+                        "target_id": previous_element_id,
+                        "relationship_type": "previous_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(prev_sibling_rel)
+
+                    next_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": previous_element_id,
+                        "target_id": list_id,
+                        "relationship_type": "next_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(next_sibling_rel)
+
+                previous_element_id = list_id
 
                 # Process list items
                 for i, item in enumerate(tag.find_all('li', recursive=False)):
@@ -1180,6 +1247,28 @@ class MarkdownParser(DocumentParser):
                 }
                 relationships.append(contained_by_relationship)
 
+                # Create sibling relationships
+                if previous_element_id:
+                    prev_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": element_id,
+                        "target_id": previous_element_id,
+                        "relationship_type": "previous_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(prev_sibling_rel)
+
+                    next_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": previous_element_id,
+                        "target_id": element_id,
+                        "relationship_type": "next_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(next_sibling_rel)
+
+                previous_element_id = element_id
+
             elif tag.name == 'blockquote':
                 # Blockquote element
                 quote_text = tag.get_text().strip()
@@ -1231,6 +1320,28 @@ class MarkdownParser(DocumentParser):
                     }
                 }
                 relationships.append(contained_by_relationship)
+
+                # Create sibling relationships
+                if previous_element_id:
+                    prev_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": element_id,
+                        "target_id": previous_element_id,
+                        "relationship_type": "previous_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(prev_sibling_rel)
+
+                    next_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": previous_element_id,
+                        "target_id": element_id,
+                        "relationship_type": "next_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(next_sibling_rel)
+
+                previous_element_id = element_id
 
                 # Extract links from blockquote
                 for a in tag.find_all('a', href=True):
@@ -1294,6 +1405,28 @@ class MarkdownParser(DocumentParser):
                     }
                 }
                 relationships.append(contained_by_relationship)
+
+                # Create sibling relationships
+                if previous_element_id:
+                    prev_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": table_id,
+                        "target_id": previous_element_id,
+                        "relationship_type": "previous_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(prev_sibling_rel)
+
+                    next_sibling_rel = {
+                        "relationship_id": self._generate_id("rel_"),
+                        "source_id": previous_element_id,
+                        "target_id": table_id,
+                        "relationship_type": "next_sibling",
+                        "metadata": {"confidence": 1.0}
+                    }
+                    relationships.append(next_sibling_rel)
+
+                previous_element_id = table_id
 
                 # Process headers
                 header_row = tag.find('thead')
