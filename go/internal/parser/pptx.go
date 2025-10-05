@@ -71,13 +71,13 @@ type SlideIds struct {
 }
 
 type SlideId struct {
-	ID   string `xml:"id,attr"`
+	ID    string `xml:"id,attr"`
 	RelID string `xml:"id,attr"`
 }
 
 type Slide struct {
-	XMLName xml.Name         `xml:"sld"`
-	CSld    CommonSlideData  `xml:"cSld"`
+	XMLName xml.Name        `xml:"sld"`
+	CSld    CommonSlideData `xml:"cSld"`
 }
 
 type CommonSlideData struct {
@@ -85,13 +85,20 @@ type CommonSlideData struct {
 }
 
 type ShapeTree struct {
-	Shapes      []Shape      `xml:"sp"`
+	Shapes        []Shape        `xml:"sp"`
 	GraphicFrames []GraphicFrame `xml:"graphicFrame"`
+	Pictures      []Picture      `xml:"pic"`
+	GroupShapes   []GroupShape   `xml:"grpSp"`
 }
 
 // GraphicFrame can contain tables
 type GraphicFrame struct {
-	Graphic Graphic `xml:"graphic"`
+	Graphic          Graphic                    `xml:"graphic"`
+	NvGraphicFramePr NonVisualGraphicFrameProps `xml:"nvGraphicFramePr"`
+}
+
+type NonVisualGraphicFrameProps struct {
+	CNvPr CommonNonVisualProps `xml:"cNvPr"`
 }
 
 type Graphic struct {
@@ -99,7 +106,14 @@ type Graphic struct {
 }
 
 type GraphicData struct {
+	URI   string    `xml:"uri,attr"`
 	Table PptxTable `xml:"tbl"`
+	Chart ChartData `xml:"chart"`
+}
+
+type ChartData struct {
+	// Charts are referenced by relationship ID, not embedded
+	// We'll detect charts by URI and frame name
 }
 
 type PptxTable struct {
@@ -111,15 +125,15 @@ type PptxTableRow struct {
 }
 
 type PptxTableCell struct {
-	TxBody TextBody    `xml:"txBody"`
-	TcPr   PptxTcPr    `xml:"tcPr"`
+	TxBody TextBody `xml:"txBody"`
+	TcPr   PptxTcPr `xml:"tcPr"`
 }
 
 type PptxTcPr struct {
-	GridSpan   int  `xml:"gridSpan,attr"`
-	RowSpan    int  `xml:"rowSpan,attr"`
-	HMerge     bool `xml:"hMerge,attr"`
-	VMerge     bool `xml:"vMerge,attr"`
+	GridSpan int  `xml:"gridSpan,attr"`
+	RowSpan  int  `xml:"rowSpan,attr"`
+	HMerge   bool `xml:"hMerge,attr"`
+	VMerge   bool `xml:"vMerge,attr"`
 }
 
 type Shape struct {
@@ -153,9 +167,57 @@ type Run struct {
 	Text string `xml:"t"`
 }
 
+// Picture represents a picture shape
+type Picture struct {
+	NvPicPr  NonVisualPictureProps `xml:"nvPicPr"`
+	BlipFill BlipFill              `xml:"blipFill"`
+}
+
+type NonVisualPictureProps struct {
+	CNvPr CommonNonVisualProps `xml:"cNvPr"`
+}
+
+type BlipFill struct {
+	Blip Blip `xml:"blip"`
+}
+
+type Blip struct {
+	Embed string `xml:"embed,attr"`
+}
+
+// GroupShape represents a group of shapes
+type GroupShape struct {
+	NvGrpSpPr NonVisualGroupProps `xml:"nvGrpSpPr"`
+	GrpSpPr   GroupShapeProps     `xml:"grpSpPr"`
+	Shapes    []Shape             `xml:"sp"`
+	Pictures  []Picture           `xml:"pic"`
+	SubGroups []GroupShape        `xml:"grpSp"`
+}
+
+type NonVisualGroupProps struct {
+	CNvPr CommonNonVisualProps `xml:"cNvPr"`
+}
+
+type GroupShapeProps struct {
+	// Group shape properties
+}
+
+// Comments structures
+type CommentList struct {
+	XMLName  xml.Name  `xml:"cmLst"`
+	Comments []Comment `xml:"cm"`
+}
+
+type Comment struct {
+	AuthorID string `xml:"authorId,attr"`
+	DateTime string `xml:"dt,attr"`
+	Idx      string `xml:"idx,attr"`
+	Text     string `xml:"text"`
+}
+
 // PptxRelationships structure for parsing relationships
 type PptxRelationships struct {
-	XMLName       xml.Name         `xml:"Relationships"`
+	XMLName       xml.Name           `xml:"Relationships"`
 	Relationships []PptxRelationItem `xml:"Relationship"`
 }
 
@@ -237,16 +299,9 @@ func (p *PptxParser) Parse(request PptxParseRequest) (*PptxParseResponse, error)
 	}
 	response.Elements = append(response.Elements, bodyElement)
 
-	// Create relationship from root to body
-	relationship := PptxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  rootElement.ElementID,
-		TargetElementID:  bodyElement.ElementID,
-		RelationshipType: "contains",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	response.Relationships = append(response.Relationships, relationship)
+	// Create bidirectional relationships from root to body
+	rels := p.createBidirectionalRelationship(rootElement.ElementID, bodyElement.ElementID, make(map[string]interface{}))
+	response.Relationships = append(response.Relationships, rels...)
 
 	// Parse presentation structure
 	elementCounter := 2
@@ -293,7 +348,7 @@ func (p *PptxParser) parsePresentationStructure(reader *zip.ReadCloser, elements
 		}
 
 		// Parse slide
-		p.parseSlide(slideXML, slideNum, elements, links, relationships, parentID, sourceID, counter)
+		slideID := p.parseSlide(slideXML, slideNum, elements, links, relationships, parentID, sourceID, counter)
 
 		// Check for slide notes
 		notesPath := strings.Replace(slidePath, "slides/slide", "notesSlides/notesSlide", 1)
@@ -301,14 +356,23 @@ func (p *PptxParser) parsePresentationStructure(reader *zip.ReadCloser, elements
 			p.parseSlideNotes(notesXML, slideNum, elements, links, relationships,
 				parentID, sourceID, counter)
 		}
+
+		// Check for slide comments
+		if p.ExtractComments {
+			commentsPath := fmt.Sprintf("ppt/comments/comment%d.xml", slideNum)
+			if commentsXML, err := p.readZipFile(reader, commentsPath); err == nil {
+				p.parseSlideComments(commentsXML, slideNum, elements, links, relationships,
+					slideID, sourceID, counter)
+			}
+		}
 	}
 
 	return nil
 }
 
-// parseSlide parses a single slide
+// parseSlide parses a single slide and returns the slide ID
 func (p *PptxParser) parseSlide(slideXML []byte, slideNum int, elements *[]PptxElement, links *[]PptxLink,
-	relationships *[]PptxRelationship, parentID, sourceID string, counter *int) {
+	relationships *[]PptxRelationship, parentID, sourceID string, counter *int) string {
 
 	// Create slide element
 	slideID := p.generateID(fmt.Sprintf("slide_%d_", slideNum))
@@ -322,23 +386,16 @@ func (p *PptxParser) parseSlide(slideXML []byte, slideNum int, elements *[]PptxE
 		ElementOrder:    *counter,
 		DocumentOrder:   *counter,
 		Metadata: map[string]interface{}{
-			"slide_index": slideNum - 1,
+			"slide_index":  slideNum - 1,
 			"slide_number": slideNum,
 		},
 	}
 	*elements = append(*elements, slideElement)
 	*counter++
 
-	// Create relationship from parent to slide
-	relationship := PptxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  parentID,
-		TargetElementID:  slideID,
-		RelationshipType: "contains",
-		Confidence:       1.0,
-		Metadata:         map[string]interface{}{"slide_number": slideNum},
-	}
-	*relationships = append(*relationships, relationship)
+	// Create bidirectional relationships from parent to slide
+	rels := p.createBidirectionalRelationship(parentID, slideID, map[string]interface{}{"slide_number": slideNum})
+	*relationships = append(*relationships, rels...)
 
 	// Parse slide content
 	var slide Slide
@@ -350,10 +407,24 @@ func (p *PptxParser) parseSlide(slideXML []byte, slideNum int, elements *[]PptxE
 				slideID, sourceID, counter)
 		}
 
-		// Process tables (in graphicFrames)
-		for tableIdx, frame := range slide.CSld.SpTree.GraphicFrames {
-			p.processTable(&frame, tableIdx, slideNum, elements, links, relationships,
+		// Process graphic frames (tables and charts)
+		for frameIdx, frame := range slide.CSld.SpTree.GraphicFrames {
+			p.processGraphicFrame(&frame, frameIdx, slideNum, elements, links, relationships,
 				slideID, sourceID, counter)
+		}
+
+		// Process pictures
+		if p.ExtractImages {
+			for picIdx, picture := range slide.CSld.SpTree.Pictures {
+				p.processPicture(&picture, picIdx, slideNum, elements, links, relationships,
+					slideID, sourceID, counter)
+			}
+		}
+
+		// Process group shapes
+		for grpIdx, group := range slide.CSld.SpTree.GroupShapes {
+			p.processGroupShape(&group, grpIdx, slideNum, elements, links, relationships,
+				slideID, sourceID, counter, "")
 		}
 	}
 
@@ -362,6 +433,8 @@ func (p *PptxParser) parseSlide(slideXML []byte, slideNum int, elements *[]PptxE
 	if allText != "" {
 		slideElement.ContentPreview = p.truncateContent(fmt.Sprintf("Slide %d: %s", slideNum, allText))
 	}
+
+	return slideID
 }
 
 // processShape processes a shape from a slide
@@ -390,6 +463,15 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 
 	// Create shape element
 	shapeElementID := p.generateID(fmt.Sprintf("shape_%d_%d_", slideNum, shapeIdx))
+
+	// Create metadata and extract temporal content
+	metadata := map[string]interface{}{
+		"slide_index": slideNum - 1,
+		"shape_index": shapeIdx,
+		"text":        text,
+	}
+	ProcessTemporalContent(text, metadata)
+
 	shapeElement := PptxElement{
 		ElementID:       shapeElementID,
 		ElementType:     shapeType,
@@ -399,25 +481,14 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 		ContentHash:     p.generateHash(text),
 		ElementOrder:    *counter,
 		DocumentOrder:   *counter,
-		Metadata: map[string]interface{}{
-			"slide_index": slideNum - 1,
-			"shape_index": shapeIdx,
-			"text":        text,
-		},
+		Metadata:        metadata,
 	}
 	*elements = append(*elements, shapeElement)
 	*counter++
 
-	// Create relationship from slide to shape
-	relationship := PptxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  slideID,
-		TargetElementID:  shapeElementID,
-		RelationshipType: "contains",
-		Confidence:       1.0,
-		Metadata:         map[string]interface{}{"shape_index": shapeIdx},
-	}
-	*relationships = append(*relationships, relationship)
+	// Create bidirectional relationships from slide to shape
+	rels := p.createBidirectionalRelationship(slideID, shapeElementID, map[string]interface{}{"shape_index": shapeIdx})
+	*relationships = append(*relationships, rels...)
 
 	// Extract individual paragraphs if there are multiple
 	if len(shape.TxBody.Paragraphs) > 1 {
@@ -436,6 +507,16 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 
 			// Create paragraph element
 			paraID := p.generateID(fmt.Sprintf("para_%d_%d_%d_", slideNum, shapeIdx, paraIdx))
+
+			// Create metadata and extract temporal content
+			paraMetadata := map[string]interface{}{
+				"slide_index":     slideNum - 1,
+				"shape_index":     shapeIdx,
+				"paragraph_index": paraIdx,
+				"text":            paraText,
+			}
+			ProcessTemporalContent(paraText, paraMetadata)
+
 			paraElement := PptxElement{
 				ElementID:       paraID,
 				ElementType:     "paragraph",
@@ -445,26 +526,14 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 				ContentHash:     p.generateHash(paraText),
 				ElementOrder:    *counter,
 				DocumentOrder:   *counter,
-				Metadata: map[string]interface{}{
-					"slide_index":     slideNum - 1,
-					"shape_index":     shapeIdx,
-					"paragraph_index": paraIdx,
-					"text":            paraText,
-				},
+				Metadata:        paraMetadata,
 			}
 			*elements = append(*elements, paraElement)
 			*counter++
 
-			// Create relationship from shape to paragraph
-			paraRel := PptxRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  shapeElementID,
-				TargetElementID:  paraID,
-				RelationshipType: "contains",
-				Confidence:       1.0,
-				Metadata:         map[string]interface{}{"paragraph_index": paraIdx},
-			}
-			*relationships = append(*relationships, paraRel)
+			// Create bidirectional relationships from shape to paragraph
+			paraRels := p.createBidirectionalRelationship(shapeElementID, paraID, map[string]interface{}{"paragraph_index": paraIdx})
+			*relationships = append(*relationships, paraRels...)
 
 			// Extract links from paragraph text
 			p.extractLinksFromText(paraText, paraID, links)
@@ -472,6 +541,30 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 	} else {
 		// Single paragraph - extract links from shape text
 		p.extractLinksFromText(text, shapeElementID, links)
+	}
+}
+
+// processGraphicFrame processes a graphic frame (table or chart)
+func (p *PptxParser) processGraphicFrame(frame *GraphicFrame, frameIdx, slideNum int, elements *[]PptxElement,
+	links *[]PptxLink, relationships *[]PptxRelationship, slideID, sourceID string, counter *int) {
+
+	// Check if this is a chart based on URI
+	uri := frame.Graphic.GraphicData.URI
+	isChart := strings.Contains(uri, "chart") || strings.Contains(uri, "Chart")
+
+	// Get frame name to double-check
+	frameName := frame.NvGraphicFramePr.CNvPr.Name
+	if strings.Contains(strings.ToLower(frameName), "chart") {
+		isChart = true
+	}
+
+	if isChart {
+		p.processChart(frame, frameIdx, slideNum, elements, links, relationships,
+			slideID, sourceID, counter)
+	} else {
+		// Assume it's a table
+		p.processTable(frame, frameIdx, slideNum, elements, links, relationships,
+			slideID, sourceID, counter)
 	}
 }
 
@@ -518,16 +611,9 @@ func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, e
 	*elements = append(*elements, tableElement)
 	*counter++
 
-	// Create relationship from slide to table
-	relationship := PptxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  slideID,
-		TargetElementID:  tableID,
-		RelationshipType: "contains",
-		Confidence:       1.0,
-		Metadata:         map[string]interface{}{"table_index": tableIdx},
-	}
-	*relationships = append(*relationships, relationship)
+	// Create bidirectional relationship from slide to table
+	tableRels := p.createBidirectionalRelationship(slideID, tableID, map[string]interface{}{"table_index": tableIdx})
+	*relationships = append(*relationships, tableRels...)
 
 	// Process rows
 	for rowIdx, row := range table.Rows {
@@ -551,16 +637,9 @@ func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, e
 		*elements = append(*elements, rowElement)
 		*counter++
 
-		// Create relationship from table to row
-		rowRel := PptxRelationship{
-			RelationshipID:   p.generateID("rel_"),
-			SourceElementID:  tableID,
-			TargetElementID:  rowID,
-			RelationshipType: "contains",
-			Confidence:       1.0,
-			Metadata:         map[string]interface{}{"row_index": rowIdx},
-		}
-		*relationships = append(*relationships, rowRel)
+		// Create bidirectional relationship from table to row
+		rowRels := p.createBidirectionalRelationship(tableID, rowID, map[string]interface{}{"row_index": rowIdx})
+		*relationships = append(*relationships, rowRels...)
 
 		// Process cells
 		for cellIdx, cell := range row.Cells {
@@ -571,6 +650,16 @@ func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, e
 
 			cellID := p.generateID(fmt.Sprintf("cell_%d_%d_%d_%d_", slideNum, tableIdx, rowIdx, cellIdx))
 
+			// Create metadata and extract temporal content
+			cellMetadata := map[string]interface{}{
+				"slide_index": slideNum - 1,
+				"table_index": tableIdx,
+				"row_index":   rowIdx,
+				"col_index":   cellIdx,
+				"text":        cellText,
+			}
+			ProcessTemporalContent(cellText, cellMetadata)
+
 			cellElement := PptxElement{
 				ElementID:       cellID,
 				ElementType:     "table_cell",
@@ -580,31 +669,130 @@ func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, e
 				ContentHash:     p.generateHash(cellText),
 				ElementOrder:    *counter,
 				DocumentOrder:   *counter,
-				Metadata: map[string]interface{}{
-					"slide_index": slideNum - 1,
-					"table_index": tableIdx,
-					"row_index":   rowIdx,
-					"col_index":   cellIdx,
-					"text":        cellText,
-				},
+				Metadata:        cellMetadata,
 			}
 			*elements = append(*elements, cellElement)
 			*counter++
 
-			// Create relationship from row to cell
-			cellRel := PptxRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  rowID,
-				TargetElementID:  cellID,
-				RelationshipType: "contains",
-				Confidence:       1.0,
-				Metadata:         map[string]interface{}{"col_index": cellIdx},
-			}
-			*relationships = append(*relationships, cellRel)
+			// Create bidirectional relationship from row to cell
+			cellRels := p.createBidirectionalRelationship(rowID, cellID, map[string]interface{}{"col_index": cellIdx})
+			*relationships = append(*relationships, cellRels...)
 
 			// Extract links from cell text
 			p.extractLinksFromText(cellText, cellID, links)
 		}
+	}
+}
+
+// processChart processes a chart from a graphic frame
+func (p *PptxParser) processChart(frame *GraphicFrame, chartIdx, slideNum int, elements *[]PptxElement,
+	links *[]PptxLink, relationships *[]PptxRelationship, slideID, sourceID string, counter *int) {
+
+	// Generate chart element ID
+	chartID := p.generateID(fmt.Sprintf("chart_%d_%d_", slideNum, chartIdx))
+
+	// Get chart name
+	chartName := frame.NvGraphicFramePr.CNvPr.Name
+	if chartName == "" {
+		chartName = fmt.Sprintf("Chart %d", chartIdx+1)
+	}
+
+	// Create chart element
+	chartElement := PptxElement{
+		ElementID:       chartID,
+		ElementType:     "chart",
+		ParentID:        slideID,
+		ContentPreview:  p.truncateContent(fmt.Sprintf("Chart: %s", chartName)),
+		ContentLocation: p.createChartLocation(sourceID, slideNum, chartIdx),
+		ContentHash:     p.generateHash(fmt.Sprintf("chart_%d_%d", slideNum, chartIdx)),
+		ElementOrder:    *counter,
+		DocumentOrder:   *counter,
+		Metadata: map[string]interface{}{
+			"slide_index": slideNum - 1,
+			"chart_index": chartIdx,
+			"chart_name":  chartName,
+			"chart_type":  "chart", // Simplified - full chart parsing would require more XML parsing
+		},
+	}
+	*elements = append(*elements, chartElement)
+	*counter++
+
+	// Create bidirectional relationship from slide to chart
+	chartRels := p.createBidirectionalRelationship(slideID, chartID, map[string]interface{}{"chart_index": chartIdx})
+	*relationships = append(*relationships, chartRels...)
+}
+
+// parseSlideComments parses comments for a slide
+func (p *PptxParser) parseSlideComments(commentsXML []byte, slideNum int, elements *[]PptxElement,
+	links *[]PptxLink, relationships *[]PptxRelationship, slideID, sourceID string, counter *int) {
+
+	// Parse comments XML
+	var commentList CommentList
+	err := xml.Unmarshal(commentsXML, &commentList)
+	if err != nil || len(commentList.Comments) == 0 {
+		return
+	}
+
+	// Create comments container element
+	commentsContainerID := p.generateID(fmt.Sprintf("comments_%d_", slideNum))
+	commentsElement := PptxElement{
+		ElementID:       commentsContainerID,
+		ElementType:     "comments_container",
+		ParentID:        slideID,
+		ContentPreview:  fmt.Sprintf("Comments for Slide %d (%d comments)", slideNum, len(commentList.Comments)),
+		ContentLocation: p.createCommentsLocation(sourceID, slideNum),
+		ContentHash:     p.generateHash(fmt.Sprintf("comments_%d", slideNum)),
+		ElementOrder:    *counter,
+		DocumentOrder:   *counter,
+		Metadata: map[string]interface{}{
+			"slide_index":   slideNum - 1,
+			"comment_count": len(commentList.Comments),
+		},
+	}
+	*elements = append(*elements, commentsElement)
+	*counter++
+
+	// Create bidirectional relationship from slide to comments container
+	containerRels := p.createBidirectionalRelationship(slideID, commentsContainerID, make(map[string]interface{}))
+	*relationships = append(*relationships, containerRels...)
+
+	// Process individual comments
+	for commentIdx, comment := range commentList.Comments {
+		if comment.Text == "" {
+			continue
+		}
+
+		// Generate comment element ID
+		commentID := p.generateID(fmt.Sprintf("comment_%d_%d_", slideNum, commentIdx))
+
+		// Create metadata and extract temporal content
+		commentMetadata := map[string]interface{}{
+			"slide_index":   slideNum - 1,
+			"comment_index": commentIdx,
+			"text":          comment.Text,
+			"author_id":     comment.AuthorID,
+			"date_time":     comment.DateTime,
+		}
+		ProcessTemporalContent(comment.Text, commentMetadata)
+
+		// Create comment element
+		commentElement := PptxElement{
+			ElementID:       commentID,
+			ElementType:     "comment",
+			ParentID:        commentsContainerID,
+			ContentPreview:  p.truncateContent(comment.Text),
+			ContentLocation: p.createCommentLocation(sourceID, slideNum, commentIdx),
+			ContentHash:     p.generateHash(fmt.Sprintf("comment_%d_%d_%s", slideNum, commentIdx, comment.Text)),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Metadata:        commentMetadata,
+		}
+		*elements = append(*elements, commentElement)
+		*counter++
+
+		// Create bidirectional relationship from container to comment
+		commentRels := p.createBidirectionalRelationship(commentsContainerID, commentID, map[string]interface{}{"comment_index": commentIdx})
+		*relationships = append(*relationships, commentRels...)
 	}
 }
 
@@ -635,6 +823,14 @@ func (p *PptxParser) parseSlideNotes(notesXML []byte, slideNum int, elements *[]
 
 	// Create notes element
 	notesElementID := p.generateID(fmt.Sprintf("notes_%d_", slideNum))
+
+	// Create metadata and extract temporal content
+	notesMetadata := map[string]interface{}{
+		"slide_index": slideNum - 1,
+		"text":        notesText,
+	}
+	ProcessTemporalContent(notesText, notesMetadata)
+
 	notesElement := PptxElement{
 		ElementID:       notesElementID,
 		ElementType:     "slide_notes",
@@ -644,24 +840,116 @@ func (p *PptxParser) parseSlideNotes(notesXML []byte, slideNum int, elements *[]
 		ContentHash:     p.generateHash(notesText),
 		ElementOrder:    *counter,
 		DocumentOrder:   *counter,
-		Metadata: map[string]interface{}{
-			"slide_index": slideNum - 1,
-			"text":        notesText,
-		},
+		Metadata:        notesMetadata,
 	}
 	*elements = append(*elements, notesElement)
 	*counter++
 
-	// Create relationship from slide to notes
-	relationship := PptxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  slideID,
-		TargetElementID:  notesElementID,
-		RelationshipType: "has_notes",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
+	// Create bidirectional relationship from slide to notes
+	notesRels := p.createBidirectionalRelationship(slideID, notesElementID, make(map[string]interface{}))
+	*relationships = append(*relationships, notesRels...)
+}
+
+// processPicture processes a picture shape
+func (p *PptxParser) processPicture(picture *Picture, picIdx, slideNum int, elements *[]PptxElement,
+	links *[]PptxLink, relationships *[]PptxRelationship, slideID, sourceID string, counter *int) {
+
+	// Generate picture element ID
+	pictureID := p.generateID(fmt.Sprintf("image_%d_%d_", slideNum, picIdx))
+
+	// Get picture name
+	pictureName := picture.NvPicPr.CNvPr.Name
+	if pictureName == "" {
+		pictureName = fmt.Sprintf("Image %d", picIdx+1)
 	}
-	*relationships = append(*relationships, relationship)
+
+	// Create picture element
+	pictureElement := PptxElement{
+		ElementID:       pictureID,
+		ElementType:     "image",
+		ParentID:        slideID,
+		ContentPreview:  p.truncateContent(fmt.Sprintf("Image: %s", pictureName)),
+		ContentLocation: p.createPictureLocation(sourceID, slideNum, picIdx),
+		ContentHash:     p.generateHash(fmt.Sprintf("image_%d_%d", slideNum, picIdx)),
+		ElementOrder:    *counter,
+		DocumentOrder:   *counter,
+		Metadata: map[string]interface{}{
+			"slide_index": slideNum - 1,
+			"image_index": picIdx,
+			"image_name":  pictureName,
+		},
+	}
+	*elements = append(*elements, pictureElement)
+	*counter++
+
+	// Create bidirectional relationship from slide to picture
+	pictureRels := p.createBidirectionalRelationship(slideID, pictureID, map[string]interface{}{"image_index": picIdx})
+	*relationships = append(*relationships, pictureRels...)
+}
+
+// processGroupShape processes a group shape and its children
+func (p *PptxParser) processGroupShape(group *GroupShape, grpIdx, slideNum int, elements *[]PptxElement,
+	links *[]PptxLink, relationships *[]PptxRelationship, parentID, sourceID string, counter *int, shapePath string) {
+
+	// Generate group element ID
+	currentPath := fmt.Sprintf("%s/%d", shapePath, grpIdx)
+	if shapePath == "" {
+		currentPath = fmt.Sprintf("%d", grpIdx)
+	}
+
+	groupID := p.generateID(fmt.Sprintf("group_%d_%s_", slideNum, currentPath))
+
+	// Get group name
+	groupName := group.NvGrpSpPr.CNvPr.Name
+	if groupName == "" {
+		groupName = fmt.Sprintf("Group %s", currentPath)
+	}
+
+	// Create group element
+	groupElement := PptxElement{
+		ElementID:       groupID,
+		ElementType:     "shape_group",
+		ParentID:        parentID,
+		ContentPreview:  p.truncateContent(fmt.Sprintf("Shape Group: %s", groupName)),
+		ContentLocation: p.createGroupLocation(sourceID, slideNum, currentPath),
+		ContentHash:     p.generateHash(fmt.Sprintf("group_%d_%s", slideNum, currentPath)),
+		ElementOrder:    *counter,
+		DocumentOrder:   *counter,
+		Metadata: map[string]interface{}{
+			"slide_index": slideNum - 1,
+			"group_path":  currentPath,
+			"group_name":  groupName,
+			"shape_count": len(group.Shapes) + len(group.Pictures) + len(group.SubGroups),
+		},
+	}
+	*elements = append(*elements, groupElement)
+	*counter++
+
+	// Create bidirectional relationship from parent to group
+	groupRels := p.createBidirectionalRelationship(parentID, groupID, map[string]interface{}{"group_index": grpIdx})
+	*relationships = append(*relationships, groupRels...)
+
+	// Process shapes in the group
+	if p.ExtractShapes {
+		for shapeIdx, shape := range group.Shapes {
+			p.processShape(&shape, shapeIdx, slideNum, elements, links, relationships,
+				groupID, sourceID, counter)
+		}
+	}
+
+	// Process pictures in the group
+	if p.ExtractImages {
+		for picIdx, picture := range group.Pictures {
+			p.processPicture(&picture, picIdx, slideNum, elements, links, relationships,
+				groupID, sourceID, counter)
+		}
+	}
+
+	// Process sub-groups recursively
+	for subGrpIdx, subGroup := range group.SubGroups {
+		p.processGroupShape(&subGroup, subGrpIdx, slideNum, elements, links, relationships,
+			groupID, sourceID, counter, currentPath)
+	}
 }
 
 // Helper methods
@@ -922,6 +1210,55 @@ func (p *PptxParser) createNotesLocation(source string, slideNum int) map[string
 	}
 }
 
+// createPictureLocation creates content location for a picture
+func (p *PptxParser) createPictureLocation(source string, slideNum, picIdx int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":      source,
+		"type":        "image",
+		"slide_index": slideNum - 1,
+		"image_index": picIdx,
+	}
+}
+
+// createGroupLocation creates content location for a shape group
+func (p *PptxParser) createGroupLocation(source string, slideNum int, groupPath string) map[string]interface{} {
+	return map[string]interface{}{
+		"source":      source,
+		"type":        "shape_group",
+		"slide_index": slideNum - 1,
+		"group_path":  groupPath,
+	}
+}
+
+// createChartLocation creates content location for a chart
+func (p *PptxParser) createChartLocation(source string, slideNum, chartIdx int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":      source,
+		"type":        "chart",
+		"slide_index": slideNum - 1,
+		"chart_index": chartIdx,
+	}
+}
+
+// createCommentsLocation creates content location for comments container
+func (p *PptxParser) createCommentsLocation(source string, slideNum int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":      source,
+		"type":        "comments_container",
+		"slide_index": slideNum - 1,
+	}
+}
+
+// createCommentLocation creates content location for a single comment
+func (p *PptxParser) createCommentLocation(source string, slideNum, commentIdx int) map[string]interface{} {
+	return map[string]interface{}{
+		"source":        source,
+		"type":          "comment",
+		"slide_index":   slideNum - 1,
+		"comment_index": commentIdx,
+	}
+}
+
 // Utility methods
 
 // generateID generates a unique ID with the given prefix
@@ -1027,4 +1364,25 @@ func (r *PptxParseResponse) ToJSON() (string, error) {
 // FromJSON creates a PptxParseRequest from JSON
 func (r *PptxParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
+}
+
+// createBidirectionalRelationship creates both "contains" and "contained_by" relationships
+func (p *PptxParser) createBidirectionalRelationship(parentID, childID string, metadata map[string]interface{}) []PptxRelationship {
+	containsRel := PptxRelationship{
+		RelationshipID:   p.generateID("rel_"),
+		SourceElementID:  parentID,
+		TargetElementID:  childID,
+		RelationshipType: "contains",
+		Confidence:       1.0,
+		Metadata:         metadata,
+	}
+	containedByRel := PptxRelationship{
+		RelationshipID:   p.generateID("rel_"),
+		SourceElementID:  childID,
+		TargetElementID:  parentID,
+		RelationshipType: "contained_by",
+		Confidence:       1.0,
+		Metadata:         make(map[string]interface{}),
+	}
+	return []PptxRelationship{containsRel, containedByRel}
 }
