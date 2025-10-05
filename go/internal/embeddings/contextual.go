@@ -348,12 +348,13 @@ func isStructuralOnlyContainer(element parser.Element) bool {
 func ShouldEmbed(element parser.Element, allElements []parser.Element) bool {
 	// Skip elements that should use their parent's embedding
 	skipTypes := map[string]bool{
-		"table_cell": true,
-		"json_item":  true,
-		"json_field": true,
-		"table":      true, // Always a container
-		"root":       true, // Document root is not embedded
-		"body":       true, // Body container is not embedded
+		"table_cell":   true,
+		"table_header": true, // Match Python: table headers are skipped like table cells
+		"json_item":    true,
+		"json_field":   true,
+		"table":        true, // Always a container
+		"root":         true, // Document root is not embedded
+		"body":         true, // Body container is not embedded
 	}
 
 	if skipTypes[element.ElementType] {
@@ -361,11 +362,8 @@ func ShouldEmbed(element parser.Element, allElements []parser.Element) bool {
 	}
 
 	// Only embed leaf elements (no children)
-	// Exception: table_row and table_header_row can have children but still get embeddings
-	hasChildrenExceptions := map[string]bool{
-		"table_header_row": true,
-		"table_row":        true,
-	}
+	// Match Python: no exceptions for table rows
+	hasChildrenExceptions := map[string]bool{}
 
 	if !hasChildrenExceptions[element.ElementType] {
 		// Check if element has children

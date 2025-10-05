@@ -735,35 +735,23 @@ func (p *DocxParser) extractCellText(cell *WordTableCell) string {
 
 // isHeaderParagraph determines if a paragraph is a header
 func (p *DocxParser) isHeaderParagraph(para *WordParagraph, text string) bool {
-	// Check for heading style
+	// Check for heading style (only use style-based detection, no heuristics)
 	if para.Ppr.PStyle.Val != "" {
 		style := strings.ToLower(para.Ppr.PStyle.Val)
+
+		// Only classify as header if explicitly styled as heading or title
 		if strings.Contains(style, "heading") || strings.Contains(style, "title") {
 			return true
 		}
-	}
 
-	// Simple heuristics for header detection
-	words := strings.Fields(text)
-	if len(words) == 0 {
-		return false
-	}
-
-	// Headers are typically short
-	if len(text) > 100 {
-		return false
-	}
-
-	// Check for title case or all caps (common in headers)
-	titleCaseCount := 0
-	for _, word := range words {
-		if len(word) > 0 && strings.ToUpper(word[:1]) == word[:1] {
-			titleCaseCount++
+		// Exclude list styles - these should be paragraphs
+		if strings.Contains(style, "list") {
+			return false
 		}
 	}
 
-	// If most words are title case, likely a header
-	return float64(titleCaseCount)/float64(len(words)) > 0.6
+	// No heuristics - only use explicit styles to match Python behavior
+	return false
 }
 
 // determineHeaderLevel determines the level of a header
