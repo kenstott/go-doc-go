@@ -745,10 +745,15 @@ class DocxParser(DocumentParser):
         current_parent = body_id
 
         # Process all block-level elements in the document
+        # Track separate indices for paragraphs and tables for content_location
+        paragraph_index = 0
+        table_index = 0
+
         for i, block in enumerate(self._iter_block_items(doc)):
             if isinstance(block, Paragraph):
                 # Process paragraph
-                para_element = self._process_paragraph(block, i, doc_id, current_parent, source_id)
+                para_element = self._process_paragraph(block, paragraph_index, doc_id, current_parent, source_id)
+                paragraph_index += 1
 
                 # Skip empty paragraphs
                 if not para_element:
@@ -817,9 +822,10 @@ class DocxParser(DocumentParser):
 
             elif isinstance(block, Table):
                 # Process table
-                table_elements, table_relationships = self._process_table(block, i, doc_id, current_parent, source_id)
+                table_elements, table_relationships = self._process_table(block, table_index, doc_id, current_parent, source_id)
                 elements.extend(table_elements)
                 relationships.extend(table_relationships)
+                table_index += 1
 
         # Extract comments if enabled
         if self.extract_comments:
