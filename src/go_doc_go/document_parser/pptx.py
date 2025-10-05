@@ -1582,21 +1582,18 @@ class PptxParser(DocumentParser):
                     # Extract dates from paragraph text
                     self._extract_dates_from_text(para_text, para_id, element_dates)
 
-                    # Create relationship from text box to paragraph
+                    # Create bidirectional relationship from text box to paragraph
                     contains_para_relationship = {
                         "relationship_id": self._generate_id("rel_"),
                         "source_id": text_id,
                         "target_id": para_id,
-                        "relationship_type": RelationshipType.CONTAINS_TEXT.value,
+                        "relationship_type": RelationshipType.CONTAINS.value,
                         "metadata": {
                             "confidence": 1.0,
                             "index": para_idx
                         }
                     }
-                    relationships.append(contains_para_relationship)
-
-                    # Create inverse relationship
-                    para_contained_relationship = {
+                    contained_by_para_relationship = {
                         "relationship_id": self._generate_id("rel_"),
                         "source_id": para_id,
                         "target_id": text_id,
@@ -1605,7 +1602,8 @@ class PptxParser(DocumentParser):
                             "confidence": 1.0
                         }
                     }
-                    relationships.append(para_contained_relationship)
+                    relationships.append(contains_para_relationship)
+                    relationships.append(contained_by_para_relationship)
 
         except Exception as e:
             logger.warning(f"Error processing text shape: {str(e)}")
@@ -1830,20 +1828,17 @@ class PptxParser(DocumentParser):
                 }
                 elements.append(row_element)
 
-                # Create relationship from table to row
+                # Create bidirectional relationship from table to row
                 contains_row_relationship = {
                     "relationship_id": self._generate_id("rel_"),
                     "source_id": table_id,
                     "target_id": row_id,
-                    "relationship_type": RelationshipType.CONTAINS_TABLE_ROW.value,
+                    "relationship_type": RelationshipType.CONTAINS.value,
                     "metadata": {
                         "confidence": 1.0,
                         "row_index": row_idx
                     }
                 }
-                relationships.append(contains_row_relationship)
-
-                # Create inverse relationship
                 row_contained_relationship = {
                     "relationship_id": self._generate_id("rel_"),
                     "source_id": row_id,
@@ -1853,6 +1848,7 @@ class PptxParser(DocumentParser):
                         "confidence": 1.0
                     }
                 }
+                relationships.append(contains_row_relationship)
                 relationships.append(row_contained_relationship)
 
                 # Process cells in this row
@@ -1894,20 +1890,17 @@ class PptxParser(DocumentParser):
                     # Extract dates from cell text
                     self._extract_dates_from_text(cell_text, cell_id, element_dates)
 
-                    # Create relationship from row to cell
+                    # Create bidirectional relationship from row to cell
                     contains_cell_relationship = {
                         "relationship_id": self._generate_id("rel_"),
                         "source_id": row_id,
                         "target_id": cell_id,
-                        "relationship_type": RelationshipType.CONTAINS_TABLE_CELL.value,
+                        "relationship_type": RelationshipType.CONTAINS.value,
                         "metadata": {
                             "confidence": 1.0,
                             "col_index": col_idx
                         }
                     }
-                    relationships.append(contains_cell_relationship)
-
-                    # Create inverse relationship
                     cell_contained_relationship = {
                         "relationship_id": self._generate_id("rel_"),
                         "source_id": cell_id,
@@ -1917,6 +1910,7 @@ class PptxParser(DocumentParser):
                             "confidence": 1.0
                         }
                     }
+                    relationships.append(contains_cell_relationship)
                     relationships.append(cell_contained_relationship)
 
         except Exception as e:
