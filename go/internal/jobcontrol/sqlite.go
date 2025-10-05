@@ -43,10 +43,17 @@ func NewSQLiteJobControl(config Config) (*SQLiteJobControl, error) {
 		config.MaxRetries = 3
 	}
 
-	// Ensure directory exists
+	// Ensure directory exists (but not the database file itself)
 	dir := filepath.Dir(config.Path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
+	if dir != "." && dir != "/" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory: %w", err)
+		}
+	}
+
+	// Remove if path exists as directory (common error)
+	if info, err := os.Stat(config.Path); err == nil && info.IsDir() {
+		return nil, fmt.Errorf("database path exists as directory: %s", config.Path)
 	}
 
 	// Open database
