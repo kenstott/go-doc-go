@@ -17,8 +17,10 @@ import statistics
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from go_doc_go.document_parser.factory import create_parser
+import pytest
 
 
+@pytest.mark.performance
 class TestDocxPerformance(unittest.TestCase):
     """Performance benchmarks for DOCX parsers."""
 

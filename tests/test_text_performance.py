@@ -13,6 +13,7 @@ from src.go_doc_go.document_parser.text import TextParser
 from src.go_doc_go.document_parser.text_go import GoTextParser
 
 
+@pytest.mark.performance
 class TestTextPerformance:
     """Performance benchmarks for text parsers."""
 

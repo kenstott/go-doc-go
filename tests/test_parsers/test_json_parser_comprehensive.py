@@ -13,6 +13,7 @@ from go_doc_go.storage import ElementType
 from go_doc_go.relationships import RelationshipType
 
 
+@pytest.mark.comprehensive
 class TestJSONParserInitialization:
     """Test JSON parser initialization and configuration."""
     
@@ -79,6 +80,7 @@ class TestJSONParserInitialization:
             assert parser.date_extractor is None
 
 
+@pytest.mark.comprehensive
 class TestJSONParserSupportsLocation:
     """Test supports_location method."""
     
@@ -156,6 +158,7 @@ class TestJSONParserSupportsLocation:
         assert parser.supports_location(location) == False
 
 
+@pytest.mark.comprehensive
 class TestJSONParserBasicParsing:
     """Test basic JSON parsing functionality."""
     
@@ -294,6 +297,7 @@ class TestJSONParserBasicParsing:
             # Should handle empty structures gracefully
 
 
+@pytest.mark.comprehensive
 class TestJSONParserDateExtraction:
     """Test date extraction functionality."""
     
@@ -344,6 +348,7 @@ class TestJSONParserDateExtraction:
         # Should still parse without date extraction
 
 
+@pytest.mark.comprehensive
 class TestJSONParserCaching:
     """Test caching functionality."""
     
@@ -397,6 +402,7 @@ class TestJSONParserCaching:
         assert "max_size" in stats["document_cache"]
 
 
+@pytest.mark.comprehensive
 class TestJSONParserPerformance:
     """Test performance monitoring."""
     
@@ -440,6 +446,7 @@ class TestJSONParserPerformance:
         assert parser.performance_stats["total_parse_time"] == 0.0
 
 
+@pytest.mark.comprehensive
 class TestJSONParserAdvancedFeatures:
     """Test advanced parser features."""
     
@@ -529,6 +536,7 @@ class TestJSONParserAdvancedFeatures:
                 assert len(preview) <= 10 or "..." in preview
 
 
+@pytest.mark.comprehensive
 class TestJSONParserErrorHandling:
     """Test error handling."""
     
@@ -619,6 +627,7 @@ class TestJSONParserErrorHandling:
         assert "document" in result
 
 
+@pytest.mark.comprehensive
 class TestJSONParserSpecialCases:
     """Test special cases and edge conditions."""
     
@@ -713,6 +722,7 @@ class TestJSONParserSpecialCases:
         assert len(result["elements"]) > 0
 
 
+@pytest.mark.comprehensive
 class TestJSONParserIntegration:
     """Integration tests."""
     
@@ -841,6 +851,7 @@ class TestJSONParserIntegration:
         assert RelationshipType.CONTAINS.value in rel_types
 
 
+@pytest.mark.comprehensive
 class TestJSONParserPrivateMethods:
     """Test private helper methods."""
     

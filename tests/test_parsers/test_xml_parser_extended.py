@@ -14,7 +14,7 @@ from go_doc_go.storage import ElementType
 from go_doc_go.relationships import RelationshipType
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserConfiguration:
     """Test XML parser configuration and initialization."""
     
@@ -63,7 +63,7 @@ class TestXMLParserConfiguration:
             assert parser.date_extractor is None
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserCaching:
     """Test XML parser caching functionality."""
     
@@ -106,7 +106,7 @@ class TestXMLParserCaching:
         assert "document" in result
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserNamespaces:
     """Test XML namespace handling."""
     
@@ -167,7 +167,7 @@ class TestXMLParserNamespaces:
         # Implementation specific - namespaces might be stored differently
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserDateExtraction:
     """Test date extraction functionality."""
     
@@ -220,7 +220,7 @@ class TestXMLParserDateExtraction:
         assert len(elements) > 5
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserSpecialContent:
     """Test handling of special XML content."""
     
@@ -314,7 +314,7 @@ class TestXMLParserSpecialContent:
         assert "document" in result
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserAttributes:
     """Test XML attribute handling."""
     
@@ -360,7 +360,7 @@ class TestXMLParserAttributes:
         assert len(elements) > 0
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserStructures:
     """Test parsing of specific XML structures."""
     
@@ -450,7 +450,7 @@ class TestXMLParserStructures:
         assert len(relationships) > 10
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserErrorHandling:
     """Test error handling in XML parser."""
     
@@ -525,7 +525,7 @@ class TestXMLParserErrorHandling:
             pass
 
 
-@pytest.mark.unit  
+@pytest.mark.comprehensive  
 class TestXMLParserPerformance:
     """Test performance aspects of XML parser."""
     
@@ -596,7 +596,7 @@ class TestXMLParserPerformance:
         assert len(result1["elements"]) == len(result2["elements"])
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestXMLParserIntegration:
     """Integration tests for XML parser."""
     

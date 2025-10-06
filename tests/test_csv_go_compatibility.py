@@ -12,6 +12,8 @@ from src.go_doc_go.document_parser.csv import CsvParser
 from src.go_doc_go.document_parser.csv_go import GoCSVParser
 
 
+@pytest.mark.integration
+@pytest.mark.compatibility
 class TestCSVGoCompatibility:
     """Test compatibility between Python and Go CSV parsers."""
 

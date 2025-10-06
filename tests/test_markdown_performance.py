@@ -13,6 +13,7 @@ from src.go_doc_go.document_parser.markdown import MarkdownParser
 from src.go_doc_go.document_parser.markdown_go import GoMarkdownParser
 
 
+@pytest.mark.performance
 class TestMarkdownPerformance:
     """Performance benchmarks for markdown parsers."""
 

@@ -15,6 +15,8 @@ from src.go_doc_go.document_parser.json import JSONParser
 from src.go_doc_go.document_parser.json_go import GoJSONParser
 
 
+@pytest.mark.integration
+@pytest.mark.compatibility
 class TestJSONGoCompatibility:
     """Test compatibility between Python and Go JSON parsers."""
 

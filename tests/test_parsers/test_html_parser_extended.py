@@ -12,7 +12,7 @@ from go_doc_go.storage import ElementType
 from go_doc_go.relationships import RelationshipType
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserConfiguration:
     """Test HTML parser configuration and initialization."""
     
@@ -58,7 +58,7 @@ class TestHTMLParserConfiguration:
         assert parser.extract_tables == True
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserBasicElements:
     """Test parsing of basic HTML elements."""
     
@@ -132,7 +132,7 @@ class TestHTMLParserBasicElements:
         assert len(elements) > 5
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserLists:
     """Test parsing of list structures."""
     
@@ -225,7 +225,7 @@ class TestHTMLParserLists:
         assert len(elements) > 3
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserTables:
     """Test parsing of table structures."""
     
@@ -316,7 +316,7 @@ class TestHTMLParserTables:
         assert len(elements) > 8
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserLinks:
     """Test parsing of links and anchors."""
     
@@ -367,7 +367,7 @@ class TestHTMLParserLinks:
         assert len(elements) > 4
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserImages:
     """Test parsing of images."""
     
@@ -403,7 +403,7 @@ class TestHTMLParserImages:
         assert len(image_elements) > 0 or len(elements) > 3
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserForms:
     """Test parsing of form elements."""
     
@@ -448,7 +448,7 @@ class TestHTMLParserForms:
         assert len(elements) > 5
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserSemantic:
     """Test parsing of semantic HTML5 elements."""
     
@@ -506,7 +506,7 @@ class TestHTMLParserSemantic:
         assert len(elements) > 10
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserMetadata:
     """Test parsing of metadata and head elements."""
     
@@ -543,7 +543,7 @@ class TestHTMLParserMetadata:
         # Could contain parsed meta tags
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserScriptsStyles:
     """Test parsing of scripts and styles."""
     
@@ -605,7 +605,7 @@ class TestHTMLParserScriptsStyles:
         assert len(elements) > 0
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserSpecialContent:
     """Test parsing of special HTML content."""
     
@@ -685,7 +685,7 @@ class TestHTMLParserSpecialContent:
         assert len(elements) > 3
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserErrorHandling:
     """Test error handling in HTML parser."""
     
@@ -741,7 +741,7 @@ It should still be parsed somehow."""
         assert "document" in result
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserPerformance:
     """Test performance aspects of HTML parser."""
     
@@ -814,7 +814,7 @@ class TestHTMLParserPerformance:
         assert len(result["elements"]) > 0
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestHTMLParserIntegration:
     """Integration tests for HTML parser."""
     

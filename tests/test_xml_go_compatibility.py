@@ -7,6 +7,8 @@ from typing import Dict, Any
 from src.go_doc_go.document_parser.factory import create_parser
 
 
+@pytest.mark.integration
+@pytest.mark.compatibility
 class TestXMLGoCompatibility:
     """Test compatibility between Python and Go XML parsers."""
 

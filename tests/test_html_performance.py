@@ -18,8 +18,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from go_doc_go.document_parser.html import HtmlParser as PythonHTMLParser
 from go_doc_go.document_parser.html_go import GoHTMLParser
+import pytest
 
 
+@pytest.mark.performance
 class HTMLPerformanceBenchmark(unittest.TestCase):
     """Performance benchmark tests for HTML parsers."""
 

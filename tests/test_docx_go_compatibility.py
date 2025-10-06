@@ -18,8 +18,11 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from go_doc_go.document_parser.factory import create_parser
+import pytest
 
 
+@pytest.mark.integration
+@pytest.mark.compatibility
 class TestDocxGoCompatibility(unittest.TestCase):
     """Test compatibility between Go and Python DOCX parsers."""
 

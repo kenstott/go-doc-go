@@ -53,6 +53,7 @@ class ConcreteParser(DocumentParser):
         return False
 
 
+@pytest.mark.unit
 class TestDocumentParser:
     """Test suite for DocumentParser base class - ONLY VALID TESTS."""
     

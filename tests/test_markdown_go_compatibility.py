@@ -12,6 +12,8 @@ from src.go_doc_go.document_parser.markdown import MarkdownParser
 from src.go_doc_go.document_parser.markdown_go import GoMarkdownParser
 
 
+@pytest.mark.integration
+@pytest.mark.compatibility
 class TestMarkdownGoCompatibility:
     """Test compatibility between Python and Go markdown parsers."""
 

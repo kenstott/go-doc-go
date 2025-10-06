@@ -131,6 +131,7 @@ def create_multipage_pdf(path: str, num_pages: int = 3) -> None:
 
 
 @pytest.mark.skipif(not PYMUPDF_AVAILABLE, reason="PyMuPDF not available")
+@pytest.mark.unit
 class TestPdfParser:
     """Test suite for PDF parser with real PDFs."""
     

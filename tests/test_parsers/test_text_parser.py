@@ -17,6 +17,7 @@ from go_doc_go.storage import ElementType
 from go_doc_go.relationships import RelationshipType
 
 
+@pytest.mark.unit
 class TestTextParser:
     """Test suite for text document parser."""
     

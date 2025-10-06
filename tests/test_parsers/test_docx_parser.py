@@ -140,6 +140,7 @@ def create_multipage_docx(path: str, num_sections: int = 3) -> None:
 
 
 @pytest.mark.skipif(not PYTHON_DOCX_AVAILABLE, reason="python-docx not available")
+@pytest.mark.unit
 class TestDocxParser:
     """Test suite for DOCX parser."""
     

@@ -141,7 +141,7 @@ def simple_pptx_content(temp_pptx_path):
 # Unit Tests for PPTX Parser
 # =============================================================================
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPptxParserExtended:
     """Extended tests to improve PPTX parser coverage."""
 
@@ -521,7 +521,7 @@ class TestPptxParserIntegration:
 # Error Handling Tests
 # =============================================================================
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPptxParserErrorHandling:
     """Test error handling in PPTX parser."""
 

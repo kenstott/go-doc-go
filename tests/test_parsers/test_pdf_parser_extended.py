@@ -12,7 +12,7 @@ from go_doc_go.storage import ElementType
 from go_doc_go.relationships import RelationshipType
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPDFParserConfiguration:
     """Test PDF parser configuration and initialization."""
     
@@ -57,7 +57,7 @@ class TestPDFParserConfiguration:
         assert parser.extract_metadata == True
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPDFParserWithMocks:
     """Test PDF parser with mocked PyMuPDF."""
     
@@ -390,7 +390,7 @@ class TestPDFParserWithMocks:
                 os.unlink(temp_path)
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPDFParserTextExtraction:
     """Test different text extraction methods."""
     
@@ -462,7 +462,7 @@ class TestPDFParserTextExtraction:
                 os.unlink(temp_path)
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPDFParserPageSelection:
     """Test page selection and limiting."""
     
@@ -557,7 +557,7 @@ class TestPDFParserPageSelection:
                 os.unlink(temp_path)
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPDFParserErrorHandling:
     """Test error handling in PDF parser."""
     
@@ -636,7 +636,7 @@ class TestPDFParserErrorHandling:
             assert "not found" in str(e).lower() or "exist" in str(e).lower()
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestPDFParserMetadata:
     """Test metadata extraction from PDF."""
     

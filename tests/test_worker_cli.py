@@ -70,7 +70,7 @@ class TestWorkerCLI:
             config['analytics']['outputs'][0]['path'] = str(analytics_path)
             config['logging']['file'] = str(temp_test_dir / "logs" / "worker-go.log")
 
-            # Delete existing analytics output directory if it exists
+            # Delete the existing analytics output directory if it exists
             if analytics_path.exists():
                 shutil.rmtree(analytics_path)
         else:

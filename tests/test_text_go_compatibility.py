@@ -12,6 +12,8 @@ from src.go_doc_go.document_parser.text import TextParser
 from src.go_doc_go.document_parser.text_go import GoTextParser
 
 
+@pytest.mark.integration
+@pytest.mark.compatibility
 class TestTextGoCompatibility:
     """Test compatibility between Python and Go text parsers."""
 

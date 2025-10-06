@@ -14,6 +14,7 @@ from src.go_doc_go.document_parser.json import JSONParser
 from src.go_doc_go.document_parser.json_go import GoJSONParser
 
 
+@pytest.mark.performance
 class TestJSONPerformance:
     """Performance benchmarks for JSON parsers."""
 

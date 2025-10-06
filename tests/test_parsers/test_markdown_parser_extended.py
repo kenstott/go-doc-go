@@ -12,7 +12,7 @@ from go_doc_go.storage import ElementType
 from go_doc_go.relationships import RelationshipType
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserConfiguration:
     """Test Markdown parser configuration and initialization."""
     
@@ -58,7 +58,7 @@ class TestMarkdownParserConfiguration:
         assert parser.extract_tables == True
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserBasicElements:
     """Test parsing of basic Markdown elements."""
     
@@ -138,7 +138,7 @@ Nested: **bold with *italic* inside**.
         assert "bold" in content_text.lower() or "italic" in content_text.lower()
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserLists:
     """Test parsing of list structures."""
     
@@ -218,7 +218,7 @@ class TestMarkdownParserLists:
         assert "[x]" in content_text or "[ ]" in content_text or "task" in content_text.lower()
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserCodeBlocks:
     """Test parsing of code blocks and inline code."""
     
@@ -302,7 +302,7 @@ Multiple inline codes: `var1`, `var2`, and `var3`.
         assert "inline code" in content_text or "print()" in content_text
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserLinks:
     """Test parsing of links and references."""
     
@@ -376,7 +376,7 @@ Multiple: [[First]], [[Second]], and [[Third]] wiki links.
         assert "Wiki Link" in content_text or "[[" in content_text
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserImages:
     """Test parsing of images."""
     
@@ -406,7 +406,7 @@ Reference style image: ![alt text][img-ref]
         assert len(image_elements) > 0 or len(elements) > 0
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserTables:
     """Test parsing of tables."""
     
@@ -455,7 +455,7 @@ class TestMarkdownParserTables:
         assert len(elements) > 0
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserBlockquotes:
     """Test parsing of blockquotes."""
     
@@ -500,7 +500,7 @@ Regular paragraph.
         assert len(elements) > 0
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserFrontmatter:
     """Test parsing of frontmatter/metadata."""
     
@@ -556,7 +556,7 @@ Document body.
         assert len(elements) > 0
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserSpecialFeatures:
     """Test special Markdown features."""
     
@@ -660,7 +660,7 @@ Another inline $\\alpha + \\beta = \\gamma$ equation.
         assert "$" in content_text or "sum" in content_text.lower()
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserErrorHandling:
     """Test error handling in Markdown parser."""
     
@@ -722,7 +722,7 @@ Unclosed code block
             pass
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserPerformance:
     """Test performance aspects of Markdown parser."""
     
@@ -784,7 +784,7 @@ def function_{i}():
         assert len(result["elements"]) > 10
 
 
-@pytest.mark.unit
+@pytest.mark.comprehensive
 class TestMarkdownParserIntegration:
     """Integration tests for Markdown parser."""
     
