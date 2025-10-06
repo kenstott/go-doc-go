@@ -33,7 +33,6 @@ func NewPostgreSQLJobControl(config Config) (*PostgreSQLJobControl, error) {
 
 	// Build connection string from config.Path (assuming it contains the DSN)
 	// Example: "postgres://user:password@localhost/dbname?sslmode=disable"
-	log.Printf("DEBUG: PostgreSQL connection string: %s", config.Path)
 	db, err := sql.Open("postgres", config.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
