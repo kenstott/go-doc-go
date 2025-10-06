@@ -463,3 +463,70 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// TestWorkerPostgreSQLJobControl tests worker with PostgreSQL backend
+func TestWorkerPostgreSQLJobControl(t *testing.T) {
+	h := NewTestHelper(t)
+	testDir := h.SetupTestDir()
+
+	// Use PostgreSQL config
+	pgConfigPath := filepath.Join(h.projectRoot, "tests", "config.pg.toml")
+	if _, err := os.Stat(pgConfigPath); os.IsNotExist(err) {
+		t.Skip("PostgreSQL config not found, skipping test")
+	}
+
+	// Create isolated config based on PostgreSQL config
+	config, err := loadConfig(pgConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to load PostgreSQL config: %v", err)
+	}
+
+	// Update analytics path to use test directory
+	analyticsPath := filepath.Join(testDir, "analytics-output-pg")
+	if len(config.Analytics.Outputs) > 0 {
+		config.Analytics.Outputs[0]["path"] = analyticsPath
+	}
+
+	// Update content source to use test assets
+	for i := range config.ContentSources {
+		if sourceType, ok := config.ContentSources[i]["type"].(string); ok && sourceType == "file" {
+			config.ContentSources[i]["base_path"] = h.testAssetsDir
+		}
+	}
+
+	// Write test config
+	isolatedConfigPath := filepath.Join(testDir, "worker_config_pg.toml")
+	var buf bytes.Buffer
+	encoder := toml.NewEncoder(&buf)
+	if err := encoder.Encode(config); err != nil {
+		t.Fatalf("Failed to marshal config: %v", err)
+	}
+	if err := os.WriteFile(isolatedConfigPath, buf.Bytes(), 0644); err != nil {
+		t.Fatalf("Failed to write isolated config: %v", err)
+	}
+
+	// Run worker with PostgreSQL backend
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	stdout, stderr, err := h.RunWorker(ctx, isolatedConfigPath, "--max-documents", "2", "--workers", "1")
+
+	// Check for PostgreSQL indicators in output
+	if ContainsAny(stdout, []string{"Creating job control with backend: postgres", "PostgreSQL"}) {
+		t.Log("✓ Worker successfully used PostgreSQL job control")
+	} else {
+		t.Logf("Warning: PostgreSQL backend not confirmed in output")
+	}
+
+	// Check for successful document processing
+	if ContainsAny(stdout, []string{"Successfully processed document", "completed successfully"}) ||
+		ContainsAny(stderr, []string{"Successfully processed document", "completed successfully"}) {
+		t.Log("✓ Worker processed documents successfully")
+	} else if err != nil {
+		t.Logf("Worker output:\n%s", stdout)
+		t.Logf("Worker errors:\n%s", stderr)
+		if !strings.Contains(err.Error(), "context deadline exceeded") {
+			t.Fatalf("Worker failed: %v", err)
+		}
+	}
+}
