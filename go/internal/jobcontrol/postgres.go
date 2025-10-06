@@ -5,34 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
-	"os"
-	"path/filepath"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 )
 
-// SQLiteJobControl implements JobControl using SQLite
-type SQLiteJobControl struct {
-	db               *sql.DB
-	dbPath           string
-	claimTimeout     int // seconds
+// PostgreSQLJobControl implements JobControl using PostgreSQL
+type PostgreSQLJobControl struct {
+	db                *sql.DB
+	claimTimeout      int // seconds
 	heartbeatInterval int // seconds
-	maxRetries       int
+	maxRetries        int
 }
 
-// Config holds configuration for job control
-type Config struct {
-	Backend           string // "sqlite" or "postgres"
-	Path              string // For SQLite: file path; For PostgreSQL: connection string (DSN)
-	ClaimTimeout      int
-	HeartbeatInterval int
-	MaxRetries        int
-}
-
-// NewSQLiteJobControl creates a new SQLite job control database
-func NewSQLiteJobControl(config Config) (*SQLiteJobControl, error) {
+// NewPostgreSQLJobControl creates a new PostgreSQL job control database
+func NewPostgreSQLJobControl(config Config) (*PostgreSQLJobControl, error) {
 	// Set defaults
 	if config.ClaimTimeout == 0 {
 		config.ClaimTimeout = 300 // 5 minutes
@@ -44,36 +31,30 @@ func NewSQLiteJobControl(config Config) (*SQLiteJobControl, error) {
 		config.MaxRetries = 3
 	}
 
-	// Ensure directory exists (but not the database file itself)
-	dir := filepath.Dir(config.Path)
-	if dir != "." && dir != "/" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory: %w", err)
-		}
-	}
-
-	// Remove if path exists as directory (common error)
-	if info, err := os.Stat(config.Path); err == nil && info.IsDir() {
-		return nil, fmt.Errorf("database path exists as directory: %s", config.Path)
-	}
-
-	// Open database
-	db, err := sql.Open("sqlite3", config.Path+"?_busy_timeout=30000&_journal_mode=WAL")
+	// Build connection string from config.Path (assuming it contains the DSN)
+	// Example: "postgres://user:password@localhost/dbname?sslmode=disable"
+	log.Printf("DEBUG: PostgreSQL connection string: %s", config.Path)
+	db, err := sql.Open("postgres", config.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
 	// Set connection pool settings
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(time.Hour)
 
-	jc := &SQLiteJobControl{
-		db:               db,
-		dbPath:           config.Path,
-		claimTimeout:     config.ClaimTimeout,
+	// Test connection
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	jc := &PostgreSQLJobControl{
+		db:                db,
+		claimTimeout:      config.ClaimTimeout,
 		heartbeatInterval: config.HeartbeatInterval,
-		maxRetries:       config.MaxRetries,
+		maxRetries:        config.MaxRetries,
 	}
 
 	// Initialize schema
@@ -86,12 +67,12 @@ func NewSQLiteJobControl(config Config) (*SQLiteJobControl, error) {
 }
 
 // initializeSchema creates database tables if they don't exist
-func (jc *SQLiteJobControl) initializeSchema() error {
+func (jc *PostgreSQLJobControl) initializeSchema() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS document_queue (
 		doc_id TEXT PRIMARY KEY,
 		source TEXT NOT NULL,
-		metadata TEXT,
+		metadata JSONB,
 		status TEXT DEFAULT 'pending',
 		claimed_by TEXT,
 		claimed_at TIMESTAMP,
@@ -103,14 +84,14 @@ func (jc *SQLiteJobControl) initializeSchema() error {
 
 	CREATE TABLE IF NOT EXISTS workers (
 		worker_id TEXT PRIMARY KEY,
-		info TEXT,
+		info JSONB,
 		last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE TABLE IF NOT EXISTS leader (
 		worker_id TEXT PRIMARY KEY,
-		info TEXT,
+		info JSONB,
 		elected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
@@ -128,8 +109,8 @@ func (jc *SQLiteJobControl) initializeSchema() error {
 		source TEXT NOT NULL,
 		last_modified TIMESTAMP,
 		content_hash TEXT,
-		file_size INTEGER,
-		processing_stats TEXT,
+		file_size BIGINT,
+		processing_stats JSONB,
 		last_processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	);
 
@@ -143,9 +124,7 @@ func (jc *SQLiteJobControl) initializeSchema() error {
 }
 
 // EnqueueDocument adds a document to the processing queue
-// Only resets documents that are in 'failed' status or don't exist
-// NEVER resets completed, pending, or processing documents
-func (jc *SQLiteJobControl) EnqueueDocument(docID, source string, metadata map[string]interface{}) error {
+func (jc *PostgreSQLJobControl) EnqueueDocument(docID, source string, metadata map[string]interface{}) error {
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("failed to marshal metadata: %w", err)
@@ -153,7 +132,7 @@ func (jc *SQLiteJobControl) EnqueueDocument(docID, source string, metadata map[s
 
 	// First check if document exists and what status it has
 	var existingStatus string
-	err = jc.db.QueryRow(`SELECT status FROM document_queue WHERE doc_id = ?`, docID).Scan(&existingStatus)
+	err = jc.db.QueryRow(`SELECT status FROM document_queue WHERE doc_id = $1`, docID).Scan(&existingStatus)
 
 	if err == nil {
 		// Document exists - only re-enqueue if it's failed
@@ -169,10 +148,10 @@ func (jc *SQLiteJobControl) EnqueueDocument(docID, source string, metadata map[s
 
 	query := `
 		INSERT INTO document_queue (doc_id, source, metadata, status, created_at)
-		VALUES (?, ?, ?, 'pending', CURRENT_TIMESTAMP)
+		VALUES ($1, $2, $3, 'pending', CURRENT_TIMESTAMP)
 		ON CONFLICT(doc_id) DO UPDATE SET
-			source = excluded.source,
-			metadata = excluded.metadata,
+			source = EXCLUDED.source,
+			metadata = EXCLUDED.metadata,
 			status = 'pending',
 			claimed_by = NULL,
 			claimed_at = NULL,
@@ -194,7 +173,7 @@ func (jc *SQLiteJobControl) EnqueueDocument(docID, source string, metadata map[s
 }
 
 // ClaimNextDocument atomically claims the next available document
-func (jc *SQLiteJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, error) {
+func (jc *PostgreSQLJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, error) {
 	tx, err := jc.db.Begin()
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
@@ -206,40 +185,35 @@ func (jc *SQLiteJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, e
 	_, err = tx.Exec(`
 		UPDATE document_queue
 		SET status = 'pending', claimed_by = NULL, claimed_at = NULL
-		WHERE status = 'processing' AND claimed_at < ?
+		WHERE status = 'processing' AND claimed_at < $1
 	`, staleThreshold)
 	if err != nil {
 		return nil, fmt.Errorf("failed to cleanup stale claims: %w", err)
 	}
 
-	// Find and claim next document
+	// Find and claim next document using FOR UPDATE SKIP LOCKED for better concurrency
 	query := `
-		SELECT doc_id, source, metadata, retry_count, created_at
-		FROM document_queue
-		WHERE status = 'pending' AND retry_count < ?
-		ORDER BY created_at ASC
-		LIMIT 1
+		UPDATE document_queue
+		SET status = 'processing', claimed_by = $1, claimed_at = $2
+		WHERE doc_id = (
+			SELECT doc_id FROM document_queue
+			WHERE status = 'pending' AND retry_count < $3
+			ORDER BY created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING doc_id, source, metadata, retry_count, created_at
 	`
 
+	now := time.Now()
 	var docID, source, metadataJSON string
 	var retryCount int
 	var createdAt time.Time
 
-	err = tx.QueryRow(query, jc.maxRetries).Scan(&docID, &source, &metadataJSON, &retryCount, &createdAt)
+	err = tx.QueryRow(query, workerID, now, jc.maxRetries).Scan(&docID, &source, &metadataJSON, &retryCount, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, nil // No documents available
 	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to find document: %w", err)
-	}
-
-	// Claim the document
-	now := time.Now()
-	_, err = tx.Exec(`
-		UPDATE document_queue
-		SET status = 'processing', claimed_by = ?, claimed_at = ?
-		WHERE doc_id = ? AND status = 'pending'
-	`, workerID, now, docID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to claim document: %w", err)
 	}
@@ -268,14 +242,14 @@ func (jc *SQLiteJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, e
 }
 
 // CompleteDocument marks a document as completed or failed
-func (jc *SQLiteJobControl) CompleteDocument(docID, workerID string, success bool, errorMsg string) error {
+func (jc *PostgreSQLJobControl) CompleteDocument(docID, workerID string, success bool, errorMsg string) error {
 	now := time.Now()
 
 	if success {
 		_, err := jc.db.Exec(`
 			UPDATE document_queue
-			SET status = 'completed', completed_at = ?
-			WHERE doc_id = ? AND claimed_by = ?
+			SET status = 'completed', completed_at = $1
+			WHERE doc_id = $2 AND claimed_by = $3
 		`, now, docID, workerID)
 		return err
 	}
@@ -283,26 +257,24 @@ func (jc *SQLiteJobControl) CompleteDocument(docID, workerID string, success boo
 	// Failed - increment retry count
 	_, err := jc.db.Exec(`
 		UPDATE document_queue
-		SET status = 'failed', retry_count = retry_count + 1, error_message = ?, completed_at = ?
-		WHERE doc_id = ? AND claimed_by = ?
+		SET status = 'failed', retry_count = retry_count + 1, error_message = $1, completed_at = $2
+		WHERE doc_id = $3 AND claimed_by = $4
 	`, errorMsg, now, docID, workerID)
 	return err
 }
 
 // IsDocumentQueued checks if a document is already in the queue
-// Returns true for pending, processing, or completed documents
-// Only returns false for documents that don't exist or have failed
-func (jc *SQLiteJobControl) IsDocumentQueued(docID string) (bool, error) {
+func (jc *PostgreSQLJobControl) IsDocumentQueued(docID string) (bool, error) {
 	var count int
 	err := jc.db.QueryRow(`
 		SELECT COUNT(*) FROM document_queue
-		WHERE doc_id = ? AND status IN ('pending', 'processing', 'completed')
+		WHERE doc_id = $1 AND status IN ('pending', 'processing', 'completed')
 	`, docID).Scan(&count)
 	return count > 0, err
 }
 
 // RegisterWorker registers a worker in the system
-func (jc *SQLiteJobControl) RegisterWorker(workerID string, info map[string]interface{}) error {
+func (jc *PostgreSQLJobControl) RegisterWorker(workerID string, info map[string]interface{}) error {
 	infoJSON, err := json.Marshal(info)
 	if err != nil {
 		return fmt.Errorf("failed to marshal worker info: %w", err)
@@ -310,9 +282,9 @@ func (jc *SQLiteJobControl) RegisterWorker(workerID string, info map[string]inte
 
 	_, err = jc.db.Exec(`
 		INSERT INTO workers (worker_id, info, last_heartbeat, registered_at)
-		VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(worker_id) DO UPDATE SET
-			info = excluded.info,
+			info = EXCLUDED.info,
 			last_heartbeat = CURRENT_TIMESTAMP
 	`, workerID, string(infoJSON))
 
@@ -320,22 +292,22 @@ func (jc *SQLiteJobControl) RegisterWorker(workerID string, info map[string]inte
 }
 
 // UpdateWorkerHeartbeat updates the worker's last heartbeat time
-func (jc *SQLiteJobControl) UpdateWorkerHeartbeat(workerID string) error {
+func (jc *PostgreSQLJobControl) UpdateWorkerHeartbeat(workerID string) error {
 	_, err := jc.db.Exec(`
 		UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP
-		WHERE worker_id = ?
+		WHERE worker_id = $1
 	`, workerID)
 	return err
 }
 
 // GetActiveWorkers returns list of active workers
-func (jc *SQLiteJobControl) GetActiveWorkers() ([]*WorkerInfo, error) {
+func (jc *PostgreSQLJobControl) GetActiveWorkers() ([]*WorkerInfo, error) {
 	timeout := time.Now().Add(-time.Duration(jc.heartbeatInterval*3) * time.Second)
 
 	rows, err := jc.db.Query(`
 		SELECT worker_id, info, last_heartbeat, registered_at
 		FROM workers
-		WHERE last_heartbeat > ?
+		WHERE last_heartbeat > $1
 	`, timeout)
 	if err != nil {
 		return nil, err
@@ -369,7 +341,7 @@ func (jc *SQLiteJobControl) GetActiveWorkers() ([]*WorkerInfo, error) {
 }
 
 // ElectLeader attempts to elect this worker as leader
-func (jc *SQLiteJobControl) ElectLeader(workerID string, info map[string]interface{}) (bool, error) {
+func (jc *PostgreSQLJobControl) ElectLeader(workerID string, info map[string]interface{}) (bool, error) {
 	infoJSON, err := json.Marshal(info)
 	if err != nil {
 		return false, fmt.Errorf("failed to marshal leader info: %w", err)
@@ -390,7 +362,7 @@ func (jc *SQLiteJobControl) ElectLeader(workerID string, info map[string]interfa
 		// No leader exists, claim leadership
 		_, err := tx.Exec(`
 			INSERT INTO leader (worker_id, info, elected_at, last_heartbeat)
-			VALUES (?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			VALUES ($1, $2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		`, workerID, string(infoJSON))
 		if err != nil {
 			return false, err
@@ -412,7 +384,7 @@ func (jc *SQLiteJobControl) ElectLeader(workerID string, info map[string]interfa
 		// Current leader is stale, take over
 		_, err := tx.Exec(`
 			UPDATE leader
-			SET worker_id = ?, info = ?, elected_at = CURRENT_TIMESTAMP, last_heartbeat = CURRENT_TIMESTAMP
+			SET worker_id = $1, info = $2, elected_at = CURRENT_TIMESTAMP, last_heartbeat = CURRENT_TIMESTAMP
 		`, workerID, string(infoJSON))
 		if err != nil {
 			return false, err
@@ -429,7 +401,7 @@ func (jc *SQLiteJobControl) ElectLeader(workerID string, info map[string]interfa
 }
 
 // GetCurrentLeader returns the current leader information
-func (jc *SQLiteJobControl) GetCurrentLeader() (*LeaderInfo, error) {
+func (jc *PostgreSQLJobControl) GetCurrentLeader() (*LeaderInfo, error) {
 	var workerID, infoJSON string
 	var electedAt, lastHeartbeat time.Time
 
@@ -467,33 +439,31 @@ func (jc *SQLiteJobControl) GetCurrentLeader() (*LeaderInfo, error) {
 }
 
 // UpdateLeaderHeartbeat updates the leader's heartbeat
-func (jc *SQLiteJobControl) UpdateLeaderHeartbeat(workerID string) error {
+func (jc *PostgreSQLJobControl) UpdateLeaderHeartbeat(workerID string) error {
 	_, err := jc.db.Exec(`
 		UPDATE leader
 		SET last_heartbeat = CURRENT_TIMESTAMP
-		WHERE worker_id = ?
+		WHERE worker_id = $1
 	`, workerID)
 	return err
 }
 
 // ReleaseLeadership releases leadership for this worker
-func (jc *SQLiteJobControl) ReleaseLeadership(workerID string) error {
+func (jc *PostgreSQLJobControl) ReleaseLeadership(workerID string) error {
 	_, err := jc.db.Exec(`
-		DELETE FROM leader WHERE worker_id = ?
+		DELETE FROM leader WHERE worker_id = $1
 	`, workerID)
 	return err
 }
 
 // ElectSourceLeader attempts to become leader for a specific content source
-// Returns true if successfully elected, false if another worker is already leader
-func (jc *SQLiteJobControl) ElectSourceLeader(sourceName, workerID, info string) (bool, error) {
+func (jc *PostgreSQLJobControl) ElectSourceLeader(sourceName, workerID, info string) (bool, error) {
 	// First, clean up stale leaders (heartbeat older than claim timeout)
-	// This allows new workers to take over from crashed/stopped workers
 	staleThreshold := time.Now().Add(-time.Duration(jc.claimTimeout) * time.Second)
 	result, err := jc.db.Exec(`
 		DELETE FROM source_leaders
-		WHERE source_name = ?
-		AND last_heartbeat < ?
+		WHERE source_name = $1
+		AND last_heartbeat < $2
 	`, sourceName, staleThreshold)
 
 	if err != nil {
@@ -508,7 +478,7 @@ func (jc *SQLiteJobControl) ElectSourceLeader(sourceName, workerID, info string)
 	// Try to insert this worker as leader for this source
 	_, err = jc.db.Exec(`
 		INSERT INTO source_leaders (source_name, worker_id, info, elected_at, last_heartbeat)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 		ON CONFLICT(source_name) DO NOTHING
 	`, sourceName, workerID, info)
 
@@ -520,7 +490,7 @@ func (jc *SQLiteJobControl) ElectSourceLeader(sourceName, workerID, info string)
 	// Check if we are the leader for this source
 	var currentLeaderID string
 	err = jc.db.QueryRow(`
-		SELECT worker_id FROM source_leaders WHERE source_name = ?
+		SELECT worker_id FROM source_leaders WHERE source_name = $1
 	`, sourceName).Scan(&currentLeaderID)
 
 	if err != nil {
@@ -534,10 +504,10 @@ func (jc *SQLiteJobControl) ElectSourceLeader(sourceName, workerID, info string)
 }
 
 // GetSourceLeader returns the current leader for a specific content source
-func (jc *SQLiteJobControl) GetSourceLeader(sourceName string) (string, error) {
+func (jc *PostgreSQLJobControl) GetSourceLeader(sourceName string) (string, error) {
 	var leaderID string
 	err := jc.db.QueryRow(`
-		SELECT worker_id FROM source_leaders WHERE source_name = ?
+		SELECT worker_id FROM source_leaders WHERE source_name = $1
 	`, sourceName).Scan(&leaderID)
 
 	if err == sql.ErrNoRows {
@@ -547,32 +517,32 @@ func (jc *SQLiteJobControl) GetSourceLeader(sourceName string) (string, error) {
 }
 
 // ReleaseSourceLeadership releases leadership for this worker for a specific source
-func (jc *SQLiteJobControl) ReleaseSourceLeadership(sourceName, workerID string) error {
+func (jc *PostgreSQLJobControl) ReleaseSourceLeadership(sourceName, workerID string) error {
 	_, err := jc.db.Exec(`
-		DELETE FROM source_leaders WHERE source_name = ? AND worker_id = ?
+		DELETE FROM source_leaders WHERE source_name = $1 AND worker_id = $2
 	`, sourceName, workerID)
 	return err
 }
 
 // UpdateSourceLeaderHeartbeat updates the heartbeat timestamp for source leader
-func (jc *SQLiteJobControl) UpdateSourceLeaderHeartbeat(sourceName, workerID string) error {
+func (jc *PostgreSQLJobControl) UpdateSourceLeaderHeartbeat(sourceName, workerID string) error {
 	_, err := jc.db.Exec(`
 		UPDATE source_leaders
 		SET last_heartbeat = CURRENT_TIMESTAMP
-		WHERE source_name = ? AND worker_id = ?
+		WHERE source_name = $1 AND worker_id = $2
 	`, sourceName, workerID)
 	return err
 }
 
 // HasDocumentChanged checks if a document has changed since last processing
-func (jc *SQLiteJobControl) HasDocumentChanged(docID, source string, currentModified *time.Time, currentHash string) (bool, error) {
+func (jc *PostgreSQLJobControl) HasDocumentChanged(docID, source string, currentModified *time.Time, currentHash string) (bool, error) {
 	var lastModified *time.Time
 	var storedHash string
 
 	err := jc.db.QueryRow(`
 		SELECT last_modified, content_hash
 		FROM document_metadata
-		WHERE doc_id = ?
+		WHERE doc_id = $1
 	`, docID).Scan(&lastModified, &storedHash)
 
 	if err == sql.ErrNoRows {
@@ -598,7 +568,7 @@ func (jc *SQLiteJobControl) HasDocumentChanged(docID, source string, currentModi
 }
 
 // StoreDocumentMetadata stores metadata for change tracking
-func (jc *SQLiteJobControl) StoreDocumentMetadata(docID, source string, lastModified *time.Time, contentHash string, fileSize *int64, processingStats map[string]interface{}) error {
+func (jc *PostgreSQLJobControl) StoreDocumentMetadata(docID, source string, lastModified *time.Time, contentHash string, fileSize *int64, processingStats map[string]interface{}) error {
 	statsJSON, err := json.Marshal(processingStats)
 	if err != nil {
 		return fmt.Errorf("failed to marshal processing stats: %w", err)
@@ -606,13 +576,13 @@ func (jc *SQLiteJobControl) StoreDocumentMetadata(docID, source string, lastModi
 
 	_, err = jc.db.Exec(`
 		INSERT INTO document_metadata (doc_id, source, last_modified, content_hash, file_size, processing_stats, last_processed_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)
 		ON CONFLICT(doc_id) DO UPDATE SET
-			source = excluded.source,
-			last_modified = excluded.last_modified,
-			content_hash = excluded.content_hash,
-			file_size = excluded.file_size,
-			processing_stats = excluded.processing_stats,
+			source = EXCLUDED.source,
+			last_modified = EXCLUDED.last_modified,
+			content_hash = EXCLUDED.content_hash,
+			file_size = EXCLUDED.file_size,
+			processing_stats = EXCLUDED.processing_stats,
 			last_processed_at = CURRENT_TIMESTAMP
 	`, docID, source, lastModified, contentHash, fileSize, string(statsJSON))
 
@@ -620,7 +590,7 @@ func (jc *SQLiteJobControl) StoreDocumentMetadata(docID, source string, lastModi
 }
 
 // GetDocumentMetadata retrieves stored metadata for a document
-func (jc *SQLiteJobControl) GetDocumentMetadata(docID string) (*DocumentMetadata, error) {
+func (jc *PostgreSQLJobControl) GetDocumentMetadata(docID string) (*DocumentMetadata, error) {
 	var source, contentHash string
 	var statsJSON string
 	var lastModified *time.Time
@@ -630,7 +600,7 @@ func (jc *SQLiteJobControl) GetDocumentMetadata(docID string) (*DocumentMetadata
 	err := jc.db.QueryRow(`
 		SELECT source, last_modified, content_hash, file_size, processing_stats, last_processed_at
 		FROM document_metadata
-		WHERE doc_id = ?
+		WHERE doc_id = $1
 	`, docID).Scan(&source, &lastModified, &contentHash, &fileSize, &statsJSON, &lastProcessedAt)
 
 	if err == sql.ErrNoRows {
@@ -658,15 +628,15 @@ func (jc *SQLiteJobControl) GetDocumentMetadata(docID string) (*DocumentMetadata
 }
 
 // GetProcessingStatus returns overall processing status
-func (jc *SQLiteJobControl) GetProcessingStatus() (*ProcessingStatus, error) {
+func (jc *PostgreSQLJobControl) GetProcessingStatus() (*ProcessingStatus, error) {
 	// Count documents by status
 	var pending, processing, completed, failed int
 	err := jc.db.QueryRow(`
 		SELECT
-			SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END),
-			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)
+			SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END)::int,
+			SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END)::int,
+			SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END)::int,
+			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::int
 		FROM document_queue
 	`).Scan(&pending, &processing, &completed, &failed)
 	if err != nil {
@@ -706,10 +676,10 @@ func (jc *SQLiteJobControl) GetProcessingStatus() (*ProcessingStatus, error) {
 }
 
 // CleanupStaleWorkers removes workers that haven't sent heartbeat
-func (jc *SQLiteJobControl) CleanupStaleWorkers(timeout int) (int, error) {
+func (jc *PostgreSQLJobControl) CleanupStaleWorkers(timeout int) (int, error) {
 	threshold := time.Now().Add(-time.Duration(timeout) * time.Second)
 	result, err := jc.db.Exec(`
-		DELETE FROM workers WHERE last_heartbeat < ?
+		DELETE FROM workers WHERE last_heartbeat < $1
 	`, threshold)
 	if err != nil {
 		return 0, err
@@ -720,10 +690,10 @@ func (jc *SQLiteJobControl) CleanupStaleWorkers(timeout int) (int, error) {
 }
 
 // CleanupStaleLeader removes stale leader
-func (jc *SQLiteJobControl) CleanupStaleLeader(timeout int) (bool, error) {
+func (jc *PostgreSQLJobControl) CleanupStaleLeader(timeout int) (bool, error) {
 	threshold := time.Now().Add(-time.Duration(timeout) * time.Second)
 	result, err := jc.db.Exec(`
-		DELETE FROM leader WHERE last_heartbeat < ?
+		DELETE FROM leader WHERE last_heartbeat < $1
 	`, threshold)
 	if err != nil {
 		return false, err
@@ -734,10 +704,6 @@ func (jc *SQLiteJobControl) CleanupStaleLeader(timeout int) (bool, error) {
 }
 
 // Close closes the database connection
-func (jc *SQLiteJobControl) Close() error {
+func (jc *PostgreSQLJobControl) Close() error {
 	return jc.db.Close()
-}
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
 }
