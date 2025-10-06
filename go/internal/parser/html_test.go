@@ -34,16 +34,16 @@ func TestParseSimpleHTML(t *testing.T) {
 		},
 	}
 
-	response, err := parser.Parse("test-doc", htmlContent)
+	response, err := parser.Parse(request)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
 	// Check document
-	if result.Document."doc_id"] != "test_doc" {
+	if response.Document["doc_id"] != "test_doc" {
 		t.Error("Document ID not set correctly")
 	}
-	if result.Document."doc_type"] != "html" {
+	if response.Document["doc_type"] != "html" {
 		t.Error("Document type not set correctly")
 	}
 
