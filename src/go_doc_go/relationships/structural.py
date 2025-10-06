@@ -16,6 +16,8 @@ class RelationshipType(Enum):
     DESCRIBES = "describes"
     NEXT_SIBLING = "next_sibling"
     PREVIOUS_SIBLING = "previous_sibling"
+    NEXT = "next"
+    PREVIOUS = "previous"
     LINK = "link"
     REFERENCED_BY = "referenced_by"
     SEMANTIC_SIMILARITY = "semantic_similarity"

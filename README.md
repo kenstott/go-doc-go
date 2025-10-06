@@ -43,8 +43,99 @@ Any Data Source → Universal Graph → Knowledge Graph → Smart Search
      │                    │               │              │
  Documents            Elements &        Domain         GraphRAG-lite
  Databases           Relationships     Entities &      Embeddings
- APIs                                  Rules           
+ APIs                                  Rules
 ```
+
+## The Universal Document Model
+
+Go-Doc-Go's **groundbreaking Universal Document Model** is a patent-pending framework that destructures **any document format** into a consistent 5-category taxonomy with 7 standard relationship types. This revolutionary approach enables unprecedented cross-format analysis, knowledge extraction, and AI-powered insights.
+
+### The Five Element Categories
+
+Every element in every document—regardless of source format—is classified into exactly one of five categories:
+
+| Category | Description | Examples | Use Case |
+|----------|-------------|----------|----------|
+| **Container** | Top-level organizational units that group content | `page`, `slide`, `sheet`, `section`, `article` | Document structure, navigation, chunking |
+| **Content** | Primary textual information blocks | `paragraph`, `header`, `text_box`, `blockquote` | Reading, search, embedding generation |
+| **Structure** | Organizational scaffolding | `table`, `list`, `table_row` | Layout understanding, data extraction |
+| **Component** | Leaf elements within structures | `table_cell`, `list_item`, `shape` | Granular data access, cell-level queries |
+| **Metadata** | Supplementary information | `comment`, `footnote`, `slide_notes`, `chart` | Context, provenance, annotations |
+
+### Seven Standard Relationships
+
+Documents are connected through seven universal relationship types:
+
+1. **contains** / **contained_by** - Hierarchical parent-child relationships
+2. **references** / **referenced_by** - Cross-references and citations
+3. **next** / **previous** - Sequential ordering
+4. **links_to** - Hyperlinks and external references
+
+This consistent model creates a **unified knowledge backbone** for:
+- 📊 **Cross-format analytics** - Query slides, sheets, and pages identically
+- 🤖 **AI model training** - Single vocabulary across all document types
+- 🔍 **Universal search** - Find content regardless of original format
+- 📈 **Knowledge graphs** - Seamless relationship discovery across sources
+
+### Category-Based Queries
+
+The Universal Document Model enables powerful category-based queries:
+
+```python
+# Find all top-level containers across ALL document types
+containers = db.query(element_category="container")
+# Returns: pages from PDFs, slides from PPTX, sheets from XLSX
+
+# Get only textual content for embedding
+content = db.query(element_category="content")
+# Returns: paragraphs, headers, text blocks - no tables or images
+
+# Extract structured data across formats
+structures = db.query(element_category="structure")
+# Returns: tables from Word, Excel, presentations - unified
+```
+
+### Extensible Taxonomy
+
+The element taxonomy is defined in `element_taxonomy.json`, making it:
+
+✅ **Easy to update** - Edit JSON, no code changes
+✅ **Version controlled** - Track taxonomy evolution
+✅ **Portable** - Shared between Go and Python implementations
+✅ **Self-documenting** - Clear category descriptions and element mappings
+
+Example taxonomy entry:
+```json
+{
+  "container": {
+    "description": "Top-level organizational units",
+    "element_types": ["page", "slide", "sheet", "section"]
+  }
+}
+```
+
+### Automatic Enrichment
+
+Categories are **automatically applied** during document processing—no manual tagging required:
+
+1. Parser extracts elements with specific types (`slide`, `paragraph`, `table_cell`)
+2. Analytics layer enriches with categories using taxonomy lookup
+3. Storage persists both type and category for maximum flexibility
+
+This **zero-overhead enrichment** means every document gets categorized automatically, creating instant cross-format compatibility.
+
+### Patent-Pending Innovation
+
+The Universal Document Model represents a **fundamental breakthrough** in document understanding:
+
+- **Unified representation** of inherently different formats (paginated vs. gridded vs. hierarchical)
+- **Semantic categories** that transcend format-specific nomenclature
+- **Automatic inference** of document structure without ML models
+- **Bidirectional mapping** preserving original types while enabling universal queries
+
+This innovation enables **true format-agnostic knowledge extraction**—the foundation for next-generation document AI and enterprise knowledge graphs.
+
+---
 
 ## Real-World Impact
 

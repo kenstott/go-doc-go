@@ -299,6 +299,9 @@ class CsvParser(DocumentParser):
         # Initialize relationships list
         relationships = []
 
+        # Initialize element_dates dictionary for tracking date information
+        element_dates = {}
+
         # Create table container element
         table_id = self._generate_id("csv_table_")
         table_element = {
@@ -390,7 +393,7 @@ class CsvParser(DocumentParser):
                 "relationship_id": self._generate_id("rel_"),
                 "source_id": table_id,
                 "target_id": header_id,
-                "relationship_type": RelationshipType.CONTAINS_TABLE_HEADER.value,
+                "relationship_type": RelationshipType.CONTAINS.value,
                 "metadata": {
                     "confidence": 1.0,
                     "row": 0
@@ -409,6 +412,65 @@ class CsvParser(DocumentParser):
                 }
             }
             relationships.append(header_contained_relationship)
+
+            # Create header cells
+            for col_idx, cell_value in enumerate(header_row):
+                cell_id = self._generate_id(f"header_cell_{col_idx}_")
+
+                # Create cell preview
+                cell_preview = str(cell_value)
+                if len(cell_preview) > self.max_content_preview:
+                    cell_preview = cell_preview[:self.max_content_preview] + "..."
+
+                cell_element = {
+                    "element_id": cell_id,
+                    "doc_id": doc_id,
+                    "element_type": ElementType.TABLE_CELL.value,
+                    "parent_id": header_id,
+                    "content_preview": cell_preview,
+                    "temporal_value": None,
+                    "content_location": json.dumps({
+                        "source": source_id,
+                        "type": ElementType.TABLE_CELL.value,
+                        "row": 0,
+                        "col": col_idx
+                    }),
+                    "content_hash": self._generate_hash(str(cell_value)),
+                    "metadata": {
+                        "row": 0,
+                        "col": col_idx,
+                        "header": cell_value,
+                        "value": cell_value,
+                        "is_header": True
+                    }
+                }
+                elements.append(cell_element)
+
+                # Create bidirectional relationship from header row to cell
+                header_to_cell_rel = {
+                    "relationship_id": self._generate_id("rel_"),
+                    "source_id": header_id,
+                    "target_id": cell_id,
+                    "relationship_type": RelationshipType.CONTAINS.value,
+                    "metadata": {
+                        "confidence": 1.0,
+                        "col_index": col_idx,
+                        "is_header": True
+                    }
+                }
+                relationships.append(header_to_cell_rel)
+
+                # Create inverse relationship
+                cell_to_header_rel = {
+                    "relationship_id": self._generate_id("rel_"),
+                    "source_id": cell_id,
+                    "target_id": header_id,
+                    "relationship_type": RelationshipType.CONTAINED_BY.value,
+                    "metadata": {
+                        "confidence": 1.0
+                    }
+                }
+                relationships.append(cell_to_header_rel)
 
         # Process data rows
         data_start_idx = 1 if self.extract_header and csv_data else 0
@@ -449,7 +511,7 @@ class CsvParser(DocumentParser):
                 "relationship_id": self._generate_id("rel_"),
                 "source_id": table_id,
                 "target_id": row_id,
-                "relationship_type": RelationshipType.CONTAINS_TABLE_ROW.value,
+                "relationship_type": RelationshipType.CONTAINS.value,
                 "metadata": {
                     "confidence": 1.0,
                     "row_index": abs_row_idx
@@ -501,7 +563,9 @@ class CsvParser(DocumentParser):
                                 normalized_preview += "..."
                             # Create separate DATE elements for extracted dates
                             for date_dict in cell_processing["extracted_dates"]:
-                                element_dates[cell_id] = element_dates.get(cell_id, []) + [date_dict]
+                                if cell_id not in element_dates:
+                                    element_dates[cell_id] = []
+                                element_dates[cell_id].append(date_dict)
 
                 cell_element = {
                     "element_id": cell_id,
@@ -532,7 +596,7 @@ class CsvParser(DocumentParser):
                     "relationship_id": self._generate_id("rel_"),
                     "source_id": row_id,
                     "target_id": cell_id,
-                    "relationship_type": RelationshipType.CONTAINS_TABLE_CELL.value,
+                    "relationship_type": RelationshipType.CONTAINS.value,
                     "metadata": {
                         "confidence": 1.0,
                         "col_index": col_idx
@@ -595,7 +659,6 @@ class CsvParser(DocumentParser):
         relationships.extend(column_relationships)
 
         # Extract dates from CSV with comprehensive temporal analysis
-        element_dates = {}
         if self.extract_dates and self.date_extractor:
             try:
                 # Extract text content from the entire CSV for date extraction

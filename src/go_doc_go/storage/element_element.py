@@ -20,6 +20,7 @@ class ElementBase(BaseModel):
 
     # Element characteristics
     element_type: str
+    element_category: str
     parent_id: Optional[str] = None
     content_preview: str
     private_content_location: str = Field(alias='content_location', exclude=True)
@@ -76,6 +77,7 @@ class ElementBase(BaseModel):
             element_id=self.element_id,
             doc_id=self.doc_id,
             element_type=self.element_type,
+            element_category=self.element_category,
             parent_id=self.parent_id,
             content_preview=self.content_preview,
             content_location=self.private_content_location,
@@ -228,6 +230,92 @@ class ElementType(Enum):
 
 
 from typing import List
+import os
+
+
+# Element categories for Universal Document Model
+CATEGORY_CONTAINER = "container"
+CATEGORY_CONTENT = "content"
+CATEGORY_STRUCTURE = "structure"
+CATEGORY_COMPONENT = "component"
+CATEGORY_METADATA = "metadata"
+
+
+# Global taxonomy data loaded from JSON
+_taxonomy = None
+_type_to_category_map = None
+
+
+def _load_taxonomy():
+    """Load element taxonomy from JSON file (cached)."""
+    global _taxonomy, _type_to_category_map
+
+    if _type_to_category_map is not None:
+        return
+
+    import json
+
+    # Find taxonomy file - look in project root
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    possible_paths = [
+        os.path.join(current_dir, '..', '..', '..', 'element_taxonomy.json'),
+        os.path.join(current_dir, '..', '..', '..', '..', 'element_taxonomy.json'),
+        'element_taxonomy.json',
+    ]
+
+    taxonomy_data = None
+    for path in possible_paths:
+        try:
+            with open(path, 'r') as f:
+                taxonomy_data = json.load(f)
+                break
+        except (FileNotFoundError, IOError):
+            continue
+
+    if not taxonomy_data:
+        # Fallback to default if file not found
+        _taxonomy = {'default_category': CATEGORY_COMPONENT}
+        _type_to_category_map = {}
+        return
+
+    _taxonomy = taxonomy_data
+
+    # Build reverse map: element_type -> category
+    _type_to_category_map = {}
+    categories = taxonomy_data.get('categories', {})
+    for category_name, category_data in categories.items():
+        for element_type in category_data.get('element_types', []):
+            _type_to_category_map[element_type] = category_name
+
+
+def get_element_category(element_type: str) -> str:
+    """
+    Returns the category for a given element type.
+
+    Loads taxonomy from element_taxonomy.json file.
+
+    Categories:
+    - container: Top-level organizational units
+    - content: Textual content blocks
+    - structure: Organizational elements
+    - component: Leaf components within structures
+    - metadata: Supplementary information
+
+    Args:
+        element_type: The element type string
+
+    Returns:
+        The element category string
+    """
+    _load_taxonomy()
+
+    if element_type in _type_to_category_map:
+        return _type_to_category_map[element_type]
+
+    # Return default category for unknown types
+    if _taxonomy and 'default_category' in _taxonomy:
+        return _taxonomy['default_category']
+    return CATEGORY_COMPONENT
 
 
 def flatten_hierarchy(elements: List[ElementHierarchical], parent_path: str = "") -> List[ElementFlat]:
@@ -254,6 +342,7 @@ def flatten_hierarchy(elements: List[ElementHierarchical], parent_path: str = ""
             element_id=element.element_id,
             doc_id=element.doc_id,
             element_type=element.element_type,
+            element_category=element.element_category,
             parent_id=element.parent_id,
             content_preview=element.content_preview,
             content_location=element.private_content_location,

@@ -5,13 +5,16 @@ This module provides utilities to detect document types based on file extension,
 MIME type, or content inspection.
 """
 
+import base64
 import json
 import logging
 import mimetypes
 import os
 import re
 import platform
+import subprocess
 from pathlib import Path
+from threading import RLock
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +110,197 @@ def initialize_magic():
 
 # Initialize magic at module import
 initialize_magic()
+
+
+class GoDocumentTypeDetector:
+    """Go-based document type detector implementation via subprocess calls."""
+
+    def __init__(self):
+        """Initialize Go document type detector wrapper."""
+        self._lock = RLock()
+
+        # Find the Go binary
+        project_root = Path(__file__).parent.parent.parent.parent
+        self.binary_path = project_root / "bin" / "doctype"
+
+        if not self.binary_path.exists():
+            raise FileNotFoundError(
+                f"Go document type detector binary not found. Expected at {self.binary_path}. "
+                "Please build it with: cd go && go build -o ../bin/doctype ./cmd/doctype"
+            )
+
+    def _run_command(self, *args):
+        """Run the Go binary with the given arguments."""
+        cmd = [str(self.binary_path), *args]
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=5  # 5 second timeout
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Go detector command failed: {result.stderr}")
+                return None
+
+            return result.stdout.strip()
+        except subprocess.TimeoutExpired:
+            logger.error("Go detector command timed out")
+            return None
+        except Exception as e:
+            logger.error(f"Error running Go detector: {e}")
+            return None
+
+    def detect_from_path(self, path):
+        """
+        Detect document type from file path.
+
+        Args:
+            path: Path to the file
+
+        Returns:
+            String representing document type: 'markdown', 'docx', etc.
+        """
+        # Match Python behavior: return None for empty path
+        if not path:
+            return None
+
+        with self._lock:
+            result = self._run_command("detect_from_path", str(path))
+            if result:
+                try:
+                    response = json.loads(result)
+                    return response.get("document_type", "text")
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse Go detector response: {result}")
+            return "text"
+
+    def detect_from_mime(self, path):
+        """
+        Detect document type from MIME type.
+
+        Args:
+            path: Path to the file
+
+        Returns:
+            String representing document type
+        """
+        # For compatibility, use detect_from_path since Go's MIME detection
+        # is integrated into the path detection
+        return self.detect_from_path(path)
+
+    def detect_from_content(self, content, metadata=None):
+        """
+        Detect document type by inspecting content.
+
+        Args:
+            content: File content (bytes or string)
+            metadata: Optional metadata that might provide hints
+
+        Returns:
+            String representing document type
+        """
+        with self._lock:
+            # Convert content to bytes if it's a string
+            if isinstance(content, str):
+                content_bytes = content.encode('utf-8')
+            else:
+                content_bytes = content
+
+            # Encode content as base64 for transmission
+            content_b64 = base64.b64encode(content_bytes).decode('ascii')
+
+            # Prepare arguments
+            args = ["detect_from_content", content_b64]
+            if metadata:
+                metadata_json = json.dumps(metadata)
+                args.append(metadata_json)
+
+            result = self._run_command(*args)
+            if result:
+                try:
+                    response = json.loads(result)
+                    return response.get("document_type", "text")
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse Go detector response: {result}")
+            return "text"
+
+    def detect(self, path=None, content=None, metadata=None):
+        """
+        Detect document type using all available methods.
+
+        Args:
+            path: Optional file path
+            content: Optional file content
+            metadata: Optional metadata hints
+
+        Returns:
+            String representing document type
+        """
+        # Match Python behavior: try path detection first, then content detection
+        # Try path-based detection first (if we have a path)
+        if path:
+            doc_type = self.detect_from_path(path)
+            # Only use path result if it's definitive (not None and not default text)
+            if doc_type and doc_type != "text":
+                return doc_type
+
+        # Then try content-based detection
+        if content is not None and len(content) > 0:
+            doc_type = self.detect_from_content(content, metadata)
+            # Only use content result if it's definitive
+            if doc_type and doc_type != "text":
+                return doc_type
+
+        # Default to text
+        return "text"
+
+    # Provide static methods for compatibility with existing code
+    @staticmethod
+    def _create_go_instance():
+        """Create a Go detector instance if available."""
+        try:
+            return GoDocumentTypeDetector()
+        except FileNotFoundError:
+            return None
+
+    _go_instance = None
+
+    @classmethod
+    def get_go_instance(cls):
+        """Get or create the Go detector instance."""
+        if cls._go_instance is None:
+            cls._go_instance = cls._create_go_instance()
+        return cls._go_instance
+
+
+def create_document_type_detector():
+    """
+    Factory function to create document type detector instance.
+
+    Uses Go implementation if USE_GO_DETECTOR environment variable is set,
+    otherwise uses Python implementation.
+
+    Returns:
+        DocumentTypeDetector or GoDocumentTypeDetector instance
+    """
+    # Check if Go modules should be used (unified flag or specific flag)
+    use_go_modules = os.environ.get("USE_GO_MODULES", "").lower() in ("true", "1", "yes")
+    use_go_detector = os.environ.get("USE_GO_DETECTOR", "").lower() in ("true", "1", "yes")
+    use_go = use_go_modules or use_go_detector
+
+    if use_go:
+        try:
+            detector = GoDocumentTypeDetector()
+            logger.info("Using Go document type detector implementation")
+            return detector
+        except FileNotFoundError as e:
+            logger.warning(f"Go detector not available: {e}. Falling back to Python implementation.")
+
+    logger.debug("Using Python document type detector implementation")
+    return DocumentTypeDetector()
 
 
 class DocumentTypeDetector:
@@ -300,38 +494,40 @@ class DocumentTypeDetector:
             except Exception as e:
                 logger.debug(f"Error detecting content type with python-magic: {str(e)}")
 
-        # Fallback to text analysis if we have a string
-        if content_str:
-            # Check for CSV format
-            if DocumentTypeDetector._is_likely_csv(content_str):
-                return 'csv'
+        # Fallback to text analysis (including for empty strings)
+        # Only process if we have valid text content
+        if content_str is None:
+            return 'binary'
 
-            # Check for markdown headers
-            if re.search(r'^#{1,6}\s+', content_str, re.MULTILINE):
-                return 'markdown'
+        # Check for JSON first (before CSV to avoid false positives)
+        trimmed = content_str.strip()
+        if ((trimmed.startswith('{') and trimmed.endswith('}')) or
+            (trimmed.startswith('[') and trimmed.endswith(']'))):
+            try:
+                json.loads(content_str)
+                return 'json'
+            except json.JSONDecodeError:
+                pass
 
-            # Check for HTML
-            if re.search(r'<!DOCTYPE html>|<html|<body|<div|<span|<p>', content_str, re.IGNORECASE):
-                return 'html'
+        # Check for CSV format
+        if DocumentTypeDetector._is_likely_csv(content_str):
+            return 'csv'
 
-            # Check for JSON
-            if content_str.strip().startswith('{') and content_str.strip().endswith('}'):
-                try:
-                    json.loads(content_str)
-                    return 'json'
-                except json.JSONDecodeError:
-                    pass
+        # Check for markdown headers
+        if re.search(r'^#{1,6}\s+', content_str, re.MULTILINE):
+            return 'markdown'
 
-            # Check for XML
-            if content_str.strip().startswith('<') and content_str.strip().endswith('>'):
-                if re.search(r'<\?xml|<[a-zA-Z]+>[^<>]*</[a-zA-Z]+>', content_str):
-                    return 'xml'
+        # Check for HTML
+        if re.search(r'<!DOCTYPE html>|<html|<body|<div|<span|<p>', content_str, re.IGNORECASE):
+            return 'html'
 
-            # Default to text for string content
-            return 'text'
+        # Check for XML
+        if trimmed.startswith('<') and trimmed.endswith('>'):
+            if re.search(r'<\?xml|<[a-zA-Z]+>[^<>]*</[a-zA-Z]+>', content_str):
+                return 'xml'
 
-        # If all detection methods fail, default to binary
-        return 'binary'
+        # Default to text for all text content (including empty strings)
+        return 'text'
 
     @staticmethod
     def _is_likely_csv(text):
@@ -396,13 +592,15 @@ class DocumentTypeDetector:
         # Try path-based detection first
         if path:
             doc_type = DocumentTypeDetector.detect_from_path(path)
-            if doc_type:
+            # Only use path result if it's definitive (not default fallback to text)
+            if doc_type and doc_type != 'text':
                 return doc_type
 
         # Then try content-based detection with metadata hints
-        if content:
+        if content is not None and len(content) > 0:
             doc_type = DocumentTypeDetector.detect_from_content(content, metadata)
-            if doc_type:
+            # Only use content result if it's definitive (not default fallback)
+            if doc_type and doc_type != 'text':
                 return doc_type
 
         # Default to text
