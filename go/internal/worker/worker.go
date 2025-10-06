@@ -41,6 +41,21 @@ type Worker struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	wg                   sync.WaitGroup
+
+	// Neo4j export state
+	neo4jExportConfig     *Neo4jExportConfig
+	lastQueueEmptyTime    *time.Time
+	lastNeo4jExportTime   *time.Time
+}
+
+// Neo4jExportConfig holds Neo4j export configuration
+type Neo4jExportConfig struct {
+	Enabled            bool
+	EmptyQueueWaitTime int    // Seconds to wait before triggering export
+	SourceAnalytics    string // Source analytics type (e.g., "parquet")
+	SourcePath         string // Path to source analytics
+	Connection         map[string]interface{}
+	BatchSize          int
 }
 
 // Config holds worker configuration
@@ -54,6 +69,7 @@ type Config struct {
 	EmbeddingConfig   *embeddings.Config // Optional embedding configuration
 	MaxDocuments      int
 	DiscoveryInterval int // seconds
+	Neo4jExportConfig *Neo4jExportConfig // Optional Neo4j export configuration
 }
 
 // ProcessResult represents the result of processing a document
@@ -65,8 +81,8 @@ type ProcessResult struct {
 
 // NewWorker creates a new document processing worker
 func NewWorker(config Config) (*Worker, error) {
-	// Create job control
-	jc, err := jobcontrol.NewSQLiteJobControl(config.JobControlConfig)
+	// Create job control using factory (supports SQLite and PostgreSQL)
+	jc, err := jobcontrol.NewJobControl(config.JobControlConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create job control: %w", err)
 	}
@@ -167,6 +183,7 @@ func NewWorker(config Config) (*Worker, error) {
 		maxDocuments:         config.MaxDocuments,
 		ctx:                  ctx,
 		cancel:               cancel,
+		neo4jExportConfig:    config.Neo4jExportConfig,
 	}
 
 	log.Printf("Initialized worker: %s", worker.workerID)
@@ -174,6 +191,9 @@ func NewWorker(config Config) (*Worker, error) {
 	log.Printf("Analytics storages: %d", len(storages))
 	if embeddingService != nil {
 		log.Printf("Embeddings enabled: %s (dimensions: %d)", embeddingService.GetModelName(), embeddingService.GetDimensions())
+	}
+	if config.Neo4jExportConfig != nil && config.Neo4jExportConfig.Enabled {
+		log.Printf("Neo4j export enabled (wait time: %d seconds)", config.Neo4jExportConfig.EmptyQueueWaitTime)
 	}
 
 	return worker, nil
@@ -961,6 +981,11 @@ func (w *Worker) perSourceDiscoveryLoop(sourceName string) {
 			log.Printf("Source leader for %s queued %d new documents", sourceName, queued)
 		}
 
+		// Check queue status for Neo4j export (only if leader)
+		if isSourceLeader {
+			w.checkQueueForNeo4jExport()
+		}
+
 		// Sleep for configured interval (with context-aware sleep)
 		select {
 		case <-time.After(time.Duration(discoveryInterval) * time.Second):
@@ -1061,6 +1086,9 @@ func (w *Worker) discoveryLoop() {
 		if totalQueued > 0 {
 			log.Printf("Leader queued %d total new documents", totalQueued)
 		}
+
+		// Check queue status for Neo4j export
+		w.checkQueueForNeo4jExport()
 
 		// Context-aware sleep
 		select {
@@ -1424,4 +1452,112 @@ func inferDocType(filename string) string {
 	default:
 		return "text"
 	}
+}
+
+// checkQueueForNeo4jExport checks if queue is empty and triggers Neo4j export if conditions are met
+func (w *Worker) checkQueueForNeo4jExport() {
+	// Only perform checks if Neo4j export is enabled
+	if w.neo4jExportConfig == nil || !w.neo4jExportConfig.Enabled {
+		return
+	}
+
+	// Get processing status
+	status, err := w.jobControl.GetProcessingStatus()
+	if err != nil {
+		log.Printf("Warning: failed to get processing status for Neo4j export check: %v", err)
+		return
+	}
+
+	// Check if queue is empty
+	pendingDocs := status.Documents["pending"]
+	processingDocs := status.Documents["processing"]
+
+	isQueueEmpty := (pendingDocs == 0 && processingDocs == 0)
+	currentTime := time.Now()
+
+	if isQueueEmpty {
+		if w.lastQueueEmptyTime == nil {
+			// Queue just became empty
+			w.lastQueueEmptyTime = &currentTime
+			log.Println("Queue is now empty, starting timer for Neo4j export")
+		} else {
+			// Check if queue has been empty long enough
+			timeSinceEmpty := currentTime.Sub(*w.lastQueueEmptyTime).Seconds()
+			if timeSinceEmpty >= float64(w.neo4jExportConfig.EmptyQueueWaitTime) {
+				// Check if enough time has passed since last export
+				timeSinceLastExport := float64(999999)
+				if w.lastNeo4jExportTime != nil {
+					timeSinceLastExport = currentTime.Sub(*w.lastNeo4jExportTime).Seconds()
+				}
+
+				if timeSinceLastExport >= float64(w.neo4jExportConfig.EmptyQueueWaitTime) {
+					log.Println("Queue has been empty long enough, triggering Neo4j export")
+					w.triggerNeo4jExport()
+					w.lastNeo4jExportTime = &currentTime
+					w.lastQueueEmptyTime = nil // Reset timer
+				} else {
+					log.Printf("Queue empty but exported recently, waiting %.1f seconds", float64(w.neo4jExportConfig.EmptyQueueWaitTime)-timeSinceLastExport)
+				}
+			}
+		}
+	} else {
+		// Queue is not empty, reset timer
+		if w.lastQueueEmptyTime != nil {
+			log.Println("Queue is no longer empty, resetting export timer")
+			w.lastQueueEmptyTime = nil
+		}
+	}
+}
+
+// triggerNeo4jExport triggers Neo4j graph export
+func (w *Worker) triggerNeo4jExport() {
+	log.Println("========================================")
+	log.Println("TRIGGERING NEO4J GRAPH EXPORT")
+	log.Println("========================================")
+
+	// Import export package
+	// Dynamically build configuration from worker settings
+	sourceAnalytics := w.neo4jExportConfig.SourceAnalytics
+	if sourceAnalytics == "" {
+		sourceAnalytics = "parquet"
+	}
+
+	// Find source path from analytics configs
+	sourcePath := w.neo4jExportConfig.SourcePath
+	if sourcePath == "" {
+		// Use configured source path from Neo4j export config
+		// Fallback to /tmp if not available
+		sourcePath = "/tmp"
+		log.Printf("Warning: No source path configured for Neo4j export, using fallback: %s", sourcePath)
+	}
+
+	// This will be implemented in the next step - for now just log
+	log.Printf("Would export from %s at %s to Neo4j", sourceAnalytics, sourcePath)
+	log.Printf("Neo4j connection: %v", w.neo4jExportConfig.Connection)
+
+	// TODO: Implement actual export using graph exporter
+	// exporter, err := export.NewGraphExporter(export.Config{
+	// 	SourceType:       sourceAnalytics,
+	// 	SourcePath:       sourcePath,
+	// 	TargetType:       "neo4j",
+	// 	TargetConnection: w.neo4jExportConfig.Connection,
+	// 	BatchSize:        w.neo4jExportConfig.BatchSize,
+	// })
+	// if err != nil {
+	// 	log.Printf("ERROR: Failed to create graph exporter: %v", err)
+	// 	return
+	// }
+	// defer exporter.Close()
+	//
+	// result := exporter.ExportToNeo4j()
+	// if result.Success {
+	// 	log.Printf("✓ Neo4j export completed successfully")
+	// 	log.Printf("  Documents: %d", result.DocumentCount)
+	// 	log.Printf("  Elements: %d", result.ElementCount)
+	// 	log.Printf("  Relationships: %d", result.RelationshipCount)
+	// } else {
+	// 	log.Printf("ERROR: Neo4j export failed: %s", result.Error)
+	// }
+
+	log.Println("========================================")
 }

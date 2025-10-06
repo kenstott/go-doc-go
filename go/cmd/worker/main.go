@@ -22,11 +22,24 @@ type Config struct {
 	Processing struct {
 		MaxWorkers int `toml:"max_workers"`
 		JobControl struct {
-			Path              string `toml:"path"`
+			Backend           string `toml:"backend"` // "sqlite" or "postgres"
+			Path              string `toml:"path"`    // SQLite: file path; PostgreSQL: DSN
 			ClaimTimeout      int    `toml:"claim_timeout"`
 			HeartbeatInterval int    `toml:"heartbeat_interval"`
 			MaxRetries        int    `toml:"max_retries"`
 		} `toml:"job_control"`
+		Neo4jExport struct {
+			Enabled            bool   `toml:"enabled"`
+			EmptyQueueWaitTime int    `toml:"empty_queue_wait_time"` // Seconds to wait before export
+			SourceAnalytics    string `toml:"source_analytics"`      // Source analytics type (e.g., "parquet")
+			Connection         struct {
+				URI      string `toml:"uri"`
+				Username string `toml:"username"`
+				Password string `toml:"password"`
+				Database string `toml:"database"`
+			} `toml:"connection"`
+			BatchSize int `toml:"batch_size"`
+		} `toml:"neo4j_export"`
 	} `toml:"processing"`
 	ContentSources []map[string]interface{} `toml:"content_sources"`
 	Analytics      struct {
@@ -123,11 +136,41 @@ func main() {
 		*workerID = fmt.Sprintf("worker_%s_%d", hostname, os.Getpid())
 	}
 
+	// Create Neo4j export configuration if enabled
+	var neo4jExportConfig *worker.Neo4jExportConfig
+	if config.Processing.Neo4jExport.Enabled {
+		// Find source analytics path from analytics outputs
+		sourcePath := ""
+		for _, output := range config.Analytics.Outputs {
+			if outputType, ok := output["type"].(string); ok && outputType == config.Processing.Neo4jExport.SourceAnalytics {
+				if path, ok := output["path"].(string); ok {
+					sourcePath = path
+					break
+				}
+			}
+		}
+
+		neo4jExportConfig = &worker.Neo4jExportConfig{
+			Enabled:            config.Processing.Neo4jExport.Enabled,
+			EmptyQueueWaitTime: config.Processing.Neo4jExport.EmptyQueueWaitTime,
+			SourceAnalytics:    config.Processing.Neo4jExport.SourceAnalytics,
+			SourcePath:         sourcePath,
+			Connection: map[string]interface{}{
+				"uri":      config.Processing.Neo4jExport.Connection.URI,
+				"username": config.Processing.Neo4jExport.Connection.Username,
+				"password": config.Processing.Neo4jExport.Connection.Password,
+				"database": config.Processing.Neo4jExport.Connection.Database,
+			},
+			BatchSize: config.Processing.Neo4jExport.BatchSize,
+		}
+	}
+
 	// Create worker configuration
 	workerConfig := worker.Config{
 		WorkerID:   *workerID,
 		NumWorkers: *numWorkers,
 		JobControlConfig: jobcontrol.Config{
+			Backend:           config.Processing.JobControl.Backend,
 			Path:              config.Processing.JobControl.Path,
 			ClaimTimeout:      config.Processing.JobControl.ClaimTimeout,
 			HeartbeatInterval: config.Processing.JobControl.HeartbeatInterval,
@@ -138,6 +181,7 @@ func main() {
 		EmbeddingConfig:   config.Embedding,
 		MaxDocuments:      *maxDocuments,
 		DiscoveryInterval: 60,
+		Neo4jExportConfig: neo4jExportConfig,
 	}
 
 	// Create worker
@@ -298,10 +342,13 @@ func loadConfig(path string) (*Config, error) {
 		config.ContentSources = append(config.ContentSources, sourceConfig)
 	}
 
-	// Expand paths to be absolute
-	if !filepath.IsAbs(config.Processing.JobControl.Path) {
-		configDir := filepath.Dir(path)
-		config.Processing.JobControl.Path = filepath.Join(configDir, config.Processing.JobControl.Path)
+	// Expand paths to be absolute (only for SQLite - PostgreSQL uses connection strings/URIs)
+	backend := strings.ToLower(config.Processing.JobControl.Backend)
+	if backend == "" || backend == "sqlite" {
+		if !filepath.IsAbs(config.Processing.JobControl.Path) {
+			configDir := filepath.Dir(path)
+			config.Processing.JobControl.Path = filepath.Join(configDir, config.Processing.JobControl.Path)
+		}
 	}
 
 	return &config, nil
