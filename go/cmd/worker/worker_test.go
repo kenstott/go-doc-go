@@ -15,74 +15,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// TestConfig represents the worker configuration structure
-type TestConfig struct {
-	Embedding struct {
-		Enabled          bool   `yaml:"enabled"`
-		Provider         string `yaml:"provider"`
-		Model            string `yaml:"model"`
-		ModelPath        string `yaml:"model_path"`
-		Dimensions       int    `yaml:"dimensions"`
-		ChunkSize        int    `yaml:"chunk_size"`
-		Overlap          int    `yaml:"overlap"`
-		Contextual       bool   `yaml:"contextual"`
-		PredecessorCount int    `yaml:"predecessor_count"`
-		SuccessorCount   int    `yaml:"successor_count"`
-	} `yaml:"embedding"`
-
-	ContentSources []struct {
-		Name              string   `yaml:"name"`
-		Type              string   `yaml:"type"`
-		BasePath          string   `yaml:"base_path,omitempty"`
-		BaseURL           string   `yaml:"base_url,omitempty"`
-		FilePattern       string   `yaml:"file_pattern,omitempty"`
-		IncludeExtensions []string `yaml:"include_extensions,omitempty"`
-		WatchForChanges   bool     `yaml:"watch_for_changes,omitempty"`
-		MaxLinkDepth      int      `yaml:"max_link_depth,omitempty"`
-		RefreshInterval   int      `yaml:"refresh_interval,omitempty"`
-		URLList           []string `yaml:"url_list,omitempty"`
-		IncludePatterns   []string `yaml:"include_patterns,omitempty"`
-		ExcludePatterns   []string `yaml:"exclude_patterns,omitempty"`
-		Headers           map[string]string `yaml:"headers,omitempty"`
-	} `yaml:"content_sources"`
-
-	RelationshipDetection struct {
-		Enabled    bool `yaml:"enabled"`
-		Structural bool `yaml:"structural"`
-		Semantic   bool `yaml:"semantic"`
-		CrossDocumentSemantic struct {
-			SimilarityThreshold float64 `yaml:"similarity_threshold"`
-		} `yaml:"cross_document_semantic"`
-	} `yaml:"relationship_detection"`
-
-	Processing struct {
-		BatchSize      int `yaml:"batch_size"`
-		MaxWorkers     int `yaml:"max_workers"`
-		TimeoutSeconds int `yaml:"timeout_seconds"`
-		JobControl     struct {
-			Backend           string `yaml:"backend"`
-			Path              string `yaml:"path"`
-			ClaimTimeout      int    `yaml:"claim_timeout"`
-			HeartbeatInterval int    `yaml:"heartbeat_interval"`
-			MaxRetries        int    `yaml:"max_retries"`
-		} `yaml:"job_control"`
-	} `yaml:"processing"`
-
-	Analytics struct {
-		Enabled bool `yaml:"enabled"`
-		Outputs []struct {
-			Type         string   `yaml:"type"`
-			Path         string   `yaml:"path"`
-			Partitioning []string `yaml:"partitioning"`
-		} `yaml:"outputs"`
-	} `yaml:"analytics"`
-
-	Logging struct {
-		Level string `yaml:"level"`
-		File  string `yaml:"file"`
-	} `yaml:"logging"`
-}
-
 // TestHelper provides utility functions for worker tests
 type TestHelper struct {
 	t              *testing.T
@@ -141,16 +73,11 @@ func (h *TestHelper) SetupTestDir() string {
 }
 
 // CreateIsolatedConfig creates a test-specific configuration
-func (h *TestHelper) CreateIsolatedConfig(testDir string, customizations func(*TestConfig)) string {
-	// Read base config
-	data, err := os.ReadFile(h.baseConfigPath)
+func (h *TestHelper) CreateIsolatedConfig(testDir string, customizations func(*YAMLConfig)) string {
+	// Use existing loadConfig function from main.go
+	config, err := loadConfig(h.baseConfigPath)
 	if err != nil {
-		h.t.Fatalf("Failed to read base config: %v", err)
-	}
-
-	var config TestConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		h.t.Fatalf("Failed to parse base config: %v", err)
+		h.t.Fatalf("Failed to load base config: %v", err)
 	}
 
 	// Override paths to use test directory
@@ -165,7 +92,7 @@ func (h *TestHelper) CreateIsolatedConfig(testDir string, customizations func(*T
 	// Configure analytics output
 	analyticsPath := filepath.Join(testDir, "analytics-output-go")
 	if len(config.Analytics.Outputs) > 0 {
-		config.Analytics.Outputs[0].Path = analyticsPath
+		config.Analytics.Outputs[0]["path"] = analyticsPath
 	}
 
 	// Remove existing analytics directory
@@ -173,24 +100,21 @@ func (h *TestHelper) CreateIsolatedConfig(testDir string, customizations func(*T
 		h.t.Logf("Warning: failed to remove existing analytics dir: %v", err)
 	}
 
-	// Configure logging
-	config.Logging.File = filepath.Join(testDir, "logs", "worker-go.log")
-
 	// Update content source to use test assets
 	for i := range config.ContentSources {
-		if config.ContentSources[i].Type == "file" {
-			config.ContentSources[i].BasePath = h.testAssetsDir
+		if sourceType, ok := config.ContentSources[i]["type"].(string); ok && sourceType == "file" {
+			config.ContentSources[i]["base_path"] = h.testAssetsDir
 		}
 	}
 
 	// Apply custom modifications
 	if customizations != nil {
-		customizations(&config)
+		customizations(config)
 	}
 
 	// Write isolated config
 	isolatedConfigPath := filepath.Join(testDir, "worker_config.yaml")
-	data, err = yaml.Marshal(&config)
+	data, err := yaml.Marshal(config)
 	if err != nil {
 		h.t.Fatalf("Failed to marshal config: %v", err)
 	}
