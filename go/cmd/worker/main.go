@@ -11,29 +11,29 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/BurntSushi/toml"
 	"github.com/kennethstott/go-doc-go/internal/embeddings"
 	"github.com/kennethstott/go-doc-go/internal/jobcontrol"
 	"github.com/kennethstott/go-doc-go/internal/worker"
-	"gopkg.in/yaml.v3"
 )
 
-// Config represents the YAML configuration structure
-type YAMLConfig struct {
+// Config represents the TOML configuration structure
+type Config struct {
 	Processing struct {
-		MaxWorkers int `yaml:"max_workers"`
+		MaxWorkers int `toml:"max_workers"`
 		JobControl struct {
-			Path              string `yaml:"path"`
-			ClaimTimeout      int    `yaml:"claim_timeout"`
-			HeartbeatInterval int    `yaml:"heartbeat_interval"`
-			MaxRetries        int    `yaml:"max_retries"`
-		} `yaml:"job_control"`
-	} `yaml:"processing"`
-	ContentSources []map[string]interface{} `yaml:"content_sources"`
+			Path              string `toml:"path"`
+			ClaimTimeout      int    `toml:"claim_timeout"`
+			HeartbeatInterval int    `toml:"heartbeat_interval"`
+			MaxRetries        int    `toml:"max_retries"`
+		} `toml:"job_control"`
+	} `toml:"processing"`
+	ContentSources []map[string]interface{} `toml:"content_sources"`
 	Analytics      struct {
-		Enabled bool                     `yaml:"enabled"`
-		Outputs []map[string]interface{} `yaml:"outputs"`
-	} `yaml:"analytics"`
-	Embedding *embeddings.Config `yaml:"embedding"`
+		Enabled bool                     `toml:"enabled"`
+		Outputs []map[string]interface{} `toml:"outputs"`
+	} `toml:"analytics"`
+	Embedding *embeddings.Config `toml:"embedding"`
 }
 
 func main() {
@@ -88,7 +88,7 @@ func main() {
 	if configPath == "" {
 		configPath = os.Getenv("GO_DOC_GO_CONFIG_PATH")
 		if configPath == "" {
-			configPath = "./config.yaml"
+			configPath = "./config.toml"
 		}
 	}
 
@@ -255,17 +255,17 @@ func spawnInstances(numInstances int, originalArgs []string) {
 	log.Printf("========================================")
 }
 
-func loadConfig(path string) (*YAMLConfig, error) {
+func loadConfig(path string) (*Config, error) {
 	// Read file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse YAML
-	var config YAMLConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse YAML: %w", err)
+	// Parse TOML
+	var config Config
+	if err := toml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse TOML: %w", err)
 	}
 
 	// Debug: Log embedding config

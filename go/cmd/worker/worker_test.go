@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -12,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/BurntSushi/toml"
 )
 
 // TestHelper provides utility functions for worker tests
@@ -40,13 +41,13 @@ func NewTestHelper(t *testing.T) *TestHelper {
 		workerBinary:   filepath.Join(projectRoot, "bin", "goworker"),
 		testOutputDir:  filepath.Join(projectRoot, "tests", "test_output", "worker_cli_test_go"),
 		testAssetsDir:  filepath.Join(projectRoot, "tests", "assets"),
-		baseConfigPath: filepath.Join(projectRoot, "tests", "config.sqlite.yaml"),
+		baseConfigPath: filepath.Join(projectRoot, "tests", "config.sqlite.toml"),
 	}
 }
 
 // SetupTestDir creates and returns a clean test directory
 func (h *TestHelper) SetupTestDir() string {
-	// Remove existing test directory
+	// Remove the existing test directory
 	if err := os.RemoveAll(h.testOutputDir); err != nil {
 		h.t.Logf("Warning: failed to remove existing test dir: %v", err)
 	}
@@ -73,7 +74,7 @@ func (h *TestHelper) SetupTestDir() string {
 }
 
 // CreateIsolatedConfig creates a test-specific configuration
-func (h *TestHelper) CreateIsolatedConfig(testDir string, customizations func(*YAMLConfig)) string {
+func (h *TestHelper) CreateIsolatedConfig(testDir string, customizations func(*Config)) string {
 	// Use existing loadConfig function from main.go
 	config, err := loadConfig(h.baseConfigPath)
 	if err != nil {
@@ -113,13 +114,15 @@ func (h *TestHelper) CreateIsolatedConfig(testDir string, customizations func(*Y
 	}
 
 	// Write isolated config
-	isolatedConfigPath := filepath.Join(testDir, "worker_config.yaml")
-	data, err := yaml.Marshal(config)
-	if err != nil {
+	isolatedConfigPath := filepath.Join(testDir, "worker_config.toml")
+
+	var buf bytes.Buffer
+	encoder := toml.NewEncoder(&buf)
+	if err := encoder.Encode(config); err != nil {
 		h.t.Fatalf("Failed to marshal config: %v", err)
 	}
 
-	if err := os.WriteFile(isolatedConfigPath, data, 0644); err != nil {
+	if err := os.WriteFile(isolatedConfigPath, buf.Bytes(), 0644); err != nil {
 		h.t.Fatalf("Failed to write isolated config: %v", err)
 	}
 

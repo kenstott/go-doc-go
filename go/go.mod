@@ -5,6 +5,7 @@ go 1.24.1
 toolchain go1.24.6
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/antchfx/xmlquery v1.4.4
 	github.com/apache/arrow/go/v18 v18.0.0-20241007013041-ab95a4d25142
