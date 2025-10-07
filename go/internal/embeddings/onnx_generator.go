@@ -20,11 +20,9 @@ type SessionWrapper struct {
 	session            *ort.AdvancedSession
 	inputTensor        *ort.Tensor[int64]
 	maskTensor         *ort.Tensor[int64]
-	tokenTypeTensor    *ort.Tensor[int64]
 	outputTensor       *ort.Tensor[float32]
 	inputData          []int64
 	maskData           []int64
-	tokenTypeData      []int64
 	batchSize          int64
 	seqLength          int64
 }
@@ -253,7 +251,6 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		// Pre-allocate tensors with FIXED shapes
 		inputData := make([]int64, fixedBatchSize*fixedSeqLength)
 		maskData := make([]int64, fixedBatchSize*fixedSeqLength)
-		tokenTypeData := make([]int64, fixedBatchSize*fixedSeqLength)
 
 		inputTensor, err := ort.NewTensor(ort.NewShape(fixedBatchSize, fixedSeqLength), inputData)
 		if err != nil {
@@ -268,38 +265,29 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 			return nil, fmt.Errorf("failed to create mask tensor: %w", err)
 		}
 
-		tokenTypeTensor, err := ort.NewTensor(ort.NewShape(fixedBatchSize, fixedSeqLength), tokenTypeData)
-		if err != nil {
-			inputTensor.Destroy()
-			maskTensor.Destroy()
-			sessionOptions.Destroy()
-			return nil, fmt.Errorf("failed to create token type tensor: %w", err)
-		}
-
 		outputShape := ort.NewShape(fixedBatchSize, fixedSeqLength, int64(embeddingDimension))
 		outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
 		if err != nil {
 			inputTensor.Destroy()
 			maskTensor.Destroy()
-			tokenTypeTensor.Destroy()
 			sessionOptions.Destroy()
 			return nil, fmt.Errorf("failed to create output tensor: %w", err)
 		}
 
 		// Create the session ONCE with these fixed tensors
 		// This is where CoreML initialization happens - very expensive!
+		// Note: Most sentence-transformers models only need input_ids and attention_mask
 		session, err := ort.NewAdvancedSession(
 			modelPath,
-			[]string{"input_ids", "attention_mask", "token_type_ids"},
+			[]string{"input_ids", "attention_mask"},
 			[]string{"last_hidden_state"},
-			[]ort.Value{inputTensor, maskTensor, tokenTypeTensor},
+			[]ort.Value{inputTensor, maskTensor},
 			[]ort.Value{outputTensor},
 			sessionOptions,
 		)
 		if err != nil {
 			inputTensor.Destroy()
 			maskTensor.Destroy()
-			tokenTypeTensor.Destroy()
 			outputTensor.Destroy()
 			sessionOptions.Destroy()
 			return nil, fmt.Errorf("failed to create ONNX session: %w", err)
@@ -310,16 +298,14 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		}
 
 		wrapper := &SessionWrapper{
-			session:         session,
-			inputTensor:     inputTensor,
-			maskTensor:      maskTensor,
-			tokenTypeTensor: tokenTypeTensor,
-			outputTensor:    outputTensor,
-			inputData:       inputData,
-			maskData:        maskData,
-			tokenTypeData:   tokenTypeData,
-			batchSize:       fixedBatchSize,
-			seqLength:       fixedSeqLength,
+			session:      session,
+			inputTensor:  inputTensor,
+			maskTensor:   maskTensor,
+			outputTensor: outputTensor,
+			inputData:    inputData,
+			maskData:     maskData,
+			batchSize:    fixedBatchSize,
+			seqLength:    fixedSeqLength,
 		}
 
 		sessionPool <- wrapper
@@ -386,14 +372,6 @@ func (g *OnnxEmbeddingGenerator) Generate(text string) ([]float64, error) {
 	}
 	defer maskTensor.Destroy()
 
-	// Create token_type_ids (all zeros for single sentence)
-	tokenTypeIDs := make([]int64, len(inputIDs))
-	tokenTypeTensor, err := ort.NewTensor(ort.NewShape(1, seqLen), tokenTypeIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token type tensor: %w", err)
-	}
-	defer tokenTypeTensor.Destroy()
-
 	// Create output tensor (pre-allocated)
 	// Output shape: [batch_size, sequence_length, hidden_size] = [1, seqLen, dimensions]
 	outputShape := ort.NewShape(1, seqLen, int64(g.dimensions))
@@ -417,11 +395,12 @@ func (g *OnnxEmbeddingGenerator) Generate(text string) ([]float64, error) {
 
 	// Create session - each session is independent, no mutex needed
 	// Sessions are created per-call for thread safety (no shared state)
+	// Note: Most sentence-transformers models only need input_ids and attention_mask
 	session, err := ort.NewAdvancedSession(
 		g.modelPath,
-		[]string{"input_ids", "attention_mask", "token_type_ids"},
+		[]string{"input_ids", "attention_mask"},
 		[]string{"last_hidden_state"},
-		[]ort.Value{inputTensor, maskTensor, tokenTypeTensor},
+		[]ort.Value{inputTensor, maskTensor},
 		[]ort.Value{outputTensor},
 		sessionOptions,
 	)
@@ -528,7 +507,6 @@ func (g *OnnxEmbeddingGenerator) generateBatchSingle(texts []string) ([][]float6
 		for j := 0; j < int(wrapper.seqLength); j++ {
 			wrapper.inputData[offset+j] = g.tokenizer.padToken
 			wrapper.maskData[offset+j] = 0
-			wrapper.tokenTypeData[offset+j] = 0
 		}
 
 		// Copy actual tokens
@@ -597,9 +575,6 @@ func (g *OnnxEmbeddingGenerator) Close() error {
 		}
 		if wrapper.maskTensor != nil {
 			wrapper.maskTensor.Destroy()
-		}
-		if wrapper.tokenTypeTensor != nil {
-			wrapper.tokenTypeTensor.Destroy()
 		}
 		if wrapper.outputTensor != nil {
 			wrapper.outputTensor.Destroy()

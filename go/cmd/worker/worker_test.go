@@ -236,6 +236,10 @@ func TestWorkerProcessDocuments(t *testing.T) {
 
 	output := stdout + stderr
 
+	// Print full worker output for debugging
+	t.Logf("Worker stdout:\n%s", stdout)
+	t.Logf("Worker stderr:\n%s", stderr)
+
 	// Check for success indicators
 	successIndicators := []string{
 		"Starting worker",

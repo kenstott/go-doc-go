@@ -5,13 +5,13 @@ This test verifies that the worker CLI can successfully process documents
 using proper distributed work queue architecture with leader election.
 """
 
-import pytest
-import subprocess
 import os
-import sqlite3
 import shutil
-import time
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 class TestWorkerCLI:
@@ -20,7 +20,10 @@ class TestWorkerCLI:
     @pytest.fixture
     def test_config_path(self):
         """Path to the test configuration file."""
-        return Path(__file__).parent / "config.sqlite.yaml"
+        if os.getenv('USE_GO_MODULES') == 'true':
+            return Path(__file__).parent / "config.sqlite.toml"
+        else:
+            return Path(__file__).parent / "config.sqlite.yaml"
 
     @pytest.fixture
     def temp_test_dir(self):
@@ -47,9 +50,17 @@ class TestWorkerCLI:
         """Create an isolated config with temp paths for worker testing."""
         import yaml
 
-        # Read the base test config
-        with open(test_config_path, 'r') as f:
-            config = yaml.safe_load(f)
+        # Read the base test config (handle both YAML and TOML)
+        if str(test_config_path).endswith('.toml'):
+            try:
+                import tomllib  # Python 3.11+
+            except ImportError:
+                import tomli as tomllib  # Python < 3.11
+            with open(test_config_path, 'rb') as f:
+                config = tomllib.load(f)
+        else:
+            with open(test_config_path, 'r') as f:
+                config = yaml.safe_load(f)
 
         # New worker architecture doesn't need storage section - uses job control + analytics only
 
@@ -89,10 +100,16 @@ class TestWorkerCLI:
         assets_dir = Path(__file__).parent / "assets"
         config['content_sources'][0]['base_path'] = str(assets_dir)
 
-        # Write isolated config
-        isolated_config_path = temp_test_dir / "worker_config.yaml"
-        with open(isolated_config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False)
+        # Write isolated config (TOML for Go worker, YAML for Python worker)
+        if os.getenv('USE_GO_MODULES') == 'true':
+            import tomli_w
+            isolated_config_path = temp_test_dir / "worker_config.toml"
+            with open(isolated_config_path, 'wb') as f:
+                tomli_w.dump(config, f)
+        else:
+            isolated_config_path = temp_test_dir / "worker_config.yaml"
+            with open(isolated_config_path, 'w') as f:
+                yaml.dump(config, f, default_flow_style=False)
 
         return isolated_config_path
 
@@ -100,7 +117,7 @@ class TestWorkerCLI:
         """Test that the worker CLI can validate the configuration."""
         # Worker CLI doesn't have --validate-only, but we can check if it starts properly
         cmd = [
-            "python", "-m", "go_doc_go.cli.worker",
+            sys.executable, "-m", "go_doc_go.cli.worker",
             "--config", str(isolated_config),
             "--max-documents", "1"  # Process just 1 document to test quickly
         ]
@@ -135,16 +152,26 @@ class TestWorkerCLI:
     def test_worker_cli_process_documents(self, isolated_config, temp_test_dir):
         """Test that the worker CLI can process documents using work queue."""
         cmd = [
-            "python", "-m", "go_doc_go.cli.worker",
+            sys.executable, "-m", "go_doc_go.cli.worker",
             "--config", str(isolated_config),
             "--max-documents", "5000"
         ]
+
+        # Set up environment with ONNX Runtime path for Go worker
+        test_env = {**os.environ, "PYTHONPATH": "src"}
+
+        # Find ONNX Runtime library in Python venv for Go worker (only if not already set)
+        if os.getenv('USE_GO_MODULES') == 'true' and 'ONNXRUNTIME_SHARED_LIBRARY_PATH' not in test_env:
+            venv_base = Path(__file__).parent.parent / ".venv"
+            onnx_lib = venv_base / "lib" / "python3.12" / "site-packages" / "onnxruntime" / "capi" / "libonnxruntime.1.23.0.dylib"
+            if onnx_lib.exists():
+                test_env["ONNXRUNTIME_SHARED_LIBRARY_PATH"] = str(onnx_lib)
 
         try:
             result = subprocess.run(
                 cmd,
                 cwd=Path(__file__).parent.parent,
-                env={**os.environ, "PYTHONPATH": "src"},
+                env=test_env,
                 capture_output=True,
                 text=True,
                 timeout=390
@@ -346,7 +373,6 @@ class TestWorkerCLI:
     def test_multi_worker_coordination_with_parquet_validation(self, isolated_config, temp_test_dir):
         """Test multi-worker coordination and validate Parquet file generation."""
         import subprocess
-        import time
         import concurrent.futures
         from pathlib import Path
 
@@ -507,7 +533,6 @@ class TestWorkerCLI:
         import threading
         import shutil
         import yaml
-        import sqlite3
         from pathlib import Path
         from datetime import datetime
 
@@ -731,7 +756,6 @@ class TestWorkerCLI:
         Test searching for elements after document processing.
         Generates minimal data if needed.
         """
-        import yaml
         import json
         import subprocess
         from pathlib import Path

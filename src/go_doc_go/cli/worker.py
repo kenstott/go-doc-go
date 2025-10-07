@@ -723,6 +723,7 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, instan
     Environment Variables:
       GO_DOC_GO_CONFIG_PATH    Path to configuration file (default: ./config.yaml)
       NUM_INSTANCES            Number of worker processes to spawn (default: 1)
+      NUM_WORKERS              Number of concurrent goroutine workers (Go worker only, default: 1)
       USE_GO_MODULES           Set to 'true' to use Go worker instead of Python
     """
     # Get instances from environment variable if not specified
@@ -740,8 +741,10 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, instan
         # Find the Go worker binary
         project_root = Path(__file__).parent.parent.parent.parent
         go_worker_paths = [
-            project_root / "bin" / "goworker",
-            project_root / "go" / "bin" / "goworker",
+            project_root / "bin" / "worker",
+            project_root / "go" / "bin" / "worker",
+            project_root / "bin" / "goworker",  # Legacy name
+            project_root / "go" / "bin" / "goworker",  # Legacy name
         ]
 
         go_worker = None
@@ -752,7 +755,7 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, instan
 
         if not go_worker:
             click.echo("Error: Go worker binary not found. Please build it with:", err=True)
-            click.echo("  cd go && go build -o ../bin/goworker ./cmd/worker", err=True)
+            click.echo("  cd go && go build -o bin/worker ./cmd/worker", err=True)
             sys.exit(1)
 
         # Build command arguments
@@ -767,8 +770,19 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, instan
         if max_documents:
             cmd.extend(["--max-documents", str(max_documents)])
 
+        # Pass instances to Go worker (already read from env at line 730)
         if instances and instances > 1:
             cmd.extend(["--instances", str(instances)])
+
+        # Check for NUM_WORKERS environment variable (Go-specific concurrency setting)
+        num_workers = os.environ.get('NUM_WORKERS')
+        if num_workers:
+            try:
+                workers_int = int(num_workers)
+                if workers_int > 0:
+                    cmd.extend(["--workers", str(workers_int)])
+            except ValueError:
+                click.echo(f"Warning: Invalid NUM_WORKERS value '{num_workers}', ignoring", err=True)
 
         # Set log level via environment (Go uses standard logging)
         env = os.environ.copy()
@@ -793,9 +807,48 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, instan
     if instances and instances > 1:
         import subprocess
         import time
+        import signal
+        import atexit
 
         click.echo(f"Starting {instances} independent Python worker processes...")
         processes = []
+
+        def cleanup_processes():
+            """Cleanup function to terminate all child processes"""
+            if processes:
+                click.echo("\nShutting down worker processes...")
+                # First try graceful termination
+                for proc in processes:
+                    try:
+                        if proc.poll() is None:  # Still running
+                            proc.terminate()
+                    except:
+                        pass
+
+                # Wait briefly for graceful shutdown
+                time.sleep(2)
+
+                # Force kill any that are still running
+                for proc in processes:
+                    try:
+                        if proc.poll() is None:  # Still running
+                            proc.kill()
+                    except:
+                        pass
+
+                click.echo("All worker processes stopped")
+
+        def signal_handler(signum, frame):
+            """Handle termination signals"""
+            cleanup_processes()
+            sys.exit(0)
+
+        # Register cleanup on normal exit
+        atexit.register(cleanup_processes)
+
+        # Register signal handlers for graceful shutdown
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
 
         try:
             for i in range(instances):
@@ -835,29 +888,13 @@ def main(config, worker_id, log_level, max_documents, discovery_interval, instan
                     if proc.poll() is not None:
                         click.echo(f"Worker process {i+1} exited with code {proc.returncode}")
 
-        except KeyboardInterrupt:
-            click.echo("\nShutting down worker processes...")
-            for proc in processes:
-                proc.terminate()
-
-            # Wait for graceful shutdown
-            time.sleep(2)
-
-            # Force kill if still running
-            for proc in processes:
-                if proc.poll() is None:
-                    proc.kill()
-
-            click.echo("All worker processes stopped")
-            sys.exit(0)
+        except (KeyboardInterrupt, SystemExit):
+            # cleanup_processes will be called via atexit
+            pass
 
         except Exception as e:
             click.echo(f"Error managing worker processes: {e}", err=True)
-            for proc in processes:
-                try:
-                    proc.kill()
-                except:
-                    pass
+            cleanup_processes()
             sys.exit(1)
 
     # Original Python worker implementation (single process)
