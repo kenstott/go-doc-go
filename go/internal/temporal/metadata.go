@@ -24,6 +24,8 @@ func GenerateTemporalMetadata(value string) map[string]interface{} {
 		return generateTimeMetadata(value)
 	case TemporalTypeTimeRange:
 		return generateTimeRangeMetadata(value)
+	case TemporalTypeMonthYear:
+		return generateMonthYearMetadata(value)
 	default:
 		return nil
 	}
@@ -193,6 +195,81 @@ func generateTimeRangeMetadata(rangeStr string) map[string]interface{} {
 		"temporal_type": "time_range",
 		"raw_value":     rangeStr,
 	}
+}
+
+// generateMonthYearMetadata generates metadata for a month-year value
+func generateMonthYearMetadata(monthYearStr string) map[string]interface{} {
+	// Normalize to get standardized format
+	normalized := normalizeMonthYear(monthYearStr)
+	parts := strings.Fields(normalized)
+
+	if len(parts) != 2 {
+		log.Printf("Failed to parse month-year %s", monthYearStr)
+		return map[string]interface{}{
+			"temporal_type": "month_year",
+			"raw_value":     monthYearStr,
+		}
+	}
+
+	monthAbbr := parts[0]
+	yearStr := parts[1]
+
+	var year int
+	if _, err := fmt.Sscanf(yearStr, "%d", &year); err != nil {
+		log.Printf("Failed to parse year from %s: %v", yearStr, err)
+		return map[string]interface{}{
+			"temporal_type": "month_year",
+			"raw_value":     monthYearStr,
+		}
+	}
+
+	monthMap := map[string]int{
+		"Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+		"Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+	}
+
+	month, ok := monthMap[monthAbbr]
+	if !ok {
+		log.Printf("Unknown month abbreviation: %s", monthAbbr)
+		return map[string]interface{}{
+			"temporal_type": "month_year",
+			"raw_value":     monthYearStr,
+		}
+	}
+
+	// Create first and last day of the month
+	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, -1)
+
+	quarter := (month-1)/3 + 1
+	decade := fmt.Sprintf("%ds", (year/10)*10)
+
+	monthNames := []string{"", "January", "February", "March", "April", "May", "June",
+		"July", "August", "September", "October", "November", "December"}
+
+	metadata := map[string]interface{}{
+		"temporal_type": "month_year",
+		"raw_value":     monthYearStr,
+		"normalized":    normalized,
+		"year":          year,
+		"month":         month,
+		"month_name":    monthNames[month],
+		"month_abbr":    monthAbbr,
+		"quarter":       quarter,
+		"quarter_label": fmt.Sprintf("Q%d", quarter),
+		"decade":        decade,
+		"start_date":    startDate.Format("2006-01-02"),
+		"end_date":      endDate.Format("2006-01-02"),
+		"days_in_month": endDate.Day(),
+		"iso_format":    fmt.Sprintf("%04d-%02d", year, month),
+	}
+
+	// Add season
+	if season := getSeason(month); season != "" {
+		metadata["season"] = season
+	}
+
+	return metadata
 }
 
 // getSeason returns the season for a month (Northern hemisphere)

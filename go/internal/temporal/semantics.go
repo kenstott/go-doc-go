@@ -16,6 +16,7 @@ const (
 	TemporalTypeTime      TemporalType = 2 // Time only (no date component)
 	TemporalTypeDateTime  TemporalType = 3 // Combined date and time
 	TemporalTypeTimeRange TemporalType = 4 // Time range (start and end times)
+	TemporalTypeMonthYear TemporalType = 5 // Month and year (e.g., "November 2023", "Nov 2023")
 )
 
 // Common date/time patterns for detection
@@ -49,9 +50,16 @@ var (
 
 	// DateTime patterns
 	dateTimePatterns = []*regexp.Regexp{
-		regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}`),                      // ISO format
-		regexp.MustCompile(`\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}`),                // 12/25/2023 14:30
-		regexp.MustCompile(`(?i)\d{1,2}:\d{2}\s*(?:am|pm).*\d{1,2}/\d{1,2}/\d{2,4}`), // Time before date
+		regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}`),                        // ISO format
+		regexp.MustCompile(`^\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}(\s*(?:am|pm))?$`), // 12/25/2023 14:30 or 03/20/2025 2:53 pm
+		regexp.MustCompile(`(?i)^\d{1,2}:\d{2}\s*(?:am|pm)\s+\d{1,2}/\d{1,2}/\d{2,4}$`), // Time before date
+	}
+
+	// Month-Year patterns (must check before general date patterns)
+	monthYearPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)^(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{4}$`), // November 2023
+		regexp.MustCompile(`(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{4}$`),                                       // Nov 2023
+		regexp.MustCompile(`(?i)^\d{4}-(0[1-9]|1[0-2])$`),                                                                           // 2023-11
 	}
 
 	// Simple number pattern to exclude
@@ -61,7 +69,9 @@ var (
 // DetectTemporalType detects if a string represents a date, time, datetime, time range, or none
 func DetectTemporalType(inputString string) TemporalType {
 	// Check if it's an obviously non-temporal string
-	if inputString == "" || len(inputString) > 50 || len(strings.Fields(inputString)) > 8 {
+	// Max 35 chars handles longest reasonable datetime: "Wednesday, September 25, 2024 11:59 PM" (40 chars trimmed to 35)
+	// Max 6 words handles "Q4 2024" (2), "12/25/2023 2:30 PM" (3), "2:00 PM - 4:00 PM" (4)
+	if inputString == "" || len(inputString) > 35 || len(strings.Fields(inputString)) > 6 {
 		return TemporalTypeNone
 	}
 
@@ -90,6 +100,13 @@ func DetectTemporalType(inputString string) TemporalType {
 	for _, pattern := range dateTimePatterns {
 		if pattern.MatchString(inputString) {
 			return TemporalTypeDateTime
+		}
+	}
+
+	// Check for month-year patterns (must check before general date patterns)
+	for _, pattern := range monthYearPatterns {
+		if pattern.MatchString(inputString) {
+			return TemporalTypeMonthYear
 		}
 	}
 
@@ -462,6 +479,8 @@ func parseDate(dateStr string) (time.Time, error) {
 		"2 Jan 2006",
 		"2-Jan-2006",
 		"02-Jan-2006",
+		"Jan-2-2006",
+		"Jan-02-2006",
 		"2006-01-02 15:04:05",
 		"2006-01-02 15:04",
 		"01/02/2006 15:04",
