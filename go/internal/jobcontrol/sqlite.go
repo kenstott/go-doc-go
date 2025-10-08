@@ -213,11 +213,13 @@ func (jc *SQLiteJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, e
 	}
 
 	// Find and claim next document
+	// Use RANDOM() to reduce contention between concurrent workers
+	// Each worker gets a different random document, preventing thundering herd
 	query := `
 		SELECT doc_id, source, metadata, retry_count, created_at
 		FROM document_queue
 		WHERE status = 'pending' AND retry_count < ?
-		ORDER BY created_at ASC
+		ORDER BY RANDOM()
 		LIMIT 1
 	`
 

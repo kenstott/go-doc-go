@@ -145,12 +145,15 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		modelConfig.ModelType, embeddingDimension, maxSeqLength)
 
 	// Fixed dimensions for session reuse
-	// Use batch_size=1 for optimal CoreML performance (batching at ONNX level slower than parallel single items)
-	const fixedBatchSize = 1
+	// Batch size can be configured for performance tuning (default: 32 for good throughput)
+	fixedBatchSize := int64(config.BatchSize)
+	if fixedBatchSize == 0 {
+		fixedBatchSize = 32 // Default to 32 for efficient batch processing
+	}
 	fixedSeqLength := int64(maxSeqLength)
 
 	// Create session pool with pre-allocated sessions and tensors
-	// This is THE KEY to performance - sessions are expensive to create with CoreML
+	// Pool size should match expected concurrency level
 	poolSize := config.PoolSize
 	if poolSize == 0 {
 		poolSize = 4 // Default to 4 if not specified
@@ -172,10 +175,11 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 			// Log GPU setup only for first session to avoid spam
 			if runtime.GOOS == "darwin" {
 				// macOS - use CoreML for Apple Silicon GPU/Neural Engine
+				// Since we're using FIXED batch sizes, we REQUIRE static input shapes
 				coreMLOptions := map[string]string{
 					"ModelFormat":                        "NeuralNetwork", // Use NeuralNetwork format for stability
 					"MLComputeUnits":                     "ALL",           // Enable all compute units (CPU, GPU, Neural Engine)
-					"RequireStaticInputShapes":           "0",             // Allow dynamic shapes (important for BERT)
+					"RequireStaticInputShapes":           "1",             // REQUIRE static shapes for CoreML (we use fixed batch_size=32)
 					"EnableOnSubgraphs":                  "0",             // Don't enable on subgraphs
 					"AllowLowPrecisionAccumulationOnGPU": "1",             // Enable low precision acceleration
 				}
@@ -184,7 +188,7 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 					log.Printf("WARNING: CoreML execution provider NOT available: %v", err)
 					log.Printf("INFO: Falling back to CPU execution provider (no GPU acceleration)")
 				} else {
-					log.Printf("SUCCESS: CoreML execution provider enabled with GPU/Neural Engine (MLComputeUnits=ALL)")
+					log.Printf("SUCCESS: CoreML execution provider enabled with GPU/Neural Engine (MLComputeUnits=ALL, StaticShapes=REQUIRED)")
 				}
 			} else if runtime.GOOS == "linux" {
 				// Linux - try CUDA for NVIDIA GPU acceleration
@@ -225,7 +229,7 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 				coreMLOptions := map[string]string{
 					"ModelFormat":                        "NeuralNetwork",
 					"MLComputeUnits":                     "ALL",
-					"RequireStaticInputShapes":           "0",
+					"RequireStaticInputShapes":           "1",             // REQUIRE static shapes
 					"EnableOnSubgraphs":                  "0",
 					"AllowLowPrecisionAccumulationOnGPU": "1",
 				}

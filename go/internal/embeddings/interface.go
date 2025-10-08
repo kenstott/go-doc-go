@@ -32,5 +32,6 @@ type Config struct {
 	SuccessorCount   int               `json:"successor_count" toml:"successor_count"`
 	CacheDir         string            `json:"cache_dir,omitempty" toml:"cache_dir,omitempty"`
 	PoolSize         int               `json:"pool_size,omitempty" toml:"pool_size,omitempty"` // ONNX session pool size (matches worker count)
+	BatchSize        int               `json:"batch_size,omitempty" toml:"batch_size,omitempty"` // ONNX batch size for inference (default: 32)
 	AdditionalConfig map[string]interface{} `json:"-" toml:"-"`
 }

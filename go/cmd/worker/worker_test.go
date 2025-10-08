@@ -28,17 +28,32 @@ type TestHelper struct {
 
 // NewTestHelper creates a new test helper
 func NewTestHelper(t *testing.T) *TestHelper {
-	// Get project root (3 levels up from go/cmd/worker)
+	// Get project root by looking for go.mod, then going up one level
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
-	projectRoot := filepath.Join(cwd, "..", "..", "..")
+
+	// Find the directory containing go.mod
+	goModDir := cwd
+	for {
+		if _, err := os.Stat(filepath.Join(goModDir, "go.mod")); err == nil {
+			break
+		}
+		parent := filepath.Dir(goModDir)
+		if parent == goModDir {
+			t.Fatalf("Could not find go.mod in directory tree")
+		}
+		goModDir = parent
+	}
+
+	// Project root is one level up from go.mod (which is in go/ subdirectory)
+	projectRoot := filepath.Dir(goModDir)
 
 	return &TestHelper{
 		t:              t,
 		projectRoot:    projectRoot,
-		workerBinary:   filepath.Join(projectRoot, "bin", "goworker"),
+		workerBinary:   filepath.Join(projectRoot, "bin", "worker"),
 		testOutputDir:  filepath.Join(projectRoot, "tests", "test_output", "worker_cli_test_go"),
 		testAssetsDir:  filepath.Join(projectRoot, "tests", "assets"),
 		baseConfigPath: filepath.Join(projectRoot, "tests", "config.sqlite.toml"),

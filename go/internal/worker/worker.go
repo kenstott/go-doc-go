@@ -27,12 +27,11 @@ import (
 type Worker struct {
 	workerID             string
 	numWorkers           int
-	batchClaimSize       int
 	jobControl           jobcontrol.JobControl
 	contentSources       map[string]contentsource.ContentSource
 	contentSourceConfigs map[string]map[string]interface{}
 	analyticsStorages    []analytics.Storage
-	embeddingService     *embeddings.Service
+	embeddingGenerator   embeddings.EmbeddingGenerator // Native ONNX generator (thread-safe)
 	contextualBuilder    *embeddings.ContextualTextBuilder
 	maxDocuments         int
 	documentsProcessed   int32 // atomic counter for goroutine safety
@@ -62,7 +61,6 @@ type Neo4jExportConfig struct {
 type Config struct {
 	WorkerID          string
 	NumWorkers        int // Number of concurrent goroutine workers (default: 1)
-	BatchClaimSize    int // Number of documents to claim at once (default: 5)
 	JobControlConfig  jobcontrol.Config
 	ContentSources    []map[string]interface{}
 	AnalyticsConfigs  []map[string]interface{}
@@ -70,13 +68,6 @@ type Config struct {
 	MaxDocuments      int
 	DiscoveryInterval int // seconds
 	Neo4jExportConfig *Neo4jExportConfig // Optional Neo4j export configuration
-}
-
-// ProcessResult represents the result of processing a document
-type ProcessResult struct {
-	DocID   string
-	Success bool
-	Error   string
 }
 
 // NewWorker creates a new document processing worker
@@ -115,27 +106,16 @@ func NewWorker(config Config) (*Worker, error) {
 		storages = append(storages, storage)
 	}
 
-	// Create embedding service if configured
-	var embeddingService *embeddings.Service
+	// Create embedding generator if configured (ONNX only)
+	var embeddingGenerator embeddings.EmbeddingGenerator
 	var contextualBuilder *embeddings.ContextualTextBuilder
 	if config.EmbeddingConfig != nil && config.EmbeddingConfig.Enabled {
-		// Create generator using factory (supports both Python shim and ONNX)
+		// Create ONNX generator (only supported provider in Go)
 		gen, err := embeddings.CreateEmbeddingGenerator(*config.EmbeddingConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create embedding generator: %w", err)
 		}
-
-		// ONNX provider uses direct generator access (thread-safe, parallel inference)
-		// Python shim uses Service wrapper (serialized access)
-		if config.EmbeddingConfig.Provider == "onnx" {
-			log.Println("Using native ONNX embedding generator (parallel inference enabled)")
-			// Bypass Service wrapper - ONNX sessions are thread-safe
-			embeddingService = embeddings.NewService(gen) // Still wrap for now for API compatibility
-		} else {
-			// Python shim needs serialized access through Service
-			embeddingService = embeddings.NewService(gen)
-			log.Println("Using Python shim embedding generator (serialized access)")
-		}
+		embeddingGenerator = gen
 
 		// Create contextual text builder if contextual mode enabled
 		if config.EmbeddingConfig.Contextual {
@@ -165,20 +145,15 @@ func NewWorker(config Config) (*Worker, error) {
 	if numWorkers == 0 {
 		numWorkers = 1
 	}
-	batchClaimSize := config.BatchClaimSize
-	if batchClaimSize == 0 {
-		batchClaimSize = 5
-	}
 
 	worker := &Worker{
 		workerID:             config.WorkerID,
 		numWorkers:           numWorkers,
-		batchClaimSize:       batchClaimSize,
 		jobControl:           jc,
 		contentSources:       sources,
 		contentSourceConfigs: sourceConfigs,
 		analyticsStorages:    storages,
-		embeddingService:     embeddingService,
+		embeddingGenerator:   embeddingGenerator,
 		contextualBuilder:    contextualBuilder,
 		maxDocuments:         config.MaxDocuments,
 		ctx:                  ctx,
@@ -189,8 +164,8 @@ func NewWorker(config Config) (*Worker, error) {
 	log.Printf("Initialized worker: %s", worker.workerID)
 	log.Printf("Content sources: %d", len(sources))
 	log.Printf("Analytics storages: %d", len(storages))
-	if embeddingService != nil {
-		log.Printf("Embeddings enabled: %s (dimensions: %d)", embeddingService.GetModelName(), embeddingService.GetDimensions())
+	if embeddingGenerator != nil {
+		log.Printf("Embeddings enabled (ONNX): %s (dimensions: %d)", embeddingGenerator.GetModelName(), embeddingGenerator.GetDimensions())
 	}
 	if config.Neo4jExportConfig != nil && config.Neo4jExportConfig.Enabled {
 		log.Printf("Neo4j export enabled (wait time: %d seconds)", config.Neo4jExportConfig.EmptyQueueWaitTime)
@@ -206,14 +181,6 @@ func (w *Worker) Run() error {
 
 	// Setup signal handlers
 	w.setupSignalHandlers()
-
-	// Start embedding service if configured
-	if w.embeddingService != nil {
-		if err := w.embeddingService.Start(); err != nil {
-			return fmt.Errorf("failed to start embedding service: %w", err)
-		}
-		defer w.embeddingService.Stop()
-	}
 
 	// Register worker
 	workerInfo := map[string]interface{}{
@@ -320,25 +287,13 @@ func (w *Worker) Run() error {
 
 // runWithPool runs the worker with a goroutine pool
 func (w *Worker) runWithPool() error {
-	log.Printf("Starting goroutine pool with %d workers, batch claim size: %d", w.numWorkers, w.batchClaimSize)
+	log.Printf("Starting worker pool with %d goroutines", w.numWorkers)
 
-	// Create channels
-	workChan := make(chan *jobcontrol.DocumentInfo, w.numWorkers*2)
-	resultChan := make(chan ProcessResult, w.numWorkers)
-
-	// Start worker goroutines
+	// Start worker goroutines - each claims and processes its own documents
 	for i := 0; i < w.numWorkers; i++ {
 		w.wg.Add(1)
-		go w.workerGoroutine(i, workChan, resultChan)
+		go w.independentWorkerGoroutine(i)
 	}
-
-	// Start document claimer goroutine
-	w.wg.Add(1)
-	go w.documentClaimerGoroutine(workChan)
-
-	// Start result handler goroutine
-	w.wg.Add(1)
-	go w.resultHandlerGoroutine(resultChan)
 
 	// Wait for all goroutines to complete
 	w.wg.Wait()
@@ -353,145 +308,72 @@ func (w *Worker) runWithPool() error {
 	return nil
 }
 
-// workerGoroutine processes documents from the work channel
-func (w *Worker) workerGoroutine(id int, workChan <-chan *jobcontrol.DocumentInfo, resultChan chan<- ProcessResult) {
+// independentWorkerGoroutine - each goroutine claims and processes its own documents
+func (w *Worker) independentWorkerGoroutine(id int) {
 	defer w.wg.Done()
 
 	log.Printf("Worker goroutine %d started", id)
 
-	for {
+	// Track last heartbeat time
+	lastHeartbeat := time.Now()
+	heartbeatInterval := 30 * time.Second
+
+	for w.running {
+		// Check document limit
+		if w.maxDocuments > 0 && atomic.LoadInt32(&w.documentsProcessed) >= int32(w.maxDocuments) {
+			log.Printf("Worker goroutine %d: reached max documents", id)
+			return
+		}
+
+		// Check context cancellation
 		select {
-		case docInfo := <-workChan:
-			if docInfo == nil {
-				log.Printf("Worker goroutine %d shutting down", id)
-				return
-			}
-
-			// Process document
-			success := w.processDocument(docInfo)
-
-			// Send result
-			resultChan <- ProcessResult{
-				DocID:   docInfo.DocID,
-				Success: success,
-			}
-
 		case <-w.ctx.Done():
 			log.Printf("Worker goroutine %d cancelled", id)
 			return
+		default:
 		}
-	}
-}
 
-// documentClaimerGoroutine claims documents in batches and sends to work channel
-func (w *Worker) documentClaimerGoroutine(workChan chan<- *jobcontrol.DocumentInfo) {
-	defer w.wg.Done()
-	defer close(workChan)
-
-	log.Printf("Document claimer started (batch size: %d)", w.batchClaimSize)
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Check document limit
-			if w.maxDocuments > 0 && atomic.LoadInt32(&w.documentsProcessed) >= int32(w.maxDocuments) {
-				log.Printf("Reached maximum document limit (%d)", w.maxDocuments)
-				// Trigger shutdown of all goroutines
-				w.running = false
-				w.cancel() // Cancel context to stop all goroutines
-				return
-			}
-
-			// Update worker heartbeat
+		// Update heartbeat periodically (only every 30 seconds, not on every iteration)
+		if time.Since(lastHeartbeat) > heartbeatInterval {
 			if err := w.jobControl.UpdateWorkerHeartbeat(w.workerID); err != nil {
-				log.Printf("Failed to update heartbeat: %v", err)
+				log.Printf("Worker goroutine %d: failed to update heartbeat: %v", id, err)
 			}
-
-			// Claim multiple documents at once
-			claimed := 0
-			for i := 0; i < w.batchClaimSize; i++ {
-				docInfo, err := w.jobControl.ClaimNextDocument(w.workerID)
-				if err != nil {
-					log.Printf("Failed to claim document: %v", err)
-					break
-				}
-				if docInfo == nil {
-					break // No more documents available
-				}
-
-				// Send to worker pool
-				workChan <- docInfo
-				claimed++
-			}
-
-			if claimed == 0 {
-				// No documents available, try to become leader if needed
-				if !w.isLeader && atomic.LoadInt32(&w.documentsProcessed) == 0 {
-					log.Println("No documents available to process")
-				}
-
-				if !w.isLeader {
-					leader, err := w.jobControl.GetCurrentLeader()
-					if err == nil && leader == nil {
-						workerInfo := map[string]interface{}{
-							"hostname":   getHostname(),
-							"pid":        os.Getpid(),
-							"started_at": time.Now().Format(time.RFC3339),
-						}
-						success, err := w.jobControl.ElectLeader(w.workerID, workerInfo)
-						if err == nil && success {
-							w.isLeader = true
-							log.Printf("Worker %s became leader", w.workerID)
-							go w.discoveryLoop()
-						}
-					}
-				}
-			}
-
-		case <-w.ctx.Done():
-			log.Println("Document claimer shutting down")
-			return
+			lastHeartbeat = time.Now()
 		}
 
-		if !w.running {
-			log.Println("Document claimer stopping")
-			return
+		// Claim next document
+		docInfo, err := w.jobControl.ClaimNextDocument(w.workerID)
+		if err != nil {
+			log.Printf("Worker goroutine %d: failed to claim document: %v", id, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		if docInfo == nil {
+			// No documents available - short sleep and retry
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		// Process document with timing
+		startTime := time.Now()
+		success := w.processDocument(docInfo)
+		processingTime := time.Since(startTime)
+
+		// Complete document
+		if success {
+			w.jobControl.CompleteDocument(docInfo.DocID, w.workerID, true, "")
+			count := atomic.AddInt32(&w.documentsProcessed, 1)
+			log.Printf("Worker goroutine %d completed document %s in %.2fs (%d total)", id, docInfo.DocID, processingTime.Seconds(), count)
+		} else {
+			w.jobControl.CompleteDocument(docInfo.DocID, w.workerID, false, "Processing failed")
+			log.Printf("Worker goroutine %d failed to process document %s after %.2fs", id, docInfo.DocID, processingTime.Seconds())
 		}
 	}
+
+	log.Printf("Worker goroutine %d stopped", id)
 }
 
-// resultHandlerGoroutine processes results from worker goroutines
-func (w *Worker) resultHandlerGoroutine(resultChan <-chan ProcessResult) {
-	defer w.wg.Done()
-
-	log.Println("Result handler started")
-
-	for {
-		select {
-		case result := <-resultChan:
-			if result.Success {
-				w.jobControl.CompleteDocument(result.DocID, w.workerID, true, "")
-				count := atomic.AddInt32(&w.documentsProcessed, 1)
-				log.Printf("Worker %s completed document %s (%d total)", w.workerID, result.DocID, count)
-			} else {
-				w.jobControl.CompleteDocument(result.DocID, w.workerID, false, result.Error)
-				log.Printf("Worker %s failed to process document %s: %s", w.workerID, result.DocID, result.Error)
-			}
-
-		case <-w.ctx.Done():
-			log.Println("Result handler shutting down")
-			return
-		}
-
-		if !w.running {
-			log.Println("Result handler stopping")
-			return
-		}
-	}
-}
 
 // processDocument processes a single document
 func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
@@ -634,7 +516,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 	// Generate embeddings if enabled
 	var embeddingMap map[string][]float64
 	var embeddingTextMap map[string]string // Track the text used for each embedding
-	if w.embeddingService != nil && len(parseResult.Elements) > 0 {
+	log.Printf("DEBUG: Embedding check - embeddingGenerator=%v, elements=%d", w.embeddingGenerator != nil, len(parseResult.Elements))
+	if w.embeddingGenerator != nil && len(parseResult.Elements) > 0 {
 		// Collect texts for batch embedding (with contextual text if enabled)
 		var texts []string
 		var elementIDs []string
@@ -683,8 +566,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 				batchTexts := texts[i:end]
 				batchIDs := elementIDs[i:end]
 
-				// Use embedding service (serialized access, thread-safe)
-				embeddingVectors, err := w.embeddingService.GenerateBatch(batchTexts)
+				// Generate embeddings using ONNX (thread-safe session pool enables parallel inference)
+				embeddingVectors, err := w.embeddingGenerator.GenerateBatch(batchTexts)
 				if err != nil {
 					log.Printf("Failed to generate embeddings for batch %d-%d: %v", i, end, err)
 					continue
@@ -1122,13 +1005,6 @@ func (w *Worker) Stop() {
 
 // Close closes the worker and releases resources
 func (w *Worker) Close() error {
-	// Stop embedding service
-	if w.embeddingService != nil {
-		if err := w.embeddingService.Stop(); err != nil {
-			log.Printf("Error stopping embedding service: %v", err)
-		}
-	}
-
 	for _, storage := range w.analyticsStorages {
 		if err := storage.Close(); err != nil {
 			log.Printf("Error closing analytics storage: %v", err)

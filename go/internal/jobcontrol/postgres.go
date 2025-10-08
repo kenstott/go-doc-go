@@ -191,13 +191,15 @@ func (jc *PostgreSQLJobControl) ClaimNextDocument(workerID string) (*DocumentInf
 	}
 
 	// Find and claim next document using FOR UPDATE SKIP LOCKED for better concurrency
+	// Use RANDOM() to reduce contention between concurrent workers
+	// Each worker gets a different random document, preventing thundering herd
 	query := `
 		UPDATE document_queue
 		SET status = 'processing', claimed_by = $1, claimed_at = $2
 		WHERE doc_id = (
 			SELECT doc_id FROM document_queue
 			WHERE status = 'pending' AND retry_count < $3
-			ORDER BY created_at ASC
+			ORDER BY RANDOM()
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
