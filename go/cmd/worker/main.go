@@ -246,7 +246,9 @@ func spawnInstances(numInstances int, originalArgs []string) {
 	var wg sync.WaitGroup
 	processes := make([]*exec.Cmd, numInstances)
 
+	log.Printf("DEBUG: About to start spawn loop with numInstances=%d", numInstances)
 	for i := 0; i < numInstances; i++ {
+		log.Printf("DEBUG: Spawn loop iteration %d (starting instance %d/%d)", i, i+1, numInstances)
 		wg.Add(1)
 
 		// Create command with same args

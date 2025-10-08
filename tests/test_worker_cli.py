@@ -176,18 +176,15 @@ class TestWorkerCLI:
                 text=True,
                 timeout=390
             )
-            # Print output for debugging
-            print("\n=== WORKER STDOUT ===")
-            print(result.stdout)
-            print("\n=== WORKER STDERR ===")
-            print(result.stderr)
-            print("=== END OUTPUT ===\n")
-
             # If a worker completed within timeout, check the return code
             assert result.returncode == 0, f"Worker failed: {result.stderr}"
         except subprocess.TimeoutExpired as e:
             # Timeout is expected for workers - check if it started and ran properly
             output = (e.stdout or b'').decode('utf-8') + (e.stderr or b'').decode('utf-8')
+
+            # Print output for debugging
+            print("\n=== WORKER STDOUT = STDERR ===")
+            print(output)
 
             success_indicators = [
                 "Starting worker",
