@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
@@ -91,7 +92,9 @@ type HTMLParser struct {
 	MaxContentPreview int
 	ExtractDates      bool
 	EnableCaching     bool
-	StoreFullContent  bool // If true, populate Content field with full (untruncated) text
+	StoreFullContent  bool           // If true, populate Content field with full (untruncated) text
+	documentCache     map[string]string // Cache of HTML content by source URL
+	cacheMu           sync.RWMutex      // Mutex for thread-safe cache access
 }
 
 // NewHTMLParser creates a new HTML parser instance
@@ -101,6 +104,7 @@ func NewHTMLParser() *HTMLParser {
 		ExtractDates:      true,
 		StoreFullContent:  false, // Default: don't store full content
 		EnableCaching:     true,
+		documentCache:     make(map[string]string),
 	}
 }
 
@@ -116,6 +120,11 @@ func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, err
 	default:
 		return nil, fmt.Errorf("unsupported content type: %T", content)
 	}
+
+	// Cache the HTML content for later resolution (contextual embeddings)
+	p.cacheMu.Lock()
+	p.documentCache[docID] = htmlContent
+	p.cacheMu.Unlock()
 
 	// Create request structure for compatibility
 	request := ParseRequest{
@@ -751,7 +760,15 @@ func (p *HTMLParser) SupportsLocation(contentLocation map[string]interface{}) bo
 		return false
 	}
 
-	// Check if file exists
+	// Support both URLs and local files
+	// For URLs, check if it looks like HTML (has CSS selector)
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		// CSS selectors are HTML-specific, so presence of selector indicates HTML
+		_, hasSelector := contentLocation["selector"]
+		return hasSelector
+	}
+
+	// For local files, check if file exists and is HTML
 	if _, err := os.Stat(source); os.IsNotExist(err) {
 		return false
 	}
@@ -768,7 +785,7 @@ func (p *HTMLParser) resolveElementSelection(contentLocation map[string]interfac
 		return nil, fmt.Errorf("content_location is nil")
 	}
 
-	// Get source file path
+	// Get source file path or URL
 	source, ok := contentLocation["source"].(string)
 	if !ok || source == "" {
 		return nil, fmt.Errorf("missing or invalid 'source' field in content_location")
@@ -780,14 +797,30 @@ func (p *HTMLParser) resolveElementSelection(contentLocation map[string]interfac
 		return nil, fmt.Errorf("missing or invalid 'selector' field in content_location")
 	}
 
-	// Read source file
-	fileContent, err := os.ReadFile(source)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read source file %s: %w", source, err)
+	var htmlContent string
+
+	// Check if source is a URL (web content)
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		// Try to get from cache
+		p.cacheMu.RLock()
+		cached, found := p.documentCache[source]
+		p.cacheMu.RUnlock()
+
+		if !found {
+			return nil, fmt.Errorf("HTML content not cached for URL: %s", source)
+		}
+		htmlContent = cached
+	} else {
+		// Local file - read from disk
+		fileContent, err := os.ReadFile(source)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read source file %s: %w", source, err)
+		}
+		htmlContent = string(fileContent)
 	}
 
 	// Parse HTML
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(fileContent)))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlContent))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}
