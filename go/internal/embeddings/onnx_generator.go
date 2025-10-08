@@ -566,6 +566,11 @@ func (g *OnnxEmbeddingGenerator) GetModelName() string {
 	return g.config.Model
 }
 
+// GetBatchSize returns the configured batch size for this generator
+func (g *OnnxEmbeddingGenerator) GetBatchSize() int {
+	return int(g.fixedBatchSize)
+}
+
 // Close releases resources
 func (g *OnnxEmbeddingGenerator) Close() error {
 	// Clean up session pool

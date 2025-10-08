@@ -14,6 +14,9 @@ type EmbeddingGenerator interface {
 	// GetModelName returns the name of the embedding model
 	GetModelName() string
 
+	// GetBatchSize returns the configured batch size for this generator
+	GetBatchSize() int
+
 	// Close closes the embedding generator and releases resources
 	Close() error
 }

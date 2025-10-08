@@ -23,6 +23,23 @@ import (
 	"golang.org/x/net/html"
 )
 
+// EmbeddingBatchItem represents a single embedding request
+type EmbeddingBatchItem struct {
+	DocID     string
+	ElementID string
+	Text      string
+}
+
+// EmbeddingBatchAggregator collects embeddings across documents for efficient batching
+type EmbeddingBatchAggregator struct {
+	mu            sync.Mutex
+	items         []EmbeddingBatchItem
+	itemIndex     map[string]int // ElementID -> index in items
+	maxBatchSize  int
+	generator     embeddings.EmbeddingGenerator
+	flushCallback func(map[string][]float64) // Called when batch is flushed
+}
+
 // Worker represents a document processing worker
 type Worker struct {
 	workerID             string
@@ -33,6 +50,7 @@ type Worker struct {
 	analyticsStorages    []analytics.Storage
 	embeddingGenerator   embeddings.EmbeddingGenerator // Native ONNX generator (thread-safe)
 	contextualBuilder    *embeddings.ContextualTextBuilder
+	embeddingAggregator  *EmbeddingBatchAggregator      // Cross-document batch aggregator
 	maxDocuments         int
 	documentsProcessed   int32 // atomic counter for goroutine safety
 	isLeader             bool
@@ -55,6 +73,87 @@ type Neo4jExportConfig struct {
 	SourcePath         string // Path to source analytics
 	Connection         map[string]interface{}
 	BatchSize          int
+}
+
+// NewEmbeddingBatchAggregator creates a new batch aggregator
+func NewEmbeddingBatchAggregator(maxBatchSize int, generator embeddings.EmbeddingGenerator) *EmbeddingBatchAggregator {
+	return &EmbeddingBatchAggregator{
+		items:        make([]EmbeddingBatchItem, 0, maxBatchSize),
+		itemIndex:    make(map[string]int),
+		maxBatchSize: maxBatchSize,
+		generator:    generator,
+	}
+}
+
+// Add adds an embedding request to the batch
+func (a *EmbeddingBatchAggregator) Add(docID, elementID, text string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Add to batch
+	a.items = append(a.items, EmbeddingBatchItem{
+		DocID:     docID,
+		ElementID: elementID,
+		Text:      text,
+	})
+	a.itemIndex[elementID] = len(a.items) - 1
+}
+
+// Flush processes all accumulated embeddings and returns results
+func (a *EmbeddingBatchAggregator) Flush() (map[string][]float64, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if len(a.items) == 0 {
+		return make(map[string][]float64), nil
+	}
+
+	log.Printf("CROSS-DOC BATCH: Flushing %d embeddings across multiple documents", len(a.items))
+
+	// Extract texts
+	texts := make([]string, len(a.items))
+	for i, item := range a.items {
+		texts[i] = item.Text
+	}
+
+	// Generate embeddings in one or more batches
+	startTime := time.Now()
+	vectors, err := a.generator.GenerateBatch(texts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate embeddings: %w", err)
+	}
+	duration := time.Since(startTime)
+
+	log.Printf("CROSS-DOC BATCH: Generated %d embeddings in %v (%.2f embeddings/sec)",
+		len(vectors), duration, float64(len(vectors))/duration.Seconds())
+
+	// Build result map
+	result := make(map[string][]float64, len(a.items))
+	for i, item := range a.items {
+		if i < len(vectors) {
+			result[item.ElementID] = vectors[i]
+		}
+	}
+
+	// Clear batch
+	a.items = a.items[:0]
+	a.itemIndex = make(map[string]int)
+
+	return result, nil
+}
+
+// ShouldFlush returns true if the batch is full
+func (a *EmbeddingBatchAggregator) ShouldFlush() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.items) >= a.maxBatchSize
+}
+
+// Size returns current batch size
+func (a *EmbeddingBatchAggregator) Size() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.items)
 }
 
 // Config holds worker configuration
@@ -109,6 +208,7 @@ func NewWorker(config Config) (*Worker, error) {
 	// Create embedding generator if configured (ONNX only)
 	var embeddingGenerator embeddings.EmbeddingGenerator
 	var contextualBuilder *embeddings.ContextualTextBuilder
+	var embeddingAggregator *EmbeddingBatchAggregator
 	if config.EmbeddingConfig != nil && config.EmbeddingConfig.Enabled {
 		// Create ONNX generator (only supported provider in Go)
 		gen, err := embeddings.CreateEmbeddingGenerator(*config.EmbeddingConfig)
@@ -116,6 +216,14 @@ func NewWorker(config Config) (*Worker, error) {
 			return nil, fmt.Errorf("failed to create embedding generator: %w", err)
 		}
 		embeddingGenerator = gen
+
+		// Create cross-document batch aggregator for efficient batching
+		batchSize := gen.GetBatchSize()
+		if batchSize == 0 {
+			batchSize = 32
+		}
+		embeddingAggregator = NewEmbeddingBatchAggregator(batchSize, gen)
+		log.Printf("Cross-document batch aggregator enabled (batch size: %d)", batchSize)
 
 		// Create contextual text builder if contextual mode enabled
 		if config.EmbeddingConfig.Contextual {
@@ -155,6 +263,7 @@ func NewWorker(config Config) (*Worker, error) {
 		analyticsStorages:    storages,
 		embeddingGenerator:   embeddingGenerator,
 		contextualBuilder:    contextualBuilder,
+		embeddingAggregator:  embeddingAggregator,
 		maxDocuments:         config.MaxDocuments,
 		ctx:                  ctx,
 		cancel:               cancel,
@@ -551,41 +660,34 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		}
 
 		if len(texts) > 0 {
-			// Batch embeddings for efficient processing
-			// Native ONNX can handle larger batches efficiently
-			const maxBatchSize = 100  // Increased from 10 for better performance with native ONNX
+			log.Printf("EMBEDDINGS: Adding %d elements from document %s to cross-document batch (current size: %d/%d)",
+				len(texts), docInfo.DocID, w.embeddingAggregator.Size(), w.embeddingAggregator.maxBatchSize)
+
+			// Add embedding requests to cross-document aggregator
 			embeddingMap = make(map[string][]float64)
-			log.Printf("EMBEDDINGS: Generating for %d elements in document %s (batch size: %d)", len(texts), docInfo.DocID, maxBatchSize)
-
-			for i := 0; i < len(texts); i += maxBatchSize {
-				end := i + maxBatchSize
-				if end > len(texts) {
-					end = len(texts)
-				}
-
-				batchTexts := texts[i:end]
-				batchIDs := elementIDs[i:end]
-
-				// Generate embeddings using ONNX (thread-safe session pool enables parallel inference)
-				embeddingVectors, err := w.embeddingGenerator.GenerateBatch(batchTexts)
-				if err != nil {
-					log.Printf("Failed to generate embeddings for batch %d-%d: %v", i, end, err)
-					continue
-				}
-
-				log.Printf("DEBUG: Batch %d-%d returned %d embedding vectors for %d texts", i, end, len(embeddingVectors), len(batchTexts))
-				for j, elementID := range batchIDs {
-					if j < len(embeddingVectors) {
-						embeddingMap[elementID] = embeddingVectors[j]
-						log.Printf("DEBUG: Stored embedding for %s (vector length: %d)", elementID, len(embeddingVectors[j]))
-					} else {
-						log.Printf("DEBUG: WARNING - No embedding vector for element %s at index %d", elementID, j)
-					}
-				}
+			for i, text := range texts {
+				elementID := elementIDs[i]
+				w.embeddingAggregator.Add(docInfo.DocID, elementID, text)
 			}
 
-			totalBatches := (len(texts) + maxBatchSize - 1) / maxBatchSize
-			log.Printf("EMBEDDINGS: Generated %d embeddings in %d batches for document %s", len(embeddingMap), totalBatches, docInfo.DocID)
+			// Strategy: Always flush to get embeddings for this document immediately
+			// This ensures we can store complete data, while still benefiting from
+			// cross-document batching when multiple small documents accumulate
+			log.Printf("EMBEDDINGS: Flushing batch with %d total items (includes current document)",
+				w.embeddingAggregator.Size())
+			flushedEmbeddings, err := w.embeddingAggregator.Flush()
+			if err != nil {
+				log.Printf("Failed to flush embeddings: %v", err)
+			} else {
+				// Store flushed embeddings that belong to this document
+				for _, elementID := range elementIDs {
+					if embedding, ok := flushedEmbeddings[elementID]; ok {
+						embeddingMap[elementID] = embedding
+					}
+				}
+				log.Printf("EMBEDDINGS: Document %s received %d/%d embeddings from flush (total flushed: %d)",
+					docInfo.DocID, len(embeddingMap), len(elementIDs), len(flushedEmbeddings))
+			}
 		}
 	}
 
