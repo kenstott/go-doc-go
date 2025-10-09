@@ -1,20 +1,21 @@
-# Go-Doc-Go: High-Performance Go Worker
+# Go-Doc-Go: Go Worker Implementation
 
-**Pure Go implementation** of the Go-Doc-Go document processing worker - parse thousands of documents per second with native Go performance, zero Python dependencies, and single-binary deployment.
+**Pure Go implementation** of the Go-Doc-Go document processing worker - similar performance to Python with the advantage of single-binary deployment (when not using ONNX embeddings).
 
 ## Why Go Worker?
 
-### 🚀 **10x Performance**
-- **Native concurrency**: Process 1000+ docs/second with Go goroutines
-- **Memory efficient**: <100MB base memory per worker
-- **True parallelism**: No GIL limitations, full multi-core utilization
-- **Compiled binary**: Instant startup, no interpreter overhead
-
-### 📦 **Single Binary Deployment**
+### 📦 **Single Binary Deployment** (Without ONNX Embeddings)
 - **Zero dependencies**: No Python, no pip, no virtual environments
-- **Statically linked**: Drop one binary and run (SQLite embedded)
+- **Statically linked**: Drop one binary and run (SQLite embedded) - unless using ONNX which requires shared library
 - **Cross-platform**: Linux, macOS, Windows from same codebase
 - **Container-friendly**: 15MB Docker images vs 500MB+ Python
+
+### ⚡ **Performance**
+- **Native concurrency**: Go goroutines enable efficient parallel processing (1000+ docs/sec requires multiple high-powered servers)
+- **Memory efficient**: <100MB base memory per worker
+- **True parallelism**: No GIL limitations, full multi-core utilization
+- **Similar speed to Python**: Comparable parsing performance with cleaner concurrency model
+- **Compiled binary**: Instant startup, no interpreter overhead
 
 ### 🔧 **Production Ready**
 - **Distributed processing**: PostgreSQL-coordinated work queues
@@ -399,11 +400,14 @@ path = "postgres://user:pass@db-server:5432/godocgo?sslmode=disable"
 
 ## Embedding Options
 
-### Option 1: ONNX Runtime (Fastest - Recommended)
+### Option 1: ONNX Runtime (Recommended)
 
-**Performance**: ~100-500ms per batch
-**Dependency**: Requires ONNX Runtime shared library + ONNX model files
-**Distribution**: Use `build-worker-dist.sh` script
+**Performance**: ~100-500ms per batch (with cross-document aggregation)
+**Dependency**: ⚠️ Requires ONNX Runtime shared library (not statically linked)
+**Distribution**: Use `build-worker-dist.sh` script to bundle library
+**Batching**: Automatically aggregates embeddings across documents for optimal GPU utilization
+
+**Note**: ONNX Runtime is a C++ library that must be dynamically linked, which removes the single-binary advantage of Go. The worker will depend on the ONNX Runtime shared library (.so/.dylib/.dll) being available at runtime.
 
 ```toml
 [embedding]
@@ -411,10 +415,14 @@ enabled = true
 provider = "onnx"
 model_path = "./models/all-MiniLM-L6-v2"  # Path to exported ONNX model
 dimensions = 384
+
+# Contextual embeddings include neighboring elements for better context
 contextual = true
-predecessor_count = 2
-successor_count = 2
+predecessor_count = 2  # Include 2 preceding elements
+successor_count = 2    # Include 2 following elements
 ```
+
+**Performance optimization**: The worker automatically aggregates embedding requests across multiple documents before processing. This maximizes GPU utilization by filling batches efficiently, especially beneficial when processing many small documents.
 
 #### Step 1: Export Model to ONNX Format
 
@@ -478,11 +486,11 @@ export ONNXRUNTIME_SHARED_LIBRARY_PATH=".venv/lib/python3.12/site-packages/onnxr
 ./bin/worker --config config.toml
 ```
 
-### Option 2: Pure Go (Zero Dependencies)
+### Option 2: Pure Go (Zero Dependencies - True Single Binary)
 
-**Performance**: ~300-1000ms per batch (2-3x slower)
-**Dependency**: None - pure Go
-**Distribution**: Single binary, truly standalone
+**Performance**: ~300-1000ms per batch (similar to Python)
+**Dependency**: None - pure Go, fully statically linked
+**Distribution**: Single binary, truly standalone - this is the main advantage over Python
 
 ```toml
 [embedding]
@@ -538,6 +546,8 @@ enabled = false
 |---------------|------------|----------------|-----------------|
 | ONNX Runtime  | 32         | 100-200ms      | 160-320 docs/sec|
 | Pure Go       | 32         | 300-600ms      | 53-106 docs/sec |
+
+**Cross-document batching**: Multiple small documents are automatically aggregated into full batches before processing, improving throughput by 2-3x for workloads with many small documents.
 
 **Memory usage**:
 - Base worker: ~50MB
@@ -1329,7 +1339,7 @@ GOOS=windows GOARCH=amd64 go build -o worker-windows-amd64.exe ./cmd/worker
 
 ### Q: Why Go instead of Python?
 
-**A**: 10x performance, 10x less memory, single binary deployment, true parallelism. Python is great for prototyping, Go is better for production workloads.
+**A**: Single binary deployment (when not using ONNX), cleaner concurrency model without GIL, comparable performance with less memory usage. The main advantage is deployment simplicity - one binary with no dependencies.
 
 ### Q: Can I use both Python and Go workers?
 
@@ -1358,7 +1368,7 @@ GOOS=windows GOARCH=amd64 go build -o worker-windows-amd64.exe ./cmd/worker
 
 ### Q: Performance vs Python?
 
-**A**: 10-20x faster for parsing, 3-5x faster with embeddings, 90% less memory.
+**A**: Similar parsing performance, similar embedding performance. The main advantage is deployment (single binary) and cleaner concurrency (no GIL). Memory usage is typically 20-30% lower.
 
 ---
 
