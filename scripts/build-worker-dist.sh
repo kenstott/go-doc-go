@@ -1,5 +1,18 @@
 #!/bin/bash
 # Build worker distribution with ONNX Runtime bundled
+#
+# Usage:
+#   ./build-worker-dist.sh              - Build tarball distribution
+#   ./build-worker-dist.sh --docker     - Build tarball + Docker image
+#   BUILD_DOCKER=true ./build-worker-dist.sh  - Build tarball + Docker image
+#   SAVE_DOCKER_TAR=true BUILD_DOCKER=true ./build-worker-dist.sh - Also save Docker image as .tar.gz
+#
+# Environment variables:
+#   TARGET_PLATFORM - Override target platform (darwin, linux, windows)
+#   TARGET_ARCH - Override target architecture (x86_64, arm64)
+#   BUILD_DOCKER - Build Docker image (true/false)
+#   SAVE_DOCKER_TAR - Save Docker image to tarball (true/false)
+#
 set -e
 
 # Allow overriding target platform/arch
@@ -465,3 +478,103 @@ if [ -n "$ONNX_LIB" ] && [ "$INCLUDE_MODEL" = true ]; then
     echo "   - Hardware acceleration enabled (CoreML on macOS)"
     echo ""
 fi
+
+# Create Docker image if requested
+if [ "$BUILD_DOCKER" = "true" ] || [ "$1" = "--docker" ]; then
+    echo "========================================="
+    echo "Building Docker image"
+    echo "========================================="
+
+    # Create Dockerfile in dist directory
+    cat > "$DIST_DIR/Dockerfile" << 'DOCKERFILE'
+FROM ubuntu:22.04
+
+# Install runtime dependencies
+RUN apt-get update && \
+    apt-get install -y ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy distribution files
+COPY worker /usr/local/bin/worker
+COPY libonnxruntime.* /usr/local/lib/ 2>/dev/null || true
+COPY models/ /app/models/ 2>/dev/null || true
+COPY config.example.toml /app/config.example.toml
+
+# Set library path
+ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+ENV ONNXRUNTIME_SHARED_LIBRARY_PATH=/usr/local/lib/libonnxruntime.so
+
+# Make worker executable
+RUN chmod +x /usr/local/bin/worker
+
+# Run ldconfig to register shared libraries
+RUN ldconfig 2>/dev/null || true
+
+# Default config path (can be overridden)
+ENV GO_DOC_GO_CONFIG_PATH=/app/config.toml
+
+ENTRYPOINT ["/usr/local/bin/worker"]
+CMD ["--config", "/app/config.toml"]
+DOCKERFILE
+
+    echo "✓ Created Dockerfile"
+
+    # Build Docker image
+    IMAGE_TAG="go-doc-go/worker:${PLATFORM}-${ARCH}"
+    IMAGE_TAG_LATEST="go-doc-go/worker:latest"
+
+    echo ""
+    echo "Building Docker image: $IMAGE_TAG"
+    docker build -t "$IMAGE_TAG" -t "$IMAGE_TAG_LATEST" "$DIST_DIR"
+
+    if [ $? -eq 0 ]; then
+        echo ""
+        echo "✅ Docker image built successfully!"
+        echo "   Image: $IMAGE_TAG"
+        echo "   Also tagged as: $IMAGE_TAG_LATEST"
+        echo ""
+        echo "Usage examples:"
+        echo ""
+        echo "  # Option 1: Mount config file (recommended)"
+        echo "  docker run -v \$(pwd)/config.toml:/app/config.toml \\"
+        echo "             -v \$(pwd)/docs:/app/docs \\"
+        echo "             -v \$(pwd)/data:/app/data \\"
+        echo "             $IMAGE_TAG_LATEST"
+        echo ""
+        echo "  # Option 2: Pass different config path"
+        echo "  docker run -v \$(pwd)/my-config.toml:/etc/worker.toml \\"
+        echo "             $IMAGE_TAG_LATEST --config /etc/worker.toml"
+        echo ""
+        echo "  # Option 3: Use environment variable"
+        echo "  docker run -e GO_DOC_GO_CONFIG_PATH=/etc/worker.toml \\"
+        echo "             -v \$(pwd)/config.toml:/etc/worker.toml \\"
+        echo "             $IMAGE_TAG_LATEST"
+        echo ""
+        echo "  # Option 4: Override CLI flags"
+        echo "  docker run -v \$(pwd)/config.toml:/app/config.toml \\"
+        echo "             $IMAGE_TAG_LATEST --config /app/config.toml --workers 4 --instances 2"
+        echo ""
+
+        # Save Docker image to tarball if requested
+        if [ "$SAVE_DOCKER_TAR" = "true" ]; then
+            DOCKER_TAR="dist/go-doc-go-worker-${PLATFORM}-${ARCH}.docker.tar"
+            echo "Saving Docker image to: $DOCKER_TAR"
+            docker save "$IMAGE_TAG" | gzip > "$DOCKER_TAR.gz"
+            echo "✓ Saved Docker image tarball: $DOCKER_TAR.gz"
+            echo ""
+            echo "To load on another machine:"
+            echo "  gunzip -c $DOCKER_TAR.gz | docker load"
+            echo ""
+        fi
+    else
+        echo "❌ Docker image build failed"
+        exit 1
+    fi
+fi
+
+echo "========================================="
+echo "Build complete!"
+echo "========================================="
