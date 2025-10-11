@@ -145,11 +145,32 @@ This document outlines the migration plan to transform the existing Go document 
   - Zero external dependencies (pure Go implementation)
   - Extensible for advanced features (filters, slicing, recursive descent)
 
+#### Phase 2.4: JSON Document Builder (COMPLETED)
+- ✅ Created `go/internal/udml/builder/` package for hierarchical document reconstruction
+- ✅ DocumentBuilder using QueryBackend interface (backend-agnostic design)
+- ✅ Hierarchy reconstruction from flat UDML elements using parent_id relationships
+- ✅ BuildOptions: IncludeContent, MaxDepth, SortChildren, Filter, IncludeMetadata
+- ✅ JSON serialization: ToJSON() (pretty) and ToJSONCompact()
+- ✅ Helper methods: GetElementCount(), GetMaxDepth()
+- ✅ Comprehensive test suite: 15 unit tests + 5 E2E integration tests
+- ✅ All 132 UDML module tests passing (query: 112, builder: 20)
+- ✅ **E2E Integration Tests**: Real Parquet + DuckDB → Document
+  - End-to-end document building from Hive-partitioned storage
+  - Multiple document handling (document isolation)
+  - Element type filtering during build
+  - JSON serialization validation (pretty vs compact)
+  - Max depth limiting (prevents deep recursion)
+- ✅ **Benefits**:
+  - Reconstructs hierarchical documents from flat storage
+  - Backend-agnostic (works with any QueryBackend)
+  - Flexible filtering and depth control
+  - Clean JSON output for APIs and exports
+  - Maintains UDML element structure with full metadata
+
 ### 🚧 In Progress Phases
 - None currently
 
 ### ⏳ Pending Phases
-- Phase 2.4: JSON Document Builder
 - Phase 2.5: Similarity Search Integration
 - Phase 3: LLM Integration
 - Phase 4: Entity Extraction Engine
