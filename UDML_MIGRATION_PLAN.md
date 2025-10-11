@@ -86,11 +86,29 @@ This document outlines the migration plan to transform the existing Go document 
   - Zero breaking changes to existing code
   - Configurable UDML schema version (default: v2.0.0)
 
+#### Phase 2.1: QueryBackend Interface (COMPLETED)
+- ✅ Created `go/internal/udml/query/` package for backend-agnostic query engine
+- ✅ Defined QueryBackend interface with Translate(), Execute(), SupportsFeature(), Explain() methods
+- ✅ Created universal Expression and Predicate types for backend-agnostic queries
+- ✅ Implemented BackendRegistry with factory pattern for swappable backends
+- ✅ MockBackend implementation for testing (no concrete backends yet)
+- ✅ Comprehensive test suite with 65 tests across 3 test files
+- ✅ All tests passing: types, registry, backend interface, E2E flow
+- ✅ **Benefits**:
+  - DuckDB is ONE swappable implementation, not a hard dependency
+  - Can add PostgreSQL, Neo4j, Elasticsearch backends without core changes
+  - Interface-first design prevents vendor lock-in
+  - Foundation for Phase 2.2 (DuckDB implementation)
+  - Clean separation: interfaces in core, implementations in adapters
+
 ### 🚧 In Progress Phases
 - None currently
 
 ### ⏳ Pending Phases
-- Phase 2: JSON Projection & Query Engine
+- Phase 2.2: DuckDB Backend Implementation
+- Phase 2.3: JSONPath Parser
+- Phase 2.4: JSON Document Builder
+- Phase 2.5: Similarity Search Integration
 - Phase 3: LLM Integration
 - Phase 4: Entity Extraction Engine
 - Phase 5: Multi-Format Export
