@@ -124,11 +124,31 @@ This document outlines the migration plan to transform the existing Go document 
   - Compatible with all Phase 1.4 Hive-partitioned storage
   - Swappable: can add PostgreSQL, Neo4j backends without core changes
 
+#### Phase 2.3: JSONPath Parser (COMPLETED)
+- ✅ Created `go/internal/udml/query/jsonpath.go` with backend-agnostic JSONPath parser (400+ lines)
+- ✅ Segment-based AST: root, key, index, wildcard, recursive, filter
+- ✅ Path support: $.field, $[0], $[*], $.*, $..field, $['field']
+- ✅ Evaluation engine: ExtractFromJSON(), CompareJSONPathValue()
+- ✅ Integrated with Expression predicates via PredicateJSONPath
+- ✅ DuckDB backend extended with >= and <= operators for JSONPath
+- ✅ Comprehensive test suite: 18 unit tests + 5 integration tests
+- ✅ All 112 query package tests passing (Phase 2.1 + 2.2 + 2.3)
+- ✅ **Integration Tests**: Real UDML JSON overflow field queries
+  - metadata.font_size > 12
+  - content_location.x >= 100
+  - Nested metadata.styles.bold = true
+  - Complex bounds queries with AND/OR
+  - Combined JSONPath + regular filters
+- ✅ **Benefits**:
+  - Backend-agnostic path expressions for JSON overflow fields
+  - Queries UDML Phase 1 promoted fields: metadata, content_location, temporal_metadata
+  - Zero external dependencies (pure Go implementation)
+  - Extensible for advanced features (filters, slicing, recursive descent)
+
 ### 🚧 In Progress Phases
 - None currently
 
 ### ⏳ Pending Phases
-- Phase 2.3: JSONPath Parser
 - Phase 2.4: JSON Document Builder
 - Phase 2.5: Similarity Search Integration
 - Phase 3: LLM Integration

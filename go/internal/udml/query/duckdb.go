@@ -279,8 +279,12 @@ func (d *DuckDBBackend) buildJSONPathPredicate(pred *Predicate) (string, []inter
 		return fmt.Sprintf("%s != %v", jsonExpr, d.formatValue(pred.Value)), nil, nil
 	case OpGreaterThan:
 		return fmt.Sprintf("%s > %v", jsonExpr, d.formatValue(pred.Value)), nil, nil
+	case OpGreaterThanOrEqual:
+		return fmt.Sprintf("%s >= %v", jsonExpr, d.formatValue(pred.Value)), nil, nil
 	case OpLessThan:
 		return fmt.Sprintf("%s < %v", jsonExpr, d.formatValue(pred.Value)), nil, nil
+	case OpLessThanOrEqual:
+		return fmt.Sprintf("%s <= %v", jsonExpr, d.formatValue(pred.Value)), nil, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported JSONPath operator: %s", pred.Operator)
 	}
