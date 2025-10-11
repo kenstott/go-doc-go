@@ -18,9 +18,11 @@ func NewStorage(config map[string]interface{}) (Storage, error) {
 	switch storageType {
 	case "parquet":
 		return NewParquetStorage(config)
+	case "hive":
+		return NewHiveParquetStorage(config)
 	case "neo4j":
 		return NewNeo4jStorage(config)
 	default:
-		return nil, fmt.Errorf("unsupported analytics storage type: %s", storageType)
+		return nil, fmt.Errorf("unsupported analytics storage type: %s (supported: parquet, hive, neo4j)", storageType)
 	}
 }

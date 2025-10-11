@@ -61,7 +61,7 @@ This document outlines the migration plan to transform the existing Go document 
 - ✅ Created `go/internal/udml/` package for UDML core functionality
 - ✅ Implemented SchemaRegistry with Apache Arrow v18 Schema API
 - ✅ Universal schema with 20 fields (11 core + 6 promoted + 3 JSON overflow)
-- ✅ 50+ element types registered, all sharing same schema instance
+- ✅ 47 element types registered (consolidated from 50), all sharing same schema instance
 - ✅ Schema methods: NewSchemaRegistry(), GetSchema(), GetRegisteredTypes(), HasSchema(), RegisterCustomSchema()
 - ✅ Comprehensive test suite with 14 tests in `go/internal/udml/schemas_test.go`
 - ✅ All tests passing: schema validation, field types, nullability, type registration, custom schemas
@@ -71,11 +71,25 @@ This document outlines the migration plan to transform the existing Go document 
   - Columnar compression handles 70-95% NULL rates efficiently
   - 60-1000x query performance improvement across backends
 
+#### Phase 1.4: Hive-Partitioned Storage (COMPLETED)
+- ✅ Created `go/internal/analytics/parquet_hive.go` with HiveParquetStorage implementation
+- ✅ Hive partition structure: `element_type=X/version=Y/date=Z/source=W/`
+- ✅ Integrated SchemaRegistry for type-specific schemas with 20 fields
+- ✅ Automatic element grouping by element_type for optimal query performance
+- ✅ Factory.go updated to support "hive" backend type
+- ✅ Comprehensive test suite with 8 tests in `go/internal/analytics/parquet_hive_test.go`
+- ✅ All tests passing: initialization, element writing, partitioning, factory integration
+- ✅ **Benefits**:
+  - Query engines skip irrelevant partitions for 60-1000x faster queries
+  - Compatible with DuckDB, Spark, Presto, Athena Hive partitioning
+  - Maintains backward compatibility (old "parquet" backend still available)
+  - Zero breaking changes to existing code
+  - Configurable UDML schema version (default: v2.0.0)
+
 ### 🚧 In Progress Phases
 - None currently
 
 ### ⏳ Pending Phases
-- Phase 1.4: Hive-Partitioned Storage
 - Phase 2: JSON Projection & Query Engine
 - Phase 3: LLM Integration
 - Phase 4: Entity Extraction Engine
@@ -1636,14 +1650,29 @@ func (s *HiveParquetStorage) writeTypePartition(elemType string, elements []Elem
 ```
 
 **Files to Create/Modify:**
-- [ ] Create `go/internal/analytics/parquet_hive.go`
-- [ ] Modify `go/internal/analytics/factory.go` to support "hive" backend type
-- [ ] Update config parsing to handle `version` parameter
-- [ ] Add schema-aware Parquet writer
+- [x] Create `go/internal/analytics/parquet_hive.go`
+- [x] Modify `go/internal/analytics/factory.go` to support "hive" backend type
+- [x] Update config parsing to handle `version` parameter
+- [x] Add schema-aware Parquet writer
+
+**Status: ✅ COMPLETED**
+- Implementation: `go/internal/analytics/parquet_hive.go` (850+ lines)
+- Tests: `go/internal/analytics/parquet_hive_test.go` (8 comprehensive tests, all passing)
+- Factory integration: `go/internal/analytics/factory.go` supports "hive" backend type
+- Hive partition structure: `element_type=X/version=Y/date=Z/source=W/`
+- Schema integration: Uses SchemaRegistry for universal schema with 20 fields (11 core + 6 promoted + 3 JSON overflow)
+- Element grouping: Automatically groups elements by element_type for optimal query performance
+- Version support: Configurable UDML schema version (default: v2.0.0)
+- **Benefits**:
+  - Query engines can skip irrelevant partitions for 60-1000x faster queries
+  - Compatible with DuckDB, Spark, Presto, Athena Hive partitioning
+  - Maintains backward compatibility (old "parquet" backend still available)
+  - Zero breaking changes to existing code
 
 **Migration Strategy:**
 - Run both old (flat) and new (Hive) storage in parallel during transition
-- Add config flag: `use_hive_partitioning: true/false`
+- Switch backend type in config: `type: "hive"` (was `type: "parquet"`)
+- Optional version parameter: `version: "v2.0.0"`
 - Validate output matches before full cutover
 
 ---
