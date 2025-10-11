@@ -1528,11 +1528,18 @@ func (r *SchemaRegistry) registerDefaultSchemas() {
 ```
 
 **Tasks:**
-- [ ] Create `go/internal/udml/` package
-- [ ] Implement SchemaRegistry with all element types
-- [ ] Define base schema (common fields)
-- [ ] Define type-specific schemas (31+ types)
-- [ ] Add schema validation
+- [x] Create `go/internal/udml/` package
+- [x] Implement SchemaRegistry with all element types
+- [x] Define base schema (common fields)
+- [x] Define type-specific schemas (50+ types registered)
+- [x] Add schema validation (comprehensive test suite with 14 tests)
+
+**Status: ✅ COMPLETED**
+- Implementation: `go/internal/udml/schemas.go`
+- Tests: `go/internal/udml/schemas_test.go` (14 tests, all passing)
+- Universal schema with 20 fields (11 core + 6 promoted + 3 JSON overflow)
+- 50+ element types registered, all sharing same schema instance
+- Arrow v18 Schema API for Parquet schema management
 
 ---
 
