@@ -410,14 +410,16 @@
 
 No matter where you start (Sales, Compliance, Engineering), the journey is the same:
 
-1. **You come for tactical efficiency** (better search, faster answers, audit prep)
-2. **You discover organizational fragmentation** (conflicts, duplications, misalignments)
-3. **You realize the strategic opportunity** (organizational coherence prevents $M+ waste)
-4. **You scale when ready** (team → division → enterprise)
+1. **You come to fix underwhelming GenAI** (make AI give accurate, grounded answers)
+2. **GenAI reveals domain incoherence** (conflicts, duplications, misalignments within your domain)
+3. **You achieve domain coherence** (align all policies/strategies/docs within your domain)
+4. **You expand to adjacent domains** (connect 2-3 domains)
+5. **Organizational coherence emerges** (6+ connected domains = organizational coordination)
+6. **You scale when ready** (team → division → enterprise)
 
-**This isn't a bait-and-switch. This is the natural discovery path when you give people better access to knowledge.**
+**This isn't a bait-and-switch. This is the natural discovery path when structure-aware grounding makes GenAI work.**
 
-* **Week 1:** Better search solves the immediate pain
+* **Week 1:** GenAI works - accurate, grounded answers solve the immediate pain
 * **Week 2-4:** Pattern discovery reveals the hidden problems
 * **Month 1-3:** Prevention of first major failure proves strategic value
 * **Month 6-12:** Organizational coherence becomes the mission
@@ -591,11 +593,11 @@ No matter where you start (Sales, Compliance, Engineering), the journey is the s
 
 ---
 
-## Slide 2.5: Yes, We Do Search Exceptionally Well. Here's What Else You Get...
+## Slide 2.5: Yes, We Fix Underwhelming GenAI. Here's What Else You Get...
 
-**If all you need is better search and Q&A, we deliver that in Week 1:**
+**If all you need is accurate, grounded GenAI answers, we deliver that in Week 1:**
 
-* ✓ "Show me contracts mentioning GDPR" → 47 results in 2 seconds (better than keyword search)
+* ✓ "Show me contracts mentioning GDPR" → 47 results in 2 seconds with accurate, grounded synthesis (not just keyword search)
 * ✓ "What's our pricing policy?" → AI synthesizes answer from 5 docs (not just finds them)
 * ✓ Individual productivity improves 20-30% immediately (Week 1 value)
 * **Investment:** $30K-50K for GraphRAG-lite
@@ -622,9 +624,9 @@ While using the search/Q&A system, they start noticing things they didn't search
 
 **The natural progression:**
 
-1. **Week 1**: You deploy for better search → It works great, people love it
-2. **Week 2-3**: Users discover hidden patterns while using it → "We didn't know these issues existed"
-3. **Month 1**: You realize the bigger opportunity → "Search helps individuals. Preventing these conflicts protects the organization."
+1. **Week 1**: You deploy to fix GenAI → It works, people love the accurate, grounded answers
+2. **Week 2-3**: GenAI reveals domain incoherence while people use it → "We didn't know these conflicts existed"
+3. **Month 1**: You realize the bigger opportunity → "GenAI helps individuals get answers. Achieving domain coherence protects the organization from $M+ failures."
 4. **Decision point**: Upgrade to explicit knowledge graphs for systematic prevention? (Most customers say yes after seeing Week 2-3 discoveries)
 
 **Why search alone isn't enough:**
@@ -2771,11 +2773,12 @@ Each system enriches the others through the shared knowledge graph
 * Immediate impact: 20% time saved
 * **Value realized**: $800K/year in productivity (200 engineers × 8 hours/week × $50/hour)
 
-**Week 3: Duplication discovery**
+**Week 3: Engineering domain incoherence discovered**
 * Team lead asks: "What are teams working on related to authentication?"
 * System reveals: Team A building OAuth integration, Team B building SSO integration
 * Deep dive: Both solving same problem with different approaches
-* **Nobody knew**: Teams in different reporting structures, no cross-visibility
+* **Engineering domain incoherence revealed**: Teams in different reporting structures, no cross-visibility, duplicate work
+* **Realization**: "GenAI revealed engineering domain incoherence - teams aren't coordinated"
 
 **Week 4: Consolidation**
 * Teams merged initiatives, unified approach
@@ -2797,88 +2800,104 @@ Each system enriches the others through the shared knowledge graph
 * Division A continues as lead, Divisions B and C pivot to integration
 * **Savings**: $1.5M in avoided duplicate infrastructure + $300K/year in reduced maintenance
 
-**Month 6: Organizational coherence**
-* System extended to Product + Sales teams
-* Cross-domain discovery: "Engineering building feature X, but Sales already committed customer to different approach"
+**Month 6: Domain expansion - Organizational coherence emerging**
+* System extended to Product + Sales domains (now 3 connected domains)
+* **Cross-domain incoherence discovered**: "Engineering building feature X, but Sales already committed customer to different approach" (Engineering ↔ Sales conflict)
 * Caught before implementation, realigned with customer expectations
 * **Prevented**: $500K in rework + customer satisfaction issue
+* **Discovery**: "Achieving engineering domain coherence prevented duplicate work. Connecting to sales and product = organizational coherence emerging."
 
 **Total ROI in first year:**
-* Tactical: $800K in productivity gains
-* Strategic: $2M in prevented duplication + coordination
+* Tactical: $800K in productivity gains from fixing GenAI
+* Strategic: $2M in prevented duplication + coordination from achieving domain coherence
 * **ROI multiple**: 70x on $40K investment
-* **Customer quote**: "We thought our problem was finding information. Our real problem was that 200 smart people weren't coordinated. Aperio gave us organizational coherence."
+* **Customer quote**: "We came to fix GenAI for engineers. GenAI revealed engineering domain incoherence. We achieved engineering domain coherence, expanded to product and sales, and organizational coherence emerged from coordinating 200 smart people."
 
 ---
 
-#### C-Suite: "We Knew We Needed Coherence - Aperio Made It Real"
+#### C-Suite: "We Knew We Needed Organizational Coherence - We Discovered It Emerges from Domain Coherence"
 
 **Company**: Enterprise with 5,000 employees across 8 divisions
-**Initial ask**: "We're losing $50M+/year to strategic misalignments and duplicate initiatives"
+**Initial ask**: "We're losing $50M+/year to strategic misalignments and duplicate initiatives - we need organizational coherence"
 **Budget**: $850K enterprise deployment
 
-**Month 1: Enterprise-wide deployment**
+**Month 1: Enterprise-wide deployment across 6+ domains**
 * Deployed across all divisions, all document sources
 * 500K+ documents ingested, normalized through UDM
-* LLM-assisted knowledge extraction rules created with domain experts from each division
-* CEO gains UP/ACROSS visibility: "What is each division building?"
+* LLM-assisted knowledge extraction rules created with domain experts from each of 6 domains:
+  - **Strategy domain**: Corporate strategies, division strategies, market positioning
+  - **Sales domain**: Pricing, contracts, customer commitments, sales playbooks
+  - **Product domain**: Roadmaps, feature specs, technical architectures
+  - **Marketing domain**: Campaigns, messaging, vertical positioning
+  - **Compliance domain**: Regulations, policies, legal requirements
+  - **Security domain**: Security policies, threat models, access controls
+* CEO gains UP/ACROSS visibility: "What is each division building across all domains?"
 
-**Month 2: The $60M strategic misalignment**
+**Month 2: Strategy domain incoherence discovered - The $60M misalignment**
 * CEO queries: "Show me all division strategies related to 'healthcare vertical'"
 * System reveals:
   - Division A targeting insurance companies (interpreted "healthcare" as insurance)
   - Division B targeting healthcare providers (hospitals, clinics)
   - Division C targeting pharma companies
   - Corporate strategy doc meant healthcare providers only
-* **Discovery**: Divisions A and C misaligned with corporate strategy
+* **Strategy domain incoherence revealed**: Divisions A and C misaligned with corporate strategy
 * **Investment to date**: Division A: $18M over 18 months; Division C: $12M over 12 months
-* **Action**: Month 2 strategy realignment session
+* **Action**: Month 2 strategy realignment session to restore strategy domain coherence
   - Division A pivots from insurance to healthcare providers (salvaged $8M of work)
   - Division C pivots from pharma to healthcare providers (salvaged $5M of work)
 * **Cost if undiscovered for full 24 months**: $30M wasted in wrong direction (would have discovered during 2-year strategy review)
 * **Savings from early detection**: $17M in salvaged work that could be pivoted
+* **Result**: **Strategy domain coherence achieved** - all division strategies aligned with corporate strategy
 
-**Month 3: The $20M duplication**
+**Month 3: Product domain incoherence discovered - The $20M duplication**
 * CFO queries: "Are any divisions building similar capabilities?"
 * System reveals: Division D and Division E both building customer analytics platforms
 * Functionality overlap: 80%
-* **Discovery**: No visibility across divisions, both independently decided they needed analytics
+* **Product domain incoherence revealed**: No visibility across divisions, both independently decided they needed analytics
 * **Investment to date**: Division D: $8M (80% complete); Division E: $3M (30% complete)
 * **Action**: Consolidate to Division D platform, Division E pivots to integration
 * **Savings**: $9M in avoided duplicate completion + $2M/year in maintenance
+* **Result**: **Product domain coherence achieved** - all divisions coordinated on product capabilities
 
-**Month 6: Continuous coherence**
-* System monitors: "Do any new division strategies conflict with corporate strategy?"
-* Catches 3 potential misalignments in planning stage (before significant investment)
-* System alerts: "Division F's new product roadmap conflicts with compliance policy"
+**Month 6: Continuous domain coherence maintained**
+* System monitors across all 6 domains: "Do any new initiatives conflict within or across domains?"
+* Catches 3 potential strategy domain misalignments in planning stage (before significant investment)
+* System alerts: "Division F's new product roadmap conflicts with compliance policy" (Product ↔ Compliance cross-domain issue)
 * Caught in planning, fixed before development ($5M saved)
+* **Discovery**: "With 6 domains connected, we're maintaining coherence continuously"
 
-**Year 1: Enterprise transformation**
+**Year 1: Organizational coherence has emerged**
+* Achieved coherence in 6 domains: Strategy, Sales, Product, Marketing, Compliance, Security
+* 6 domains = 15 cross-domain connections (N(N-1)/2 growth)
+* **Organizational coherence has emerged** as natural result of connecting coherent domains
 * UP visibility: CEO spots misalignments in planning, not after $20M invested
 * ACROSS visibility: Divisions aware of each other's initiatives, coordinate proactively
 * Platform powers: LLM chatbots, compliance monitoring, workflow automation, decision support
 * Culture shift: From siloed divisions to coordinated organization
 
 **Total ROI in first year:**
-* Strategic misalignments prevented: $60M+ (early detection + salvaged work)
-* Duplications prevented: $29M (consolidation + avoided waste)
-* Compliance issues prevented: $8M (caught in planning)
-* **Total value realized**: $97M
+* Strategy domain: $60M+ in prevented misalignments (early detection + salvaged work)
+* Product domain: $29M in prevented duplications (consolidation + avoided waste)
+* Compliance domain: $8M in compliance issues prevented (caught in planning)
+* **Total value realized**: $97M across 6 connected domains
 * **ROI multiple**: 114x on $850K investment
-* **CEO quote**: "We knew organizational coherence was the problem. Aperio made it possible to achieve at scale. This isn't a productivity tool - it's organizational infrastructure."
+* **CEO quote**: "We came seeking organizational coherence. We discovered it's an emergent property - achieve coherence in individual domains (Strategy, Sales, Product, Compliance, etc.), connect them, and organizational coherence emerges naturally. This isn't a productivity tool - it's how we coordinate 5,000 people."
 
 ---
 
 **The Pattern Across All Proof Points:**
 
-1. **Customers come for tactical needs**: Faster search, audit efficiency, knowledge recovery, strategic visibility
-2. **Customers discover hidden problems**: Week 2-6, while using the system, they find conflicts/duplications/violations nobody knew existed
-3. **Customers realize strategic value**: Month 1-3, they understand the real ROI is preventing organizational failures, not incremental efficiency
-4. **Customers scale when ready**: Month 3-12, they expand from pilot to division to enterprise because compound value is obvious
+1. **Customers come to fix underwhelming GenAI**: Sales needs accurate pricing answers, Compliance needs reliable audit answers, Engineering needs trustworthy technical answers, C-Suite needs strategic visibility
+2. **GenAI reveals domain incoherence**: Week 2-6, while using the system, they discover conflicts/duplications/violations within their primary domain (Sales, Compliance, Product, Strategy) that nobody knew existed
+3. **Customers achieve primary domain coherence**: Month 1-3, they upgrade to explicit knowledge graphs to systematically achieve and maintain coherence in their pilot domain
+4. **Customers expand to adjacent domains**: Month 3-6, they connect 2-3 domains and discover cross-domain incoherence (Sales ↔ Product conflicts, Marketing ↔ Compliance issues)
+5. **Organizational coherence emerges**: Month 6-12+, with 6+ connected domains creating 15+ cross-domain relationships, organizational coherence emerges as a natural property of connected coherent domains
 
 **Common discoveries across proof points:**
-* "We thought we needed better search - we discovered we needed organizational coherence"
-* "The ROI isn't from faster answers - it's from preventing $M+ failures"
+* "We came to fix underwhelming GenAI - GenAI revealed domain incoherence we didn't know existed"
+* "We achieved domain coherence in our pilot domain - the value was immediate ($2-10M in prevented failures)"
+* "We expanded to adjacent domains - organizational coherence emerged naturally from connecting coherent domains"
+* "The ROI isn't from better GenAI answers - it's from achieving and maintaining coherence across all domains"
 * "Week 1 solved our surface problem; Week 2-6 revealed our real problem"
 * "This isn't a productivity tool - it's how we coordinate our organization"
 
