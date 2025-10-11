@@ -4,11 +4,48 @@
 
 This document outlines the migration plan to transform the existing Go document processing system into **UDML (Universal Document Model Language)** - an LLM-powered, scalable knowledge extraction architecture.
 
-**Current State:** Flat Parquet storage with basic partitioning (date, source)
+**Current State:** ~~Flat Parquet storage with basic partitioning~~ → **Hive-partitioned UDML with QueryBackend abstraction** ✅
 **Target State:** Hive-partitioned storage with type-specific schemas, JSON projection, JSONPath queries, LLM-generated ontologies, and format-agnostic knowledge graph export
 
-**Timeline:** 9-10 weeks
+**Timeline:** 9-10 weeks (Week 5 of 10 - 50% complete)
 **Complexity:** Major architectural refactor with clean breaking changes - no backward compatibility in target state
+
+---
+
+## 🎯 Current Status (as of Phase 2.4)
+
+### Completed: 9 of 15 phases (60%)
+- ✅ Phase 0.1: Parser Interface
+- ✅ Phase 1.1: Type System Updates
+- ✅ Phase 1.2: Parser Promoted Fields Migration
+- ✅ Phase 1.3: Schema Registry
+- ✅ Phase 1.4: Hive-Partitioned Storage
+- ✅ Phase 2.1: QueryBackend Interface
+- ✅ Phase 2.2: DuckDB Backend Implementation
+- ✅ Phase 2.3: JSONPath Parser
+- ✅ Phase 2.4: JSON Document Builder
+
+### Test Statistics
+- **Total UDML Tests**: 132 (all passing)
+  - Query package: 112 tests (Phases 2.1-2.3)
+  - Builder package: 20 tests (15 unit + 5 E2E)
+- **Test Coverage**:
+  - Query package: 82.0%
+  - Builder package: 91.2%
+  - JSONPath: 85%+ on critical paths
+- **Integration Tests**: Full stack validation (Parquet → DuckDB → Builder → JSON)
+
+### Performance Achievements
+- **Query speedup**: 60-1000x via Hive partition pruning
+- **Query latency**: 0.6-5ms for JSONPath queries
+- **JSON serialization**: 39% size reduction (compact vs pretty)
+- **Zero-copy queries**: DuckDB reads Parquet directly
+
+### Architecture Wins
+- ✅ **Backend-agnostic design**: Can swap DuckDB for PostgreSQL, Neo4j, Elasticsearch
+- ✅ **Interface-first approach**: No vendor lock-in
+- ✅ **Hierarchical reconstruction**: From flat storage to nested documents
+- ✅ **JSONPath support**: Query JSON overflow fields (metadata, content_location)
 
 ---
 
@@ -170,13 +207,64 @@ This document outlines the migration plan to transform the existing Go document 
 ### 🚧 In Progress Phases
 - None currently
 
-### ⏳ Pending Phases
-- Phase 2.5: Similarity Search Integration
-- Phase 3: LLM Integration
-- Phase 4: Entity Extraction Engine
-- Phase 5: Multi-Format Export
-- Phase 6: Versioning System
-- Phase 7: Testing & Documentation
+### ⏳ Pending Phases (6 remaining)
+1. **Phase 2.5: Similarity Search Integration** (Next Up!)
+   - Implement semantic similarity using existing contextual embeddings
+   - Add similarity() function to JSONPath predicates
+   - Vector-based document/element search
+
+2. **Phase 3: LLM Integration** (Week 6-7)
+   - Ontology extraction from documents
+   - Entity relationship mapping
+   - Knowledge graph generation
+
+3. **Phase 4: Entity Extraction Engine** (Week 7-8)
+   - Named entity recognition (NER)
+   - Relationship extraction
+   - Knowledge base integration
+
+4. **Phase 5: Multi-Format Export** (Week 8)
+   - JSON-LD export
+   - RDF/Turtle export
+   - GraphML export
+   - Neo4j direct import
+
+5. **Phase 6: Versioning System** (Week 9)
+   - Document version tracking
+   - Change detection
+   - Version comparison
+
+6. **Phase 7: Testing & Documentation** (Week 10)
+   - End-to-end system tests
+   - Performance benchmarking
+   - API documentation
+   - Migration guide
+
+---
+
+## 📋 What's Next: Phase 2.5 Roadmap
+
+### Immediate Next Steps
+1. **Similarity Search Foundation**
+   - Leverage existing `contextual_embeddings` table
+   - Add `similarity(embedding_vector, threshold)` JSONPath function
+   - Implement vector similarity comparison in query backends
+
+2. **Integration Points**
+   - Extend `Predicate` type with `PredicateSimilarity`
+   - Add similarity support to DuckDB backend (using DuckDB vector extension or pgvector)
+   - Create similarity search API in DocumentBuilder
+
+3. **Testing Requirements**
+   - Unit tests: Similarity function parsing and translation
+   - Integration tests: Real embedding queries with threshold filtering
+   - Performance tests: Vector search benchmarks
+
+### Success Criteria for Phase 2.5
+- ✅ Semantic search working across UDML elements
+- ✅ Integration with existing embeddings infrastructure
+- ✅ Query latency < 100ms for similarity searches
+- ✅ 90%+ test coverage maintained
 
 ---
 
