@@ -329,12 +329,21 @@ func TestPPTXPromotedFieldsDetail(t *testing.T) {
 	zipWriter.Close()
 	pptxContent := buf.Bytes()
 
+	// Write to temporary file since PPTX parser expects file path
+	tmpFile, err := os.CreateTemp("", "test-promoted-*.pptx")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	_, err = tmpFile.Write(pptxContent)
+	require.NoError(t, err)
+	tmpFile.Close()
+
 	pptxParser := parser.NewPPTXParser()
 	ctx := context.Background()
 
 	req := parser.ParseRequest{
 		ID:      "test-pptx-promoted-001",
-		Content: pptxContent,
+		Content: tmpFile.Name(),
 		Config:  parser.DefaultParserConfig(),
 	}
 

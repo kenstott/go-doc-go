@@ -52,6 +52,10 @@ This document outlines the migration plan to transform the existing Go document 
 - ✅ Comprehensive integration tests created (multi_parser_integration_test.go)
 - ✅ All parsers passing integration tests
 - ✅ Backward compatibility maintained via ParseLegacy methods
+- ✅ **Test fixes completed**:
+  - Fixed PPTX integration test to use temp files (parser expects file path)
+  - Fixed XLSX parser ElementCategory population for all element types (10+ locations updated)
+  - All promoted fields tests passing (TestCSVPromotedFieldsDetail, TestDOCXPromotedFieldsDetail, TestPDFPromotedFieldsDetail, TestPPTXPromotedFieldsDetail, TestXLSXPromotedFieldsDetail, TestPromotedFieldsAcrossParsers)
 
 ### 🚧 In Progress Phases
 - None currently

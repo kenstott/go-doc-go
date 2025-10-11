@@ -280,12 +280,13 @@ func (p *XLSXParser) processComments(file *excelize.File, sheetName, docID, shee
 	// Create comments container element
 	commentsID := generateID("comments_")
 	commentsElement := Element{
-		ElementID:      commentsID,
-		ElementType:    "comments",
-		ContentPreview: fmt.Sprintf("Comments in sheet '%s'", sheetName),
-		ParentID:       sheetID,
-		Position:       position,
-		Depth:          3,
+		ElementID:       commentsID,
+		ElementType:     "comments",
+		ContentPreview:  fmt.Sprintf("Comments in sheet '%s'", sheetName),
+		ParentID:        sheetID,
+		Position:        position,
+		Depth:           3,
+		ElementCategory: GetElementCategory("comments"),
 		ContentLocation: map[string]interface{}{
 			"sheet_name": sheetName,
 			"type":       "comments",
@@ -316,12 +317,13 @@ func (p *XLSXParser) processComments(file *excelize.File, sheetName, docID, shee
 		}
 
 		commentElement := Element{
-			ElementID:      commentID,
-			ElementType:    "comment",
-			ContentPreview: contentPreview,
-			ParentID:       commentsID,
-			Position:       position,
-			Depth:          4,
+			ElementID:       commentID,
+			ElementType:     "comment",
+			ContentPreview:  contentPreview,
+			ParentID:        commentsID,
+			Position:        position,
+			Depth:           4,
+			ElementCategory: GetElementCategory("comment"),
 			ContentLocation: map[string]interface{}{
 				"sheet_name": sheetName,
 				"cell":       comment.Cell,
@@ -371,12 +373,13 @@ func (p *XLSXParser) detectAndProcessTables(file *excelize.File, sheetName, docI
 	// Create data tables container
 	dataTablesID := generateID("data_tables_")
 	dataTablesElement := Element{
-		ElementID:      dataTablesID,
-		ElementType:    "data_tables",
-		ContentPreview: fmt.Sprintf("Data tables in sheet '%s'", sheetName),
-		ParentID:       sheetID,
-		Position:       position,
-		Depth:          3,
+		ElementID:       dataTablesID,
+		ElementType:     "data_tables",
+		ContentPreview:  fmt.Sprintf("Data tables in sheet '%s'", sheetName),
+		ParentID:        sheetID,
+		Position:        position,
+		Depth:           3,
+		ElementCategory: GetElementCategory("data_tables"),
 		ContentLocation: map[string]interface{}{
 			"sheet_name": sheetName,
 		},
@@ -570,12 +573,13 @@ func (p *XLSXParser) processTableRegion(file *excelize.File, sheetName, docID, p
 
 	// Create table element
 	tableElement := Element{
-		ElementID:      tableID,
-		ElementType:    "data_table",
-		ContentPreview: preview,
-		ParentID:       parentID,
-		Position:       position,
-		Depth:          4,
+		ElementID:       tableID,
+		ElementType:     "data_table",
+		ContentPreview:  preview,
+		ParentID:        parentID,
+		Position:        position,
+		Depth:           4,
+		ElementCategory: GetElementCategory("data_table"),
 		ContentLocation: map[string]interface{}{
 			"sheet_name": sheetName,
 			"range":      fmt.Sprintf("%s%d:%s%d", columnLetter(region.MinCol), region.MinRow, columnLetter(region.MaxCol), region.MaxRow),
@@ -645,12 +649,13 @@ func (p *XLSXParser) processHeaderRow(file *excelize.File, sheetName, docID, tab
 	}
 
 	headerRowElement := Element{
-		ElementID:      headerRowID,
-		ElementType:    "table_header_row",
-		ContentPreview: headerPreview,
-		ParentID:       tableID,
-		Position:       position,
-		Depth:          5,
+		ElementID:       headerRowID,
+		ElementType:     "table_header_row",
+		ContentPreview:  headerPreview,
+		ParentID:        tableID,
+		Position:        position,
+		Depth:           5,
+		ElementCategory: GetElementCategory("table_header_row"),
 		ContentLocation: map[string]interface{}{
 			"sheet_name": sheetName,
 			"row":        region.MinRow,
@@ -750,12 +755,13 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 	rowPreview := fmt.Sprintf("Row %d", row)
 
 	rowElement := Element{
-		ElementID:      rowID,
-		ElementType:    "table_row",
-		ContentPreview: rowPreview,
-		ParentID:       tableID,
-		Position:       position,
-		Depth:          5,
+		ElementID:       rowID,
+		ElementType:     "table_row",
+		ContentPreview:  rowPreview,
+		ParentID:        tableID,
+		Position:        position,
+		Depth:           5,
+		ElementCategory: GetElementCategory("table_row"),
 		ContentLocation: map[string]interface{}{
 			"sheet_name": sheetName,
 			"row":        row,
@@ -905,12 +911,13 @@ func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID 
 		// Create row element
 		rowID := generateID("row_")
 		rowElement := Element{
-			ElementID:      rowID,
-			ElementType:    "table_row",
-			ContentPreview: fmt.Sprintf("Row %d", row),
-			ParentID:       sheetID,
-			Position:       position,
-			Depth:          3,
+			ElementID:       rowID,
+			ElementType:     "table_row",
+			ContentPreview:  fmt.Sprintf("Row %d", row),
+			ParentID:        sheetID,
+			Position:        position,
+			Depth:           3,
+			ElementCategory: GetElementCategory("table_row"),
 			ContentLocation: map[string]interface{}{
 				"sheet_name": sheetName,
 				"row":        row,
@@ -957,13 +964,14 @@ func (p *XLSXParser) processRows(file *excelize.File, sheetName, docID, sheetID 
 				}
 
 				cellElement := Element{
-					ElementID:      cellID,
-					ElementType:    elementType,
-					Content:        normalizedValue,
-					ContentPreview: normalizedPreview,
-					ParentID:       rowID,
-					Position:       position,
-					Depth:          4,
+					ElementID:       cellID,
+					ElementType:     elementType,
+					Content:         normalizedValue,
+					ContentPreview:  normalizedPreview,
+					ParentID:        rowID,
+					Position:        position,
+					Depth:           4,
+					ElementCategory: GetElementCategory(elementType),
 					ContentLocation: map[string]interface{}{
 						"sheet_name": sheetName,
 						"cell":       cellAddr,
@@ -1014,12 +1022,13 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 		rowPreview := fmt.Sprintf("Row %d", row)
 
 		rowElement := Element{
-			ElementID:      rowID,
-			ElementType:    "table_row",
-			ContentPreview: rowPreview,
-			ParentID:       sheetID,
-			Position:       position,
-			Depth:          3,
+			ElementID:       rowID,
+			ElementType:     "table_row",
+			ContentPreview:  rowPreview,
+			ParentID:        sheetID,
+			Position:        position,
+			Depth:           3,
+			ElementCategory: GetElementCategory("table_row"),
 			ContentLocation: map[string]interface{}{
 				"sheet_name": sheetName,
 				"row":        row,
@@ -1171,12 +1180,13 @@ func (p *XLSXParser) processMergedCells(file *excelize.File, sheetName, docID, s
 	// Create merged cells container element
 	mergedCellsID := generateID("merged_cells_")
 	mergedCellsElement := Element{
-		ElementID:      mergedCellsID,
-		ElementType:    "merged_cells",
-		ContentPreview: fmt.Sprintf("Merged cells in sheet '%s'", sheetName),
-		ParentID:       sheetID,
-		Position:       position,
-		Depth:          3,
+		ElementID:       mergedCellsID,
+		ElementType:     "merged_cells",
+		ContentPreview:  fmt.Sprintf("Merged cells in sheet '%s'", sheetName),
+		ParentID:        sheetID,
+		Position:        position,
+		Depth:           3,
+		ElementCategory: GetElementCategory("merged_cells"),
 		ContentLocation: map[string]interface{}{
 			"sheet_name": sheetName,
 			"type":       "merged_cells",
@@ -1212,13 +1222,14 @@ func (p *XLSXParser) processMergedCells(file *excelize.File, sheetName, docID, s
 
 		// Create merged cell element
 		mergedElement := Element{
-			ElementID:      mergedID,
-			ElementType:    "merged_cell",
-			Content:        cellValue,
-			ContentPreview: contentPreview,
-			ParentID:       mergedCellsID,
-			Position:       position,
-			Depth:          4,
+			ElementID:       mergedID,
+			ElementType:     "merged_cell",
+			Content:         cellValue,
+			ContentPreview:  contentPreview,
+			ParentID:        mergedCellsID,
+			Position:        position,
+			Depth:           4,
+			ElementCategory: GetElementCategory("merged_cell"),
 			ContentLocation: map[string]interface{}{
 				"sheet_name": sheetName,
 				"range":      mergedCell.GetCellValue(),
