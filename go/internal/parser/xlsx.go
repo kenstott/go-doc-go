@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -34,7 +35,35 @@ func NewXLSXParser() *XLSXParser {
 		ExtractComments:   true,
 		ExtractFormulas:   true,
 		ExtractLinks:      true,
+		ExtractDates:      true,
 	}
+}
+
+// GetName returns the parser name
+func (p *XLSXParser) GetName() string {
+	return "xlsx"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *XLSXParser) GetSupportedFormats() []string {
+	return []string{".xlsx", ".xls", "xlsx"}
+}
+
+// Parse implements the Parser interface for Excel documents
+func (p *XLSXParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// XLSX parser can handle both file paths and byte content
+	return p.ParseLegacy(req.ID, req.Content)
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *XLSXParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *XLSXParser) Close() error {
+	// XLSX parser has no persistent resources to clean up
+	return nil
 }
 
 // CellData represents information about a cell
@@ -59,8 +88,9 @@ type TableRegion struct {
 	Confidence string
 }
 
-// Parse parses Excel content
-func (p *XLSXParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// ParseLegacy parses Excel content (legacy interface)
+// Deprecated: Use Parse(ctx, ParseRequest) instead
+func (p *XLSXParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	var file *excelize.File
 	var err error
 
@@ -98,11 +128,12 @@ func (p *XLSXParser) Parse(docID string, content interface{}) (*ParseResult, err
 	// Create root element
 	rootID := generateID("root_")
 	rootElement := Element{
-		ElementID:      rootID,
-		ElementType:    "root",
-		ContentPreview: "Excel Document",
-		Position:       0,
-		Depth:          0,
+		ElementID:       rootID,
+		ElementType:     "root",
+		ContentPreview:  "Excel Document",
+		Position:        0,
+		Depth:           0,
+		ElementCategory: GetElementCategory("root"),
 	}
 	result.Elements = append(result.Elements, rootElement)
 
@@ -110,12 +141,13 @@ func (p *XLSXParser) Parse(docID string, content interface{}) (*ParseResult, err
 	workbookID := generateID("workbook_")
 	sheetNames := file.GetSheetList()
 	workbookElement := Element{
-		ElementID:      workbookID,
-		ElementType:    "workbook",
-		ContentPreview: fmt.Sprintf("Excel workbook with %d sheets", len(sheetNames)),
-		ParentID:       rootID,
-		Position:       1,
-		Depth:          1,
+		ElementID:       workbookID,
+		ElementType:     "workbook",
+		ContentPreview:  fmt.Sprintf("Excel workbook with %d sheets", len(sheetNames)),
+		ParentID:        rootID,
+		Position:        1,
+		Depth:           1,
+		ElementCategory: GetElementCategory("workbook"),
 		Metadata: map[string]interface{}{
 			"sheet_count": len(sheetNames),
 			"sheet_names": sheetNames,
@@ -179,6 +211,7 @@ func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, 
 	}
 
 	// Create sheet element
+	sheetPageNum := sheetIdx + 1 // Sheets map to pages in XLSX
 	sheetElement := Element{
 		ElementID:      sheetID,
 		ElementType:    "sheet",
@@ -194,6 +227,9 @@ func (p *XLSXParser) processSheet(file *excelize.File, sheetName string, docID, 
 			"max_row":    maxRow,
 			"max_column": maxCol,
 		},
+		// UDML Phase 1: Populate promoted fields
+		PageNumber:      &sheetPageNum,
+		ElementCategory: GetElementCategory("sheet"),
 	}
 	elements = append(elements, sheetElement)
 	position++
@@ -661,6 +697,14 @@ func (p *XLSXParser) processHeaderRow(file *excelize.File, sheetName, docID, tab
 					"sheet":  sheetName,
 				},
 			}
+
+			// UDML Phase 1: Populate promoted fields
+			rowIdx := region.MinRow
+			colIdx := col
+			headerCellElement.RowIndex = &rowIdx
+			headerCellElement.ColumnIndex = &colIdx
+			headerCellElement.ElementCategory = GetElementCategory("table_header")
+
 			elements = append(elements, headerCellElement)
 			position++
 
@@ -810,6 +854,19 @@ func (p *XLSXParser) processTableRow(file *excelize.File, sheetName, docID, tabl
 			if p.ExtractDates && normalizedValue != "" {
 				ProcessTemporalContent(normalizedValue, cellElement.Metadata)
 			}
+
+			// UDML Phase 1: Populate promoted fields
+			rowIdx := row
+			colIdx := col
+			cellElement.RowIndex = &rowIdx
+			cellElement.ColumnIndex = &colIdx
+
+			// TemporalType from temporal metadata
+			if temporalType, ok := cellElement.Metadata["temporal_type"].(string); ok && temporalType != "" {
+				cellElement.TemporalType = &temporalType
+			}
+
+			cellElement.ElementCategory = GetElementCategory("table_cell")
 
 			elements = append(elements, cellElement)
 			position++
@@ -1074,6 +1131,19 @@ func (p *XLSXParser) processRawRows(file *excelize.File, sheetName, docID, sheet
 			if p.ExtractDates && normalizedValue != "" {
 				ProcessTemporalContent(normalizedValue, cellElement.Metadata)
 			}
+
+			// UDML Phase 1: Populate promoted fields
+			rowIdx := row
+			colIdx := col
+			cellElement.RowIndex = &rowIdx
+			cellElement.ColumnIndex = &colIdx
+
+			// TemporalType from temporal metadata
+			if temporalType, ok := cellElement.Metadata["temporal_type"].(string); ok && temporalType != "" {
+				cellElement.TemporalType = &temporalType
+			}
+
+			cellElement.ElementCategory = GetElementCategory(elementType)
 
 			elements = append(elements, cellElement)
 			position++

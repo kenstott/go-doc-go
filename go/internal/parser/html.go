@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -71,8 +72,9 @@ type HTMLRelationship struct {
 	Metadata         map[string]interface{} `json:"metadata"`
 }
 
-// ParseRequest represents the input for HTML parsing
-type ParseRequest struct {
+// HTMLParseRequest represents the input for HTML parsing (deprecated - use parser.ParseRequest)
+// Kept temporarily during migration to new Parser interface
+type HTMLParseRequest struct {
 	ID       string                 `json:"id"`
 	Content  string                 `json:"content"`
 	Metadata map[string]interface{} `json:"metadata"`
@@ -108,8 +110,68 @@ func NewHTMLParser() *HTMLParser {
 	}
 }
 
-// Parse is the universal interface that converts HTML content to ParseResult
-func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// Parser interface implementation
+
+// GetName returns the parser name
+func (p *HTMLParser) GetName() string {
+	return "html"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *HTMLParser) GetSupportedFormats() []string {
+	return []string{".html", ".htm", "html"}
+}
+
+// Parse implements the Parser interface for HTML documents
+func (p *HTMLParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request
+	var htmlContent string
+	switch v := req.Content.(type) {
+	case string:
+		htmlContent = v
+	case []byte:
+		htmlContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Cache the HTML content for later resolution
+	p.cacheMu.Lock()
+	p.documentCache[req.ID] = htmlContent
+	p.cacheMu.Unlock()
+
+	// Create HTML-specific request
+	htmlRequest := HTMLParseRequest{
+		ID:       req.ID,
+		Content:  htmlContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseHTML(htmlRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *HTMLParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *HTMLParser) Close() error {
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+	p.documentCache = make(map[string]string)
+	return nil
+}
+
+// ParseLegacy is the legacy interface that converts HTML content to ParseResult (deprecated)
+func (p *HTMLParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
 	var htmlContent string
 	switch v := content.(type) {
@@ -127,7 +189,7 @@ func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, err
 	p.cacheMu.Unlock()
 
 	// Create request structure for compatibility
-	request := ParseRequest{
+	request := HTMLParseRequest{
 		ID:       docID,
 		Content:  htmlContent,
 		Metadata: make(map[string]interface{}),
@@ -144,7 +206,7 @@ func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, err
 }
 
 // parseHTML parses an HTML document into structured elements (internal implementation)
-func (p *HTMLParser) parseHTML(request ParseRequest) (*ParseResponse, error) {
+func (p *HTMLParser) parseHTML(request HTMLParseRequest) (*ParseResponse, error) {
 	// Parse HTML content
 	doc, err := html.Parse(strings.NewReader(request.Content))
 	if err != nil {
@@ -533,6 +595,14 @@ func (p *HTMLParser) extractMetadata(node *html.Node) map[string]interface{} {
 		}
 	}
 
+	// Extract header level for h1-h6 tags
+	tagName := strings.ToLower(node.Data)
+	if len(tagName) == 2 && tagName[0] == 'h' && tagName[1] >= '1' && tagName[1] <= '6' {
+		level := int(tagName[1] - '0')
+		metadata["level"] = level
+		metadata["tag"] = tagName
+	}
+
 	// Set default values for table cells if not present
 	if node.Data == "td" || node.Data == "th" {
 		if _, exists := metadata["colspan"]; !exists {
@@ -663,8 +733,8 @@ func (r *ParseResponse) ToJSON() (string, error) {
 	return string(data), nil
 }
 
-// FromJSON creates a ParseRequest from JSON
-func (r *ParseRequest) FromJSON(jsonStr string) error {
+// FromJSON creates an HTMLParseRequest from JSON
+func (r *HTMLParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
 }
 
@@ -698,6 +768,40 @@ func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult 
 			ContentLocation: htmlElem.ContentLocation,
 			Metadata:        htmlElem.Metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// TagName - store the HTML tag name for all HTML elements
+		tagName := string(htmlElem.ElementType)
+		element.TagName = &tagName
+
+		// SectionLevel - for header elements (h1-h6)
+		if htmlElem.ElementType == HTMLElementTypeHeader {
+			// Extract level from element type or ID
+			level := extractHeaderLevel(htmlElem.ElementID, htmlElem.Metadata)
+			if level > 0 {
+				element.SectionLevel = &level
+			}
+		}
+
+		// RowIndex and ColumnIndex - for table cells
+		if htmlElem.ElementType == HTMLElementTypeTableCell || htmlElem.ElementType == HTMLElementTypeTableHeader {
+			if row, ok := htmlElem.Metadata["row"].(int); ok {
+				element.RowIndex = &row
+			}
+			if col, ok := htmlElem.Metadata["col"].(int); ok {
+				element.ColumnIndex = &col
+			}
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := htmlElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// ElementCategory
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
 	}
 
@@ -746,6 +850,25 @@ func calculateDepth(elementType HTMLElementType) int {
 	default:
 		return 2 // Default depth for unknown elements
 	}
+}
+
+// extractHeaderLevel extracts the heading level (1-6) from header element metadata
+func extractHeaderLevel(elementID string, metadata map[string]interface{}) int {
+	// Try to get from metadata first
+	if level, ok := metadata["level"].(int); ok && level >= 1 && level <= 6 {
+		return level
+	}
+
+	// Extract from element ID (e.g., "h1_123" or "header_h2_456")
+	idLower := strings.ToLower(elementID)
+	for level := 1; level <= 6; level++ {
+		tag := fmt.Sprintf("h%d", level)
+		if strings.Contains(idLower, tag) {
+			return level
+		}
+	}
+
+	return 0 // Unknown level
 }
 
 // SupportsLocation checks if this parser can resolve the given content location

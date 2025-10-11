@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -91,7 +92,7 @@ func (r *MarkdownParseResponse) ToJSON() (string, error) {
 	return string(data), nil
 }
 
-// ToParseResult converts MarkdownParseResponse to the standard ParseResult format
+// ToParseResult converts MarkdownParseResponse to the standard ParseResult format (deprecated - use convertToParseResult)
 func (r *MarkdownParseResponse) ToParseResult() *ParseResult {
 	// Convert document metadata
 	var doc Document
@@ -150,6 +151,104 @@ func (r *MarkdownParseResponse) ToParseResult() *ParseResult {
 	}
 }
 
+// convertToParseResult converts MarkdownParseResponse to universal ParseResult with promoted fields
+func (p *MarkdownParser) convertToParseResult(response *MarkdownParseResponse) *ParseResult {
+	result := &ParseResult{
+		Document: Document{
+			ID:      response.Document["doc_id"].(string),
+			DocType: "markdown",
+		},
+		Elements:      make([]Element, 0, len(response.Elements)),
+		Relationships: make([]Relationship, 0, len(response.Relationships)),
+		Links:         make([]Link, 0, len(response.Links)),
+	}
+
+	// Convert metadata if present
+	if meta, ok := response.Document["metadata"]; ok {
+		result.Document.Metadata = meta.(map[string]interface{})
+	}
+
+	// Convert elements with promoted fields
+	for i, mdElem := range response.Elements {
+		element := Element{
+			ElementID:       mdElem.ElementID,
+			ElementType:     string(mdElem.ElementType),
+			Content:         mdElem.Text,
+			ContentPreview:  mdElem.ContentPreview,
+			ParentID:        mdElem.ParentID,
+			Position:        i,
+			Depth:           calculateMarkdownDepth(mdElem.ElementType),
+			ContentLocation: mdElem.ContentLocation,
+			Metadata:        mdElem.Metadata,
+		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// SectionLevel - for header elements
+		if mdElem.ElementType == MarkdownElementTypeHeader {
+			if level, ok := mdElem.Metadata["level"].(int); ok {
+				element.SectionLevel = &level
+			}
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := mdElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// ElementCategory
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
+		result.Elements = append(result.Elements, element)
+	}
+
+	// Convert relationships
+	for _, mdRel := range response.Relationships {
+		relationship := Relationship{
+			RelationshipID:   mdRel.RelationshipID,
+			RelationshipType: mdRel.RelationshipType,
+			SourceElementID:  mdRel.SourceElementID,
+			TargetElementID:  mdRel.TargetElementID,
+			Confidence:       mdRel.Confidence,
+			Metadata:         mdRel.Metadata,
+		}
+		result.Relationships = append(result.Relationships, relationship)
+	}
+
+	// Convert links
+	for _, mdLink := range response.Links {
+		link := Link{
+			LinkID:          generateID("link"),
+			SourceElementID: mdLink.ElementID,
+			LinkType:        mdLink.LinkType,
+			LinkTarget:      mdLink.LinkTarget,
+			LinkText:        mdLink.LinkText,
+		}
+		result.Links = append(result.Links, link)
+	}
+
+	return result
+}
+
+// calculateMarkdownDepth calculates element depth based on markdown element type
+func calculateMarkdownDepth(elementType MarkdownElementType) int {
+	switch elementType {
+	case MarkdownElementTypeRoot:
+		return 0
+	case MarkdownElementTypeFrontMatter:
+		return 1
+	case MarkdownElementTypeHeader, MarkdownElementTypeParagraph, MarkdownElementTypeCodeBlock,
+		MarkdownElementTypeList, MarkdownElementTypeBlockquote, MarkdownElementTypeTable:
+		return 2
+	case MarkdownElementTypeListItem, MarkdownElementTypeTableRow:
+		return 3
+	case MarkdownElementTypeTableCell:
+		return 4
+	default:
+		return 2 // Default depth for unknown elements
+	}
+}
+
 // MarkdownParser handles parsing of markdown documents
 type MarkdownParser struct {
 	MaxContentPreview     int
@@ -182,8 +281,60 @@ func NewMarkdownParser() *MarkdownParser {
 	}
 }
 
-// Parse parses markdown content and returns structured elements
-func (p *MarkdownParser) Parse(request MarkdownParseRequest) (*MarkdownParseResponse, error) {
+// Parser interface implementation
+
+// GetName returns the parser name
+func (p *MarkdownParser) GetName() string {
+	return "markdown"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *MarkdownParser) GetSupportedFormats() []string {
+	return []string{".md", ".markdown", "markdown"}
+}
+
+// Parse implements the Parser interface for Markdown documents
+func (p *MarkdownParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request
+	var mdContent string
+	switch v := req.Content.(type) {
+	case string:
+		mdContent = v
+	case []byte:
+		mdContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Create Markdown-specific request
+	mdRequest := MarkdownParseRequest{
+		ID:       req.ID,
+		Content:  mdContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseMarkdown(mdRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *MarkdownParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *MarkdownParser) Close() error {
+	return nil
+}
+
+// parseMarkdown parses markdown content and returns structured elements (internal method)
+func (p *MarkdownParser) parseMarkdown(request MarkdownParseRequest) (*MarkdownParseResponse, error) {
 	if request.ID == "" {
 		return nil, fmt.Errorf("document ID is required")
 	}

@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -34,8 +35,36 @@ func NewPDFParser() *PDFParser {
 	}
 }
 
-// Parse parses PDF content using go-fitz (MuPDF wrapper)
-func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// GetName returns the parser name
+func (p *PDFParser) GetName() string {
+	return "pdf"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *PDFParser) GetSupportedFormats() []string {
+	return []string{".pdf", "pdf"}
+}
+
+// Parse implements the Parser interface for PDF documents
+func (p *PDFParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request - PDF parser expects file path or []byte
+	return p.ParseLegacy(req.ID, req.Content)
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *PDFParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *PDFParser) Close() error {
+	// PDF parser has no persistent resources to clean up
+	return nil
+}
+
+// ParseLegacy parses PDF content using go-fitz (MuPDF wrapper)
+// Deprecated: Use Parse(ctx, ParseRequest) instead
+func (p *PDFParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	var data []byte
 	var err error
 
@@ -84,11 +113,12 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 	// Create root element
 	rootID := generateID("root_")
 	rootElement := Element{
-		ElementID:      rootID,
-		ElementType:    "root",
-		ContentPreview: "PDF Document",
-		Position:       0,
-		Depth:          0,
+		ElementID:       rootID,
+		ElementType:     "root",
+		ContentPreview:  "PDF Document",
+		Position:        0,
+		Depth:           0,
+		ElementCategory: GetElementCategory("root"),
 	}
 	result.Elements = append(result.Elements, rootElement)
 
@@ -98,12 +128,13 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 	// Create body element
 	bodyID := generateID("body_")
 	bodyElement := Element{
-		ElementID:      bodyID,
-		ElementType:    "body",
-		ContentPreview: fmt.Sprintf("PDF content with %d pages", numPages),
-		ParentID:       rootID,
-		Position:       1,
-		Depth:          1,
+		ElementID:       bodyID,
+		ElementType:     "body",
+		ContentPreview:  fmt.Sprintf("PDF content with %d pages", numPages),
+		ParentID:        rootID,
+		Position:        1,
+		Depth:           1,
+		ElementCategory: GetElementCategory("body"),
 	}
 	result.Elements = append(result.Elements, bodyElement)
 
@@ -147,16 +178,20 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 
 	// Create page element
 	pageID := generateID(fmt.Sprintf("page_%d_", pageNum+1))
+	pageNumber := pageNum + 1
 	pageElement := Element{
 		ElementID:      pageID,
 		ElementType:    "page",
-		ContentPreview: fmt.Sprintf("Page %d", pageNum+1),
+		ContentPreview: fmt.Sprintf("Page %d", pageNumber),
 		ParentID:       bodyID,
 		Position:       *elementPosition,
 		Depth:          2,
 		ContentLocation: map[string]interface{}{
-			"page_number": pageNum + 1,
+			"page_number": pageNumber,
 		},
+		// UDML Phase 1: Populate promoted fields
+		PageNumber:      &pageNumber,
+		ElementCategory: GetElementCategory("page"),
 	}
 	elements = append(elements, pageElement)
 	*elementPosition++
@@ -205,16 +240,29 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 		ProcessTemporalContent(block.Text, metadata)
 
 		blockElement := Element{
-			ElementID:      blockID,
-			ElementType:    blockType,
-			Content:        block.Text,
-			ContentPreview: p.truncateText(block.Text, p.MaxContentPreview),
-			ParentID:       pageID,
-			Position:       *elementPosition,
-			Depth:          3,
+			ElementID:       blockID,
+			ElementType:     blockType,
+			Content:         block.Text,
+			ContentPreview:  p.truncateText(block.Text, p.MaxContentPreview),
+			ParentID:        pageID,
+			Position:        *elementPosition,
+			Depth:           3,
 			ContentLocation: metadata,
-			Metadata:       metadata,
+			Metadata:        metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+		pageNum := pageNum + 1
+		blockElement.PageNumber = &pageNum
+
+		// TemporalType from temporal metadata
+		if temporalType, ok := metadata["temporal_type"].(string); ok && temporalType != "" {
+			blockElement.TemporalType = &temporalType
+		}
+
+		// ElementCategory
+		blockElement.ElementCategory = GetElementCategory(blockType)
+
 		elements = append(elements, blockElement)
 		*elementPosition++
 
@@ -374,6 +422,7 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 		contentPreview := fmt.Sprintf("Table with %d rows and %d columns", table.Rows, table.Cols)
 
 		// Create table element
+		tablePageNum := pageNum + 1
 		tableElement := Element{
 			ElementID:      tableID,
 			ElementType:    "table",
@@ -382,9 +431,12 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			Position:       *elementPosition,
 			Depth:          3,
 			ContentLocation: map[string]interface{}{
-				"page_number": pageNum + 1,
+				"page_number": tablePageNum,
 				"table_index": tableIdx,
 			},
+			// UDML Phase 1: Populate promoted fields
+			PageNumber:      &tablePageNum,
+			ElementCategory: GetElementCategory("table"),
 		}
 		elements = append(elements, tableElement)
 		*elementPosition++
@@ -427,6 +479,7 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			headerText := strings.Join(headerTexts, "\t")
 
 			// Create header row element
+			headerRowPageNum := pageNum + 1
 			headerRowElement := Element{
 				ElementID:      headerRowID,
 				ElementType:    "table_header_row",
@@ -435,10 +488,13 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				Position:       *elementPosition,
 				Depth:          4,
 				ContentLocation: map[string]interface{}{
-					"page_number": pageNum + 1,
+					"page_number": headerRowPageNum,
 					"table_index": tableIdx,
 					"row":         0,
 				},
+				// UDML Phase 1: Populate promoted fields
+				PageNumber:      &headerRowPageNum,
+				ElementCategory: GetElementCategory("table_header_row"),
 			}
 			elements = append(elements, headerRowElement)
 			*elementPosition++
@@ -475,16 +531,33 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				ProcessTemporalContent(cellText, headerMetadata)
 
 				headerCellElement := Element{
-					ElementID:      headerCellID,
-					ElementType:    "table_header",
-					Content:        cellText,
-					ContentPreview: p.truncateText(cellText, p.MaxContentPreview),
-					ParentID:       headerRowID,
-					Position:       *elementPosition,
-					Depth:          5,
+					ElementID:       headerCellID,
+					ElementType:     "table_header",
+					Content:         cellText,
+					ContentPreview:  p.truncateText(cellText, p.MaxContentPreview),
+					ParentID:        headerRowID,
+					Position:        *elementPosition,
+					Depth:           5,
 					ContentLocation: headerMetadata,
-					Metadata:       headerMetadata,
+					Metadata:        headerMetadata,
 				}
+
+				// UDML Phase 1: Populate promoted fields
+				headerCellPageNum := pageNum + 1
+				headerCellRowIdx := 0
+				headerCellColIdx := colKey
+				headerCellElement.PageNumber = &headerCellPageNum
+				headerCellElement.RowIndex = &headerCellRowIdx
+				headerCellElement.ColumnIndex = &headerCellColIdx
+
+				// TemporalType from temporal metadata
+				if temporalType, ok := headerMetadata["temporal_type"].(string); ok && temporalType != "" {
+					headerCellElement.TemporalType = &temporalType
+				}
+
+				// ElementCategory
+				headerCellElement.ElementCategory = GetElementCategory("table_header")
+
 				elements = append(elements, headerCellElement)
 				*elementPosition++
 
@@ -533,6 +606,7 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			rowText := strings.Join(rowTexts, "\t")
 
 			// Create row element
+			rowPageNum := pageNum + 1
 			rowElement := Element{
 				ElementID:      rowID,
 				ElementType:    "table_row",
@@ -541,10 +615,13 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				Position:       *elementPosition,
 				Depth:          4,
 				ContentLocation: map[string]interface{}{
-					"page_number": pageNum + 1,
+					"page_number": rowPageNum,
 					"table_index": tableIdx,
 					"row":         row,
 				},
+				// UDML Phase 1: Populate promoted fields
+				PageNumber:      &rowPageNum,
+				ElementCategory: GetElementCategory("table_row"),
 			}
 			elements = append(elements, rowElement)
 			*elementPosition++
@@ -581,16 +658,33 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				ProcessTemporalContent(cellText, cellMetadata)
 
 				cellElement := Element{
-					ElementID:      cellID,
-					ElementType:    "table_cell",
-					Content:        cellText,
-					ContentPreview: p.truncateText(cellText, p.MaxContentPreview),
-					ParentID:       rowID,
-					Position:       *elementPosition,
-					Depth:          5,
+					ElementID:       cellID,
+					ElementType:     "table_cell",
+					Content:         cellText,
+					ContentPreview:  p.truncateText(cellText, p.MaxContentPreview),
+					ParentID:        rowID,
+					Position:        *elementPosition,
+					Depth:           5,
 					ContentLocation: cellMetadata,
-					Metadata:       cellMetadata,
+					Metadata:        cellMetadata,
 				}
+
+				// UDML Phase 1: Populate promoted fields
+				cellPageNum := pageNum + 1
+				cellRowIdx := row
+				cellColIdx := col
+				cellElement.PageNumber = &cellPageNum
+				cellElement.RowIndex = &cellRowIdx
+				cellElement.ColumnIndex = &cellColIdx
+
+				// TemporalType from temporal metadata
+				if temporalType, ok := cellMetadata["temporal_type"].(string); ok && temporalType != "" {
+					cellElement.TemporalType = &temporalType
+				}
+
+				// ElementCategory
+				cellElement.ElementCategory = GetElementCategory("table_cell")
+
 				elements = append(elements, cellElement)
 				*elementPosition++
 

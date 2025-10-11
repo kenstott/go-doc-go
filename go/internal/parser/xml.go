@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"encoding/xml"
@@ -98,8 +99,60 @@ func NewXMLParser() *XMLParser {
 	}
 }
 
-// Parse is the universal interface that converts XML content to ParseResult
-func (p *XMLParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// GetName returns the parser name
+func (p *XMLParser) GetName() string {
+	return "xml"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *XMLParser) GetSupportedFormats() []string {
+	return []string{".xml", "xml"}
+}
+
+// Parse implements the Parser interface for XML documents
+func (p *XMLParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract XML content from request
+	var xmlContent string
+	switch v := req.Content.(type) {
+	case string:
+		xmlContent = v
+	case []byte:
+		xmlContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Create XML-specific request
+	xmlRequest := XMLParseRequest{
+		ID:       req.ID,
+		Content:  xmlContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using internal implementation
+	response, err := p.parseXML(xmlRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult with promoted fields
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *XMLParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *XMLParser) Close() error {
+	// XML parser has no resources to clean up
+	return nil
+}
+
+// ParseLegacy is the legacy interface that converts XML content to ParseResult
+// Deprecated: Use Parse(ctx, ParseRequest) instead
+func (p *XMLParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
 	var xmlContent string
 	switch v := content.(type) {
@@ -492,7 +545,7 @@ func (r *XMLParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
 }
 
-// convertToParseResult converts XMLParseResponse to universal ParseResult format
+// convertToParseResult converts XMLParseResponse to universal ParseResult format with promoted fields
 func (p *XMLParser) convertToParseResult(response *XMLParseResponse) *ParseResult {
 	result := &ParseResult{
 		Document: Document{
@@ -522,6 +575,22 @@ func (p *XMLParser) convertToParseResult(response *XMLParseResponse) *ParseResul
 			ContentLocation: xmlElem.ContentLocation,
 			Metadata:        xmlElem.Metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// TagName - for XML elements, store the tag name from metadata
+		if tagName, ok := xmlElem.Metadata["tag_name"].(string); ok && tagName != "" {
+			element.TagName = &tagName
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := xmlElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// ElementCategory - use taxonomy
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
 	}
 

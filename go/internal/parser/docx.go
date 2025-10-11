@@ -2,6 +2,7 @@ package parser
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/json"
@@ -59,7 +60,7 @@ type DocxParseResponse struct {
 	Relationships []DocxRelationship     `json:"relationships"`
 }
 
-// ToParseResult converts DocxParseResponse to the standard ParseResult format
+// ToParseResult converts DocxParseResponse to the standard ParseResult format with promoted fields
 func (r *DocxParseResponse) ToParseResult() *ParseResult {
 	// Convert document metadata
 	var doc Document
@@ -74,10 +75,10 @@ func (r *DocxParseResponse) ToParseResult() *ParseResult {
 	}
 	doc.Metadata = r.Document
 
-	// Convert elements
+	// Convert elements with promoted fields
 	elements := make([]Element, len(r.Elements))
 	for i, docxElem := range r.Elements {
-		elements[i] = Element{
+		element := Element{
 			ElementID:       docxElem.ElementID,
 			ElementType:     docxElem.ElementType,
 			Content:         "", // DOCX elements use ContentLocation
@@ -86,12 +87,42 @@ func (r *DocxParseResponse) ToParseResult() *ParseResult {
 			Metadata:        docxElem.Metadata,
 			ContentLocation: docxElem.ContentLocation,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// SectionLevel - for header elements
+		if docxElem.ElementType == "header" {
+			if level, ok := docxElem.Metadata["level"].(int); ok {
+				element.SectionLevel = &level
+			}
+		}
+
+		// RowIndex and ColumnIndex - for table cells
+		if docxElem.ElementType == "table_cell" || docxElem.ElementType == "table_header" || docxElem.ElementType == "merged_cell" {
+			if row, ok := docxElem.Metadata["row"].(int); ok {
+				element.RowIndex = &row
+			}
+			if col, ok := docxElem.Metadata["col"].(int); ok {
+				element.ColumnIndex = &col
+			}
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := docxElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// ElementCategory - use taxonomy
+		element.ElementCategory = GetElementCategory(docxElem.ElementType)
+
+		elements[i] = element
 	}
 
 	// Convert relationships
 	relationships := make([]Relationship, len(r.Relationships))
 	for i, docxRel := range r.Relationships {
 		relationships[i] = Relationship{
+			RelationshipID:   docxRel.RelationshipID,
 			SourceElementID:  docxRel.SourceElementID,
 			TargetElementID:  docxRel.TargetElementID,
 			RelationshipType: docxRel.RelationshipType,
@@ -190,11 +221,61 @@ func NewDocxParser() *DocxParser {
 		ExtractComments:       true,
 		ExtractStyles:         true,
 		MaxImageSize:          1024 * 1024, // 1MB
+		ExtractDates:          true,
 	}
 }
 
-// Parse parses a DOCX document into structured elements
-func (p *DocxParser) Parse(request DocxParseRequest) (*DocxParseResponse, error) {
+// GetName returns the parser name
+func (p *DocxParser) GetName() string {
+	return "docx"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *DocxParser) GetSupportedFormats() []string {
+	return []string{".docx", "docx"}
+}
+
+// Parse implements the Parser interface for DOCX documents
+func (p *DocxParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request - DOCX parser expects file path
+	var contentPath string
+	switch v := req.Content.(type) {
+	case string:
+		contentPath = v
+	default:
+		return nil, fmt.Errorf("unsupported content type for DOCX parser: %T (expected file path string)", req.Content)
+	}
+
+	// Create DOCX-specific request
+	docxRequest := DocxParseRequest{
+		ID:       req.ID,
+		Content:  contentPath,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using internal implementation
+	response, err := p.parseDocx(docxRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult with promoted fields
+	return response.ToParseResult(), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *DocxParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *DocxParser) Close() error {
+	// DOCX parser has no persistent resources to clean up
+	return nil
+}
+
+// parseDocx parses a DOCX document into structured elements (internal implementation)
+func (p *DocxParser) parseDocx(request DocxParseRequest) (*DocxParseResponse, error) {
 	// Open DOCX file as ZIP archive
 	reader, err := zip.OpenReader(request.Content)
 	if err != nil {

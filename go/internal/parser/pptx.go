@@ -2,6 +2,7 @@ package parser
 
 import (
 	"archive/zip"
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/json"
@@ -249,8 +250,57 @@ func NewPptxParser() *PptxParser {
 	}
 }
 
-// Parse parses a PPTX document into structured elements
-func (p *PptxParser) Parse(request PptxParseRequest) (*PptxParseResponse, error) {
+// GetName returns the parser name
+func (p *PptxParser) GetName() string {
+	return "pptx"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *PptxParser) GetSupportedFormats() []string {
+	return []string{".pptx", "pptx"}
+}
+
+// Parse implements the Parser interface for PPTX documents
+func (p *PptxParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request - PPTX parser expects file path
+	var contentPath string
+	switch v := req.Content.(type) {
+	case string:
+		contentPath = v
+	default:
+		return nil, fmt.Errorf("unsupported content type for PPTX parser: %T (expected file path string)", req.Content)
+	}
+
+	// Create PPTX-specific request
+	pptxRequest := PptxParseRequest{
+		ID:       req.ID,
+		Content:  contentPath,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using internal implementation
+	response, err := p.parsePptx(pptxRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult with promoted fields
+	return response.ToParseResult(), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *PptxParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *PptxParser) Close() error {
+	// PPTX parser has no persistent resources to clean up
+	return nil
+}
+
+// parsePptx parses a PPTX document into structured elements (internal implementation)
+func (p *PptxParser) parsePptx(request PptxParseRequest) (*PptxParseResponse, error) {
 	// Open PPTX file as ZIP archive
 	reader, err := zip.OpenReader(request.Content)
 	if err != nil {
@@ -1284,7 +1334,7 @@ func (p *PptxParser) truncateContent(content string) string {
 	return content[:p.MaxContentPreview-3] + "..."
 }
 
-// ToParseResult converts PptxParseResponse to generic ParseResult
+// ToParseResult converts PptxParseResponse to generic ParseResult with promoted fields
 func (r *PptxParseResponse) ToParseResult() *ParseResult {
 	// Convert document map to Document struct
 	doc := Document{
@@ -1309,7 +1359,7 @@ func (r *PptxParseResponse) ToParseResult() *ParseResult {
 		Relationships: make([]Relationship, 0, len(r.Relationships)),
 	}
 
-	// Convert elements
+	// Convert elements with promoted fields
 	for _, pptxElem := range r.Elements {
 		elem := Element{
 			ElementID:       pptxElem.ElementID,
@@ -1321,6 +1371,35 @@ func (r *PptxParseResponse) ToParseResult() *ParseResult {
 			Depth:           0, // PPTX doesn't track depth currently
 			Metadata:        pptxElem.Metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// PageNumber - from slide_number or slide_index + 1 (PPTX slides map to pages)
+		if slideNumber, ok := pptxElem.Metadata["slide_number"].(int); ok {
+			elem.PageNumber = &slideNumber
+		} else if slideIndex, ok := pptxElem.Metadata["slide_index"].(int); ok {
+			slideNumber := slideIndex + 1
+			elem.PageNumber = &slideNumber
+		}
+
+		// RowIndex and ColumnIndex - for table cells
+		if pptxElem.ElementType == "table_cell" {
+			if row, ok := pptxElem.Metadata["row_index"].(int); ok {
+				elem.RowIndex = &row
+			}
+			if col, ok := pptxElem.Metadata["col_index"].(int); ok {
+				elem.ColumnIndex = &col
+			}
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := pptxElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			elem.TemporalType = &temporalType
+		}
+
+		// ElementCategory - use taxonomy
+		elem.ElementCategory = GetElementCategory(pptxElem.ElementType)
+
 		result.Elements = append(result.Elements, elem)
 	}
 

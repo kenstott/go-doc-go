@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -117,8 +118,60 @@ func NewTextParser() *TextParser {
 	}
 }
 
-// Parse is the universal interface that converts text content to ParseResult
-func (p *TextParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// Parser interface implementation
+
+// GetName returns the parser name
+func (p *TextParser) GetName() string {
+	return "text"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *TextParser) GetSupportedFormats() []string {
+	return []string{".txt", "text"}
+}
+
+// Parse implements the Parser interface for text documents
+func (p *TextParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request
+	var textContent string
+	switch v := req.Content.(type) {
+	case string:
+		textContent = v
+	case []byte:
+		textContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Create text-specific request
+	textRequest := TextParseRequest{
+		ID:       req.ID,
+		Content:  textContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseText(textRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *TextParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *TextParser) Close() error {
+	return nil
+}
+
+// ParseLegacy is the legacy interface that converts text content to ParseResult (deprecated)
+func (p *TextParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
 	var textContent string
 	switch v := content.(type) {
@@ -551,6 +604,15 @@ func (p *TextParser) convertToParseResult(response *TextParseResponse) *ParseRes
 			ContentLocation: textElem.ContentLocation,
 			Metadata:        textElem.Metadata,
 		}
+
+		// Populate TemporalType promoted field from metadata
+		if temporalType, ok := textElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// Set element category
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
 	}
 

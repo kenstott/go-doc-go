@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -97,8 +98,60 @@ func NewJSONParser() *JSONParser {
 	}
 }
 
-// Parse is the universal interface that converts JSON content to ParseResult
-func (p *JSONParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// Parser interface implementation
+
+// GetName returns the parser name
+func (p *JSONParser) GetName() string {
+	return "json"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *JSONParser) GetSupportedFormats() []string {
+	return []string{".json", "json"}
+}
+
+// Parse implements the Parser interface for JSON documents
+func (p *JSONParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request
+	var jsonContent string
+	switch v := req.Content.(type) {
+	case string:
+		jsonContent = v
+	case []byte:
+		jsonContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Create JSON-specific request
+	jsonRequest := JSONParseRequest{
+		ID:       req.ID,
+		Content:  jsonContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseJSON(jsonRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *JSONParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *JSONParser) Close() error {
+	return nil
+}
+
+// ParseLegacy is the legacy interface that converts JSON content to ParseResult (deprecated)
+func (p *JSONParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
 	var jsonContent string
 	switch v := content.(type) {
@@ -666,6 +719,15 @@ func (p *JSONParser) convertToParseResult(response *JSONParseResponse) *ParseRes
 			ContentLocation: jsonElem.ContentLocation,
 			Metadata:        jsonElem.Metadata,
 		}
+
+		// Populate TemporalType promoted field from metadata
+		if temporalType, ok := jsonElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// Set element category
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
 	}
 
