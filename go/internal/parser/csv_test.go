@@ -31,7 +31,7 @@ func TestParseSimpleCSV(t *testing.T) {
 John Doe,30,New York
 Jane Smith,25,Los Angeles`
 
-	result, err := parser.Parse("test_doc", csvContent)
+	result, err := parser.ParseLegacy("test_doc", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestParseCSVWithHeader(t *testing.T) {
 2,Widget B,14.99,Electronics
 3,Gadget C,29.99,Tools`
 
-	result, err := parser.Parse("test_products", csvContent)
+	result, err := parser.ParseLegacy("test_products", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestParseCSVWithoutHeader(t *testing.T) {
 Jane,25,Designer
 Bob,35,Manager`
 
-	result, err := parser.Parse("test_no_header", csvContent)
+	result, err := parser.ParseLegacy("test_no_header", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestParseCSVWithDifferentDelimiter(t *testing.T) {
 John Doe;30;New York
 Jane Smith;25;Los Angeles`
 
-	result, err := parser.Parse("test_semicolon", csvContent)
+	result, err := parser.ParseLegacy("test_semicolon", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestParseCSVWithQuotes(t *testing.T) {
 "Widget A","A great widget, with features",9.99
 "Widget B","Another widget, even better",14.99`
 
-	result, err := parser.Parse("test_quotes", csvContent)
+	result, err := parser.ParseLegacy("test_quotes", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestParseCSVWithQuotes(t *testing.T) {
 func TestParseEmptyCSV(t *testing.T) {
 	parser := NewCSVParser()
 
-	result, err := parser.Parse("empty_test", "")
+	result, err := parser.ParseLegacy("empty_test", "")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -226,7 +226,7 @@ John Doe,30,New York
 Jane Smith,,Los Angeles
 Bob Wilson,35,`
 
-	result, err := parser.Parse("test_missing", csvContent)
+	result, err := parser.ParseLegacy("test_missing", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -287,7 +287,7 @@ func TestLinkExtraction(t *testing.T) {
 Company A,https://example.com,contact@example.com
 Company B,https://test.org,info@test.org`
 
-	result, err := parser.Parse("test_links", csvContent)
+	result, err := parser.ParseLegacy("test_links", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestMaxRowsLimit(t *testing.T) {
 4,Row 4
 5,Row 5`
 
-	result, err := parser.Parse("test_max_rows", csvContent)
+	result, err := parser.ParseLegacy("test_max_rows", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestRelationshipCreation(t *testing.T) {
 John,30
 Jane,25`
 
-	result, err := parser.Parse("test_relationships", csvContent)
+	result, err := parser.ParseLegacy("test_relationships", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -402,7 +402,7 @@ func TestStripWhitespace(t *testing.T) {
  John Doe , 30 , New York
  Jane Smith , 25 , Los Angeles `
 
-	result, err := parser.Parse("test_whitespace", csvContent)
+	result, err := parser.ParseLegacy("test_whitespace", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestStripWhitespace(t *testing.T) {
 func TestCSVSerialization(t *testing.T) {
 	parser := NewCSVParser()
 
-	result, err := parser.Parse("test_csv", "name,age\nJohn,30")
+	result, err := parser.ParseLegacy("test_csv", "name,age\nJohn,30")
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -449,7 +449,7 @@ func TestComplexRealWorldCSV(t *testing.T) {
 1004,Alice,Williams,alice.williams@company.com,Sales,70000,2023-03-01,2003
 1005,Charlie,Brown,charlie.brown@company.com,Engineering,85000,2023-01-10,2001`
 
-	result, err := parser.Parse("employee_data", csvContent)
+	result, err := parser.ParseLegacy("employee_data", csvContent)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
