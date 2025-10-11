@@ -39,6 +39,86 @@ const (
 	RelationshipCustom       RelationshipType = "custom"         // User-defined
 )
 
+// ============================================================================
+// ONTOLOGY SCHEMA (EXTRACTION RULES) - Input to extraction
+// ============================================================================
+
+// OntologySchema defines the extraction rules for a domain
+type OntologySchema struct {
+	Name                    string                    `json:"name"`                      // Schema name
+	Version                 string                    `json:"version"`                   // Schema version
+	Description             string                    `json:"description"`               // Schema description
+	Domain                  string                    `json:"domain"`                    // Domain (e.g., "financial", "legal")
+	DocumentTypes           []string                  `json:"document_types"`            // Applicable document types
+	KeyConcepts             []string                  `json:"key_concepts"`              // Key concepts in domain
+	Terms                   []Term                    `json:"terms,omitempty"`           // Domain terms and synonyms
+	ElementEntityMappings   []ElementEntityMapping    `json:"element_entity_mappings"`   // Entity extraction rules
+	EntityRelationshipRules []EntityRelationshipRule  `json:"entity_relationship_rules"` // Relationship extraction rules
+	DerivedEntities         []DerivedEntity           `json:"derived_entities,omitempty"` // Derived entity definitions
+	Metadata                map[string]interface{}    `json:"metadata,omitempty"`        // Additional metadata
+	CreatedAt               time.Time                 `json:"created_at"`                // Creation timestamp
+}
+
+// Term defines a domain term and its synonyms
+type Term struct {
+	Term        string   `json:"term"`                  // Term name
+	Synonyms    []string `json:"synonyms"`              // Synonyms
+	Description string   `json:"description,omitempty"` // Term description
+}
+
+// ElementEntityMapping defines how to extract an entity type from element types
+type ElementEntityMapping struct {
+	EntityType      string           `json:"entity_type"`   // Entity type to extract
+	Description     string           `json:"description"`   // Description of entity type
+	ElementTypes    []string         `json:"element_types"` // UDML element types to process
+	ExtractionRules []ExtractionRule `json:"extraction_rules"` // Rules for extraction
+}
+
+// ExtractionRuleType defines the type of extraction rule
+type ExtractionRuleType string
+
+const (
+	RuleTypeMetadata   ExtractionRuleType = "metadata_field"   // Extract from element metadata
+	RuleTypeRegex      ExtractionRuleType = "regex_pattern"    // Extract using regex pattern
+	RuleTypeKeyword    ExtractionRuleType = "keyword_match"    // Extract by keyword matching
+	RuleTypeSimilarity ExtractionRuleType = "text_similarity"  // Extract based on text similarity
+	RuleTypeJSONPath   ExtractionRuleType = "jsonpath_query"   // Extract using JSONPath expressions
+)
+
+// ExtractionRule defines a rule for extracting entities
+type ExtractionRule struct {
+	Type                ExtractionRuleType `json:"type"`                            // Rule type
+	FieldPath           string             `json:"field_path,omitempty"`            // Metadata field path (for metadata_field)
+	Pattern             string             `json:"pattern,omitempty"`               // Regex pattern (for regex_pattern)
+	Keywords            []string           `json:"keywords,omitempty"`              // Keywords to match (for keyword_match)
+	ReferenceText       string             `json:"reference_text,omitempty"`        // Reference text for similarity (for text_similarity)
+	SimilarityThreshold float64            `json:"similarity_threshold,omitempty"`  // Minimum similarity score (for text_similarity)
+	JSONPathExpr        string             `json:"jsonpath_expr,omitempty"`         // JSONPath expression (for jsonpath_query)
+	Confidence          float64            `json:"confidence"`                      // Confidence score for this rule
+}
+
+// EntityRelationshipRule defines how to extract relationships between entity types
+type EntityRelationshipRule struct {
+	Name                string           `json:"name"`                        // Rule name
+	SourceEntityType    string           `json:"source_entity_type"`          // Source entity type
+	TargetEntityType    string           `json:"target_entity_type"`          // Target entity type
+	RelationshipType    RelationshipType `json:"relationship_type"`           // Relationship type
+	Description         string           `json:"description,omitempty"`       // Rule description
+	ConfidenceThreshold float64          `json:"confidence_threshold"`        // Minimum confidence to extract
+}
+
+// DerivedEntity defines an entity derived from combinations of other entities
+type DerivedEntity struct {
+	Name            string   `json:"name"`             // Derived entity name
+	Description     string   `json:"description"`      // Description
+	SourceEntities  []string `json:"source_entities"`  // Source entity types
+	AggregationType string   `json:"aggregation_type"` // How to combine (e.g., "COMBINATION")
+}
+
+// ============================================================================
+// EXTRACTED INSTANCES - Output from extraction
+// ============================================================================
+
 // Entity represents a named entity extracted from a document
 type Entity struct {
 	ID         string                 `json:"id"`          // Unique identifier
