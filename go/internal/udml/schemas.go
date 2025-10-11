@@ -71,16 +71,16 @@ func (r *SchemaRegistry) registerDefaultSchemas() {
 
 	// ALL element types use the same universal schema
 	// This enables cross-type queries while maintaining Hive partitioning benefits
-	// Define all supported element types
+	// Define all supported element types (47 types - aligned with actual parser usage)
 	elementTypes := []string{
 		// Document structure
-		"root", "document", "section", "subsection",
+		"root", "body", "section",
 
 		// Text elements
-		"paragraph", "text", "heading", "header",
+		"paragraph", "text", "header",
 
 		// List elements
-		"list", "list_item", "ordered_list", "unordered_list",
+		"list", "list_item",
 
 		// Table elements
 		"table", "data_table", "data_tables",
@@ -88,31 +88,39 @@ func (r *SchemaRegistry) registerDefaultSchemas() {
 		"table_row", "table_cell",
 
 		// Code elements
-		"code", "code_block", "code_inline",
+		"code_block",
 
 		// Media elements
-		"image", "figure", "chart",
-
-		// Link elements
-		"link", "hyperlink", "anchor",
-
-		// Reference elements
-		"footnote", "endnote", "citation", "reference",
+		"image", "chart",
 
 		// HTML/XML specific
-		"div", "span", "article", "nav", "footer",
-		"html", "body", "head",
+		"div", "span", "article", "blockquote",
 
-		// Structured data
-		"field", "object", "array", "json_field",
+		// Structured data (JSON)
+		"json_field", "json_object", "json_array", "json_item",
 
-		// Office document specific
-		"sheet", "workbook", "slide", "presentation",
-		"page", "comment", "comments",
+		// XML specific
+		"xml_element",
+
+		// Office document specific - Word
+		"headers", "footers", "comments",
+
+		// Office document specific - Excel
+		"sheet", "workbook", "comment",
 		"merged_cell", "merged_cells",
 
-		// Generic/fallback
-		"element", "container", "component",
+		// Office document specific - PowerPoint
+		"slide", "presentation_root", "presentation_body",
+		"comments_container", "slide_notes", "shape_group",
+
+		// PDF specific
+		"page",
+
+		// Markdown specific
+		"front_matter",
+
+		// Text parser specific
+		"line", "range", "substring",
 	}
 
 	// Register the universal schema for all element types

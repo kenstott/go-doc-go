@@ -116,8 +116,8 @@ func TestGetSchema(t *testing.T) {
 	registry := NewSchemaRegistry()
 
 	elementTypes := []string{
-		"paragraph", "heading", "table", "table_cell",
-		"list", "code_block", "image", "link",
+		"paragraph", "header", "table", "table_cell",
+		"list", "code_block", "image",
 		"div", "span", "json_field",
 	}
 
@@ -166,7 +166,7 @@ func TestHasSchema(t *testing.T) {
 	registry := NewSchemaRegistry()
 
 	// Test known element types
-	knownTypes := []string{"paragraph", "table", "heading"}
+	knownTypes := []string{"paragraph", "table", "header"}
 	for _, elemType := range knownTypes {
 		assert.True(t, registry.HasSchema(elemType),
 			"Should have schema for %s", elemType)
@@ -183,13 +183,15 @@ func TestGetRegisteredTypes(t *testing.T) {
 
 	types := registry.GetRegisteredTypes()
 
-	assert.Greater(t, len(types), 30, "Should have registered many element types")
+	assert.Equal(t, 47, len(types), "Should have registered exactly 47 element types (aligned with parser usage)")
 
 	// Verify some expected types are present
 	expectedTypes := []string{
-		"root", "document", "paragraph", "heading",
+		"root", "body", "paragraph", "header",
 		"table", "table_row", "table_cell",
 		"list", "list_item", "code_block",
+		// Verify some of the newly added types
+		"presentation_root", "json_object", "xml_element", "front_matter", "blockquote",
 	}
 
 	registeredTypesMap := make(map[string]bool)
@@ -287,7 +289,7 @@ func TestSchemaFieldCount(t *testing.T) {
 // BenchmarkGetSchema benchmarks schema retrieval performance
 func BenchmarkGetSchema(b *testing.B) {
 	registry := NewSchemaRegistry()
-	elementTypes := []string{"paragraph", "table", "heading", "list", "code_block"}
+	elementTypes := []string{"paragraph", "table", "header", "list", "code_block"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
