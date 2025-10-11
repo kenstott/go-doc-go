@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -212,7 +213,14 @@ func (d *DuckDBBackend) buildWhereClause(pred *Predicate) (string, []interface{}
 	case PredicateJSONPath:
 		return d.buildJSONPathPredicate(pred)
 	case PredicateSimilarity:
-		return "", nil, fmt.Errorf("similarity predicates not yet implemented")
+		// Similarity predicates require special handling
+		// We'll fetch candidates and compute similarity in-memory
+		// For now, just return a basic filter that selects rows with the embedding field
+		if pred.EmbeddingField == "" {
+			return "", nil, fmt.Errorf("similarity predicate requires embedding field")
+		}
+		// Return a filter that ensures the embedding field exists
+		return fmt.Sprintf("%s IS NOT NULL", pred.EmbeddingField), nil, nil
 	default:
 		return "", nil, fmt.Errorf("unknown predicate type: %s", pred.Type)
 	}
@@ -563,4 +571,103 @@ func (d *DuckDBBackend) Close() error {
 		return d.db.Close()
 	}
 	return nil
+}
+
+// ApplySimilarityFilter applies similarity filtering to query results
+// This is done in-memory since DuckDB doesn't have native vector similarity
+func ApplySimilarityFilter(results *QueryResult, pred *Predicate) (*QueryResult, error) {
+	if pred == nil || pred.Type != PredicateSimilarity {
+		return results, nil
+	}
+
+	if pred.EmbeddingField == "" {
+		return nil, fmt.Errorf("similarity predicate requires embedding field")
+	}
+
+	if len(pred.QueryVector) == 0 {
+		return nil, fmt.Errorf("similarity predicate requires query vector")
+	}
+
+	// Convert query vector to float64 for comparison
+	queryVec := ConvertFloat32ToFloat64(pred.QueryVector)
+
+	// Calculate similarity for each row
+	type scoredRow struct {
+		row        Row
+		similarity float64
+	}
+	scoredRows := make([]scoredRow, 0, len(results.Rows))
+
+	for _, row := range results.Rows {
+		// Extract embedding vector from row
+		embeddingVal, ok := row[pred.EmbeddingField]
+		if !ok {
+			continue // Skip rows without embedding
+		}
+
+		// Try to parse embedding as []float64
+		var embedding []float64
+		switch v := embeddingVal.(type) {
+		case []float64:
+			embedding = v
+		case []float32:
+			embedding = ConvertFloat32ToFloat64(v)
+		case []interface{}:
+			// Convert interface slice to float64
+			embedding = make([]float64, len(v))
+			for i, val := range v {
+				switch fval := val.(type) {
+				case float64:
+					embedding[i] = fval
+				case float32:
+					embedding[i] = float64(fval)
+				default:
+					continue // Skip malformed embeddings
+				}
+			}
+		default:
+			continue // Skip non-vector fields
+		}
+
+		// Calculate cosine similarity
+		similarity, err := CosineSimilarityFloat64(queryVec, embedding)
+		if err != nil {
+			continue // Skip on error
+		}
+
+		// Apply threshold filter
+		if pred.Threshold > 0 && similarity < pred.Threshold {
+			continue
+		}
+
+		scoredRows = append(scoredRows, scoredRow{
+			row:        row,
+			similarity: similarity,
+		})
+	}
+
+	// Sort by similarity (descending)
+	sort.Slice(scoredRows, func(i, j int) bool {
+		return scoredRows[i].similarity > scoredRows[j].similarity
+	})
+
+	// Apply topK limit
+	if pred.TopK > 0 && len(scoredRows) > pred.TopK {
+		scoredRows = scoredRows[:pred.TopK]
+	}
+
+	// Build filtered result
+	filteredRows := make([]Row, len(scoredRows))
+	for i, s := range scoredRows {
+		filteredRows[i] = s.row
+		// Optionally add similarity score to row
+		filteredRows[i]["_similarity"] = s.similarity
+	}
+
+	return &QueryResult{
+		Rows:          filteredRows,
+		RowCount:      len(filteredRows),
+		Columns:       results.Columns,
+		ExecutionTime: results.ExecutionTime,
+	}, nil
 }
