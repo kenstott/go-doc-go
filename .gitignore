@@ -214,3 +214,18 @@ test_containers/
 
 # Go worker binary
 go/worker
+
+# Test and debug commands
+go/cmd/test_duckdb_query/
+go/cmd/test_jsonpath/
+go/cmd/test_*/
+
+# Coverage reports
+go/coverage.html
+go/coverage_*.html
+go/*.html
+
+# Backup and skip files
+go/**/*.bak
+go/**/*.bak2
+go/**/*.skip
