@@ -11,17 +11,18 @@ func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "Speaker",
+				Domain:       "test",
+				Confidence:   0.9,
 				Description:  "Person speaking",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeMetadata,
-						FieldPath:  "speaker",
-						Confidence: 0.9,
+						Type:      RuleTypeMetadata,
+						FieldPath: "speaker",
 					},
 				},
 			},
@@ -61,7 +62,7 @@ func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
 		t.Errorf("Expected 2 entities, got %d", len(ontology.Entities))
 	}
 
-	// Check entity names
+	// Check entity names and domain inheritance
 	names := make(map[string]bool)
 	for _, entity := range ontology.Entities {
 		names[entity.Name] = true
@@ -69,7 +70,10 @@ func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
 			t.Errorf("Expected custom entity type, got %s", entity.Type)
 		}
 		if entity.Confidence != 0.9 {
-			t.Errorf("Expected confidence 0.9, got %.2f", entity.Confidence)
+			t.Errorf("Expected confidence 0.9 (from mapping), got %.2f", entity.Confidence)
+		}
+		if entity.Domain != "test" {
+			t.Errorf("Expected domain 'test' (inherited from mapping), got '%s'", entity.Domain)
 		}
 	}
 
@@ -83,17 +87,18 @@ func TestRuleBasedExtractor_RegexExtraction(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "Email",
+				Domain:       "test",
+				Confidence:   0.95,
 				Description:  "Email addresses",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeRegex,
-						Pattern:    `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`,
-						Confidence: 0.95,
+						Type:    RuleTypeRegex,
+						Pattern: `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`,
 					},
 				},
 			},
@@ -124,9 +129,12 @@ func TestRuleBasedExtractor_RegexExtraction(t *testing.T) {
 
 	for _, entity := range ontology.Entities {
 		if entity.Confidence != 0.95 {
-			t.Errorf("Expected confidence 0.95, got %.2f", entity.Confidence)
+			t.Errorf("Expected confidence 0.95 (from mapping), got %.2f", entity.Confidence)
 		}
-		t.Logf("Extracted email: %s", entity.Name)
+		if entity.Domain != "test" {
+			t.Errorf("Expected domain 'test', got '%s'", entity.Domain)
+		}
+		t.Logf("Extracted email: %s (domain: %s)", entity.Name, entity.Domain)
 	}
 }
 
@@ -135,17 +143,18 @@ func TestRuleBasedExtractor_KeywordExtraction(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "Organization",
+				Domain:       "test",
+				Confidence:   0.85,
 				Description:  "Company names",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeKeyword,
-						Keywords:   []string{"Microsoft", "Apple", "Google"},
-						Confidence: 0.85,
+						Type:     RuleTypeKeyword,
+						Keywords: []string{"Microsoft", "Apple", "Google"},
 					},
 				},
 			},
@@ -180,6 +189,9 @@ func TestRuleBasedExtractor_KeywordExtraction(t *testing.T) {
 		if entity.Type != EntityTypeOrganization {
 			t.Errorf("Expected organization type, got %s", entity.Type)
 		}
+		if entity.Domain != "test" {
+			t.Errorf("Expected domain 'test', got '%s'", entity.Domain)
+		}
 	}
 
 	if !names["Microsoft"] || !names["Apple"] {
@@ -192,41 +204,43 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "person",
+				Domain:       "test",
+				Confidence:   0.8,
 				Description:  "People",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeRegex,
-						Pattern:    `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
-						Confidence: 0.8,
+						Type:    RuleTypeRegex,
+						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
 					},
 				},
 			},
 			{
 				EntityType:   "organization",
+				Domain:       "test",
+				Confidence:   0.85,
 				Description:  "Organizations",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeKeyword,
-						Keywords:   []string{"Corp", "Inc", "LLC"},
-						Confidence: 0.85,
+						Type:     RuleTypeKeyword,
+						Keywords: []string{"Corp", "Inc", "LLC"},
 					},
 				},
 			},
 		},
 		EntityRelationshipRules: []EntityRelationshipRule{
 			{
-				Name:                "person_works_at_org",
-				SourceEntityType:    "person",
-				TargetEntityType:    "organization",
-				RelationshipType:    RelationshipPartOf,
-				Description:         "Person works at organization",
-				ConfidenceThreshold: 0.7,
+				Name:             "person_works_at_org",
+				SourceEntityType: "person",
+				TargetEntityType: "organization",
+				RelationshipType: RelationshipPartOf,
+				Description:      "Person works at organization",
+				Confidence:       0.7,
 			},
 		},
 		CreatedAt: time.Now(),
@@ -255,7 +269,7 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 	if len(ontology.Entities) != 3 {
 		t.Errorf("Expected 3 entities, got %d", len(ontology.Entities))
 		for _, e := range ontology.Entities {
-			t.Logf("  Entity: %s (%s)", e.Name, e.Type)
+			t.Logf("  Entity: %s (%s, domain: %s)", e.Name, e.Type, e.Domain)
 		}
 	}
 
@@ -264,12 +278,18 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 		t.Errorf("Expected at least 1 relationship, got %d", len(ontology.Relationships))
 	}
 
-	// Verify at least one relationship is part_of type
+	// Verify at least one relationship is part_of type and inherits domain from source
 	hasPartOf := false
 	for _, rel := range ontology.Relationships {
-		t.Logf("Relationship: %s -> %s (%s)", rel.SourceID, rel.TargetID, rel.Type)
+		t.Logf("Relationship: %s -> %s (%s, domain: %s)", rel.SourceID, rel.TargetID, rel.Type, rel.Domain)
 		if rel.Type == RelationshipPartOf {
 			hasPartOf = true
+			if rel.Domain != "test" {
+				t.Errorf("Expected relationship domain 'test' (from source entity), got '%s'", rel.Domain)
+			}
+			if rel.Confidence != 0.7 {
+				t.Errorf("Expected relationship confidence 0.7 (from rule), got %.2f", rel.Confidence)
+			}
 		}
 	}
 
@@ -283,17 +303,18 @@ func TestRuleBasedExtractor_ElementTypeFiltering(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "Heading",
+				Domain:       "test",
+				Confidence:   0.9,
 				Description:  "Headings only",
 				ElementTypes: []string{"heading"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeRegex,
-						Pattern:    `.+`,
-						Confidence: 0.9,
+						Type:    RuleTypeRegex,
+						Pattern: `.+`,
 					},
 				},
 			},
@@ -333,6 +354,9 @@ func TestRuleBasedExtractor_ElementTypeFiltering(t *testing.T) {
 		if entity.ElementID != "elem1" {
 			t.Errorf("Expected entity from elem1 (heading), got %s", entity.ElementID)
 		}
+		if entity.Domain != "test" {
+			t.Errorf("Expected domain 'test', got '%s'", entity.Domain)
+		}
 	}
 }
 
@@ -341,17 +365,18 @@ func TestRuleBasedExtractor_NestedMetadata(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "Author",
+				Domain:       "test",
+				Confidence:   0.95,
 				Description:  "Document author",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeMetadata,
-						FieldPath:  "author.name",
-						Confidence: 0.95,
+						Type:      RuleTypeMetadata,
+						FieldPath: "author.name",
 					},
 				},
 			},
@@ -390,6 +415,9 @@ func TestRuleBasedExtractor_NestedMetadata(t *testing.T) {
 		if entity.Name != "Alice Johnson" {
 			t.Errorf("Expected 'Alice Johnson', got '%s'", entity.Name)
 		}
+		if entity.Domain != "test" {
+			t.Errorf("Expected domain 'test', got '%s'", entity.Domain)
+		}
 	}
 }
 
@@ -398,22 +426,22 @@ func TestRuleBasedExtractor_MultipleRules(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "person",
+				Domain:       "test",
+				Confidence:   0.8,
 				Description:  "People",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeMetadata,
-						FieldPath:  "author",
-						Confidence: 0.95,
+						Type:      RuleTypeMetadata,
+						FieldPath: "author",
 					},
 					{
-						Type:       RuleTypeRegex,
-						Pattern:    `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
-						Confidence: 0.8,
+						Type:    RuleTypeRegex,
+						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
 					},
 				},
 			},
@@ -449,7 +477,10 @@ func TestRuleBasedExtractor_MultipleRules(t *testing.T) {
 	names := make(map[string]bool)
 	for _, entity := range ontology.Entities {
 		names[entity.Name] = true
-		t.Logf("Extracted: %s (confidence: %.2f)", entity.Name, entity.Confidence)
+		if entity.Domain != "test" {
+			t.Errorf("Expected domain 'test', got '%s'", entity.Domain)
+		}
+		t.Logf("Extracted: %s (confidence: %.2f, domain: %s)", entity.Name, entity.Confidence, entity.Domain)
 	}
 
 	if !names["Alice Brown"] || !names["Bob Wilson"] {
@@ -462,17 +493,18 @@ func TestRuleBasedExtractor_Deduplication(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "person",
+				Domain:       "test",
+				Confidence:   0.8,
 				Description:  "People",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeRegex,
-						Pattern:    `\bAlice\b`,
-						Confidence: 0.8,
+						Type:    RuleTypeRegex,
+						Pattern: `\bAlice\b`,
 					},
 				},
 			},
@@ -512,6 +544,9 @@ func TestRuleBasedExtractor_Deduplication(t *testing.T) {
 		if entity.Name != "Alice" {
 			t.Errorf("Expected 'Alice', got '%s'", entity.Name)
 		}
+		if entity.Domain != "test" {
+			t.Errorf("Expected domain 'test', got '%s'", entity.Domain)
+		}
 		// Should have 2 mentions
 		if len(entity.Mentions) != 2 {
 			t.Errorf("Expected 2 mentions, got %d", len(entity.Mentions))
@@ -524,7 +559,7 @@ func TestRuleBasedExtractor_EmptySchema(t *testing.T) {
 	schema := &OntologySchema{
 		Name:                    "empty_schema",
 		Version:                 "1.0.0",
-		Domain:                  "test",
+		Domains:                 []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings:   []ElementEntityMapping{},
 		EntityRelationshipRules: []EntityRelationshipRule{},
 		CreatedAt:               time.Now(),
@@ -562,28 +597,29 @@ func TestRuleBasedExtractor_ValidationError(t *testing.T) {
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
-		Domain:  "test",
+		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
 		ElementEntityMappings: []ElementEntityMapping{
 			{
 				EntityType:   "person",
+				Domain:       "test",
+				Confidence:   0.8,
 				Description:  "People",
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:       RuleTypeKeyword,
-						Keywords:   []string{"John"},
-						Confidence: 0.8,
+						Type:     RuleTypeKeyword,
+						Keywords: []string{"John"},
 					},
 				},
 			},
 		},
 		EntityRelationshipRules: []EntityRelationshipRule{
 			{
-				Name:                "invalid_rel",
-				SourceEntityType:    "person",
-				TargetEntityType:    "nonexistent_type",
-				RelationshipType:    RelationshipRelatedTo,
-				ConfidenceThreshold: 0.5,
+				Name:             "invalid_rel",
+				SourceEntityType: "person",
+				TargetEntityType: "nonexistent_type",
+				RelationshipType: RelationshipRelatedTo,
+				Confidence:       0.5,
 			},
 		},
 		CreatedAt: time.Now(),

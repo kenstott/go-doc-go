@@ -2,6 +2,7 @@ package ontology
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -43,20 +44,28 @@ const (
 // ONTOLOGY SCHEMA (EXTRACTION RULES) - Input to extraction
 // ============================================================================
 
+// Domain represents a domain of ownership in the data mesh
+type Domain struct {
+	Name        string `json:"name" yaml:"name"`                                   // Domain name
+	Description string `json:"description,omitempty" yaml:"description,omitempty"` // Domain description
+	Owner       string `json:"owner,omitempty" yaml:"owner,omitempty"`             // Domain owner (team/person)
+}
+
 // OntologySchema defines the extraction rules for a domain
 type OntologySchema struct {
-	Name                    string                    `json:"name"`                      // Schema name
-	Version                 string                    `json:"version"`                   // Schema version
-	Description             string                    `json:"description"`               // Schema description
-	Domain                  string                    `json:"domain"`                    // Domain (e.g., "financial", "legal")
-	DocumentTypes           []string                  `json:"document_types"`            // Applicable document types
-	KeyConcepts             []string                  `json:"key_concepts"`              // Key concepts in domain
-	Terms                   []Term                    `json:"terms,omitempty"`           // Domain terms and synonyms
-	ElementEntityMappings   []ElementEntityMapping    `json:"element_entity_mappings"`   // Entity extraction rules
-	EntityRelationshipRules []EntityRelationshipRule  `json:"entity_relationship_rules"` // Relationship extraction rules
-	DerivedEntities         []DerivedEntity           `json:"derived_entities,omitempty"` // Derived entity definitions
-	Metadata                map[string]interface{}    `json:"metadata,omitempty"`        // Additional metadata
-	CreatedAt               time.Time                 `json:"created_at"`                // Creation timestamp
+	Name                    string                    `json:"name" yaml:"name"`                                                     // Schema name
+	Version                 string                    `json:"version" yaml:"version"`                                               // Schema version
+	Description             string                    `json:"description" yaml:"description"`                                       // Schema description
+	Domain                  string                    `json:"domain" yaml:"domain"`                                                 // Primary domain (deprecated, use Domains)
+	Domains                 []Domain                  `json:"domains" yaml:"domains"`                                               // Domain registry (multi-domain support)
+	DocumentTypes           []string                  `json:"document_types,omitempty" yaml:"document_types,omitempty"`             // Applicable document types
+	KeyConcepts             []string                  `json:"key_concepts,omitempty" yaml:"key_concepts,omitempty"`                 // Key concepts in domain
+	Terms                   []Term                    `json:"terms,omitempty" yaml:"terms,omitempty"`                               // Domain terms and synonyms
+	ElementEntityMappings   []ElementEntityMapping    `json:"element_entity_mappings" yaml:"element_entity_mappings"`               // Entity extraction rules
+	EntityRelationshipRules []EntityRelationshipRule  `json:"entity_relationship_rules,omitempty" yaml:"entity_relationship_rules,omitempty"` // Relationship extraction rules
+	DerivedEntities         []DerivedEntity           `json:"derived_entities,omitempty" yaml:"derived_entities,omitempty"`         // Derived entity definitions
+	Metadata                map[string]interface{}    `json:"metadata,omitempty" yaml:"metadata,omitempty"`                         // Additional metadata
+	CreatedAt               time.Time                 `json:"created_at" yaml:"created_at"`                                         // Creation timestamp
 }
 
 // Term defines a domain term and its synonyms
@@ -68,10 +77,13 @@ type Term struct {
 
 // ElementEntityMapping defines how to extract an entity type from element types
 type ElementEntityMapping struct {
-	EntityType      string           `json:"entity_type"`   // Entity type to extract
-	Description     string           `json:"description"`   // Description of entity type
-	ElementTypes    []string         `json:"element_types"` // UDML element types to process
-	ExtractionRules []ExtractionRule `json:"extraction_rules"` // Rules for extraction
+	EntityType      string           `json:"entity_type" yaml:"entity_type"`             // Entity type to extract
+	Domain          string           `json:"domain" yaml:"domain"`                       // Domain this entity belongs to (required)
+	Description     string           `json:"description" yaml:"description"`             // Description of entity type
+	ElementTypes    []string         `json:"element_types,omitempty" yaml:"element_types,omitempty"` // Simple element type filter
+	ElementFilter   string           `json:"element_filter,omitempty" yaml:"element_filter,omitempty"` // JSONPath filter (advanced)
+	Confidence      float64          `json:"confidence" yaml:"confidence"`               // Context quality confidence (0.0-1.0)
+	ExtractionRules []ExtractionRule `json:"extraction_rules" yaml:"extraction_rules"`   // Rules for extraction (OR logic)
 }
 
 // ExtractionRuleType defines the type of extraction rule
@@ -85,26 +97,58 @@ const (
 	RuleTypeJSONPath   ExtractionRuleType = "jsonpath_query"   // Extract using JSONPath expressions
 )
 
-// ExtractionRule defines a rule for extracting entities
+// ExtractionRule defines a rule for extracting entities (binary match)
 type ExtractionRule struct {
-	Type                ExtractionRuleType `json:"type"`                            // Rule type
-	FieldPath           string             `json:"field_path,omitempty"`            // Metadata field path (for metadata_field)
-	Pattern             string             `json:"pattern,omitempty"`               // Regex pattern (for regex_pattern)
-	Keywords            []string           `json:"keywords,omitempty"`              // Keywords to match (for keyword_match)
-	ReferenceText       string             `json:"reference_text,omitempty"`        // Reference text for similarity (for text_similarity)
-	SimilarityThreshold float64            `json:"similarity_threshold,omitempty"`  // Minimum similarity score (for text_similarity)
-	JSONPathExpr        string             `json:"jsonpath_expr,omitempty"`         // JSONPath expression (for jsonpath_query)
-	Confidence          float64            `json:"confidence"`                      // Confidence score for this rule
+	Type                ExtractionRuleType `json:"type" yaml:"type"`                                              // Rule type
+	FieldPath           string             `json:"field_path,omitempty" yaml:"field_path,omitempty"`              // Metadata field path (for metadata_field)
+	Pattern             string             `json:"pattern,omitempty" yaml:"pattern,omitempty"`                    // Regex pattern (for regex_pattern)
+	Keywords            []string           `json:"keywords,omitempty" yaml:"keywords,omitempty"`                  // Keywords to match (for keyword_match)
+	ReferenceText       string             `json:"reference_text,omitempty" yaml:"reference_text,omitempty"`      // Reference text for similarity (for text_similarity)
+	SimilarityThreshold float64            `json:"similarity_threshold,omitempty" yaml:"similarity_threshold,omitempty"` // Minimum similarity score (for text_similarity)
+	JSONPathExpr        string             `json:"jsonpath_expr,omitempty" yaml:"jsonpath_expr,omitempty"`        // JSONPath expression (for jsonpath_query)
+}
+
+// RelationshipExtractionPatternType defines types of relationship extraction patterns
+type RelationshipExtractionPatternType string
+
+const (
+	RelPatternTextTemplate RelationshipExtractionPatternType = "text_template" // Text pattern with entity placeholders
+	RelPatternProximity    RelationshipExtractionPatternType = "proximity"     // Entities near each other with signal words
+	RelPatternRegex        RelationshipExtractionPatternType = "regex"         // Regex with named groups for entities
+	RelPatternDependency   RelationshipExtractionPatternType = "dependency"    // Grammatical dependency pattern
+	RelPatternCooccurrence RelationshipExtractionPatternType = "cooccurrence"  // Statistical co-occurrence
+)
+
+// RelationshipExtractionPattern defines a pattern for extracting a relationship (binary match)
+type RelationshipExtractionPattern struct {
+	Type        RelationshipExtractionPatternType `json:"type" yaml:"type"`                               // Pattern type
+	Template    string                            `json:"template,omitempty" yaml:"template,omitempty"`   // Text template (e.g., "{person} is CEO of {organization}")
+	Pattern     string                            `json:"pattern,omitempty" yaml:"pattern,omitempty"`     // Regex pattern with named groups
+	SignalWords []string                          `json:"signal_words,omitempty" yaml:"signal_words,omitempty"` // Signal words indicating relationship
+	MaxDistance int                               `json:"max_distance,omitempty" yaml:"max_distance,omitempty"` // Max tokens between entities (for proximity)
+	Direction   string                            `json:"direction,omitempty" yaml:"direction,omitempty"` // "forward", "backward", "bidirectional"
+	Examples    []string                          `json:"examples,omitempty" yaml:"examples,omitempty"`   // Example texts matching this pattern
 }
 
 // EntityRelationshipRule defines how to extract relationships between entity types
+//
+// Relationship semantic: source_entity --[ENRICHED_BY]--> target_entity
+//   - SourceEntityType: Entity being enriched (consumer's entity)
+//   - TargetEntityType: Entity providing enrichment (producer's entity)
+//   - Domain ownership: Inherited from source entity (consumer domain)
+//
+// The domain that NEEDS the enrichment owns the relationship. Source/target are
+// graph structure terms (for Neo4j/RDF export). In data governance contexts, this
+// pattern aligns with consumer ownership of integration logic and producer ownership
+// of data access approvals.
 type EntityRelationshipRule struct {
-	Name                string           `json:"name"`                        // Rule name
-	SourceEntityType    string           `json:"source_entity_type"`          // Source entity type
-	TargetEntityType    string           `json:"target_entity_type"`          // Target entity type
-	RelationshipType    RelationshipType `json:"relationship_type"`           // Relationship type
-	Description         string           `json:"description,omitempty"`       // Rule description
-	ConfidenceThreshold float64          `json:"confidence_threshold"`        // Minimum confidence to extract
+	Name               string                          `json:"name" yaml:"name"`                                       // Rule name
+	SourceEntityType   string                          `json:"source_entity_type" yaml:"source_entity_type"`           // Source entity type
+	TargetEntityType   string                          `json:"target_entity_type" yaml:"target_entity_type"`           // Target entity type
+	RelationshipType   RelationshipType                `json:"relationship_type" yaml:"relationship_type"`             // Relationship type
+	Description        string                          `json:"description,omitempty" yaml:"description,omitempty"`     // Rule description
+	Confidence         float64                         `json:"confidence" yaml:"confidence"`                           // Pattern reliability confidence (0.0-1.0)
+	ExtractionPatterns []RelationshipExtractionPattern `json:"extraction_patterns" yaml:"extraction_patterns"`         // Patterns for extracting relationship (OR logic)
 }
 
 // DerivedEntity defines an entity derived from combinations of other entities
@@ -124,6 +168,7 @@ type Entity struct {
 	ID         string                 `json:"id"`          // Unique identifier
 	Name       string                 `json:"name"`        // Entity name
 	Type       EntityType             `json:"type"`        // Entity type
+	Domain     string                 `json:"domain"`      // Domain ownership (inherited from mapping)
 	Confidence float64                `json:"confidence"`  // Extraction confidence (0-1)
 	Attributes map[string]interface{} `json:"attributes"`  // Additional properties
 	ElementID  string                 `json:"element_id"`  // Source UDML element
@@ -144,6 +189,7 @@ type Mention struct {
 type Relationship struct {
 	ID         string                 `json:"id"`          // Unique identifier
 	Type       RelationshipType       `json:"type"`        // Relationship type
+	Domain     string                 `json:"domain"`      // Domain ownership (consumer domain, inherited from source entity being enriched)
 	SourceID   string                 `json:"source_id"`   // Source entity ID
 	TargetID   string                 `json:"target_id"`   // Target entity ID
 	Confidence float64                `json:"confidence"`  // Extraction confidence (0-1)
@@ -352,6 +398,106 @@ func (o *Ontology) Validate() error {
 			return NewValidationError("duplicate class ID: " + class.ID)
 		}
 		classIDs[class.ID] = true
+	}
+
+	return nil
+}
+
+// Validate checks if the ontology schema is valid
+func (s *OntologySchema) Validate() error {
+	// Check required fields
+	if s.Name == "" {
+		return NewValidationError("schema name cannot be empty")
+	}
+	if s.Version == "" {
+		return NewValidationError("schema version cannot be empty")
+	}
+
+	// Build domain registry map
+	domainMap := make(map[string]bool)
+	for _, domain := range s.Domains {
+		if domain.Name == "" {
+			return NewValidationError("domain has empty name")
+		}
+		if domainMap[domain.Name] {
+			return NewValidationError("duplicate domain name: " + domain.Name)
+		}
+		domainMap[domain.Name] = true
+	}
+
+	// Check at least one entity mapping exists
+	if len(s.ElementEntityMappings) == 0 {
+		return NewValidationError("schema must have at least one entity mapping")
+	}
+
+	// Validate entity mappings
+	for i, mapping := range s.ElementEntityMappings {
+		if mapping.EntityType == "" {
+			return NewValidationError(fmt.Sprintf("entity mapping %d has empty entity_type", i))
+		}
+		if mapping.Domain == "" {
+			return NewValidationError(fmt.Sprintf("entity mapping %d (%s) has empty domain", i, mapping.EntityType))
+		}
+		// Validate domain exists in registry (if registry is populated)
+		if len(s.Domains) > 0 && !domainMap[mapping.Domain] {
+			return NewValidationError(fmt.Sprintf("entity mapping %d (%s) references unknown domain: %s", i, mapping.EntityType, mapping.Domain))
+		}
+		if mapping.Confidence < 0.0 || mapping.Confidence > 1.0 {
+			return NewValidationError(fmt.Sprintf("entity mapping %d (%s) has invalid confidence: %.2f (must be 0.0-1.0)", i, mapping.EntityType, mapping.Confidence))
+		}
+		if len(mapping.ExtractionRules) == 0 {
+			return NewValidationError(fmt.Sprintf("entity mapping %d (%s) has no extraction rules", i, mapping.EntityType))
+		}
+
+		// Validate extraction rules
+		for j, rule := range mapping.ExtractionRules {
+			switch rule.Type {
+			case RuleTypeMetadata:
+				if rule.FieldPath == "" {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: metadata_field requires field_path", i, mapping.EntityType, j))
+				}
+			case RuleTypeRegex:
+				if rule.Pattern == "" {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: regex_pattern requires pattern", i, mapping.EntityType, j))
+				}
+			case RuleTypeKeyword:
+				if len(rule.Keywords) == 0 {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: keyword_match requires keywords", i, mapping.EntityType, j))
+				}
+			case RuleTypeSimilarity:
+				if rule.ReferenceText == "" {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: text_similarity requires reference_text", i, mapping.EntityType, j))
+				}
+				if rule.SimilarityThreshold < 0.0 || rule.SimilarityThreshold > 1.0 {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid similarity_threshold: %.2f (must be 0.0-1.0)", i, mapping.EntityType, j, rule.SimilarityThreshold))
+				}
+			case RuleTypeJSONPath:
+				if rule.JSONPathExpr == "" {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: jsonpath_query requires jsonpath_expr", i, mapping.EntityType, j))
+				}
+			default:
+				return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: unknown rule type: %s", i, mapping.EntityType, j, rule.Type))
+			}
+		}
+	}
+
+	// Validate relationship rules
+	for i, rule := range s.EntityRelationshipRules {
+		if rule.Name == "" {
+			return NewValidationError(fmt.Sprintf("relationship rule %d has empty name", i))
+		}
+		if rule.SourceEntityType == "" {
+			return NewValidationError(fmt.Sprintf("relationship rule %d (%s) has empty source_entity_type", i, rule.Name))
+		}
+		if rule.TargetEntityType == "" {
+			return NewValidationError(fmt.Sprintf("relationship rule %d (%s) has empty target_entity_type", i, rule.Name))
+		}
+		if rule.Confidence < 0.0 || rule.Confidence > 1.0 {
+			return NewValidationError(fmt.Sprintf("relationship rule %d (%s) has invalid confidence: %.2f (must be 0.0-1.0)", i, rule.Name, rule.Confidence))
+		}
+		if len(rule.ExtractionPatterns) == 0 {
+			return NewValidationError(fmt.Sprintf("relationship rule %d (%s) has no extraction patterns", i, rule.Name))
+		}
 	}
 
 	return nil

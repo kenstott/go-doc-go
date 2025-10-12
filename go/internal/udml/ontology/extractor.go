@@ -162,7 +162,8 @@ func (e *RuleBasedExtractor) extractFromMetadata(mapping ElementEntityMapping, r
 			ID:         e.generateID("ent"),
 			Name:       value,
 			Type:       e.parseEntityType(mapping.EntityType),
-			Confidence: rule.Confidence,
+			Domain:     mapping.Domain, // Domain ownership from mapping
+			Confidence: mapping.Confidence,
 			Attributes: map[string]interface{}{
 				"source":     "metadata",
 				"field_path": rule.FieldPath,
@@ -208,7 +209,8 @@ func (e *RuleBasedExtractor) extractFromRegex(mapping ElementEntityMapping, rule
 				ID:         e.generateID("ent"),
 				Name:       entityName,
 				Type:       e.parseEntityType(mapping.EntityType),
-				Confidence: rule.Confidence,
+				Domain:     mapping.Domain, // Domain ownership from mapping
+				Confidence: mapping.Confidence,
 				Attributes: map[string]interface{}{
 					"source":  "regex",
 					"pattern": rule.Pattern,
@@ -260,7 +262,8 @@ func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, r
 				ID:         e.generateID("ent"),
 				Name:       actualText,
 				Type:       e.parseEntityType(mapping.EntityType),
-				Confidence: rule.Confidence,
+				Domain:     mapping.Domain, // Domain ownership from mapping
+				Confidence: mapping.Confidence,
 				Attributes: map[string]interface{}{
 					"source":   "keyword",
 					"keywords": rule.Keywords,
@@ -300,11 +303,13 @@ func (e *RuleBasedExtractor) extractFromSimilarity(mapping ElementEntityMapping,
 		// Check if similarity meets threshold
 		if similarity >= rule.SimilarityThreshold {
 			// Extract the whole content as entity when similar
+			// Text similarity is binary: if similarity >= threshold -> TRUE, use mapping confidence
 			entity := Entity{
 				ID:         e.generateID("ent"),
 				Name:       elem.ContentPreview,
 				Type:       e.parseEntityType(mapping.EntityType),
-				Confidence: similarity * rule.Confidence, // Combine similarity with rule confidence
+				Domain:     mapping.Domain, // Domain ownership from mapping
+				Confidence: mapping.Confidence, // Use mapping confidence (context quality)
 				Attributes: map[string]interface{}{
 					"source":               "similarity",
 					"reference_text":       rule.ReferenceText,
@@ -368,7 +373,8 @@ func (e *RuleBasedExtractor) extractFromJSONPath(mapping ElementEntityMapping, r
 				ID:         e.generateID("ent"),
 				Name:       resultStr,
 				Type:       e.parseEntityType(mapping.EntityType),
-				Confidence: rule.Confidence,
+				Domain:     mapping.Domain, // Domain ownership from mapping
+				Confidence: mapping.Confidence,
 				Attributes: map[string]interface{}{
 					"source":        "jsonpath",
 					"jsonpath_expr": rule.JSONPathExpr,
@@ -422,18 +428,17 @@ func (e *RuleBasedExtractor) applyRelationshipRule(rule EntityRelationshipRule, 
 		for _, target := range targetEntities {
 			// Check if entities are in the same element or adjacent elements
 			if e.areEntitiesRelated(source, target) {
-				// Check confidence threshold
-				avgConfidence := (source.Confidence + target.Confidence) / 2
-				if avgConfidence < rule.ConfidenceThreshold {
-					continue
-				}
-
+				// Use rule confidence (pattern reliability)
+				// Entity confidence is separate and already set
+				// Domain inherited from source entity (consumer domain owns enrichment relationship)
+				// source = entity being enriched (consumer), target = entity providing data (producer)
 				rel := Relationship{
 					ID:         e.generateID("rel"),
 					Type:       rule.RelationshipType,
+					Domain:     source.Domain, // Consumer domain owns enrichment (source = entity being enriched)
 					SourceID:   source.ID,
 					TargetID:   target.ID,
-					Confidence: avgConfidence,
+					Confidence: rule.Confidence, // Pattern reliability
 					Attributes: map[string]interface{}{
 						"rule": rule.Name,
 					},
@@ -646,7 +651,7 @@ func (e *RuleBasedExtractor) tokenizeText(text string) []string {
 }
 
 // evaluateJSONPath evaluates a JSONPath expression against JSON data
-// This is a simplified JSONPath implementation supporting basic paths like "$.key.subkey[0]"
+// Supports: basic paths ($.key.subkey[0]), filters ($[?(@.price < 10)]), recursive descent ($..book)
 func (e *RuleBasedExtractor) evaluateJSONPath(data interface{}, path string) []interface{} {
 	// Remove leading $. if present
 	path = strings.TrimPrefix(path, "$.")
@@ -666,6 +671,26 @@ func (e *RuleBasedExtractor) evaluateJSONPath(data interface{}, path string) []i
 		var next []interface{}
 
 		for _, item := range current {
+			// Handle recursive descent (e.g., ..book)
+			if strings.HasPrefix(segment, "..") {
+				key := strings.TrimPrefix(segment, "..")
+				next = append(next, e.recursiveDescent(item, key)...)
+				continue
+			}
+
+			// Handle array filter (e.g., [?(@.price < 10)])
+			if strings.HasPrefix(segment, "[?(") && strings.HasSuffix(segment, ")]") {
+				filterExpr := strings.TrimSuffix(strings.TrimPrefix(segment, "[?("), ")]")
+				if arr, ok := item.([]interface{}); ok {
+					for _, arrItem := range arr {
+						if e.evaluateFilter(arrItem, filterExpr) {
+							next = append(next, arrItem)
+						}
+					}
+				}
+				continue
+			}
+
 			// Handle array index (e.g., [0])
 			if strings.HasPrefix(segment, "[") && strings.HasSuffix(segment, "]") {
 				indexStr := strings.Trim(segment, "[]")
@@ -697,6 +722,195 @@ func (e *RuleBasedExtractor) evaluateJSONPath(data interface{}, path string) []i
 	}
 
 	return current
+}
+
+// recursiveDescent recursively searches for a key in nested structures
+func (e *RuleBasedExtractor) recursiveDescent(data interface{}, key string) []interface{} {
+	var results []interface{}
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		// Check if this level has the key
+		if val, exists := v[key]; exists {
+			results = append(results, val)
+		}
+		// Recurse into all nested values
+		for _, nestedVal := range v {
+			results = append(results, e.recursiveDescent(nestedVal, key)...)
+		}
+	case []interface{}:
+		// Recurse into array elements
+		for _, item := range v {
+			results = append(results, e.recursiveDescent(item, key)...)
+		}
+	}
+
+	return results
+}
+
+// evaluateFilter evaluates a filter expression (e.g., "@.price < 10")
+func (e *RuleBasedExtractor) evaluateFilter(item interface{}, filterExpr string) bool {
+	// Parse filter expression like "@.price < 10" or "@.name == 'John'"
+	filterExpr = strings.TrimSpace(filterExpr)
+
+	// Handle comparison operators
+	operators := []string{"==", "!=", ">=", "<=", ">", "<"}
+	for _, op := range operators {
+		if strings.Contains(filterExpr, op) {
+			parts := strings.SplitN(filterExpr, op, 2)
+			if len(parts) != 2 {
+				return false
+			}
+
+			leftExpr := strings.TrimSpace(parts[0])
+			rightExpr := strings.TrimSpace(parts[1])
+
+			// Evaluate left side (should be @.field)
+			leftValue := e.evaluateFilterExpression(item, leftExpr)
+
+			// Evaluate right side (can be literal or @.field)
+			var rightValue interface{}
+			if strings.HasPrefix(rightExpr, "@.") {
+				rightValue = e.evaluateFilterExpression(item, rightExpr)
+			} else {
+				// Parse literal value (number, string, bool)
+				rightValue = e.parseLiteral(rightExpr)
+			}
+
+			// Compare values
+			return e.compareValues(leftValue, rightValue, op)
+		}
+	}
+
+	return false
+}
+
+// evaluateFilterExpression evaluates an expression like "@.price" against an item
+func (e *RuleBasedExtractor) evaluateFilterExpression(item interface{}, expr string) interface{} {
+	// Remove @ prefix
+	expr = strings.TrimPrefix(expr, "@")
+	expr = strings.TrimPrefix(expr, ".")
+
+	if expr == "" {
+		return item
+	}
+
+	// Navigate to the field
+	parts := strings.Split(expr, ".")
+	current := item
+
+	for _, part := range parts {
+		if m, ok := current.(map[string]interface{}); ok {
+			if val, exists := m[part]; exists {
+				current = val
+			} else {
+				return nil
+			}
+		} else {
+			return nil
+		}
+	}
+
+	return current
+}
+
+// parseLiteral parses a string literal into its actual type
+func (e *RuleBasedExtractor) parseLiteral(s string) interface{} {
+	s = strings.TrimSpace(s)
+
+	// Try parsing as number
+	if num, err := fmt.Sscanf(s, "%f", new(float64)); err == nil && num == 1 {
+		var f float64
+		fmt.Sscanf(s, "%f", &f)
+		return f
+	}
+
+	// Try parsing as bool
+	if s == "true" {
+		return true
+	}
+	if s == "false" {
+		return false
+	}
+
+	// Try parsing as string (remove quotes)
+	if (strings.HasPrefix(s, "'") && strings.HasSuffix(s, "'")) ||
+		(strings.HasPrefix(s, "\"") && strings.HasSuffix(s, "\"")) {
+		return s[1 : len(s)-1]
+	}
+
+	return s
+}
+
+// compareValues compares two values using the given operator
+func (e *RuleBasedExtractor) compareValues(left, right interface{}, op string) bool {
+	if left == nil || right == nil {
+		return false
+	}
+
+	// Try numeric comparison
+	leftNum, leftIsNum := e.toFloat64(left)
+	rightNum, rightIsNum := e.toFloat64(right)
+
+	if leftIsNum && rightIsNum {
+		switch op {
+		case "==":
+			return leftNum == rightNum
+		case "!=":
+			return leftNum != rightNum
+		case ">":
+			return leftNum > rightNum
+		case "<":
+			return leftNum < rightNum
+		case ">=":
+			return leftNum >= rightNum
+		case "<=":
+			return leftNum <= rightNum
+		}
+	}
+
+	// Fall back to string comparison
+	leftStr := fmt.Sprintf("%v", left)
+	rightStr := fmt.Sprintf("%v", right)
+
+	switch op {
+	case "==":
+		return leftStr == rightStr
+	case "!=":
+		return leftStr != rightStr
+	case ">":
+		return leftStr > rightStr
+	case "<":
+		return leftStr < rightStr
+	case ">=":
+		return leftStr >= rightStr
+	case "<=":
+		return leftStr <= rightStr
+	}
+
+	return false
+}
+
+// toFloat64 attempts to convert a value to float64
+func (e *RuleBasedExtractor) toFloat64(v interface{}) (float64, bool) {
+	switch val := v.(type) {
+	case float64:
+		return val, true
+	case float32:
+		return float64(val), true
+	case int:
+		return float64(val), true
+	case int32:
+		return float64(val), true
+	case int64:
+		return float64(val), true
+	case string:
+		var f float64
+		if _, err := fmt.Sscanf(val, "%f", &f); err == nil {
+			return f, true
+		}
+	}
+	return 0, false
 }
 
 // parseJSONPathSegments parses a JSONPath expression into segments
