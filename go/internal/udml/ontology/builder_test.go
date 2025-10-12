@@ -190,19 +190,28 @@ func TestBuildResult_Log(t *testing.T) {
 func TestElementEntityMapping_Structure(t *testing.T) {
 	mapping := ElementEntityMapping{
 		EntityType:   "organization",
+		Domain:       "test",
+		Confidence:   0.9,
 		Description:  "Companies and organizations",
 		ElementTypes: []string{"paragraph"},
 		ExtractionRules: []ExtractionRule{
 			{
-				Type:       RuleTypeKeyword,
-				Keywords:   []string{"Microsoft", "MSFT"},
-				Confidence: 0.9,
+				Type:     RuleTypeKeyword,
+				Keywords: []string{"Microsoft", "MSFT"},
 			},
 		},
 	}
 
 	if mapping.EntityType != "organization" {
 		t.Errorf("Expected entity_type 'organization', got '%s'", mapping.EntityType)
+	}
+
+	if mapping.Domain != "test" {
+		t.Errorf("Expected domain 'test', got '%s'", mapping.Domain)
+	}
+
+	if mapping.Confidence != 0.9 {
+		t.Errorf("Expected confidence 0.9 (context quality), got %.2f", mapping.Confidence)
 	}
 
 	if len(mapping.ExtractionRules) != 1 {
@@ -221,12 +230,12 @@ func TestElementEntityMapping_Structure(t *testing.T) {
 
 func TestEntityRelationshipRule_Structure(t *testing.T) {
 	rule := EntityRelationshipRule{
-		Name:                "person_works_at_org",
-		SourceEntityType:    "person",
-		TargetEntityType:    "organization",
-		RelationshipType:    RelationshipPartOf,
-		Description:         "Person employed by organization",
-		ConfidenceThreshold: 0.7,
+		Name:             "person_works_at_org",
+		SourceEntityType: "person",
+		TargetEntityType: "organization",
+		RelationshipType: RelationshipPartOf,
+		Description:      "Person employed by organization",
+		Confidence:       0.7,
 	}
 
 	if rule.Name != "person_works_at_org" {
@@ -237,7 +246,7 @@ func TestEntityRelationshipRule_Structure(t *testing.T) {
 		t.Errorf("Expected relationship type 'part_of', got '%s'", rule.RelationshipType)
 	}
 
-	if rule.ConfidenceThreshold != 0.7 {
-		t.Errorf("Expected confidence threshold 0.7, got %.2f", rule.ConfidenceThreshold)
+	if rule.Confidence != 0.7 {
+		t.Errorf("Expected confidence 0.7 (pattern reliability), got %.2f", rule.Confidence)
 	}
 }

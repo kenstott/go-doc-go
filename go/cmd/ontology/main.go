@@ -3,12 +3,10 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -57,9 +55,9 @@ func main() {
 		}
 	}
 
-	// Set default output path
+	// Set default output path with YAML as default format
 	if *outputPath == "" {
-		*outputPath = fmt.Sprintf("%s.ontology.json", *schemaName)
+		*outputPath = fmt.Sprintf("%s.ontology.yaml", *schemaName)
 	}
 
 	// Check if Parquet path exists
@@ -139,6 +137,9 @@ func main() {
 		log.Printf("     Element types: %s", strings.Join(mapping.ElementTypes, ", "))
 		log.Printf("     Extraction rules: %d", len(mapping.ExtractionRules))
 
+		// Show mapping-level confidence
+		log.Printf("     Confidence: %.2f (context quality)", mapping.Confidence)
+
 		// Show sample of extraction rules
 		for j, rule := range mapping.ExtractionRules {
 			if j >= 2 { // Show first 2 rules
@@ -151,11 +152,11 @@ func main() {
 				if len(keywords) > 3 {
 					keywords = append(keywords[:3], "...")
 				}
-				log.Printf("       - keyword_match: %s (confidence: %.2f)", strings.Join(keywords, ", "), rule.Confidence)
+				log.Printf("       - keyword_match: %s", strings.Join(keywords, ", "))
 			case ontology.RuleTypeRegex:
-				log.Printf("       - regex_pattern: %s (confidence: %.2f)", rule.Pattern, rule.Confidence)
+				log.Printf("       - regex_pattern: %s", rule.Pattern)
 			case ontology.RuleTypeMetadata:
-				log.Printf("       - metadata_field: %s (confidence: %.2f)", rule.FieldPath, rule.Confidence)
+				log.Printf("       - metadata_field: %s", rule.FieldPath)
 			}
 		}
 	}
@@ -334,20 +335,9 @@ func addKeywordRule(mapping *ontology.ElementEntityMapping, reader *bufio.Reader
 		keywords[i] = strings.TrimSpace(keywords[i])
 	}
 
-	fmt.Print("Enter confidence (0.0-1.0, default 0.8): ")
-	line, _ = reader.ReadString('\n')
-	confStr := strings.TrimSpace(line)
-	conf := 0.8
-	if confStr != "" {
-		if parsed, err := strconv.ParseFloat(confStr, 64); err == nil {
-			conf = parsed
-		}
-	}
-
 	rule := ontology.ExtractionRule{
-		Type:       ontology.RuleTypeKeyword,
-		Keywords:   keywords,
-		Confidence: conf,
+		Type:     ontology.RuleTypeKeyword,
+		Keywords: keywords,
 	}
 
 	mapping.ExtractionRules = append(mapping.ExtractionRules, rule)
@@ -365,20 +355,9 @@ func addRegexRule(mapping *ontology.ElementEntityMapping, reader *bufio.Reader, 
 		return
 	}
 
-	fmt.Print("Enter confidence (0.0-1.0, default 0.8): ")
-	line, _ = reader.ReadString('\n')
-	confStr := strings.TrimSpace(line)
-	conf := 0.8
-	if confStr != "" {
-		if parsed, err := strconv.ParseFloat(confStr, 64); err == nil {
-			conf = parsed
-		}
-	}
-
 	rule := ontology.ExtractionRule{
-		Type:       ontology.RuleTypeRegex,
-		Pattern:    pattern,
-		Confidence: conf,
+		Type:    ontology.RuleTypeRegex,
+		Pattern: pattern,
 	}
 
 	mapping.ExtractionRules = append(mapping.ExtractionRules, rule)
@@ -418,6 +397,22 @@ func addEntityType(schema *ontology.OntologySchema, reader *bufio.Reader, result
 		return
 	}
 
+	// Show available domains
+	fmt.Println("\nAvailable domains:")
+	for i, domain := range schema.Domains {
+		fmt.Printf("  %d. %s - %s (owner: %s)\n", i+1, domain.Name, domain.Description, domain.Owner)
+	}
+	fmt.Print("Select domain number (or enter new domain name): ")
+	line, _ = reader.ReadString('\n')
+	domainInput := strings.TrimSpace(line)
+
+	var selectedDomain string
+	if idx, err := strconv.Atoi(domainInput); err == nil && idx > 0 && idx <= len(schema.Domains) {
+		selectedDomain = schema.Domains[idx-1].Name
+	} else {
+		selectedDomain = domainInput
+	}
+
 	fmt.Print("Description: ")
 	line, _ = reader.ReadString('\n')
 	description := strings.TrimSpace(line)
@@ -429,16 +424,28 @@ func addEntityType(schema *ontology.OntologySchema, reader *bufio.Reader, result
 		elementTypes[i] = strings.TrimSpace(elementTypes[i])
 	}
 
+	fmt.Print("Confidence (0.65-0.95, context quality): ")
+	line, _ = reader.ReadString('\n')
+	confStr := strings.TrimSpace(line)
+	confidence := 0.75 // Default to narrative context
+	if confStr != "" {
+		if parsed, err := strconv.ParseFloat(confStr, 64); err == nil {
+			confidence = parsed
+		}
+	}
+
 	mapping := ontology.ElementEntityMapping{
 		EntityType:      entityType,
+		Domain:          selectedDomain,
 		Description:     description,
 		ElementTypes:    elementTypes,
+		Confidence:      confidence,
 		ExtractionRules: []ontology.ExtractionRule{},
 	}
 
 	schema.ElementEntityMappings = append(schema.ElementEntityMappings, mapping)
 	result.UserRefinements = append(result.UserRefinements,
-		fmt.Sprintf("Added entity type: %s", entityType))
+		fmt.Sprintf("Added entity type: %s (domain: %s, confidence: %.2f)", entityType, selectedDomain, confidence))
 	fmt.Println("Entity type added.")
 
 	if confirm("Would you like to add extraction rules now?") {
@@ -554,12 +561,12 @@ func addRelationshipRule(schema *ontology.OntologySchema, reader *bufio.Reader, 
 	description := strings.TrimSpace(line)
 
 	rule := ontology.EntityRelationshipRule{
-		Name:                name,
-		SourceEntityType:    sourceType,
-		TargetEntityType:    targetType,
-		RelationshipType:    relType,
-		Description:         description,
-		ConfidenceThreshold: 0.7,
+		Name:             name,
+		SourceEntityType: sourceType,
+		TargetEntityType: targetType,
+		RelationshipType: relType,
+		Description:      description,
+		Confidence:       0.85, // Default confidence for pattern reliability
 	}
 
 	schema.EntityRelationshipRules = append(schema.EntityRelationshipRules, rule)
@@ -636,28 +643,11 @@ func reviewTopEntities(result *ontology.BuildResult) {
 	}
 }
 
-// saveSchema saves the ontology schema to JSON
+// saveSchema saves the ontology schema with auto-format detection (YAML/JSON)
 func saveSchema(schema *ontology.OntologySchema, outputPath string) error {
-	// Ensure output directory exists
-	dir := filepath.Dir(outputPath)
-	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
-		}
-	}
-
-	// Marshal to JSON with indentation
-	data, err := json.MarshalIndent(schema, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal schema: %w", err)
-	}
-
-	// Write to file
-	if err := os.WriteFile(outputPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
-	}
-
-	return nil
+	// Use ontology package's SaveSchema with auto-format detection
+	// Format is automatically detected from file extension (.yaml, .yml, .json)
+	return ontology.SaveSchema(schema, outputPath, ontology.FormatAuto)
 }
 
 // confirm prompts for yes/no confirmation
