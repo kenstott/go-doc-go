@@ -97,6 +97,35 @@ class ParserConfig:
         return {**cls.DEFAULTS, **(config or {})}
 ```
 
+## Go Development Standards
+
+### Binary Output Location
+All compiled Go binaries MUST be output to `<project-dir>/bin/` directory.
+
+**Requirements:**
+- Use the `-o` flag to specify output location when building Go binaries
+- Keep all project binaries centralized in the `bin/` directory
+- This ensures binaries are properly gitignored and organized
+
+**Examples:**
+```bash
+# Building the worker binary
+go build -o bin/goworker ./cmd/worker
+
+# Building the ontology CLI
+go build -o bin/ontology ./cmd/ontology
+
+# Building any command
+go build -o bin/<binary-name> ./cmd/<command>/
+```
+
+**Benefits:**
+- Centralized location for all binaries (easier to find and manage)
+- Consistent with standard Go project layout conventions
+- Properly gitignored (bin/ directory should be in .gitignore)
+- Prevents binaries from being scattered across cmd/ directories
+- Simplifies cleanup (rm -rf bin/)
+
 ## Testing Guidelines
 
 ### Test Organization
