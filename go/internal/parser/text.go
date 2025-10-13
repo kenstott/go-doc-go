@@ -12,7 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/kennethstott/go-doc-go/internal/temporal"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/temporal"
 )
 
 // TextElementType represents the type of text element

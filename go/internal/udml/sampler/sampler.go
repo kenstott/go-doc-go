@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/udml/query"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 )
 
 // Sampler performs stratified sampling from UDML Parquet storage

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/analytics"
-	"github.com/kennethstott/go-doc-go/internal/udml/query"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 )
 
 // TestDocumentBuilder_EndToEnd tests document building with real Parquet storage and DuckDB

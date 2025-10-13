@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 )
 
 // TestJSONPath_IntegrationWithDuckDB tests JSONPath queries against real Parquet files

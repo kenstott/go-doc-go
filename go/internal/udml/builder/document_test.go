@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/udml/query"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 )
 
 // MockBackendForBuilder implements QueryBackend for testing

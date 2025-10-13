@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/udml/sampler"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/sampler"
 )
 
 // OntologyBuilder orchestrates the automatic ontology schema creation process

@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/analytics"
-	"github.com/kennethstott/go-doc-go/internal/contentsource"
-	"github.com/kennethstott/go-doc-go/internal/embeddings"
-	"github.com/kennethstott/go-doc-go/internal/jobcontrol"
-	"github.com/kennethstott/go-doc-go/internal/parser"
-	"github.com/kennethstott/go-doc-go/internal/resolver"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/contentsource"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/jobcontrol"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 	"golang.org/x/net/html"
 )
 

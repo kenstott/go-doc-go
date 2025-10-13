@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kennethstott/go-doc-go/internal/udml/sampler"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/sampler"
 )
 
 // MockLLMClient implements LLMClient for testing

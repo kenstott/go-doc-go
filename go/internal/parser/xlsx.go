@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/temporal"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/temporal"
 	"github.com/xuri/excelize/v2"
 )
 

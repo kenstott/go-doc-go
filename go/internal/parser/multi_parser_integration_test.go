@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kennethstott/go-doc-go/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

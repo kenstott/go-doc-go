@@ -19,7 +19,7 @@ import (
 	"github.com/apache/arrow/go/v18/parquet"
 	"github.com/apache/arrow/go/v18/parquet/compress"
 	"github.com/apache/arrow/go/v18/parquet/pqarrow"
-	"github.com/kennethstott/go-doc-go/internal/udml"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml"
 )
 
 // HiveParquetStorage implements Storage interface with Hive-partitioned structure

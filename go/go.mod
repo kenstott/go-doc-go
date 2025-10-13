@@ -1,4 +1,4 @@
-module github.com/kennethstott/go-doc-go
+module github.com/kennethstott/doculyzer-go-conversion
 
 go 1.24.1
 

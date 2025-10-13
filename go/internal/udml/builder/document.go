@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/kennethstott/go-doc-go/internal/udml/query"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 )
 
 // Document represents a reconstructed hierarchical document from UDML elements

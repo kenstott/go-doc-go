@@ -3,8 +3,8 @@ package embeddings
 import (
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/parser"
-	"github.com/kennethstott/go-doc-go/internal/resolver"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 )
 
 // ContextualTextBuilder builds context-aware text for embeddings
