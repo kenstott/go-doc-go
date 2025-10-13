@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/udml/ontology"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology"
 )
 
 func main() {

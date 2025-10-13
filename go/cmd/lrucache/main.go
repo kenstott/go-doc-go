@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/kennethstott/go-doc-go/internal/cache"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/cache"
 )
 
 func main() {
