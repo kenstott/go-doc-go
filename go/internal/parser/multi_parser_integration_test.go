@@ -387,29 +387,38 @@ func TestRelationshipConsistency(t *testing.T) {
 			result, err := p.parser.Parse(ctx, req)
 			require.NoError(t, err)
 
-			// All parsers should create relationships
-			assert.NotEmpty(t, result.Relationships, "Parser %s should create relationships", p.name)
-
-			// Validate relationship structure
-			for _, rel := range result.Relationships {
-				assert.NotEmpty(t, rel.RelationshipID, "Relationship ID should not be empty")
-				assert.NotEmpty(t, rel.RelationshipType, "Relationship type should not be empty")
-				assert.NotEmpty(t, rel.SourceElementID, "Source element ID should not be empty")
-				assert.NotEmpty(t, rel.TargetElementID, "Target element ID should not be empty")
-				assert.GreaterOrEqual(t, rel.Confidence, 0.0, "Confidence should be non-negative")
-				assert.LessOrEqual(t, rel.Confidence, 1.0, "Confidence should not exceed 1.0")
-			}
-
-			// Verify relationship IDs reference actual elements
+			// Verify hierarchy via parent_id field (replaces old Relationships array)
+			hierarchyCount := 0
+			parentChildMap := make(map[string][]string)
 			elementIDs := make(map[string]bool)
+
 			for _, elem := range result.Elements {
 				elementIDs[elem.ElementID] = true
+				if elem.ParentID != "" {
+					hierarchyCount++
+					parentChildMap[elem.ParentID] = append(parentChildMap[elem.ParentID], elem.ElementID)
+				}
 			}
 
-			for _, rel := range result.Relationships {
-				assert.True(t, elementIDs[rel.SourceElementID], "Source element should exist: %s", rel.SourceElementID)
-				assert.True(t, elementIDs[rel.TargetElementID], "Target element should exist: %s", rel.TargetElementID)
+			assert.Greater(t, hierarchyCount, 0, "Parser %s should have elements with parent_id forming hierarchy", p.name)
+
+			// Verify all parent_id references point to valid elements
+			for _, elem := range result.Elements {
+				if elem.ParentID != "" {
+					assert.True(t, elementIDs[elem.ParentID], "Parent element should exist: %s", elem.ParentID)
+				}
 			}
+
+			// Verify root element exists and has children
+			rootFound := false
+			for _, elem := range result.Elements {
+				if elem.ElementType == "root" && elem.ParentID == "" {
+					rootFound = true
+					assert.Greater(t, len(parentChildMap[elem.ElementID]), 0, "Root should have children")
+					break
+				}
+			}
+			assert.True(t, rootFound, "Parser %s should have root element", p.name)
 		})
 	}
 }

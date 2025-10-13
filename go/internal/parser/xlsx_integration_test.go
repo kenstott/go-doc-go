@@ -238,30 +238,29 @@ func TestXLSXParserEndToEnd(t *testing.T) {
 		result, err := xlsxParser.Parse(ctx, req)
 		require.NoError(t, err)
 
-		// XLSX parser should create bidirectional relationships
-		assert.NotEmpty(t, result.Relationships, "Should have relationships between elements")
+		// Verify hierarchy via parent_id field (replaces old Relationships array)
+		hierarchyCount := 0
+		parentChildMap := make(map[string][]string)
 
-		// Verify relationship structure
-		for _, rel := range result.Relationships {
-			assert.NotEmpty(t, rel.RelationshipID)
-			assert.NotEmpty(t, rel.RelationshipType)
-			assert.NotEmpty(t, rel.SourceElementID)
-			assert.NotEmpty(t, rel.TargetElementID)
-		}
-
-		// Verify bidirectional relationships exist
-		hasContains := false
-		hasContainedBy := false
-		for _, rel := range result.Relationships {
-			if rel.RelationshipType == "contains" {
-				hasContains = true
-			}
-			if rel.RelationshipType == "contained_by" {
-				hasContainedBy = true
+		for _, elem := range result.Elements {
+			if elem.ParentID != "" {
+				hierarchyCount++
+				parentChildMap[elem.ParentID] = append(parentChildMap[elem.ParentID], elem.ElementID)
 			}
 		}
-		assert.True(t, hasContains, "Should have 'contains' relationships")
-		assert.True(t, hasContainedBy, "Should have 'contained_by' relationships")
+
+		assert.Greater(t, hierarchyCount, 0, "Should have elements with parent_id forming hierarchy")
+
+		// Verify root element exists and has children
+		rootFound := false
+		for _, elem := range result.Elements {
+			if elem.ElementType == "root" && elem.ParentID == "" {
+				rootFound = true
+				assert.Greater(t, len(parentChildMap[elem.ElementID]), 0, "Root should have children")
+				break
+			}
+		}
+		assert.True(t, rootFound, "Should have root element")
 	})
 }
 
