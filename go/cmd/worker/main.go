@@ -12,9 +12,9 @@ import (
 	"syscall"
 
 	"github.com/BurntSushi/toml"
-	"github.com/kennethstott/go-doc-go/internal/embeddings"
-	"github.com/kennethstott/go-doc-go/internal/jobcontrol"
-	"github.com/kennethstott/go-doc-go/internal/worker"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/jobcontrol"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/worker"
 )
 
 // Config represents the TOML configuration structure
@@ -41,8 +41,27 @@ type Config struct {
 			BatchSize int `toml:"batch_size"`
 		} `toml:"neo4j_export"`
 	} `toml:"processing"`
-	ContentSources []map[string]interface{} `toml:"content_sources"`
-	Analytics      struct {
+	ContentSources       []map[string]interface{} `toml:"content_sources"`
+	RelationshipDetection struct {
+		Enabled    bool `toml:"enabled"`
+		Structural bool `toml:"structural"`
+		Semantic   bool `toml:"semantic"`
+		CrossDocumentSemantic struct {
+			Enabled                  bool    `toml:"enabled"`
+			SimilarityThreshold      float64 `toml:"similarity_threshold"`
+			QueueIdleTriggerMinutes  int     `toml:"queue_idle_trigger_minutes"`
+			RateLimitBatchSize       int     `toml:"rate_limit_batch_size"`
+			RateLimitSleepMs         int     `toml:"rate_limit_sleep_ms"`
+			MinIntervalMinutes       int     `toml:"min_interval_minutes"`
+		} `toml:"cross_document_semantic"`
+	} `toml:"relationship_detection"`
+	Ontology struct {
+		Enabled                 bool   `toml:"enabled"`
+		SchemaPath              string `toml:"schema_path"`
+		QueueIdleTriggerMinutes int    `toml:"queue_idle_trigger_minutes"`
+		MinIntervalMinutes      int    `toml:"min_interval_minutes"`
+	} `toml:"ontology"`
+	Analytics struct {
 		Enabled bool                     `toml:"enabled"`
 		Outputs []map[string]interface{} `toml:"outputs"`
 	} `toml:"analytics"`
@@ -165,6 +184,30 @@ func main() {
 		}
 	}
 
+	// Create semantic relationship config if enabled
+	var semanticConfig *worker.SemanticConfig
+	if config.RelationshipDetection.CrossDocumentSemantic.Enabled {
+		semanticConfig = &worker.SemanticConfig{
+			Enabled:                  config.RelationshipDetection.CrossDocumentSemantic.Enabled,
+			SimilarityThreshold:      config.RelationshipDetection.CrossDocumentSemantic.SimilarityThreshold,
+			QueueIdleTriggerMinutes:  config.RelationshipDetection.CrossDocumentSemantic.QueueIdleTriggerMinutes,
+			RateLimitBatchSize:       config.RelationshipDetection.CrossDocumentSemantic.RateLimitBatchSize,
+			RateLimitSleepMs:         config.RelationshipDetection.CrossDocumentSemantic.RateLimitSleepMs,
+			MinIntervalMinutes:       config.RelationshipDetection.CrossDocumentSemantic.MinIntervalMinutes,
+		}
+	}
+
+	// Create ontology extraction config if enabled
+	var ontologyConfig *worker.OntologyConfig
+	if config.Ontology.Enabled {
+		ontologyConfig = &worker.OntologyConfig{
+			Enabled:                 config.Ontology.Enabled,
+			SchemaPath:              config.Ontology.SchemaPath,
+			QueueIdleTriggerMinutes: config.Ontology.QueueIdleTriggerMinutes,
+			MinIntervalMinutes:      config.Ontology.MinIntervalMinutes,
+		}
+	}
+
 	// Create worker configuration
 	workerConfig := worker.Config{
 		WorkerID:   *workerID,
@@ -182,6 +225,8 @@ func main() {
 		MaxDocuments:      *maxDocuments,
 		DiscoveryInterval: 60,
 		Neo4jExportConfig: neo4jExportConfig,
+		SemanticConfig:    semanticConfig,
+		OntologyConfig:    ontologyConfig,
 	}
 
 	// Create worker

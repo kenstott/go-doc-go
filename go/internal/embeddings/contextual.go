@@ -65,7 +65,6 @@ func (b *ContextualTextBuilder) getElementText(element parser.Element) string {
 func (b *ContextualTextBuilder) BuildContextualText(
 	element parser.Element,
 	allElements []parser.Element,
-	relationships []parser.Relationship,
 ) string {
 	// Build element map (for parent traversal)
 	elementMap := buildElementMap(allElements)

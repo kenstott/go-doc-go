@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/apache/arrow/go/v18/parquet/compress"
 	"github.com/apache/arrow/go/v18/parquet/pqarrow"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml"
+	_ "github.com/marcboeker/go-duckdb"
 )
 
 // HiveParquetStorage implements Storage interface with Hive-partitioned structure
@@ -116,6 +118,128 @@ func (s *HiveParquetStorage) AppendElements(elements []Element) error {
 	return nil
 }
 
+// QueryElements queries elements from Hive-partitioned Parquet files using DuckDB
+func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]Element, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query - select all element fields
+	query := fmt.Sprintf(`SELECT
+		element_id, doc_id, source_name, element_type, element_category,
+		content, content_preview, content_hash, parent_id,
+		element_order, document_position,
+		page_number, section_level, row_index, column_index, temporal_type, tag_name,
+		content_location, metadata, temporal_metadata
+		FROM '%s/elements/**/*.parquet'`, s.basePath)
+
+	// Build WHERE clauses from filters
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+	if elementType, ok := filters["element_type"].(string); ok && elementType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("element_type = '%s'", elementType))
+	}
+	if elementCategory, ok := filters["element_category"].(string); ok && elementCategory != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("element_category = '%s'", elementCategory))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query elements: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	var elements []Element
+	for rows.Next() {
+		var elem Element
+		var metadataJSON sql.NullString
+		var contentLocationJSON sql.NullString
+		var temporalMetadataJSON sql.NullString
+		var pageNumber sql.NullInt64
+		var sectionLevel sql.NullInt64
+		var rowIndex sql.NullInt64
+		var columnIndex sql.NullInt64
+		var temporalType sql.NullString
+		var tagName sql.NullString
+
+		err := rows.Scan(
+			&elem.ElementID, &elem.DocID, &elem.SourceName, &elem.ElementType, &elem.ElementCategory,
+			&elem.Content, &elem.ContentPreview, &elem.ContentHash, &elem.ParentID,
+			&elem.ElementOrder, &elem.DocumentPosition,
+			&pageNumber, &sectionLevel, &rowIndex, &columnIndex, &temporalType, &tagName,
+			&contentLocationJSON, &metadataJSON, &temporalMetadataJSON,
+		)
+		if err != nil {
+			log.Printf("Failed to scan element row: %v", err)
+			continue
+		}
+
+		// Parse nullable integer fields
+		if pageNumber.Valid {
+			val := int(pageNumber.Int64)
+			elem.PageNumber = &val
+		}
+		if sectionLevel.Valid {
+			val := int(sectionLevel.Int64)
+			elem.SectionLevel = &val
+		}
+		if rowIndex.Valid {
+			val := int(rowIndex.Int64)
+			elem.RowIndex = &val
+		}
+		if columnIndex.Valid {
+			val := int(columnIndex.Int64)
+			elem.ColumnIndex = &val
+		}
+		if temporalType.Valid {
+			elem.TemporalType = &temporalType.String
+		}
+		if tagName.Valid {
+			elem.TagName = &tagName.String
+		}
+
+		// Parse JSON fields
+		if metadataJSON.Valid && metadataJSON.String != "" {
+			if err := json.Unmarshal([]byte(metadataJSON.String), &elem.Metadata); err != nil {
+				log.Printf("Failed to unmarshal metadata for element %s: %v", elem.ElementID, err)
+			}
+		}
+		if contentLocationJSON.Valid && contentLocationJSON.String != "" {
+			if err := json.Unmarshal([]byte(contentLocationJSON.String), &elem.ContentLocation); err != nil {
+				log.Printf("Failed to unmarshal content_location for element %s: %v", elem.ElementID, err)
+			}
+		}
+		if temporalMetadataJSON.Valid && temporalMetadataJSON.String != "" {
+			if err := json.Unmarshal([]byte(temporalMetadataJSON.String), &elem.TemporalMetadata); err != nil {
+				log.Printf("Failed to unmarshal temporal_metadata for element %s: %v", elem.ElementID, err)
+			}
+		}
+
+		elements = append(elements, elem)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating element rows: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d elements from Hive-partitioned Parquet", len(elements))
+	return elements, nil
+}
+
 // AppendRelationships writes relationships to Parquet files
 func (s *HiveParquetStorage) AppendRelationships(relationships []Relationship) error {
 	if len(relationships) == 0 {
@@ -171,6 +295,209 @@ func (s *HiveParquetStorage) AppendLinks(links []Link) error {
 
 	log.Printf("ANALYTICS: Wrote %d links to Hive-partitioned Parquet", len(links))
 	return nil
+}
+
+// QueryEmbeddings queries embeddings from Hive-partitioned Parquet files using DuckDB
+func (s *HiveParquetStorage) QueryEmbeddings(filters map[string]interface{}) ([]Embedding, error) {
+	// HiveParquetStorage uses the same DuckDB query approach as ParquetStorage
+	// The query engine handles the Hive partitioning transparently
+
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query based on filters
+	query := fmt.Sprintf("SELECT element_id, doc_id, source_name, embedding, text FROM '%s/embeddings/**/*.parquet'",
+		s.basePath)
+
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	var embeddings []Embedding
+	for rows.Next() {
+		var emb Embedding
+		var embeddingJSON string
+
+		err := rows.Scan(&emb.ElementID, &emb.DocID, &emb.SourceName, &embeddingJSON, &emb.Text)
+		if err != nil {
+			log.Printf("Failed to scan embedding row: %v", err)
+			continue
+		}
+
+		// Parse embedding from JSON array string
+		if err := json.Unmarshal([]byte(embeddingJSON), &emb.Embedding); err != nil {
+			log.Printf("Failed to unmarshal embedding for element %s: %v", emb.ElementID, err)
+			continue
+		}
+
+		embeddings = append(embeddings, emb)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d embeddings from Hive-partitioned Parquet", len(embeddings))
+	return embeddings, nil
+}
+
+// ============================================================================
+// UDML-O: Ontology Instance Layer Methods
+// ============================================================================
+
+// AppendOntologyEntities writes ontology entities to Parquet files
+// Partitioning: source=X/domain=Y/date=Z/
+func (s *HiveParquetStorage) AppendOntologyEntities(entities []OntologyEntity) error {
+	if len(entities) == 0 {
+		return nil
+	}
+
+	// Group entities by partition keys (source, domain, date)
+	partitioned := s.partitionOntologyEntities(entities)
+
+	for partKey, ents := range partitioned {
+		if err := s.writeOntologyEntitiesToParquet(partKey, ents); err != nil {
+			return fmt.Errorf("failed to write ontology entities partition %s: %w", partKey, err)
+		}
+	}
+
+	log.Printf("ANALYTICS: Wrote %d ontology entities to Hive-partitioned Parquet", len(entities))
+	return nil
+}
+
+// AppendOntologyRelationships writes ontology relationships to Parquet files
+// Partitioning: source=X/domain=Y/date=Z/
+func (s *HiveParquetStorage) AppendOntologyRelationships(relationships []OntologyRelationship) error {
+	if len(relationships) == 0 {
+		return nil
+	}
+
+	// Group relationships by partition keys
+	partitioned := s.partitionOntologyRelationships(relationships)
+
+	for partKey, rels := range partitioned {
+		if err := s.writeOntologyRelationshipsToParquet(partKey, rels); err != nil {
+			return fmt.Errorf("failed to write ontology relationships partition %s: %w", partKey, err)
+		}
+	}
+
+	log.Printf("ANALYTICS: Wrote %d ontology relationships to Hive-partitioned Parquet", len(relationships))
+	return nil
+}
+
+// AppendOntologyMentions writes ontology mentions to Parquet files
+// Partitioning: source=X/domain=Y/date=Z/
+func (s *HiveParquetStorage) AppendOntologyMentions(mentions []OntologyMention) error {
+	if len(mentions) == 0 {
+		return nil
+	}
+
+	// Group mentions by partition keys
+	partitioned := s.partitionOntologyMentions(mentions)
+
+	for partKey, mns := range partitioned {
+		if err := s.writeOntologyMentionsToParquet(partKey, mns); err != nil {
+			return fmt.Errorf("failed to write ontology mentions partition %s: %w", partKey, err)
+		}
+	}
+
+	log.Printf("ANALYTICS: Wrote %d ontology mentions to Hive-partitioned Parquet", len(mentions))
+	return nil
+}
+
+// QueryOntologyEntities queries ontology entities from Hive-partitioned Parquet files
+func (s *HiveParquetStorage) QueryOntologyEntities(filters map[string]interface{}) ([]OntologyEntity, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query based on filters
+	query := fmt.Sprintf("SELECT entity_id, doc_id, source_name, entity_name, entity_type, domain, confidence, attributes, element_id, extracted_at FROM '%s/ontology_entities/**/*.parquet'",
+		s.basePath)
+
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+	if domain, ok := filters["domain"].(string); ok && domain != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("domain = '%s'", domain))
+	}
+	if entityType, ok := filters["entity_type"].(string); ok && entityType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("entity_type = '%s'", entityType))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ontology entities: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	var entities []OntologyEntity
+	for rows.Next() {
+		var entity OntologyEntity
+		var attributesJSON string
+		var extractedAtStr string
+
+		err := rows.Scan(&entity.EntityID, &entity.DocID, &entity.SourceName, &entity.EntityName,
+			&entity.EntityType, &entity.Domain, &entity.Confidence, &attributesJSON, &entity.ElementID, &extractedAtStr)
+		if err != nil {
+			log.Printf("Failed to scan ontology entity row: %v", err)
+			continue
+		}
+
+		// Parse attributes from JSON
+		if attributesJSON != "" {
+			if err := json.Unmarshal([]byte(attributesJSON), &entity.Attributes); err != nil {
+				log.Printf("Failed to unmarshal attributes for entity %s: %v", entity.EntityID, err)
+			}
+		}
+
+		// Parse timestamp
+		if entity.ExtractedAt, err = time.Parse(time.RFC3339, extractedAtStr); err != nil {
+			entity.ExtractedAt = time.Now()
+		}
+
+		entities = append(entities, entity)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d ontology entities from Hive-partitioned Parquet", len(entities))
+	return entities, nil
 }
 
 // Close closes the storage (no-op for Parquet)
@@ -229,10 +556,47 @@ func (s *HiveParquetStorage) partitionLinks(links []Link) map[string][]Link {
 	return partitioned
 }
 
+// partitionOntologyEntities groups ontology entities by partition keys (source, domain, date)
+func (s *HiveParquetStorage) partitionOntologyEntities(entities []OntologyEntity) map[string][]OntologyEntity {
+	partitioned := make(map[string][]OntologyEntity)
+	for _, entity := range entities {
+		key := s.getOntologyPartitionKey(time.Now(), entity.SourceName, entity.Domain)
+		partitioned[key] = append(partitioned[key], entity)
+	}
+	return partitioned
+}
+
+// partitionOntologyRelationships groups ontology relationships by partition keys
+func (s *HiveParquetStorage) partitionOntologyRelationships(relationships []OntologyRelationship) map[string][]OntologyRelationship {
+	partitioned := make(map[string][]OntologyRelationship)
+	for _, rel := range relationships {
+		key := s.getOntologyPartitionKey(time.Now(), rel.SourceName, rel.Domain)
+		partitioned[key] = append(partitioned[key], rel)
+	}
+	return partitioned
+}
+
+// partitionOntologyMentions groups ontology mentions by partition keys
+func (s *HiveParquetStorage) partitionOntologyMentions(mentions []OntologyMention) map[string][]OntologyMention {
+	partitioned := make(map[string][]OntologyMention)
+	for _, mention := range mentions {
+		// Mentions inherit partition from their entity's source/domain
+		key := s.getPartitionKey(time.Now(), mention.SourceName)
+		partitioned[key] = append(partitioned[key], mention)
+	}
+	return partitioned
+}
+
 // getPartitionKey generates a partition key based on date and source (for non-elements tables)
 func (s *HiveParquetStorage) getPartitionKey(timestamp time.Time, sourceName string) string {
 	date := timestamp.Format("2006-01-02")
 	return fmt.Sprintf("date=%s/source=%s", date, sourceName)
+}
+
+// getOntologyPartitionKey generates partition key for ontology data (source, domain, date)
+func (s *HiveParquetStorage) getOntologyPartitionKey(timestamp time.Time, sourceName, domain string) string {
+	date := timestamp.Format("2006-01-02")
+	return fmt.Sprintf("source=%s/domain=%s/date=%s", sourceName, domain, date)
 }
 
 // getHivePartitionPath returns the full Hive partition path for elements

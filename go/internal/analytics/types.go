@@ -72,12 +72,77 @@ type Link struct {
 	LinkText        string `json:"link_text,omitempty"`
 }
 
+// ============================================================================
+// UDML-O: Ontology Instance Layer - Entity instances and relationships extracted via ontology schemas
+// ============================================================================
+
+// OntologyEntity represents an extracted entity from ontology analysis
+type OntologyEntity struct {
+	EntityID    string                 `json:"entity_id"`    // Unique entity ID
+	DocID       string                 `json:"doc_id"`       // Source document
+	SourceName  string                 `json:"source_name"`  // Source name
+	EntityName  string                 `json:"entity_name"`  // Entity name
+	EntityType  string                 `json:"entity_type"`  // person/organization/location/etc
+	Domain      string                 `json:"domain"`       // Domain ownership (data mesh)
+	Confidence  float64                `json:"confidence"`   // Extraction confidence (0.0-1.0)
+	Attributes  map[string]interface{} `json:"attributes"`   // Entity properties
+	ElementID   string                 `json:"element_id"`   // Source UDML element
+	ExtractedAt time.Time              `json:"extracted_at"` // Extraction timestamp
+}
+
+// OntologyRelationship represents a semantic relationship between entities
+type OntologyRelationship struct {
+	RelationshipID   string                 `json:"relationship_id"`   // Unique relationship ID
+	DocID            string                 `json:"doc_id"`            // Source document
+	SourceName       string                 `json:"source_name"`       // Source name
+	SourceEntityID   string                 `json:"source_entity_id"`  // Source entity ID
+	TargetEntityID   string                 `json:"target_entity_id"`  // Target entity ID
+	RelationshipType string                 `json:"relationship_type"` // is_a/part_of/mentions/etc
+	Domain           string                 `json:"domain"`            // Consumer domain (owns the enrichment)
+	Confidence       float64                `json:"confidence"`        // Pattern reliability (0.0-1.0)
+	Evidence         string                 `json:"evidence"`          // Supporting text
+	Attributes       map[string]interface{} `json:"attributes"`        // Relationship properties
+	ElementID        string                 `json:"element_id"`        // Source UDML element
+	ExtractedAt      time.Time              `json:"extracted_at"`      // Extraction timestamp
+}
+
+// OntologyMention represents where an entity is mentioned in the document
+type OntologyMention struct {
+	MentionID     string    `json:"mention_id"`     // Unique mention ID
+	EntityID      string    `json:"entity_id"`      // Entity being mentioned
+	DocID         string    `json:"doc_id"`         // Source document
+	SourceName    string    `json:"source_name"`    // Source name
+	ElementID     string    `json:"element_id"`     // UDML element where mentioned
+	MentionText   string    `json:"mention_text"`   // Actual text of mention
+	StartPosition int       `json:"start_position"` // Character offset start
+	EndPosition   int       `json:"end_position"`   // Character offset end
+	ExtractedAt   time.Time `json:"extracted_at"`   // Extraction timestamp
+}
+
 // Storage defines the interface for analytics storage
 type Storage interface {
+	// UDML-D: Documents
 	AppendDocuments(documents []Document) error
+
+	// UDML-E: Elements
 	AppendElements(elements []Element) error
+	QueryElements(filters map[string]interface{}) ([]Element, error)
+
+	// UDML-R: Structural and semantic relationships between elements
 	AppendRelationships(relationships []Relationship) error
+
+	// UDML-V: Vector embeddings
 	AppendEmbeddings(embeddings []Embedding) error
+	QueryEmbeddings(filters map[string]interface{}) ([]Embedding, error)
+
+	// UDML-L: Links
 	AppendLinks(links []Link) error
+
+	// UDML-O: Ontology instances - entity instances and relationships extracted via ontology extraction rules
+	AppendOntologyEntities(entities []OntologyEntity) error
+	AppendOntologyRelationships(relationships []OntologyRelationship) error
+	AppendOntologyMentions(mentions []OntologyMention) error
+	QueryOntologyEntities(filters map[string]interface{}) ([]OntologyEntity, error)
+
 	Close() error
 }

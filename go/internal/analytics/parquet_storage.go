@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/apache/arrow/go/v18/parquet"
 	"github.com/apache/arrow/go/v18/parquet/compress"
 	"github.com/apache/arrow/go/v18/parquet/pqarrow"
+	_ "github.com/marcboeker/go-duckdb"
 )
 
 // ParquetStorage implements Storage interface with native Go Parquet writing
@@ -162,6 +164,143 @@ func (s *ParquetStorage) AppendLinks(links []Link) error {
 
 	log.Printf("ANALYTICS: Wrote %d links to Parquet (native Go)", len(links))
 	return nil
+}
+
+// QueryEmbeddings queries embeddings from Parquet files using DuckDB
+func (s *ParquetStorage) QueryEmbeddings(filters map[string]interface{}) ([]Embedding, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query based on filters
+	query := fmt.Sprintf("SELECT element_id, doc_id, source_name, embedding, text FROM '%s/embeddings/**/*.parquet'",
+		s.basePath)
+
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	var embeddings []Embedding
+	for rows.Next() {
+		var emb Embedding
+		var embeddingJSON string
+
+		err := rows.Scan(&emb.ElementID, &emb.DocID, &emb.SourceName, &embeddingJSON, &emb.Text)
+		if err != nil {
+			log.Printf("Failed to scan embedding row: %v", err)
+			continue
+		}
+
+		// Parse embedding from JSON array string
+		if err := json.Unmarshal([]byte(embeddingJSON), &emb.Embedding); err != nil {
+			log.Printf("Failed to unmarshal embedding for element %s: %v", emb.ElementID, err)
+			continue
+		}
+
+		embeddings = append(embeddings, emb)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d embeddings from Parquet", len(embeddings))
+	return embeddings, nil
+}
+
+// QueryElements queries elements from Parquet files using DuckDB
+func (s *ParquetStorage) QueryElements(filters map[string]interface{}) ([]Element, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query - select all element fields
+	query := fmt.Sprintf(`SELECT
+		element_id, doc_id, source_name, element_type, element_category,
+		content, content_preview, content_hash, parent_id,
+		element_order, document_position, content_location
+		FROM '%s/elements/**/*.parquet'`, s.basePath)
+
+	// Build WHERE clauses from filters
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+	if elementType, ok := filters["element_type"].(string); ok && elementType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("element_type = '%s'", elementType))
+	}
+	if elementCategory, ok := filters["element_category"].(string); ok && elementCategory != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("element_category = '%s'", elementCategory))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query elements: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results (ParquetStorage doesn't have promoted fields)
+	var elements []Element
+	for rows.Next() {
+		var elem Element
+		var contentLocationJSON sql.NullString
+
+		err := rows.Scan(
+			&elem.ElementID, &elem.DocID, &elem.SourceName, &elem.ElementType, &elem.ElementCategory,
+			&elem.Content, &elem.ContentPreview, &elem.ContentHash, &elem.ParentID,
+			&elem.ElementOrder, &elem.DocumentPosition, &contentLocationJSON,
+		)
+		if err != nil {
+			log.Printf("Failed to scan element row: %v", err)
+			continue
+		}
+
+		// Parse JSON fields
+		if contentLocationJSON.Valid && contentLocationJSON.String != "" {
+			if err := json.Unmarshal([]byte(contentLocationJSON.String), &elem.ContentLocation); err != nil {
+				log.Printf("Failed to unmarshal content_location for element %s: %v", elem.ElementID, err)
+			}
+		}
+
+		elements = append(elements, elem)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating element rows: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d elements from Parquet", len(elements))
+	return elements, nil
 }
 
 // Close closes the storage (no-op for Parquet)
@@ -700,4 +839,32 @@ func (s *ParquetStorage) writeRecordToFile(filepath string, schema *arrow.Schema
 	}
 
 	return nil
+}
+
+// ============================================================================
+// UDML-O: Stub implementations (not yet fully implemented for non-Hive storage)
+// ============================================================================
+
+// AppendOntologyEntities is not yet implemented for ParquetStorage (use HiveParquetStorage)
+func (s *ParquetStorage) AppendOntologyEntities(entities []OntologyEntity) error {
+	log.Printf("WARNING: Ontology entities not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil
+}
+
+// AppendOntologyRelationships is not yet implemented for ParquetStorage
+func (s *ParquetStorage) AppendOntologyRelationships(relationships []OntologyRelationship) error {
+	log.Printf("WARNING: Ontology relationships not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil
+}
+
+// AppendOntologyMentions is not yet implemented for ParquetStorage
+func (s *ParquetStorage) AppendOntologyMentions(mentions []OntologyMention) error {
+	log.Printf("WARNING: Ontology mentions not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil
+}
+
+// QueryOntologyEntities is not yet implemented for ParquetStorage
+func (s *ParquetStorage) QueryOntologyEntities(filters map[string]interface{}) ([]OntologyEntity, error) {
+	log.Printf("WARNING: Ontology entity queries not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil, nil
 }

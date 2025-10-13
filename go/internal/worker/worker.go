@@ -20,7 +20,6 @@ import (
 	"github.com/kennethstott/doculyzer-go-conversion/internal/jobcontrol"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
-	"golang.org/x/net/html"
 )
 
 // EmbeddingBatchItem represents a single embedding request
@@ -63,6 +62,18 @@ type Worker struct {
 	neo4jExportConfig     *Neo4jExportConfig
 	lastQueueEmptyTime    *time.Time
 	lastNeo4jExportTime   *time.Time
+
+	// Semantic analysis state
+	semanticConfig           *SemanticConfig
+	semanticAnalyzer         *SemanticAnalyzer
+	semanticAnalysisRunning  atomic.Bool
+	lastSemanticAnalysisTime *time.Time
+
+	// Ontology extraction state
+	ontologyConfig            *OntologyConfig
+	ontologyExtractor         *OntologyExtractor
+	ontologyExtractionRunning atomic.Bool
+	lastOntologyExtractionTime *time.Time
 }
 
 // Neo4jExportConfig holds Neo4j export configuration
@@ -156,6 +167,24 @@ func (a *EmbeddingBatchAggregator) Size() int {
 	return len(a.items)
 }
 
+// SemanticConfig holds configuration for cross-document semantic relationship detection
+type SemanticConfig struct {
+	Enabled                  bool
+	SimilarityThreshold      float64
+	QueueIdleTriggerMinutes  int
+	RateLimitBatchSize       int
+	RateLimitSleepMs         int
+	MinIntervalMinutes       int
+}
+
+// OntologyConfig holds configuration for ontology-based entity extraction
+type OntologyConfig struct {
+	Enabled                 bool
+	SchemaPath              string // Path to ontology schema files (YAML/JSON)
+	QueueIdleTriggerMinutes int
+	MinIntervalMinutes      int
+}
+
 // Config holds worker configuration
 type Config struct {
 	WorkerID          string
@@ -167,6 +196,8 @@ type Config struct {
 	MaxDocuments      int
 	DiscoveryInterval int // seconds
 	Neo4jExportConfig *Neo4jExportConfig // Optional Neo4j export configuration
+	SemanticConfig    *SemanticConfig    // Optional semantic relationship detection configuration
+	OntologyConfig    *OntologyConfig    // Optional ontology extraction configuration
 }
 
 // NewWorker creates a new document processing worker
@@ -254,6 +285,28 @@ func NewWorker(config Config) (*Worker, error) {
 		numWorkers = 1
 	}
 
+	// Create semantic analyzer if configured
+	var semanticAnalyzer *SemanticAnalyzer
+	if config.SemanticConfig != nil && config.SemanticConfig.Enabled {
+		semanticAnalyzer = NewSemanticAnalyzer(config.SemanticConfig, storages)
+		log.Printf("Semantic analysis enabled (threshold: %.2f, idle trigger: %d min)",
+			config.SemanticConfig.SimilarityThreshold, config.SemanticConfig.QueueIdleTriggerMinutes)
+	}
+
+	// Create ontology extractor if configured
+	var ontologyExtractor *OntologyExtractor
+	if config.OntologyConfig != nil && config.OntologyConfig.Enabled {
+		extractor, err := NewOntologyExtractor(config.OntologyConfig, storages)
+		if err != nil {
+			log.Printf("WARNING: Failed to create ontology extractor: %v", err)
+			log.Printf("Ontology extraction will be disabled")
+		} else {
+			ontologyExtractor = extractor
+			log.Printf("Ontology extraction enabled (schema path: %s, idle trigger: %d min)",
+				config.OntologyConfig.SchemaPath, config.OntologyConfig.QueueIdleTriggerMinutes)
+		}
+	}
+
 	worker := &Worker{
 		workerID:             config.WorkerID,
 		numWorkers:           numWorkers,
@@ -268,6 +321,10 @@ func NewWorker(config Config) (*Worker, error) {
 		ctx:                  ctx,
 		cancel:               cancel,
 		neo4jExportConfig:    config.Neo4jExportConfig,
+		semanticConfig:       config.SemanticConfig,
+		semanticAnalyzer:     semanticAnalyzer,
+		ontologyConfig:       config.OntologyConfig,
+		ontologyExtractor:    ontologyExtractor,
 	}
 
 	log.Printf("Initialized worker: %s", worker.workerID)
@@ -278,6 +335,14 @@ func NewWorker(config Config) (*Worker, error) {
 	}
 	if config.Neo4jExportConfig != nil && config.Neo4jExportConfig.Enabled {
 		log.Printf("Neo4j export enabled (wait time: %d seconds)", config.Neo4jExportConfig.EmptyQueueWaitTime)
+	}
+	if semanticAnalyzer != nil {
+		log.Printf("Semantic analysis enabled (queue idle: %d min, min interval: %d min)",
+			config.SemanticConfig.QueueIdleTriggerMinutes, config.SemanticConfig.MinIntervalMinutes)
+	}
+	if ontologyExtractor != nil {
+		log.Printf("Ontology extraction enabled (queue idle: %d min, min interval: %d min)",
+			config.OntologyConfig.QueueIdleTriggerMinutes, config.OntologyConfig.MinIntervalMinutes)
 	}
 
 	return worker, nil
@@ -542,74 +607,89 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 
 	log.Printf("DEBUG: Determined docType=%s for document %s", docType, docInfo.DocID)
 
-	// Parse the document using appropriate parser
+	// Parse the document using appropriate parser with unified Parser interface
+	ctx := context.Background()
 	switch docType {
 	case "docx":
 		log.Printf("DEBUG: Parsing DOCX with BinaryPath=%s", docContent.BinaryPath)
 		docxParser := parser.NewDocxParser()
-		docxResult, docxErr := docxParser.Parse(parser.DocxParseRequest{
+		parseResult, err = docxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: docContent.BinaryPath, // DOCX parser expects file path
+			Config:  parser.DefaultParserConfig(),
 		})
-		if docxErr != nil {
-			log.Printf("ERROR: DOCX parse error: %v", docxErr)
-			err = docxErr
-		} else {
-			log.Printf("DEBUG: DOCX parsed successfully: %d elements, %d relationships",
-				len(docxResult.Elements), len(docxResult.Relationships))
-			parseResult = docxResult.ToParseResult()
-		}
 	case "pptx", "ppt":
 		log.Printf("DEBUG: Parsing PPTX with BinaryPath=%s", docContent.BinaryPath)
 		pptxParser := parser.NewPptxParser()
-		pptxResult, pptxErr := pptxParser.Parse(parser.PptxParseRequest{
+		parseResult, err = pptxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: docContent.BinaryPath, // PPTX parser expects file path
+			Config:  parser.DefaultParserConfig(),
 		})
-		if pptxErr != nil {
-			log.Printf("ERROR: PPTX parse error: %v", pptxErr)
-			err = pptxErr
-		} else {
-			log.Printf("DEBUG: PPTX parsed successfully: %d elements, %d relationships",
-				len(pptxResult.Elements), len(pptxResult.Relationships))
-			parseResult = pptxResult.ToParseResult()
-		}
 	case "xlsx", "xls":
 		xlsxParser := parser.NewXLSXParser()
-		parseResult, err = xlsxParser.Parse(docInfo.DocID, contentToUse)
-	case "pdf":
-		pdfParser := parser.NewPDFParser()
-		parseResult, err = pdfParser.Parse(docInfo.DocID, contentToUse)
-	case "csv":
-		csvParser := parser.NewCSVParser()
-		parseResult, err = csvParser.Parse(docInfo.DocID, contentToUse)
-	case "json":
-		jsonParser := parser.NewJSONParser()
-		parseResult, err = jsonParser.Parse(docInfo.DocID, contentToUse)
-	case "xml":
-		xmlParser := parser.NewXMLParser()
-		parseResult, err = xmlParser.Parse(docInfo.DocID, contentToUse)
-	case "html":
-		htmlParser := parser.NewHTMLParser()
-		parseResult, err = htmlParser.Parse(docInfo.DocID, contentToUse)
-	case "markdown", "md":
-		markdownParser := parser.NewMarkdownParser()
-		mdResult, mdErr := markdownParser.Parse(parser.MarkdownParseRequest{
+		parseResult, err = xlsxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
 		})
-		if mdErr != nil {
-			err = mdErr
-		} else {
-			parseResult = mdResult.ToParseResult()
-		}
+	case "pdf":
+		pdfParser := parser.NewPDFParser()
+		parseResult, err = pdfParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "csv":
+		csvParser := parser.NewCSVParser()
+		parseResult, err = csvParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "json":
+		jsonParser := parser.NewJSONParser()
+		parseResult, err = jsonParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "xml":
+		xmlParser := parser.NewXMLParser()
+		parseResult, err = xmlParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "html":
+		htmlParser := parser.NewHTMLParser()
+		parseResult, err = htmlParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "markdown", "md":
+		markdownParser := parser.NewMarkdownParser()
+		parseResult, err = markdownParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
 	case "text", "txt":
 		textParser := parser.NewTextParser()
-		parseResult, err = textParser.Parse(docInfo.DocID, contentToUse)
+		parseResult, err = textParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
 	default:
 		// Default to text parser
 		textParser := parser.NewTextParser()
-		parseResult, err = textParser.Parse(docInfo.DocID, contentToUse)
+		parseResult, err = textParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
 	}
 
 	if err != nil {
@@ -617,10 +697,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		return false
 	}
 
-	// Create sequential (sibling) relationships between elements with the same parent
-	// This matches Python's StructuralRelationshipDetector behavior
-	sequentialRels := parser.CreateSequentialRelationships(parseResult.Elements)
-	parseResult.Relationships = append(parseResult.Relationships, sequentialRels...)
+	// Note: Relationships and Links were removed during UDML migration
+	// They are now handled by UDML graph extraction instead
 
 	// Generate embeddings if enabled
 	var embeddingMap map[string][]float64
@@ -642,7 +720,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 
 			// Use contextual text if builder is configured
 			if w.contextualBuilder != nil {
-				embeddingText = w.contextualBuilder.BuildContextualText(elem, parseResult.Elements, parseResult.Relationships)
+				embeddingText = w.contextualBuilder.BuildContextualText(elem, parseResult.Elements)
 			} else {
 				// Simple mode: use content preview
 				embeddingText = elem.ContentPreview
@@ -702,7 +780,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 			ContentType:       docContent.DocType,
 			ProcessedAt:       time.Now(),
 			ElementCount:      len(parseResult.Elements),
-			RelationshipCount: len(parseResult.Relationships),
+			RelationshipCount: 0, // Relationships removed during UDML migration
 		}}
 		if err := storage.AppendDocuments(docs); err != nil {
 			log.Printf("Failed to store documents: %v", err)
@@ -754,45 +832,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 			}
 		}
 
-		// Store relationships
-		var relationships []analytics.Relationship
-		for _, rel := range parseResult.Relationships {
-			relationships = append(relationships, analytics.Relationship{
-				SourceElementID:  rel.SourceElementID,
-				TargetElementID:  rel.TargetElementID,
-				RelationshipType: rel.RelationshipType,
-				DocID:            docInfo.DocID,
-				SourceName:       docInfo.Source,
-				Metadata:         rel.Metadata,
-			})
-		}
-		if len(relationships) > 0 {
-			if err := storage.AppendRelationships(relationships); err != nil {
-				log.Printf("Failed to store relationships: %v", err)
-				return false
-			}
-		}
-
-		// Store links
-		if parseResult != nil && len(parseResult.Links) > 0 {
-			var links []analytics.Link
-			for _, link := range parseResult.Links {
-				links = append(links, analytics.Link{
-					LinkID:          link.LinkID,
-					SourceElementID: link.SourceElementID,
-					DocID:           docInfo.DocID,
-					SourceName:      docInfo.Source,
-					LinkType:        link.LinkType,
-					LinkTarget:      link.LinkTarget,
-					LinkText:        link.LinkText,
-				})
-			}
-
-			if err := storage.AppendLinks(links); err != nil {
-				log.Printf("Failed to store links: %v", err)
-				// Don't return false - links are optional
-			}
-		}
+		// Note: Relationships and Links storage removed during UDML migration
+		// UDML graph extraction will handle these via separate process
 
 		// Store embeddings
 		if embeddingMap != nil && len(embeddingMap) > 0 {
@@ -817,10 +858,11 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		}
 	}
 
-	// Queue links from parseResult (works for all document types including HTML, DOCX, PDF, etc.)
+	// Queue links discovered during parsing (works for all document types)
+	// Parsers create link elements with element_type="link" and metadata["link_target"]
 	sourceConfig, hasConfig := w.contentSourceConfigs[docInfo.Source]
-	if parseResult != nil && len(parseResult.Links) > 0 && hasConfig {
-		w.queueLinksFromParseResult(docInfo, parseResult, sourceConfig)
+	if hasConfig {
+		w.queueDiscoveredLinks(docInfo, parseResult, sourceConfig)
 	}
 
 	log.Printf("Successfully processed document %s", docInfo.DocID)
@@ -1115,110 +1157,10 @@ func (w *Worker) Close() error {
 	return w.jobControl.Close()
 }
 
-// extractAndQueueLinks extracts links from HTML content and queues them for processing
-func (w *Worker) extractAndQueueLinks(docInfo *jobcontrol.DocumentInfo, htmlContent string, sourceConfig map[string]interface{}) {
-	// Get current depth from metadata
-	currentDepth := 0
-	if depth, ok := docInfo.Metadata["discovery_depth"].(float64); ok {
-		currentDepth = int(depth)
-	}
-
-	// Get max depth from source config (not from document metadata)
-	maxDepth := 1 // default
-	if configDepth, ok := sourceConfig["max_link_depth"].(int); ok {
-		maxDepth = configDepth
-	} else if configDepth, ok := sourceConfig["max_link_depth"].(float64); ok {
-		maxDepth = int(configDepth)
-	}
-
-	// Check if we've reached max depth
-	if currentDepth >= maxDepth {
-		log.Printf("Not extracting links from %s - at max depth %d", docInfo.DocID, maxDepth)
-		return
-	}
-
-	// Parse HTML
-	doc, err := html.Parse(strings.NewReader(htmlContent))
-	if err != nil {
-		log.Printf("Failed to parse HTML for link extraction: %v", err)
-		return
-	}
-
-	// Parse base URL
-	baseURL, err := url.Parse(docInfo.DocID)
-	if err != nil {
-		log.Printf("Failed to parse base URL %s: %v", docInfo.DocID, err)
-		return
-	}
-
-	// Extract links
-	links := make(map[string]bool)
-	var extract func(*html.Node)
-	extract = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "a" {
-			for _, attr := range n.Attr {
-				if attr.Key == "href" {
-					// Resolve relative URL
-					linkURL, err := url.Parse(attr.Val)
-					if err != nil {
-						continue
-					}
-					absoluteURL := baseURL.ResolveReference(linkURL)
-
-					// Skip if different domain
-					if absoluteURL.Host != baseURL.Host {
-						continue
-					}
-
-					// Skip fragments
-					absoluteURL.Fragment = ""
-					linkStr := absoluteURL.String()
-
-					// Skip if same as base URL
-					if linkStr == docInfo.DocID {
-						continue
-					}
-
-					// Apply filters
-					if w.shouldIncludeLink(linkStr, sourceConfig) {
-						links[linkStr] = true
-					}
-					break
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			extract(c)
-		}
-	}
-	extract(doc)
-
-	// Queue discovered links
-	queued := 0
-	for link := range links {
-		metadata := map[string]interface{}{
-			"url":             link,
-			"parent_url":      docInfo.DocID,
-			"discovery_depth": currentDepth + 1,
-			"source_name":     docInfo.Source,
-		}
-
-		if err := w.jobControl.EnqueueDocument(link, docInfo.Source, metadata); err != nil {
-			log.Printf("Failed to enqueue link %s: %v", link, err)
-		} else {
-			queued++
-		}
-	}
-
-	if queued > 0 {
-		log.Printf("Queued %d links from %s for processing", queued, docInfo.DocID)
-	}
-}
-
-// queueLinksFromParseResult queues links from parseResult.Links via job control
-func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, parseResult *parser.ParseResult, sourceConfig map[string]interface{}) {
+// queueDiscoveredLinks queues links discovered during parsing
+// All parsers create link elements with element_type="link" and metadata["link_target"]
+func (w *Worker) queueDiscoveredLinks(docInfo *jobcontrol.DocumentInfo, parseResult *parser.ParseResult, sourceConfig map[string]interface{}) {
 	if sourceConfig == nil {
-		// No source config, can't determine depth or filtering
 		return
 	}
 
@@ -1242,22 +1184,29 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 		return
 	}
 
-	// Queue each link
+	// Find all link elements and queue their targets
 	queued := 0
-	for _, link := range parseResult.Links {
-		// Skip empty links
-		if link.LinkTarget == "" {
+	for _, elem := range parseResult.Elements {
+		// Check if this is a link element
+		if elem.ElementType != "link" {
 			continue
 		}
 
-		// Skip wiki, mailto, and image links (not processable as documents)
-		if link.LinkType == "wiki" || link.LinkType == "email" || link.LinkType == "image" ||
-		   strings.HasPrefix(link.LinkTarget, "mailto:") {
+		// Extract link target from metadata
+		linkTarget, ok := elem.Metadata["link_target"].(string)
+		if !ok || linkTarget == "" {
+			continue
+		}
+
+		// Skip mailto, javascript, and anchor-only links
+		if strings.HasPrefix(linkTarget, "mailto:") ||
+		   strings.HasPrefix(linkTarget, "javascript:") ||
+		   strings.HasPrefix(linkTarget, "#") {
 			continue
 		}
 
 		// Skip links to common image file extensions
-		lowerTarget := strings.ToLower(link.LinkTarget)
+		lowerTarget := strings.ToLower(linkTarget)
 		if strings.HasSuffix(lowerTarget, ".png") || strings.HasSuffix(lowerTarget, ".jpg") ||
 		   strings.HasSuffix(lowerTarget, ".jpeg") || strings.HasSuffix(lowerTarget, ".gif") ||
 		   strings.HasSuffix(lowerTarget, ".bmp") || strings.HasSuffix(lowerTarget, ".svg") ||
@@ -1266,7 +1215,7 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 		}
 
 		// Resolve relative links to absolute URLs
-		targetURL := link.LinkTarget
+		targetURL := linkTarget
 		hasProtocol := strings.Contains(targetURL, "://")
 
 		if !hasProtocol {
@@ -1277,19 +1226,26 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 			}
 		}
 
-		// Apply filters if this is a URL with a protocol (http://, https://, s3://, file://, sharepoint://, etc.)
+		// Apply filters if this is a URL with a protocol
 		if strings.Contains(targetURL, "://") {
 			if !w.shouldIncludeLink(targetURL, sourceConfig) {
 				continue
 			}
 		}
 
+		// Get link type from metadata (if available)
+		linkType, _ := elem.Metadata["link_type"].(string)
+		if linkType == "" {
+			linkType = "discovered"
+		}
+
+		// Queue the link for processing
 		metadata := map[string]interface{}{
 			"url":             targetURL,
 			"parent_url":      docInfo.DocID,
 			"discovery_depth": currentDepth + 1,
 			"source_name":     docInfo.Source,
-			"link_type":       link.LinkType,
+			"link_type":       linkType,
 		}
 
 		if err := w.jobControl.EnqueueDocument(targetURL, docInfo.Source, metadata); err != nil {
@@ -1300,7 +1256,7 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 	}
 
 	if queued > 0 {
-		log.Printf("Queued %d links from %s parseResult for processing", queued, docInfo.DocID)
+		log.Printf("Queued %d discovered links from %s for processing", queued, docInfo.DocID)
 	}
 }
 
@@ -1478,12 +1434,160 @@ func (w *Worker) checkQueueForNeo4jExport() {
 				}
 			}
 		}
+
+		// Also check for finalization triggers (semantic analysis and ontology extraction)
+		w.checkQueueForFinalization(isQueueEmpty, currentTime)
 	} else {
 		// Queue is not empty, reset timer
 		if w.lastQueueEmptyTime != nil {
 			log.Println("Queue is no longer empty, resetting export timer")
 			w.lastQueueEmptyTime = nil
 		}
+	}
+}
+
+// checkQueueForFinalization checks if queue is idle and triggers finalization tasks (semantic + ontology)
+func (w *Worker) checkQueueForFinalization(isQueueEmpty bool, currentTime time.Time) {
+	// Trigger semantic analysis first (if enabled)
+	w.checkQueueForSemanticAnalysis(isQueueEmpty, currentTime)
+
+	// Then trigger ontology extraction (if enabled)
+	w.checkQueueForOntologyExtraction(isQueueEmpty, currentTime)
+}
+
+// checkQueueForSemanticAnalysis checks if queue is idle and triggers semantic analysis
+func (w *Worker) checkQueueForSemanticAnalysis(isQueueEmpty bool, currentTime time.Time) {
+	// Only perform checks if semantic analysis is enabled
+	if w.semanticConfig == nil || !w.semanticConfig.Enabled || w.semanticAnalyzer == nil {
+		return
+	}
+
+	// Check if already running
+	if w.semanticAnalysisRunning.Load() {
+		return
+	}
+
+	// Check if queue is empty
+	if !isQueueEmpty {
+		return
+	}
+
+	// Calculate time since queue became empty
+	// Use 30 seconds for testing when QueueIdleTriggerMinutes is 0
+	idleTriggerSeconds := float64(w.semanticConfig.QueueIdleTriggerMinutes * 60)
+	if idleTriggerSeconds == 0 {
+		idleTriggerSeconds = 30 // 30 seconds for immediate testing
+	}
+	if w.lastQueueEmptyTime != nil {
+		timeSinceEmpty := currentTime.Sub(*w.lastQueueEmptyTime).Seconds()
+		if timeSinceEmpty < idleTriggerSeconds {
+			return // Not idle long enough yet
+		}
+	}
+
+	// Check minimum interval since last analysis
+	minIntervalSeconds := float64(w.semanticConfig.MinIntervalMinutes * 60)
+	if w.lastSemanticAnalysisTime != nil {
+		timeSinceLastAnalysis := currentTime.Sub(*w.lastSemanticAnalysisTime).Seconds()
+		if timeSinceLastAnalysis < minIntervalSeconds {
+			log.Printf("SEMANTIC ANALYSIS: Skipping (ran %.1f min ago, min interval: %d min)",
+				timeSinceLastAnalysis/60, w.semanticConfig.MinIntervalMinutes)
+			return
+		}
+	}
+
+	// Trigger semantic analysis in background
+	log.Println("SEMANTIC ANALYSIS: Queue idle long enough, triggering analysis")
+	w.wg.Add(1)
+	go w.runSemanticAnalysis()
+}
+
+// runSemanticAnalysis runs semantic relationship detection in background
+func (w *Worker) runSemanticAnalysis() {
+	defer w.wg.Done()
+
+	// Set running flag
+	if !w.semanticAnalysisRunning.CompareAndSwap(false, true) {
+		log.Println("SEMANTIC ANALYSIS: Already running, skipping")
+		return
+	}
+	defer w.semanticAnalysisRunning.Store(false)
+
+	// Update last analysis time
+	now := time.Now()
+	w.lastSemanticAnalysisTime = &now
+
+	// Run analysis
+	if err := w.semanticAnalyzer.AnalyzeAndStore(); err != nil {
+		log.Printf("SEMANTIC ANALYSIS: Failed: %v", err)
+	}
+}
+
+// checkQueueForOntologyExtraction checks if queue is idle and triggers ontology extraction
+func (w *Worker) checkQueueForOntologyExtraction(isQueueEmpty bool, currentTime time.Time) {
+	// Only perform checks if ontology extraction is enabled
+	if w.ontologyConfig == nil || !w.ontologyConfig.Enabled || w.ontologyExtractor == nil {
+		return
+	}
+
+	// Check if already running
+	if w.ontologyExtractionRunning.Load() {
+		return
+	}
+
+	// Check if queue is empty
+	if !isQueueEmpty {
+		return
+	}
+
+	// Calculate time since queue became empty
+	// Use 30 seconds for testing when QueueIdleTriggerMinutes is 0
+	idleTriggerSeconds := float64(w.ontologyConfig.QueueIdleTriggerMinutes * 60)
+	if idleTriggerSeconds == 0 {
+		idleTriggerSeconds = 30 // 30 seconds for immediate testing
+	}
+	if w.lastQueueEmptyTime != nil {
+		timeSinceEmpty := currentTime.Sub(*w.lastQueueEmptyTime).Seconds()
+		if timeSinceEmpty < idleTriggerSeconds {
+			return // Not idle long enough yet
+		}
+	}
+
+	// Check minimum interval since last extraction
+	minIntervalSeconds := float64(w.ontologyConfig.MinIntervalMinutes * 60)
+	if w.lastOntologyExtractionTime != nil {
+		timeSinceLastExtraction := currentTime.Sub(*w.lastOntologyExtractionTime).Seconds()
+		if timeSinceLastExtraction < minIntervalSeconds {
+			log.Printf("ONTOLOGY EXTRACTION: Skipping (ran %.1f min ago, min interval: %d min)",
+				timeSinceLastExtraction/60, w.ontologyConfig.MinIntervalMinutes)
+			return
+		}
+	}
+
+	// Trigger ontology extraction in background
+	log.Println("ONTOLOGY EXTRACTION: Queue idle long enough, triggering extraction")
+	w.wg.Add(1)
+	go w.runOntologyExtraction()
+}
+
+// runOntologyExtraction runs ontology entity extraction in background
+func (w *Worker) runOntologyExtraction() {
+	defer w.wg.Done()
+
+	// Set running flag
+	if !w.ontologyExtractionRunning.CompareAndSwap(false, true) {
+		log.Println("ONTOLOGY EXTRACTION: Already running, skipping")
+		return
+	}
+	defer w.ontologyExtractionRunning.Store(false)
+
+	// Update last extraction time
+	now := time.Now()
+	w.lastOntologyExtractionTime = &now
+
+	// Run extraction
+	if err := w.ontologyExtractor.ExtractAndStore(); err != nil {
+		log.Printf("ONTOLOGY EXTRACTION: Failed: %v", err)
 	}
 }
 

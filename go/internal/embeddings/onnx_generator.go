@@ -20,9 +20,11 @@ type SessionWrapper struct {
 	session            *ort.AdvancedSession
 	inputTensor        *ort.Tensor[int64]
 	maskTensor         *ort.Tensor[int64]
+	tokenTypeIDsTensor *ort.Tensor[int64]
 	outputTensor       *ort.Tensor[float32]
 	inputData          []int64
 	maskData           []int64
+	tokenTypeIDsData   []int64
 	batchSize          int64
 	seqLength          int64
 }
@@ -255,6 +257,7 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		// Pre-allocate tensors with FIXED shapes
 		inputData := make([]int64, fixedBatchSize*fixedSeqLength)
 		maskData := make([]int64, fixedBatchSize*fixedSeqLength)
+		tokenTypeIDsData := make([]int64, fixedBatchSize*fixedSeqLength) // All zeros for sentence-transformers
 
 		inputTensor, err := ort.NewTensor(ort.NewShape(fixedBatchSize, fixedSeqLength), inputData)
 		if err != nil {
@@ -269,29 +272,39 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 			return nil, fmt.Errorf("failed to create mask tensor: %w", err)
 		}
 
+		tokenTypeIDsTensor, err := ort.NewTensor(ort.NewShape(fixedBatchSize, fixedSeqLength), tokenTypeIDsData)
+		if err != nil {
+			inputTensor.Destroy()
+			maskTensor.Destroy()
+			sessionOptions.Destroy()
+			return nil, fmt.Errorf("failed to create token_type_ids tensor: %w", err)
+		}
+
 		outputShape := ort.NewShape(fixedBatchSize, fixedSeqLength, int64(embeddingDimension))
 		outputTensor, err := ort.NewEmptyTensor[float32](outputShape)
 		if err != nil {
 			inputTensor.Destroy()
 			maskTensor.Destroy()
+			tokenTypeIDsTensor.Destroy()
 			sessionOptions.Destroy()
 			return nil, fmt.Errorf("failed to create output tensor: %w", err)
 		}
 
 		// Create the session ONCE with these fixed tensors
 		// This is where CoreML initialization happens - very expensive!
-		// Note: Most sentence-transformers models only need input_ids and attention_mask
+		// BERT models require three inputs: input_ids, attention_mask, and token_type_ids
 		session, err := ort.NewAdvancedSession(
 			modelPath,
-			[]string{"input_ids", "attention_mask"},
+			[]string{"input_ids", "attention_mask", "token_type_ids"},
 			[]string{"last_hidden_state"},
-			[]ort.Value{inputTensor, maskTensor},
+			[]ort.Value{inputTensor, maskTensor, tokenTypeIDsTensor},
 			[]ort.Value{outputTensor},
 			sessionOptions,
 		)
 		if err != nil {
 			inputTensor.Destroy()
 			maskTensor.Destroy()
+			tokenTypeIDsTensor.Destroy()
 			outputTensor.Destroy()
 			sessionOptions.Destroy()
 			return nil, fmt.Errorf("failed to create ONNX session: %w", err)
@@ -302,14 +315,16 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		}
 
 		wrapper := &SessionWrapper{
-			session:      session,
-			inputTensor:  inputTensor,
-			maskTensor:   maskTensor,
-			outputTensor: outputTensor,
-			inputData:    inputData,
-			maskData:     maskData,
-			batchSize:    fixedBatchSize,
-			seqLength:    fixedSeqLength,
+			session:            session,
+			inputTensor:        inputTensor,
+			maskTensor:         maskTensor,
+			tokenTypeIDsTensor: tokenTypeIDsTensor,
+			outputTensor:       outputTensor,
+			inputData:          inputData,
+			maskData:           maskData,
+			tokenTypeIDsData:   tokenTypeIDsData,
+			batchSize:          fixedBatchSize,
+			seqLength:          fixedSeqLength,
 		}
 
 		sessionPool <- wrapper
@@ -511,11 +526,13 @@ func (g *OnnxEmbeddingGenerator) generateBatchSingle(texts []string) ([][]float6
 		for j := 0; j < int(wrapper.seqLength); j++ {
 			wrapper.inputData[offset+j] = g.tokenizer.padToken
 			wrapper.maskData[offset+j] = 0
+			wrapper.tokenTypeIDsData[offset+j] = 0 // All zeros for single sentence (sentence-transformers)
 		}
 
 		// Copy actual tokens
 		copy(wrapper.inputData[offset:offset+seqLen], batchInputIDs[i])
 		copy(wrapper.maskData[offset:offset+seqLen], batchAttentionMasks[i])
+		// token_type_ids remain zeros (already set above)
 	}
 	log.Printf("TIMING: Tensor fill took %v", time.Since(startFill))
 
@@ -584,6 +601,9 @@ func (g *OnnxEmbeddingGenerator) Close() error {
 		}
 		if wrapper.maskTensor != nil {
 			wrapper.maskTensor.Destroy()
+		}
+		if wrapper.tokenTypeIDsTensor != nil {
+			wrapper.tokenTypeIDsTensor.Destroy()
 		}
 		if wrapper.outputTensor != nil {
 			wrapper.outputTensor.Destroy()

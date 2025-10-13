@@ -388,6 +388,197 @@ func (s *Neo4jStorage) AppendLinks(links []Link) error {
 	return nil
 }
 
+// QueryEmbeddings queries embeddings from Neo4j Element nodes
+func (s *Neo4jStorage) QueryEmbeddings(filters map[string]interface{}) ([]Embedding, error) {
+	session := s.driver.NewSession(s.ctx, neo4j.SessionConfig{DatabaseName: s.database})
+	defer session.Close(s.ctx)
+
+	// Build query based on filters
+	query := `
+		MATCH (e:Element {run_id: $run_id})
+		WHERE e.embedding IS NOT NULL
+	`
+	params := map[string]interface{}{
+		"run_id": s.runID,
+	}
+
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		query += " AND e.source_name = $source_name"
+		params["source_name"] = source
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		query += " AND e.doc_id = $doc_id"
+		params["doc_id"] = docID
+	}
+
+	query += " RETURN e.element_id as element_id, e.doc_id as doc_id, e.source_name as source_name, e.embedding as embedding, e.embedding_text as text"
+
+	// Execute query
+	result, err := session.Run(s.ctx, query, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query embeddings: %w", err)
+	}
+
+	// Parse results
+	var embeddings []Embedding
+	for result.Next(s.ctx) {
+		record := result.Record()
+
+		elementID, _ := record.Get("element_id")
+		docID, _ := record.Get("doc_id")
+		sourceName, _ := record.Get("source_name")
+		embeddingVal, _ := record.Get("embedding")
+		text, _ := record.Get("text")
+
+		// Convert embedding to []float64
+		var embedding []float64
+		if embList, ok := embeddingVal.([]interface{}); ok {
+			embedding = make([]float64, len(embList))
+			for i, v := range embList {
+				if fv, ok := v.(float64); ok {
+					embedding[i] = fv
+				}
+			}
+		}
+
+		embeddings = append(embeddings, Embedding{
+			ElementID:  elementID.(string),
+			DocID:      docID.(string),
+			SourceName: sourceName.(string),
+			Embedding:  embedding,
+			Text:       text.(string),
+		})
+	}
+
+	if err := result.Err(); err != nil {
+		return nil, fmt.Errorf("result iteration error: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d embeddings from Neo4j", len(embeddings))
+	return embeddings, nil
+}
+
+// QueryElements queries elements from Neo4j Element nodes
+func (s *Neo4jStorage) QueryElements(filters map[string]interface{}) ([]Element, error) {
+	session := s.driver.NewSession(s.ctx, neo4j.SessionConfig{DatabaseName: s.database})
+	defer session.Close(s.ctx)
+
+	// Build query based on filters
+	query := `
+		MATCH (e:Element {run_id: $run_id})
+	`
+	params := map[string]interface{}{
+		"run_id": s.runID,
+	}
+
+	// Add WHERE clause if filters specified
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, "e.source_name = $source_name")
+		params["source_name"] = source
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, "e.doc_id = $doc_id")
+		params["doc_id"] = docID
+	}
+	if elementType, ok := filters["element_type"].(string); ok && elementType != "" {
+		whereClauses = append(whereClauses, "e.element_type = $element_type")
+		params["element_type"] = elementType
+	}
+	if elementCategory, ok := filters["element_category"].(string); ok && elementCategory != "" {
+		whereClauses = append(whereClauses, "e.element_category = $element_category")
+		params["element_category"] = elementCategory
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + whereClauses[0]
+		for i := 1; i < len(whereClauses); i++ {
+			query += " AND " + whereClauses[i]
+		}
+	}
+
+	query += ` RETURN e.element_id as element_id, e.doc_id as doc_id, e.source_name as source_name,
+		e.element_type as element_type, e.element_category as element_category,
+		e.content_preview as content_preview, e.content_hash as content_hash,
+		e.parent_id as parent_id, e.metadata_json as metadata_json,
+		e.temporal_metadata_json as temporal_metadata_json,
+		e.content_location_json as content_location_json,
+		e.element_order as element_order, e.document_position as document_position`
+
+	// Execute query
+	result, err := session.Run(s.ctx, query, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query elements: %w", err)
+	}
+
+	// Parse results
+	var elements []Element
+	for result.Next(s.ctx) {
+		record := result.Record()
+
+		elementID, _ := record.Get("element_id")
+		docID, _ := record.Get("doc_id")
+		sourceName, _ := record.Get("source_name")
+		elementType, _ := record.Get("element_type")
+		elementCategory, _ := record.Get("element_category")
+		contentPreview, _ := record.Get("content_preview")
+		contentHash, _ := record.Get("content_hash")
+		parentID, _ := record.Get("parent_id")
+		metadataJSON, _ := record.Get("metadata_json")
+		temporalMetadataJSON, _ := record.Get("temporal_metadata_json")
+		contentLocationJSON, _ := record.Get("content_location_json")
+		elementOrder, _ := record.Get("element_order")
+		documentPosition, _ := record.Get("document_position")
+
+		elem := Element{
+			ElementID:        elementID.(string),
+			DocID:            docID.(string),
+			SourceName:       sourceName.(string),
+			ElementType:      elementType.(string),
+			ElementCategory:  elementCategory.(string),
+			ContentPreview:   contentPreview.(string),
+			ElementOrder:     elementOrder.(float64),
+			DocumentPosition: documentPosition.(float64),
+		}
+
+		if contentHash != nil {
+			elem.ContentHash = contentHash.(string)
+		}
+		if parentID != nil {
+			elem.ParentID = parentID.(string)
+		}
+
+		// Parse JSON fields
+		if metadataJSON != nil {
+			var metadata map[string]interface{}
+			if err := json.Unmarshal([]byte(metadataJSON.(string)), &metadata); err == nil {
+				elem.Metadata = metadata
+			}
+		}
+		if temporalMetadataJSON != nil {
+			var temporalMetadata map[string]interface{}
+			if err := json.Unmarshal([]byte(temporalMetadataJSON.(string)), &temporalMetadata); err == nil {
+				elem.TemporalMetadata = temporalMetadata
+			}
+		}
+		if contentLocationJSON != nil {
+			var contentLocation map[string]interface{}
+			if err := json.Unmarshal([]byte(contentLocationJSON.(string)), &contentLocation); err == nil {
+				elem.ContentLocation = contentLocation
+			}
+		}
+
+		elements = append(elements, elem)
+	}
+
+	if err := result.Err(); err != nil {
+		return nil, fmt.Errorf("result iteration error: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d elements from Neo4j", len(elements))
+	return elements, nil
+}
+
 // Close closes the Neo4j connection
 func (s *Neo4jStorage) Close() error {
 	return s.driver.Close(s.ctx)
@@ -459,4 +650,32 @@ func sanitizeRelationshipType(relType string) string {
 		result = "RELATED_TO"
 	}
 	return result
+}
+
+// ============================================================================
+// UDML-O: Stub implementations (not yet fully implemented for Neo4j)
+// ============================================================================
+
+// AppendOntologyEntities is not yet implemented for Neo4jStorage
+func (s *Neo4jStorage) AppendOntologyEntities(entities []OntologyEntity) error {
+	log.Printf("WARNING: Ontology entities not yet supported in Neo4jStorage")
+	return nil
+}
+
+// AppendOntologyRelationships is not yet implemented for Neo4jStorage
+func (s *Neo4jStorage) AppendOntologyRelationships(relationships []OntologyRelationship) error {
+	log.Printf("WARNING: Ontology relationships not yet supported in Neo4jStorage")
+	return nil
+}
+
+// AppendOntologyMentions is not yet implemented for Neo4jStorage
+func (s *Neo4jStorage) AppendOntologyMentions(mentions []OntologyMention) error {
+	log.Printf("WARNING: Ontology mentions not yet supported in Neo4jStorage")
+	return nil
+}
+
+// QueryOntologyEntities is not yet implemented for Neo4jStorage
+func (s *Neo4jStorage) QueryOntologyEntities(filters map[string]interface{}) ([]OntologyEntity, error) {
+	log.Printf("WARNING: Ontology entity queries not yet supported in Neo4jStorage")
+	return nil, nil
 }
