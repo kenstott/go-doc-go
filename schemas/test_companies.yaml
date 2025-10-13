@@ -1,0 +1,35 @@
+name: test_companies
+domain: business
+version: "1.0"
+description: Test schema for extracting company and location entities
+
+element_entity_mappings:
+  - domain: "business"
+    element_type: "paragraph"
+    entity_type: "Organization"
+    patterns:
+      - regex: "\\b([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*\\s+(?:Inc|LLC|Corp|Corporation|Ltd|Limited))\\b"
+        confidence: 0.9
+      - regex: "\\b([A-Z][A-Z]+)\\b"
+        confidence: 0.6
+        min_length: 3
+        max_length: 10
+
+  - domain: "business"
+    element_type: "paragraph"
+    entity_type: "Location"
+    patterns:
+      - regex: "\\b([A-Z][a-z]+(?:,\\s*[A-Z]{2})?|[A-Z][a-z]+)\\b"
+        confidence: 0.7
+
+entity_relationship_rules:
+  - source_type: "Organization"
+    target_type: "Location"
+    relationship_type: "located_in"
+    patterns:
+      - type: "proximity"
+        max_distance: 3
+        confidence: 0.7
+      - type: "content_pattern"
+        regex: "{source}.*(?:in|at|located in).*{target}"
+        confidence: 0.9

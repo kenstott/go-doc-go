@@ -1,0 +1,256 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/udml-1.0-hierarchical.schema.json",
+  "title": "UDML Hierarchical Document Schema",
+  "description": "Universal Document Model Language (UDML) v1.0 JSON Schema for hierarchical/nested document format",
+  "type": "object",
+  "required": ["doc_id", "elements"],
+  "properties": {
+    "doc_id": {
+      "type": "string",
+      "description": "Unique identifier for the document",
+      "minLength": 1
+    },
+    "source_name": {
+      "type": "string",
+      "description": "Source document name"
+    },
+    "version": {
+      "type": "string",
+      "description": "Document version",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "elements": {
+      "type": "array",
+      "description": "Root-level document elements with nested children",
+      "items": {
+        "$ref": "#/definitions/HierarchicalElement"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Document-level metadata",
+      "additionalProperties": true
+    }
+  },
+  "definitions": {
+    "HierarchicalElement": {
+      "type": "object",
+      "required": ["element_id", "element_type", "element_order"],
+      "properties": {
+        "element_id": {
+          "type": "string",
+          "description": "Unique element identifier",
+          "minLength": 1
+        },
+        "element_type": {
+          "type": "string",
+          "description": "Element type classification",
+          "enum": [
+            "root",
+            "body",
+            "section",
+            "document",
+            "paragraph",
+            "text",
+            "heading",
+            "header",
+            "list",
+            "list_item",
+            "link",
+            "temporal",
+            "table",
+            "data_table",
+            "data_tables",
+            "table_header",
+            "table_header_row",
+            "table_header_cell",
+            "table_row",
+            "table_cell",
+            "code_block",
+            "image",
+            "figure",
+            "chart",
+            "div",
+            "span",
+            "article",
+            "blockquote",
+            "json_field",
+            "json_object",
+            "json_array",
+            "json_item",
+            "xml_element",
+            "headers",
+            "footers",
+            "comments",
+            "sheet",
+            "workbook",
+            "comment",
+            "slide",
+            "slide_notes",
+            "shape_group",
+            "page",
+            "front_matter",
+            "line",
+            "range",
+            "substring",
+            "formula",
+            "footnote",
+            "quote",
+            "caption",
+            "metadata",
+            "other"
+          ]
+        },
+        "element_category": {
+          "type": "string",
+          "description": "Element category classification"
+        },
+        "content": {
+          "type": "string",
+          "description": "Primary element content"
+        },
+        "content_preview": {
+          "type": "string",
+          "description": "Truncated content preview"
+        },
+        "content_hash": {
+          "type": "string",
+          "description": "Hash of content for deduplication"
+        },
+        "element_order": {
+          "type": "number",
+          "description": "Ordering within parent (maps to position in flat format)"
+        },
+        "document_position": {
+          "type": "number",
+          "description": "Global document position (optional)"
+        },
+        "page_number": {
+          "type": "integer",
+          "description": "Page number (1-indexed)",
+          "minimum": 1
+        },
+        "section_level": {
+          "type": "integer",
+          "description": "Section/heading level (1-6)",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "row_index": {
+          "type": "integer",
+          "description": "Table row index (0-indexed)",
+          "minimum": 0
+        },
+        "column_index": {
+          "type": "integer",
+          "description": "Table column index (0-indexed)",
+          "minimum": 0
+        },
+        "temporal_type": {
+          "type": "string",
+          "description": "Temporal classification",
+          "enum": ["date", "time", "duration", "timestamp"]
+        },
+        "tag_name": {
+          "type": "string",
+          "description": "HTML/XML tag name"
+        },
+        "row_span": {
+          "type": "integer",
+          "description": "Number of rows this cell spans (default 1)",
+          "minimum": 1,
+          "default": 1
+        },
+        "column_span": {
+          "type": "integer",
+          "description": "Number of columns this cell spans (default 1)",
+          "minimum": 1,
+          "default": 1
+        },
+        "is_header": {
+          "type": "boolean",
+          "description": "Whether this cell is a header cell",
+          "default": false
+        },
+        "header_scope": {
+          "type": "string",
+          "description": "Scope of header cell (HTML-style)",
+          "enum": ["row", "col", "rowgroup", "colgroup"]
+        },
+        "complexity": {
+          "type": "string",
+          "description": "Table complexity classification",
+          "enum": ["simple", "complex"]
+        },
+        "header_rows": {
+          "type": "array",
+          "description": "Array of row indices that contain column headers",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "header_columns": {
+          "type": "array",
+          "description": "Array of column indices that contain row headers",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "data_start_row": {
+          "type": "integer",
+          "description": "Row index where data starts (after headers)",
+          "minimum": 0
+        },
+        "data_start_column": {
+          "type": "integer",
+          "description": "Column index where data starts (after row headers)",
+          "minimum": 0
+        },
+        "detection_method": {
+          "type": "string",
+          "description": "Method used to detect this table",
+          "enum": ["explicit", "layout_analysis", "heuristic", "alignment"]
+        },
+        "detection_confidence": {
+          "type": "number",
+          "description": "Confidence score for table detection (0.0-1.0)",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "source_format": {
+          "type": "string",
+          "description": "Original source format for this element",
+          "enum": ["pdf", "docx", "xlsx", "pptx", "html", "markdown", "csv", "other"]
+        },
+        "content_location": {
+          "type": "object",
+          "description": "Location metadata for content",
+          "additionalProperties": true
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Element-specific metadata",
+          "additionalProperties": true
+        },
+        "temporal_metadata": {
+          "type": "object",
+          "description": "Temporal-specific metadata",
+          "additionalProperties": true
+        },
+        "children": {
+          "type": "array",
+          "description": "Nested child elements",
+          "items": {
+            "$ref": "#/definitions/HierarchicalElement"
+          },
+          "default": []
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

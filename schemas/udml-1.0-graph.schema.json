@@ -1,0 +1,232 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/udml-1.0-graph.schema.json",
+  "title": "UDML Graph Document Schema (UDML-G)",
+  "description": "Universal Document Model Language (UDML) v1.0 JSON Schema for graph/RDF export format",
+  "type": "object",
+  "required": ["document_id", "metadata", "nodes", "edges"],
+  "properties": {
+    "document_id": {
+      "type": "string",
+      "description": "Unique identifier for the document",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "UDML schema version",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "default": "1.0.0"
+    },
+    "metadata": {
+      "$ref": "#/definitions/DocumentMetadata"
+    },
+    "nodes": {
+      "type": "array",
+      "description": "Graph nodes representing elements",
+      "items": {
+        "$ref": "#/definitions/Node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "description": "Graph edges representing relationships",
+      "items": {
+        "$ref": "#/definitions/Edge"
+      }
+    }
+  },
+  "definitions": {
+    "DocumentMetadata": {
+      "type": "object",
+      "required": ["source_type"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Document title"
+        },
+        "author": {
+          "type": "string",
+          "description": "Document author"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document creation timestamp (ISO8601)"
+        },
+        "modified_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document modification timestamp (ISO8601)"
+        },
+        "source_type": {
+          "type": "string",
+          "description": "Document source type",
+          "enum": [
+            "pdf",
+            "docx",
+            "xlsx",
+            "pptx",
+            "html",
+            "markdown",
+            "text",
+            "json",
+            "xml",
+            "csv",
+            "other"
+          ]
+        },
+        "source_path": {
+          "type": "string",
+          "description": "Path or URL to source document"
+        },
+        "page_count": {
+          "type": "integer",
+          "description": "Number of pages",
+          "minimum": 0
+        },
+        "word_count": {
+          "type": "integer",
+          "description": "Number of words",
+          "minimum": 0
+        },
+        "language": {
+          "type": "string",
+          "description": "Document language (ISO 639-1 code)",
+          "pattern": "^[a-z]{2}$"
+        },
+        "custom": {
+          "type": "object",
+          "description": "Custom metadata fields",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "Node": {
+      "type": "object",
+      "required": ["id", "type", "content"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique node identifier (maps to element_id)",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "description": "Node type classification (maps to element_type)",
+          "enum": [
+            "root",
+            "body",
+            "section",
+            "document",
+            "paragraph",
+            "text",
+            "heading",
+            "header",
+            "list",
+            "list_item",
+            "link",
+            "temporal",
+            "table",
+            "data_table",
+            "data_tables",
+            "table_header",
+            "table_header_row",
+            "table_header_cell",
+            "table_row",
+            "table_cell",
+            "code_block",
+            "image",
+            "figure",
+            "chart",
+            "div",
+            "span",
+            "article",
+            "blockquote",
+            "json_field",
+            "json_object",
+            "json_array",
+            "json_item",
+            "xml_element",
+            "headers",
+            "footers",
+            "comments",
+            "sheet",
+            "workbook",
+            "comment",
+            "slide",
+            "slide_notes",
+            "shape_group",
+            "page",
+            "front_matter",
+            "line",
+            "range",
+            "substring",
+            "formula",
+            "footnote",
+            "quote",
+            "caption",
+            "metadata",
+            "other"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "description": "Node content/label"
+        },
+        "properties": {
+          "type": "object",
+          "description": "Node properties bag",
+          "additionalProperties": true
+        },
+        "provider_name": {
+          "type": "string",
+          "description": "Parser/provider that created this node"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Confidence score for this node",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "additionalProperties": false
+    },
+    "Edge": {
+      "type": "object",
+      "required": ["source", "target", "type"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Source node ID",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "description": "Target node ID",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "description": "Edge type (relationship type)",
+          "enum": [
+            "contains"
+          ]
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Confidence score for this edge",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "properties": {
+          "type": "object",
+          "description": "Edge properties",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
