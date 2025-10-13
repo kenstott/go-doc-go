@@ -21,7 +21,8 @@ wheels/
 *.egg
 
 # Virtual Environment
-.venv/
+# NOTE: .venv/ is NOT ignored - it contains ONNX Runtime library needed by Go
+# See PYTHON_REMOVAL.md for details
 venv/
 ENV/
 env/
