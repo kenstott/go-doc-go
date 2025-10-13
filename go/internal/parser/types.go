@@ -47,55 +47,17 @@ type Element struct {
 	Metadata        map[string]interface{} `json:"metadata,omitempty" parquet:"metadata"`
 }
 
-// Relationship represents a relationship between elements
-type Relationship struct {
-	RelationshipID   string                 `json:"relationship_id"`
-	RelationshipType string                 `json:"relationship_type"`
-	SourceElementID  string                 `json:"source_element_id"`
-	TargetElementID  string                 `json:"target_element_id"`
-	Confidence       float64                `json:"confidence,omitempty"`
-	Metadata         map[string]interface{} `json:"metadata,omitempty"`
-}
-
-// Link represents an extracted link (URL, email, file reference, etc.)
-type Link struct {
-	LinkID          string `json:"link_id"`
-	SourceElementID string `json:"source_element_id"`
-	LinkType        string `json:"link_type"`
-	LinkTarget      string `json:"link_target"`
-	LinkText        string `json:"link_text,omitempty"`
-	Context         string `json:"context,omitempty"`
-}
-
 // ParseResult is the universal output format for all parsers
 type ParseResult struct {
-	Document      Document       `json:"document"`
-	Elements      []Element      `json:"elements"`
-	Relationships []Relationship `json:"relationships"`
-	Links         []Link         `json:"links,omitempty"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	Document Document               `json:"document"`
+	Elements []Element              `json:"elements"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 
-// Common relationship types
+// Common relationship types (used internally for parent-child hierarchy via parent_id)
 const (
-	RelationshipContains    = "contains"
-	RelationshipContainedBy = "contained_by"
-	RelationshipReferences  = "references"
-	RelationshipReferencedBy = "referenced_by"
-	RelationshipNext        = "next"
-	RelationshipPrevious    = "previous"
-	RelationshipLinksTo     = "links_to"
-)
-
-// Common link types
-const (
-	LinkTypeURL      = "url"
-	LinkTypeEmail    = "email"
-	LinkTypeFile     = "file"
-	LinkTypeInternal = "internal"
-	LinkTypeCitation = "citation"
-	LinkTypeFootnote = "footnote"
+	RelationshipContains = "contains"
 )
 
 // Element categories for Universal Document Model
