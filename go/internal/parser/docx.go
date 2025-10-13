@@ -118,34 +118,9 @@ func (r *DocxParseResponse) ToParseResult() *ParseResult {
 		elements[i] = element
 	}
 
-	// Convert relationships
-	relationships := make([]Relationship, len(r.Relationships))
-	for i, docxRel := range r.Relationships {
-		relationships[i] = Relationship{
-			RelationshipID:   docxRel.RelationshipID,
-			SourceElementID:  docxRel.SourceElementID,
-			TargetElementID:  docxRel.TargetElementID,
-			RelationshipType: docxRel.RelationshipType,
-			Metadata:         docxRel.Metadata,
-		}
-	}
-
-	// Convert links
-	links := make([]Link, len(r.Links))
-	for i, docxLink := range r.Links {
-		links[i] = Link{
-			SourceElementID: docxLink.SourceID,
-			LinkTarget:      docxLink.LinkTarget,
-			LinkText:        docxLink.LinkText,
-			LinkType:        docxLink.LinkType,
-		}
-	}
-
 	return &ParseResult{
-		Document:      doc,
-		Elements:      elements,
-		Relationships: relationships,
-		Links:         links,
+		Document: doc,
+		Elements: elements,
 	}
 }
 
@@ -439,7 +414,7 @@ func (p *DocxParser) parseWordDocument(doc *WordDocument, elements *[]DocxElemen
 	*elements = append(*elements, bodyElement)
 	*counter++
 
-	// Create relationship from root to body
+	// Create relationship from root to body (unidirectional parent→child)
 	relationship := DocxRelationship{
 		RelationshipID:   p.generateID("rel_"),
 		SourceElementID:  parentID,
@@ -449,17 +424,6 @@ func (p *DocxParser) parseWordDocument(doc *WordDocument, elements *[]DocxElemen
 		Metadata:         make(map[string]interface{}),
 	}
 	*relationships = append(*relationships, relationship)
-
-	// Create inverse relationship
-	inverseRelationship := DocxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  bodyElement.ElementID,
-		TargetElementID:  parentID,
-		RelationshipType: "contained_by",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	*relationships = append(*relationships, inverseRelationship)
 
 	// Parse paragraphs
 	currentParent := bodyElement.ElementID
@@ -544,32 +508,16 @@ func (p *DocxParser) processParagraph(para *WordParagraph, index int, elements *
 	*elements = append(*elements, element)
 	*counter++
 
-	// Create relationship
-	relType := "contains"
-	if elementType == "paragraph" {
-		relType = "contains_text"
-	}
-
+	// Create relationship (unidirectional parent→child)
 	relationship := DocxRelationship{
 		RelationshipID:   p.generateID("rel_"),
 		SourceElementID:  element.ParentID,
 		TargetElementID:  elementID,
-		RelationshipType: relType,
+		RelationshipType: "contains",
 		Confidence:       1.0,
 		Metadata:         map[string]interface{}{"index": index},
 	}
 	*relationships = append(*relationships, relationship)
-
-	// Create inverse relationship
-	inverseRelationship := DocxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  elementID,
-		TargetElementID:  element.ParentID,
-		RelationshipType: "contained_by",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	*relationships = append(*relationships, inverseRelationship)
 
 	// Extract links from paragraph
 	p.extractLinksFromText(text, elementID, links)
@@ -599,7 +547,7 @@ func (p *DocxParser) processTable(table *WordTable, index int, elements *[]DocxE
 	*elements = append(*elements, tableElement)
 	*counter++
 
-	// Create relationship from parent to table
+	// Create relationship from parent to table (unidirectional parent→child)
 	relationship := DocxRelationship{
 		RelationshipID:   p.generateID("rel_"),
 		SourceElementID:  parentID,
@@ -609,17 +557,6 @@ func (p *DocxParser) processTable(table *WordTable, index int, elements *[]DocxE
 		Metadata:         map[string]interface{}{"index": index},
 	}
 	*relationships = append(*relationships, relationship)
-
-	// Create inverse relationship
-	inverseRelationship := DocxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  tableID,
-		TargetElementID:  parentID,
-		RelationshipType: "contained_by",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	*relationships = append(*relationships, inverseRelationship)
 
 	// Process table rows
 	for rowIdx, row := range table.Rows {
@@ -650,27 +587,16 @@ func (p *DocxParser) processTableRow(row *WordTableRow, rowIdx, tableIdx int, el
 	*elements = append(*elements, rowElement)
 	*counter++
 
-	// Create relationship from table to row
+	// Create relationship from table to row (unidirectional parent→child)
 	relationship := DocxRelationship{
 		RelationshipID:   p.generateID("rel_"),
 		SourceElementID:  tableID,
 		TargetElementID:  rowID,
-		RelationshipType: "contains_table_row",
+		RelationshipType: "contains",
 		Confidence:       1.0,
 		Metadata:         map[string]interface{}{"row_index": rowIdx},
 	}
 	*relationships = append(*relationships, relationship)
-
-	// Create inverse relationship
-	inverseRelationship := DocxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  rowID,
-		TargetElementID:  tableID,
-		RelationshipType: "contained_by",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	*relationships = append(*relationships, inverseRelationship)
 
 	// Process table cells
 	for colIdx, cell := range row.Cells {
@@ -747,32 +673,16 @@ func (p *DocxParser) processTableCell(cell *WordTableCell, rowIdx, colIdx, table
 	*elements = append(*elements, cellElement)
 	*counter++
 
-	// Create relationship from row to cell
-	relType := "contains_table_cell"
-	if cellType == "table_header" {
-		relType = "contains_table_header"
-	}
-
+	// Create relationship from row to cell (unidirectional parent→child)
 	relationship := DocxRelationship{
 		RelationshipID:   p.generateID("rel_"),
 		SourceElementID:  rowID,
 		TargetElementID:  cellID,
-		RelationshipType: relType,
+		RelationshipType: "contains",
 		Confidence:       1.0,
 		Metadata:         map[string]interface{}{"col_index": colIdx},
 	}
 	*relationships = append(*relationships, relationship)
-
-	// Create inverse relationship
-	inverseRelationship := DocxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  cellID,
-		TargetElementID:  rowID,
-		RelationshipType: "contained_by",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	*relationships = append(*relationships, inverseRelationship)
 
 	// Extract links from cell
 	p.extractLinksFromText(cellText, cellID, links)

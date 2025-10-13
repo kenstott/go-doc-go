@@ -217,10 +217,8 @@ func (p *TextParser) parseText(request TextParseRequest) (*TextParseResponse, er
 	p.LinkIDCounter = 0
 
 	response := &TextParseResponse{
-		Document:      make(map[string]interface{}),
-		Elements:      []TextElement{},
-		Relationships: []TextRelationship{},
-		Links:         []TextLink{},
+		Document: make(map[string]interface{}),
+		Elements: []TextElement{},
 	}
 
 	// Create document metadata
@@ -581,9 +579,7 @@ func (p *TextParser) convertToParseResult(response *TextParseResponse) *ParseRes
 			ID:      response.Document["doc_id"].(string),
 			DocType: response.Document["doc_type"].(string),
 		},
-		Elements:      make([]Element, 0, len(response.Elements)),
-		Relationships: make([]Relationship, 0, len(response.Relationships)),
-		Links:         make([]Link, 0, len(response.Links)),
+		Elements: make([]Element, 0, len(response.Elements)),
 	}
 
 	// Convert metadata if present
@@ -614,30 +610,6 @@ func (p *TextParser) convertToParseResult(response *TextParseResponse) *ParseRes
 		element.ElementCategory = GetElementCategory(element.ElementType)
 
 		result.Elements = append(result.Elements, element)
-	}
-
-	// Convert relationships
-	for _, textRel := range response.Relationships {
-		relationship := Relationship{
-			RelationshipID:   textRel.RelationshipID,
-			RelationshipType: textRel.RelationshipType,
-			SourceElementID:  textRel.SourceElementID,
-			TargetElementID:  textRel.TargetElementID,
-			Confidence:       textRel.Confidence,
-			Metadata:         textRel.Metadata,
-		}
-		result.Relationships = append(result.Relationships, relationship)
-	}
-
-	// Convert links
-	for _, textLink := range response.Links {
-		link := Link{
-			LinkID:          textLink.LinkID,
-			SourceElementID: textLink.ElementID,
-			LinkType:        textLink.LinkType,
-			LinkTarget:      textLink.LinkTarget,
-		}
-		result.Links = append(result.Links, link)
 	}
 
 	return result

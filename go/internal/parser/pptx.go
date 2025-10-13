@@ -325,7 +325,7 @@ func (p *PptxParser) parsePptx(request PptxParseRequest) (*PptxParseResponse, er
 	// Create root element
 	rootElement := PptxElement{
 		ElementID:       p.generateID("root_"),
-		ElementType:     "presentation_root",
+		ElementType:     "root",
 		ContentPreview:  p.truncateContent(fmt.Sprintf("Presentation: %s", request.ID)),
 		ContentLocation: p.createContentLocation(request.ID, "root", ""),
 		ContentHash:     p.generateHash(request.Content),
@@ -338,7 +338,7 @@ func (p *PptxParser) parsePptx(request PptxParseRequest) (*PptxParseResponse, er
 	// Create presentation body element
 	bodyElement := PptxElement{
 		ElementID:       p.generateID("body_"),
-		ElementType:     "presentation_body",
+		ElementType:     "body",
 		ParentID:        rootElement.ElementID,
 		ContentPreview:  "Presentation body",
 		ContentLocation: p.createContentLocation(request.ID, "body", ""),
@@ -349,9 +349,9 @@ func (p *PptxParser) parsePptx(request PptxParseRequest) (*PptxParseResponse, er
 	}
 	response.Elements = append(response.Elements, bodyElement)
 
-	// Create bidirectional relationships from root to body
-	rels := p.createBidirectionalRelationship(rootElement.ElementID, bodyElement.ElementID, make(map[string]interface{}))
-	response.Relationships = append(response.Relationships, rels...)
+	// Create relationship from root to body (unidirectional parent→child)
+	rel := p.createRelationship(rootElement.ElementID, bodyElement.ElementID, make(map[string]interface{}))
+	response.Relationships = append(response.Relationships, rel)
 
 	// Parse presentation structure
 	elementCounter := 2
@@ -443,9 +443,9 @@ func (p *PptxParser) parseSlide(slideXML []byte, slideNum int, elements *[]PptxE
 	*elements = append(*elements, slideElement)
 	*counter++
 
-	// Create bidirectional relationships from parent to slide
-	rels := p.createBidirectionalRelationship(parentID, slideID, map[string]interface{}{"slide_number": slideNum})
-	*relationships = append(*relationships, rels...)
+	// Create relationship (unidirectional parent→child) from parent to slide
+	rel := p.createRelationship(parentID, slideID, map[string]interface{}{"slide_number": slideNum})
+	*relationships = append(*relationships, rel)
 
 	// Parse slide content
 	var slide Slide
@@ -536,9 +536,9 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 	*elements = append(*elements, shapeElement)
 	*counter++
 
-	// Create bidirectional relationships from slide to shape
-	rels := p.createBidirectionalRelationship(slideID, shapeElementID, map[string]interface{}{"shape_index": shapeIdx})
-	*relationships = append(*relationships, rels...)
+	// Create relationship (unidirectional parent→child) from slide to shape
+	rel := p.createRelationship(slideID, shapeElementID, map[string]interface{}{"shape_index": shapeIdx})
+	*relationships = append(*relationships, rel)
 
 	// Extract individual paragraphs if there are multiple
 	if len(shape.TxBody.Paragraphs) > 1 {
@@ -581,9 +581,9 @@ func (p *PptxParser) processShape(shape *Shape, shapeIdx, slideNum int, elements
 			*elements = append(*elements, paraElement)
 			*counter++
 
-			// Create bidirectional relationships from shape to paragraph
-			paraRels := p.createBidirectionalRelationship(shapeElementID, paraID, map[string]interface{}{"paragraph_index": paraIdx})
-			*relationships = append(*relationships, paraRels...)
+			// Create relationship (unidirectional parent→child) from shape to paragraph
+			paraRel := p.createRelationship(shapeElementID, paraID, map[string]interface{}{"paragraph_index": paraIdx})
+			*relationships = append(*relationships, paraRel)
 
 			// Extract links from paragraph text
 			p.extractLinksFromText(paraText, paraID, links)
@@ -661,9 +661,9 @@ func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, e
 	*elements = append(*elements, tableElement)
 	*counter++
 
-	// Create bidirectional relationship from slide to table
-	tableRels := p.createBidirectionalRelationship(slideID, tableID, map[string]interface{}{"table_index": tableIdx})
-	*relationships = append(*relationships, tableRels...)
+	// Create relationship (unidirectional parent→child) from slide to table
+	tableRel := p.createRelationship(slideID, tableID, map[string]interface{}{"table_index": tableIdx})
+	*relationships = append(*relationships, tableRel)
 
 	// Process rows
 	for rowIdx, row := range table.Rows {
@@ -687,9 +687,9 @@ func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, e
 		*elements = append(*elements, rowElement)
 		*counter++
 
-		// Create bidirectional relationship from table to row
-		rowRels := p.createBidirectionalRelationship(tableID, rowID, map[string]interface{}{"row_index": rowIdx})
-		*relationships = append(*relationships, rowRels...)
+		// Create relationship (unidirectional parent→child) from table to row
+		rowRel := p.createRelationship(tableID, rowID, map[string]interface{}{"row_index": rowIdx})
+		*relationships = append(*relationships, rowRel)
 
 		// Process cells
 		for cellIdx, cell := range row.Cells {
@@ -724,9 +724,9 @@ func (p *PptxParser) processTable(frame *GraphicFrame, tableIdx, slideNum int, e
 			*elements = append(*elements, cellElement)
 			*counter++
 
-			// Create bidirectional relationship from row to cell
-			cellRels := p.createBidirectionalRelationship(rowID, cellID, map[string]interface{}{"col_index": cellIdx})
-			*relationships = append(*relationships, cellRels...)
+			// Create relationship (unidirectional parent→child) from row to cell
+			cellRel := p.createRelationship(rowID, cellID, map[string]interface{}{"col_index": cellIdx})
+			*relationships = append(*relationships, cellRel)
 
 			// Extract links from cell text
 			p.extractLinksFromText(cellText, cellID, links)
@@ -767,9 +767,9 @@ func (p *PptxParser) processChart(frame *GraphicFrame, chartIdx, slideNum int, e
 	*elements = append(*elements, chartElement)
 	*counter++
 
-	// Create bidirectional relationship from slide to chart
-	chartRels := p.createBidirectionalRelationship(slideID, chartID, map[string]interface{}{"chart_index": chartIdx})
-	*relationships = append(*relationships, chartRels...)
+	// Create relationship (unidirectional parent→child) from slide to chart
+	chartRel := p.createRelationship(slideID, chartID, map[string]interface{}{"chart_index": chartIdx})
+	*relationships = append(*relationships, chartRel)
 }
 
 // parseSlideComments parses comments for a slide
@@ -787,7 +787,7 @@ func (p *PptxParser) parseSlideComments(commentsXML []byte, slideNum int, elemen
 	commentsContainerID := p.generateID(fmt.Sprintf("comments_%d_", slideNum))
 	commentsElement := PptxElement{
 		ElementID:       commentsContainerID,
-		ElementType:     "comments_container",
+		ElementType:     "comments",
 		ParentID:        slideID,
 		ContentPreview:  fmt.Sprintf("Comments for Slide %d (%d comments)", slideNum, len(commentList.Comments)),
 		ContentLocation: p.createCommentsLocation(sourceID, slideNum),
@@ -802,9 +802,9 @@ func (p *PptxParser) parseSlideComments(commentsXML []byte, slideNum int, elemen
 	*elements = append(*elements, commentsElement)
 	*counter++
 
-	// Create bidirectional relationship from slide to comments container
-	containerRels := p.createBidirectionalRelationship(slideID, commentsContainerID, make(map[string]interface{}))
-	*relationships = append(*relationships, containerRels...)
+	// Create relationship (unidirectional parent→child) from slide to comments container
+	containerRel := p.createRelationship(slideID, commentsContainerID, make(map[string]interface{}))
+	*relationships = append(*relationships, containerRel)
 
 	// Process individual comments
 	for commentIdx, comment := range commentList.Comments {
@@ -840,9 +840,9 @@ func (p *PptxParser) parseSlideComments(commentsXML []byte, slideNum int, elemen
 		*elements = append(*elements, commentElement)
 		*counter++
 
-		// Create bidirectional relationship from container to comment
-		commentRels := p.createBidirectionalRelationship(commentsContainerID, commentID, map[string]interface{}{"comment_index": commentIdx})
-		*relationships = append(*relationships, commentRels...)
+		// Create relationship (unidirectional parent→child) from container to comment
+		commentRel := p.createRelationship(commentsContainerID, commentID, map[string]interface{}{"comment_index": commentIdx})
+		*relationships = append(*relationships, commentRel)
 	}
 }
 
@@ -895,9 +895,9 @@ func (p *PptxParser) parseSlideNotes(notesXML []byte, slideNum int, elements *[]
 	*elements = append(*elements, notesElement)
 	*counter++
 
-	// Create bidirectional relationship from slide to notes
-	notesRels := p.createBidirectionalRelationship(slideID, notesElementID, make(map[string]interface{}))
-	*relationships = append(*relationships, notesRels...)
+	// Create relationship (unidirectional parent→child) from slide to notes
+	notesRel := p.createRelationship(slideID, notesElementID, make(map[string]interface{}))
+	*relationships = append(*relationships, notesRel)
 }
 
 // processPicture processes a picture shape
@@ -932,9 +932,9 @@ func (p *PptxParser) processPicture(picture *Picture, picIdx, slideNum int, elem
 	*elements = append(*elements, pictureElement)
 	*counter++
 
-	// Create bidirectional relationship from slide to picture
-	pictureRels := p.createBidirectionalRelationship(slideID, pictureID, map[string]interface{}{"image_index": picIdx})
-	*relationships = append(*relationships, pictureRels...)
+	// Create relationship (unidirectional parent→child) from slide to picture
+	pictureRel := p.createRelationship(slideID, pictureID, map[string]interface{}{"image_index": picIdx})
+	*relationships = append(*relationships, pictureRel)
 }
 
 // processGroupShape processes a group shape and its children
@@ -975,9 +975,9 @@ func (p *PptxParser) processGroupShape(group *GroupShape, grpIdx, slideNum int, 
 	*elements = append(*elements, groupElement)
 	*counter++
 
-	// Create bidirectional relationship from parent to group
-	groupRels := p.createBidirectionalRelationship(parentID, groupID, map[string]interface{}{"group_index": grpIdx})
-	*relationships = append(*relationships, groupRels...)
+	// Create relationship (unidirectional parent→child) from parent to group
+	groupRel := p.createRelationship(parentID, groupID, map[string]interface{}{"group_index": grpIdx})
+	*relationships = append(*relationships, groupRel)
 
 	// Process shapes in the group
 	if p.ExtractShapes {
@@ -1294,7 +1294,7 @@ func (p *PptxParser) createChartLocation(source string, slideNum, chartIdx int) 
 func (p *PptxParser) createCommentsLocation(source string, slideNum int) map[string]interface{} {
 	return map[string]interface{}{
 		"source":      source,
-		"type":        "comments_container",
+		"type":        "comments",
 		"slide_index": slideNum - 1,
 	}
 }
@@ -1353,10 +1353,8 @@ func (r *PptxParseResponse) ToParseResult() *ParseResult {
 	}
 
 	result := &ParseResult{
-		Document:      doc,
-		Elements:      make([]Element, 0, len(r.Elements)),
-		Links:         make([]Link, 0, len(r.Links)),
-		Relationships: make([]Relationship, 0, len(r.Relationships)),
+		Document: doc,
+		Elements: make([]Element, 0, len(r.Elements)),
 	}
 
 	// Convert elements with promoted fields
@@ -1403,31 +1401,6 @@ func (r *PptxParseResponse) ToParseResult() *ParseResult {
 		result.Elements = append(result.Elements, elem)
 	}
 
-	// Convert links
-	for _, pptxLink := range r.Links {
-		link := Link{
-			LinkID:          generateID("link"),
-			SourceElementID: pptxLink.SourceID,
-			LinkTarget:      pptxLink.LinkTarget,
-			LinkText:        pptxLink.LinkText,
-			LinkType:        pptxLink.LinkType,
-		}
-		result.Links = append(result.Links, link)
-	}
-
-	// Convert relationships
-	for _, pptxRel := range r.Relationships {
-		rel := Relationship{
-			RelationshipID:   pptxRel.RelationshipID,
-			SourceElementID:  pptxRel.SourceElementID,
-			TargetElementID:  pptxRel.TargetElementID,
-			RelationshipType: pptxRel.RelationshipType,
-			Confidence:       pptxRel.Confidence,
-			Metadata:         pptxRel.Metadata,
-		}
-		result.Relationships = append(result.Relationships, rel)
-	}
-
 	return result
 }
 
@@ -1445,9 +1418,9 @@ func (r *PptxParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
 }
 
-// createBidirectionalRelationship creates both "contains" and "contained_by" relationships
-func (p *PptxParser) createBidirectionalRelationship(parentID, childID string, metadata map[string]interface{}) []PptxRelationship {
-	containsRel := PptxRelationship{
+// createRelationship creates a unidirectional parent→child "contains" relationship
+func (p *PptxParser) createRelationship(parentID, childID string, metadata map[string]interface{}) PptxRelationship {
+	return PptxRelationship{
 		RelationshipID:   p.generateID("rel_"),
 		SourceElementID:  parentID,
 		TargetElementID:  childID,
@@ -1455,13 +1428,4 @@ func (p *PptxParser) createBidirectionalRelationship(parentID, childID string, m
 		Confidence:       1.0,
 		Metadata:         metadata,
 	}
-	containedByRel := PptxRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  childID,
-		TargetElementID:  parentID,
-		RelationshipType: "contained_by",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	return []PptxRelationship{containsRel, containedByRel}
 }

@@ -105,9 +105,7 @@ func (p *PDFParser) ParseLegacy(docID string, content interface{}) (*ParseResult
 			ID:      docID,
 			DocType: "pdf",
 		},
-		Elements:      []Element{},
-		Relationships: []Relationship{},
-		Links:         []Link{},
+		Elements: []Element{},
 	}
 
 	// Create root element
@@ -138,22 +136,6 @@ func (p *PDFParser) ParseLegacy(docID string, content interface{}) (*ParseResult
 	}
 	result.Elements = append(result.Elements, bodyElement)
 
-	// Add root->body relationships
-	result.Relationships = append(result.Relationships,
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contains",
-			SourceElementID:  rootID,
-			TargetElementID:  bodyID,
-		},
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contained_by",
-			SourceElementID:  bodyID,
-			TargetElementID:  rootID,
-		},
-	)
-
 	// Process pages
 	pageCount := numPages
 	if p.MaxPages > 0 && pageCount > p.MaxPages {
@@ -162,9 +144,8 @@ func (p *PDFParser) ParseLegacy(docID string, content interface{}) (*ParseResult
 
 	elementPosition := 2
 	for pageNum := 0; pageNum < pageCount; pageNum++ {
-		pageElements, pageRels, pos := p.processPage(doc, pageNum, bodyID, &elementPosition)
+		pageElements, pos := p.processPage(doc, pageNum, bodyID, &elementPosition)
 		result.Elements = append(result.Elements, pageElements...)
-		result.Relationships = append(result.Relationships, pageRels...)
 		elementPosition = pos
 	}
 
@@ -172,9 +153,8 @@ func (p *PDFParser) ParseLegacy(docID string, content interface{}) (*ParseResult
 }
 
 // processPage processes a single PDF page
-func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, elementPosition *int) ([]Element, []Relationship, int) {
+func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, elementPosition *int) ([]Element, int) {
 	elements := []Element{}
-	relationships := []Relationship{}
 
 	// Create page element
 	pageID := generateID(fmt.Sprintf("page_%d_", pageNum+1))
@@ -196,33 +176,16 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 	elements = append(elements, pageElement)
 	*elementPosition++
 
-	// Add body->page relationships
-	relationships = append(relationships,
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contains",
-			SourceElementID:  bodyID,
-			TargetElementID:  pageID,
-		},
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contained_by",
-			SourceElementID:  pageID,
-			TargetElementID:  bodyID,
-		},
-	)
-
 	// Extract text from page
 	pageText, err := doc.Text(pageNum)
 	if err != nil || pageText == "" {
-		return elements, relationships, *elementPosition
+		return elements, *elementPosition
 	}
 
 	// Get text blocks with positioning information
 	textBlocks := p.extractTextBlocks(doc, pageNum, pageText)
 
 	// Process text blocks
-	var prevBlockID string
 	for _, block := range textBlocks {
 		blockID := generateID("block_")
 		blockType := "paragraph"
@@ -266,41 +229,6 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 		elements = append(elements, blockElement)
 		*elementPosition++
 
-		// Add page->block relationships
-		relationships = append(relationships,
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contains",
-				SourceElementID:  pageID,
-				TargetElementID:  blockID,
-			},
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contained_by",
-				SourceElementID:  blockID,
-				TargetElementID:  pageID,
-			},
-		)
-
-		// Add sibling relationships (previous/next)
-		if prevBlockID != "" {
-			relationships = append(relationships,
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "next_sibling",
-					SourceElementID:  prevBlockID,
-					TargetElementID:  blockID,
-				},
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "previous_sibling",
-					SourceElementID:  blockID,
-					TargetElementID:  prevBlockID,
-				},
-			)
-		}
-		prevBlockID = blockID
-
 		// Extract links if enabled
 		if p.ExtractLinks {
 			links := p.extractLinks(block.Text, blockID)
@@ -312,13 +240,12 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 
 	// Extract tables if enabled
 	if p.ExtractTables {
-		tableElements, tableRels, pos := p.extractTables(doc, pageNum, pageID, elementPosition)
+		tableElements, pos := p.extractTables(doc, pageNum, pageID, elementPosition)
 		elements = append(elements, tableElements...)
-		relationships = append(relationships, tableRels...)
 		*elementPosition = pos
 	}
 
-	return elements, relationships, *elementPosition
+	return elements, *elementPosition
 }
 
 // TextBlock represents a block of text with metadata
@@ -408,9 +335,8 @@ type Table struct {
 }
 
 // extractTables extracts tables from a PDF page using heuristic detection
-func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string, elementPosition *int) ([]Element, []Relationship, int) {
+func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string, elementPosition *int) ([]Element, int) {
 	elements := []Element{}
-	relationships := []Relationship{}
 
 	// Detect tables using heuristics
 	tables := p.detectTablesHeuristic(doc, pageNum)
@@ -440,22 +366,6 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 		}
 		elements = append(elements, tableElement)
 		*elementPosition++
-
-		// Add page->table relationships
-		relationships = append(relationships,
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contains",
-				SourceElementID:  pageID,
-				TargetElementID:  tableID,
-			},
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contained_by",
-				SourceElementID:  tableID,
-				TargetElementID:  pageID,
-			},
-		)
 
 		// Add header row if exists
 		if table.Rows > 0 {
@@ -498,22 +408,6 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			}
 			elements = append(elements, headerRowElement)
 			*elementPosition++
-
-			// Add table->header_row relationships
-			relationships = append(relationships,
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contains_table_row",
-					SourceElementID:  tableID,
-					TargetElementID:  headerRowID,
-				},
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contained_by",
-					SourceElementID:  headerRowID,
-					TargetElementID:  tableID,
-				},
-			)
 
 			// Add header cells
 			for colIdx, colKey := range colKeys {
@@ -560,22 +454,6 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 
 				elements = append(elements, headerCellElement)
 				*elementPosition++
-
-				// Add header_row->header_cell relationships
-				relationships = append(relationships,
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contains_table_header",
-						SourceElementID:  headerRowID,
-						TargetElementID:  headerCellID,
-					},
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contained_by",
-						SourceElementID:  headerCellID,
-						TargetElementID:  headerRowID,
-					},
-				)
 			}
 		}
 
@@ -626,22 +504,6 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			elements = append(elements, rowElement)
 			*elementPosition++
 
-			// Add table->row relationships
-			relationships = append(relationships,
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contains_table_row",
-					SourceElementID:  tableID,
-					TargetElementID:  rowID,
-				},
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contained_by",
-					SourceElementID:  rowID,
-					TargetElementID:  tableID,
-				},
-			)
-
 			// Add cells
 			for colIdx, col := range colKeys {
 				cellID := generateID(fmt.Sprintf("table_cell_%d_%d_%d_", tableIdx, row, colIdx))
@@ -687,27 +549,11 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 
 				elements = append(elements, cellElement)
 				*elementPosition++
-
-				// Add row->cell relationships
-				relationships = append(relationships,
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contains_table_cell",
-						SourceElementID:  rowID,
-						TargetElementID:  cellID,
-					},
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contained_by",
-						SourceElementID:  cellID,
-						TargetElementID:  rowID,
-					},
-				)
 			}
 		}
 	}
 
-	return elements, relationships, *elementPosition
+	return elements, *elementPosition
 }
 
 // detectTablesHeuristic detects tables using positioned text from HTML output
@@ -1106,35 +952,17 @@ func (p *PDFParser) formatTableText(table Table) string {
 	return strings.Join(lines, "\n")
 }
 
-// extractLinks extracts URLs and emails from text
-func (p *PDFParser) extractLinks(text string, sourceID string) []Link {
-	var links []Link
-
+// extractLinks extracts URLs and emails from text (returns count for compatibility)
+func (p *PDFParser) extractLinks(text string, sourceID string) int {
 	// URL pattern
 	urlPattern := regexp.MustCompile(`https?://[^\s]+`)
 	urls := urlPattern.FindAllString(text, -1)
-	for _, url := range urls {
-		links = append(links, Link{
-			LinkID:          generateID("link_"),
-			SourceElementID: sourceID,
-			LinkType:        "url",
-			LinkTarget:      url,
-		})
-	}
 
 	// Email pattern
 	emailPattern := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 	emails := emailPattern.FindAllString(text, -1)
-	for _, email := range emails {
-		links = append(links, Link{
-			LinkID:          generateID("link_"),
-			SourceElementID: sourceID,
-			LinkType:        "email",
-			LinkTarget:      email,
-		})
-	}
 
-	return links
+	return len(urls) + len(emails)
 }
 
 // truncateText truncates text to specified length
