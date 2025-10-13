@@ -37,6 +37,8 @@ const (
 	HTMLElementTypeSpan        HTMLElementType = "span"
 	HTMLElementTypeBody        HTMLElementType = "body"
 	HTMLElementTypeText        HTMLElementType = "text"
+	HTMLElementTypeLink        HTMLElementType = "link"
+	HTMLElementTypeTemporal    HTMLElementType = "temporal"
 )
 
 // HTMLElement represents a parsed HTML element
@@ -54,24 +56,6 @@ type HTMLElement struct {
 	Content         string                 `json:"content,omitempty"`
 }
 
-// HTMLLink represents an extracted link
-type HTMLLink struct {
-	SourceID   string `json:"source_id"`
-	LinkText   string `json:"link_text"`
-	LinkTarget string `json:"link_target"`
-	LinkType   string `json:"link_type"`
-}
-
-// HTMLRelationship represents a relationship between elements
-type HTMLRelationship struct {
-	RelationshipID   string `json:"relationship_id"`
-	SourceElementID  string `json:"source_element_id"`
-	TargetElementID  string `json:"target_element_id"`
-	RelationshipType string `json:"relationship_type"`
-	Confidence       float64 `json:"confidence"`
-	Metadata         map[string]interface{} `json:"metadata"`
-}
-
 // HTMLParseRequest represents the input for HTML parsing (deprecated - use parser.ParseRequest)
 // Kept temporarily during migration to new Parser interface
 type HTMLParseRequest struct {
@@ -82,11 +66,9 @@ type HTMLParseRequest struct {
 
 // ParseResponse represents the output of HTML parsing
 type ParseResponse struct {
-	Document      map[string]interface{} `json:"document"`
-	Elements      []HTMLElement          `json:"elements"`
-	Links         []HTMLLink             `json:"links"`
-	Relationships []HTMLRelationship     `json:"relationships"`
-	Dates         map[string]interface{} `json:"dates,omitempty"`
+	Document map[string]interface{} `json:"document"`
+	Elements []HTMLElement          `json:"elements"`
+	Dates    map[string]interface{} `json:"dates,omitempty"`
 }
 
 // HTMLParser handles HTML document parsing
@@ -222,9 +204,7 @@ func (p *HTMLParser) parseHTML(request HTMLParseRequest) (*ParseResponse, error)
 			"metadata":     request.Metadata,
 			"content_hash": p.generateHash(request.Content),
 		},
-		Elements:      []HTMLElement{},
-		Links:         []HTMLLink{},
-		Relationships: []HTMLRelationship{},
+		Elements: []HTMLElement{},
 	}
 
 	// Create root element
@@ -242,23 +222,19 @@ func (p *HTMLParser) parseHTML(request HTMLParseRequest) (*ParseResponse, error)
 
 	// Parse document elements
 	elementCounter := 1
-	p.parseNode(doc, &response.Elements, &response.Links, &response.Relationships,
-		rootElement.ElementID, request.ID, &elementCounter)
-
-	// Extract links from anchor tags
-	p.extractLinks(doc, &response.Links, response.Elements)
+	p.parseNode(doc, &response.Elements, rootElement.ElementID, request.ID, &elementCounter)
 
 	return response, nil
 }
 
 // parseNode recursively parses HTML nodes and returns the ID of the element created (if any)
-func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *[]HTMLLink,
-	relationships *[]HTMLRelationship, parentID, sourceID string, counter *int) string {
+func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement,
+	parentID, sourceID string, counter *int) string {
 
 	if node.Type == html.DocumentNode {
 		// Document node - recurse into children without creating element
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
+			p.parseNode(child, elements, parentID, sourceID, counter)
 		}
 		return ""
 	} else if node.Type == html.ElementNode {
@@ -269,12 +245,17 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 			return ""
 		}
 
+		// Special handling for anchor tags - create link elements
+		if strings.ToLower(node.Data) == "a" {
+			return p.parseAnchorTag(node, elements, parentID, sourceID, counter)
+		}
+
 		// Check if this tag should get a dedicated element (semantic tags only)
 		// This matches Python's selective element creation in html.py:942-944
 		if !p.shouldCreateElement(node.Data) {
 			// Don't create element, but process children with same parent
 			for child := node.FirstChild; child != nil; child = child.NextSibling {
-				p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
+				p.parseNode(child, elements, parentID, sourceID, counter)
 			}
 			return ""
 		}
@@ -325,38 +306,9 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 		*elements = append(*elements, element)
 		*counter++
 
-		// Create bidirectional parent-child relationships
-		if parentID != "" {
-			// Determine relationship type - use contains_text for paragraph tags
-			relType := "contains"
-			if node.Data == "p" {
-				relType = "contains_text"
-			}
-
-			// Parent contains child
-			containsRel := HTMLRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  parentID,
-				TargetElementID:  element.ElementID,
-				RelationshipType: relType,
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			// Child contained by parent
-			containedByRel := HTMLRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  element.ElementID,
-				TargetElementID:  parentID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			*relationships = append(*relationships, containsRel, containedByRel)
-		}
-
 		// Recursively parse children
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			p.parseNode(child, elements, links, relationships, element.ElementID, sourceID, counter)
+			p.parseNode(child, elements, element.ElementID, sourceID, counter)
 		}
 
 		return element.ElementID
@@ -545,38 +497,54 @@ func (p *HTMLParser) extractTextRecursive(node *html.Node, text *strings.Builder
 	}
 }
 
-// extractLinks extracts anchor links from the HTML document
-func (p *HTMLParser) extractLinks(doc *html.Node, links *[]HTMLLink, elements []HTMLElement) {
-	p.extractLinksRecursive(doc, links, elements)
-}
+// parseAnchorTag creates a link element for an HTML anchor tag
+// Link elements are containers that can have text/image children
+func (p *HTMLParser) parseAnchorTag(node *html.Node, elements *[]HTMLElement,
+	parentID, sourceID string, counter *int) string {
 
-// extractLinksRecursive recursively extracts links from HTML nodes
-func (p *HTMLParser) extractLinksRecursive(node *html.Node, links *[]HTMLLink, elements []HTMLElement) {
-	if node.Type == html.ElementNode && node.Data == "a" {
-		// Find href attribute
-		var href string
-		for _, attr := range node.Attr {
-			if attr.Key == "href" {
-				href = attr.Val
-				break
-			}
-		}
-
-		if href != "" {
-			linkText := p.extractTextContent(node)
-			link := HTMLLink{
-				SourceID:   elements[0].ElementID, // Will be updated later to correct element
-				LinkText:   linkText,
-				LinkTarget: href,
-				LinkType:   "html",
-			}
-			*links = append(*links, link)
+	// Find href attribute
+	var href string
+	for _, attr := range node.Attr {
+		if attr.Key == "href" {
+			href = attr.Val
+			break
 		}
 	}
 
+	// Extract text content for preview (truncated)
+	linkText := p.extractTextContent(node)
+
+	// Create link element
+	linkElement := HTMLElement{
+		ElementID:       p.generateID("link_"),
+		ElementType:     HTMLElementTypeLink,
+		ParentID:        parentID,
+		ContentPreview:  linkText,
+		ContentLocation: p.createContentLocationForNode(sourceID, HTMLElementTypeLink, node),
+		ContentHash:     p.generateHash(linkText),
+		ElementOrder:    *counter,
+		DocumentOrder:   *counter,
+		Metadata: map[string]interface{}{
+			"link_target": href,
+			"link_type":   "html",
+		},
+	}
+
+	// Store full text if enabled
+	if p.StoreFullContent {
+		fullText := p.extractFullTextContent(node)
+		linkElement.Content = fullText
+	}
+
+	*elements = append(*elements, linkElement)
+	*counter++
+
+	// Recursively parse children (text, images, etc.) with link as parent
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
-		p.extractLinksRecursive(child, links, elements)
+		p.parseNode(child, elements, linkElement.ElementID, sourceID, counter)
 	}
+
+	return linkElement.ElementID
 }
 
 // extractMetadata extracts metadata from HTML attributes
@@ -745,9 +713,7 @@ func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult 
 			ID:      response.Document["doc_id"].(string),
 			DocType: response.Document["doc_type"].(string),
 		},
-		Elements:      make([]Element, 0, len(response.Elements)),
-		Relationships: make([]Relationship, 0, len(response.Relationships)),
-		Links:         make([]Link, 0, len(response.Links)),
+		Elements: make([]Element, 0, len(response.Elements)),
 	}
 
 	// Convert metadata if present
@@ -803,31 +769,6 @@ func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult 
 		element.ElementCategory = GetElementCategory(element.ElementType)
 
 		result.Elements = append(result.Elements, element)
-	}
-
-	// Convert relationships
-	for _, htmlRel := range response.Relationships {
-		relationship := Relationship{
-			RelationshipID:   htmlRel.RelationshipID,
-			RelationshipType: htmlRel.RelationshipType,
-			SourceElementID:  htmlRel.SourceElementID,
-			TargetElementID:  htmlRel.TargetElementID,
-			Confidence:       htmlRel.Confidence,
-			Metadata:         htmlRel.Metadata,
-		}
-		result.Relationships = append(result.Relationships, relationship)
-	}
-
-	// Convert links
-	for _, htmlLink := range response.Links {
-		link := Link{
-			LinkID:          generateID("link"),
-			SourceElementID: htmlLink.SourceID,
-			LinkType:        htmlLink.LinkType,
-			LinkTarget:      htmlLink.LinkTarget,
-			LinkText:        htmlLink.LinkText,
-		}
-		result.Links = append(result.Links, link)
 	}
 
 	return result
