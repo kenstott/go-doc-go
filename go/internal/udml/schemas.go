@@ -71,7 +71,7 @@ func (r *SchemaRegistry) registerDefaultSchemas() {
 
 	// ALL element types use the same universal schema
 	// This enables cross-type queries while maintaining Hive partitioning benefits
-	// Define all supported element types (47 types - aligned with actual parser usage)
+	// Define all supported element types (45 types - aligned with actual parser usage)
 	elementTypes := []string{
 		// Document structure
 		"root", "body", "section",
@@ -110,7 +110,7 @@ func (r *SchemaRegistry) registerDefaultSchemas() {
 		"merged_cell", "merged_cells",
 
 		// Office document specific - PowerPoint
-		"slide", "presentation_root", "presentation_body",
+		"slide",
 		"comments_container", "slide_notes", "shape_group",
 
 		// PDF specific

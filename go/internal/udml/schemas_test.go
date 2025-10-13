@@ -183,7 +183,7 @@ func TestGetRegisteredTypes(t *testing.T) {
 
 	types := registry.GetRegisteredTypes()
 
-	assert.Equal(t, 47, len(types), "Should have registered exactly 47 element types (aligned with parser usage)")
+	assert.Equal(t, 45, len(types), "Should have registered exactly 45 element types (aligned with parser usage)")
 
 	// Verify some expected types are present
 	expectedTypes := []string{
@@ -191,7 +191,7 @@ func TestGetRegisteredTypes(t *testing.T) {
 		"table", "table_row", "table_cell",
 		"list", "list_item", "code_block",
 		// Verify some of the newly added types
-		"presentation_root", "json_object", "xml_element", "front_matter", "blockquote",
+		"slide", "json_object", "xml_element", "front_matter", "blockquote",
 	}
 
 	registeredTypesMap := make(map[string]bool)
