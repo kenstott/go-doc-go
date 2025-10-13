@@ -7,14 +7,14 @@ This document outlines the migration plan to transform the existing Go document 
 **Current State:** ~~Flat Parquet storage with basic partitioning~~ → **Hive-partitioned UDML with QueryBackend abstraction + Domain-Based Ontology Extraction** ✅
 **Target State:** Hive-partitioned storage with type-specific schemas, JSON projection, JSONPath queries, LLM-generated ontologies, and format-agnostic knowledge graph export
 
-**Timeline:** 9-10 weeks (Week 8 of 10 - 87% complete)
+**Timeline:** 9-10 weeks (Week 9 of 10 - 93% complete)
 **Complexity:** Major architectural refactor with clean breaking changes - no backward compatibility in target state
 
 ---
 
-## 🎯 Current Status (as of Phase 5 - October 13, 2025)
+## 🎯 Current Status (as of Phase 6 - October 13, 2025)
 
-### Completed: 13 of 15 phases (86.7%)
+### Completed: 14 of 15 phases (93.3%)
 - ✅ Phase 0.1: Parser Interface
 - ✅ Phase 1.1: Type System Updates
 - ✅ Phase 1.2: Parser Promoted Fields Migration
@@ -28,15 +28,17 @@ This document outlines the migration plan to transform the existing Go document 
 - ✅ **Phase 3: Domain-Based Ontology Extraction (100% COMPLETE)**
 - ✅ **Phase 4: Generic Graph Model (100% COMPLETE)**
 - ✅ **Phase 5: Multi-Format Export (100% COMPLETE)**
+- ✅ **Phase 6: Versioning System (100% COMPLETE)**
 
 ### Test Statistics
-- **Total UDML Tests**: 218 (all passing)
+- **Total UDML Tests**: 248 (all passing)
   - Query package: 114 tests (includes 2 similarity integration tests)
   - Builder package: 20 tests (15 unit + 5 E2E)
   - Core UDML: 14 schema tests
   - Ontology package: 30 tests (domain-based extraction)
   - Graph package: 21 tests (graph model + builder)
   - **Export package: 13 tests + 5 benchmarks (multi-format export)**
+  - **Versioning package: 30 tests + 8 examples (UDML system versioning)**
 - **Test Coverage**:
   - Query package: 79.7% (added similarity functions)
   - Builder package: 91.2%
@@ -45,6 +47,7 @@ This document outlines the migration plan to transform the existing Go document 
   - Ontology: 100% core features tested
   - Graph package: 86.1%
   - **Export package: 84.1%**
+  - **Versioning package: 81.3%**
 - **Integration Tests**: Full stack validation including similarity search (Parquet → DuckDB → Similarity Filter → Ranked Results) + ontology extraction with domain assignment + multi-format graph export
 
 ### Performance Achievements
@@ -7089,5 +7092,660 @@ coverage: 84.1% of statements
 
 **Next Steps:** Ready for Phase 6 (Versioning System) or Phase 7 (Testing & Documentation).
 
+### ✅ Phase 6: Versioning System - COMPLETED
+
+**What Was Implemented:**
+
+Phase 6 delivers a comprehensive UDML system versioning capability, enabling tracking of schema evolution, parser upgrades, embedding model changes, and system migrations. This is **UDML System Versioning** (tracking versions of the UDML system itself), not document versioning (tracking changes to individual documents).
+
+#### 6.1 Core Version Types (`go/internal/udml/versioning/types.go`) ✅
+
+**Implemented:** Complete versioning data structures (130 lines)
+
+**Core Types:**
+```go
+// VersionMetadata describes a UDML version
+type VersionMetadata struct {
+    Version         string                 // Semantic version (e.g., "1.0.0", "1.1.0")
+    CreatedAt       time.Time              // When version was created
+    ParserVersion   string                 // Parser version used
+    EmbeddingModel  string                 // Embedding model (e.g., "text-embedding-ada-002")
+    OntologyVersion string                 // Ontology schema version
+    SchemaChanges   map[string]interface{} // Schema changes in this version
+    Notes           string                 // Human-readable notes
+    Tags            []string               // Tags (e.g., "production", "beta", "latest")
+    ElementCount    int64                  // Total elements in this version
+    DocumentCount   int64                  // Total documents processed
+    SizeBytes       int64                  // Total storage size
+    CreatedBy       string                 // Who/what created this version
+    Deprecated      bool                   // Is this version deprecated?
+    DeprecatedAt    *time.Time             // When it was deprecated
+}
+
+// VersionDiff represents differences between two versions
+type VersionDiff struct {
+    FromVersion     string
+    ToVersion       string
+    ComparedAt      time.Time
+    SchemaChanges   SchemaChanges          // Schema differences
+    FieldChanges    map[string]FieldChange // Field-level changes
+    TypeChanges     map[string]TypeChange  // Type changes
+    ElementsAdded   int64                  // Elements added
+    ElementsRemoved int64                  // Elements removed
+    DocumentsAdded  int64                  // Documents added
+    DocumentsRemoved int64                 // Documents removed
+    SizeDelta       int64                  // Storage size change
+}
+
+// MigrationRecord tracks version migrations
+type MigrationRecord struct {
+    FromVersion      string
+    ToVersion        string
+    StartedAt        time.Time
+    CompletedAt      *time.Time
+    Status           MigrationStatus       // pending, running, completed, failed
+    TotalRecords     int64
+    ProcessedRecords int64
+    ErrorCount       int64
+    ErrorMessages    []string
+    Strategy         MigrationStrategy     // reprocess, copy, incremental
+    Notes            string
+}
+```
+
+**Enums:**
+- `MigrationStatus`: Pending, Running, Completed, Failed
+- `MigrationStrategy`: Reprocess, Copy, Incremental
+
+#### 6.2 Version Manager (`go/internal/udml/versioning/manager.go`) ✅
+
+**Implemented:** Complete version manager with caching and time-travel (382 lines)
+
+**Core Features:**
+```go
+type VersionManager struct {
+    backend    VersionBackend
+    mu         sync.RWMutex
+    cache      map[string]*VersionMetadata  // Cache up to 100 versions
+    cacheSize  int                          // Default: 100
+    cacheTTL   time.Duration                // Default: 5 minutes
+}
+
+// Version CRUD operations
+func (vm *VersionManager) CreateVersion(ctx context.Context, meta *VersionMetadata) error
+func (vm *VersionManager) GetVersion(ctx context.Context, version string) (*VersionMetadata, error)
+func (vm *VersionManager) UpdateVersion(ctx context.Context, meta *VersionMetadata) error
+func (vm *VersionManager) DeleteVersion(ctx context.Context, version string) error
+
+// Querying versions
+func (vm *VersionManager) GetLatestVersion(ctx context.Context) (*VersionMetadata, error)
+func (vm *VersionManager) ListVersions(ctx context.Context, query *VersionQuery) ([]*VersionMetadata, error)
+
+// Time-travel queries
+func (vm *VersionManager) GetVersionAtTime(ctx context.Context, timestamp time.Time) (*VersionMetadata, error)
+
+// Version comparison
+func (vm *VersionManager) CompareVersions(ctx context.Context, fromVersion, toVersion string) (*VersionDiff, error)
+func (vm *VersionManager) GetStats(ctx context.Context, version string) (*VersionStats, error)
+
+// Version management
+func (vm *VersionManager) TagVersion(ctx context.Context, version string, tags ...string) error
+func (vm *VersionManager) UntagVersion(ctx context.Context, version string, tags ...string) error
+func (vm *VersionManager) DeprecateVersion(ctx context.Context, version string, reason string) error
+
+// Migration tracking
+func (vm *VersionManager) CreateMigration(ctx context.Context, fromVersion, toVersion string) (*MigrationRecord, error)
+func (vm *VersionManager) UpdateMigration(ctx context.Context, migration *MigrationRecord) error
+func (vm *VersionManager) GetMigration(ctx context.Context, fromVersion, toVersion string) (*MigrationRecord, error)
+func (vm *VersionManager) ListMigrations(ctx context.Context) ([]*MigrationRecord, error)
+
+// Metadata export
+func (vm *VersionManager) ExportMetadata(ctx context.Context, version string) ([]byte, error)
+```
+
+**Caching Strategy:**
+- Check cache first for read operations
+- Fetch from backend on cache miss
+- Update cache on write operations
+- Thread-safe with `sync.RWMutex`
+
+#### 6.3 Memory Backend (`go/internal/udml/versioning/memory_backend.go`) ✅
+
+**Implemented:** In-memory backend for testing and single-process deployments (422 lines)
+
+**Features:**
+```go
+type MemoryBackend struct {
+    versions   map[string]*VersionMetadata
+    migrations map[string]*MigrationRecord  // Key: "from_version:to_version"
+    mu         sync.RWMutex
+}
+
+// Deep copy pattern to prevent external modifications
+func (mb *MemoryBackend) GetVersion(ctx context.Context, version string) (*VersionMetadata, error) {
+    mb.mu.RLock()
+    defer mb.mu.RUnlock()
+
+    meta, exists := mb.versions[version]
+    if !exists {
+        return nil, fmt.Errorf("version %s not found", version)
+    }
+
+    // Return a copy to prevent external modifications
+    metaCopy := *meta
+    if meta.SchemaChanges != nil {
+        metaCopy.SchemaChanges = make(map[string]interface{})
+        for k, v := range meta.SchemaChanges {
+            metaCopy.SchemaChanges[k] = v
+        }
+    }
+    if meta.Tags != nil {
+        metaCopy.Tags = append([]string{}, meta.Tags...)
+    }
+
+    return &metaCopy, nil
+}
+```
+
+**Backend Interface Pattern:**
+- Pluggable storage backends
+- MemoryBackend for testing
+- Can add DuckDBBackend or ParquetBackend for production
+- All operations implement `VersionBackend` interface
+
+**Thread Safety:**
+- All operations use `sync.RWMutex` for concurrent access
+- Read operations use `RLock()` for parallel reads
+- Write operations use `Lock()` for exclusive access
+
+#### 6.4 Usage Examples (`go/internal/udml/versioning/example_test.go`) ✅
+
+**Implemented:** 8 comprehensive real-world examples (384 lines)
+
+**Examples:**
+
+**1. Basic Version Management:**
+```go
+// Create version manager with memory backend
+backend := versioning.NewMemoryBackend()
+vm := versioning.NewVersionManager(backend)
+defer vm.Close()
+
+ctx := context.Background()
+
+// Create initial UDML version
+v1 := &versioning.VersionMetadata{
+    Version:         "1.0.0",
+    ParserVersion:   "2.1.0",
+    EmbeddingModel:  "text-embedding-ada-002",
+    OntologyVersion: "1.0.0",
+    Notes:           "Initial UDML release with 6 promoted fields",
+    ElementCount:    1000000,
+    DocumentCount:   5000,
+    SizeBytes:       10 * 1024 * 1024 * 1024, // 10GB
+    CreatedBy:       "system",
+    Tags:            []string{"production", "stable"},
+}
+
+if err := vm.CreateVersion(ctx, v1); err != nil {
+    log.Fatal(err)
+}
+
+// Retrieve version
+retrieved, _ := vm.GetVersion(ctx, "1.0.0")
+fmt.Printf("Version: %s\n", retrieved.Version)
+fmt.Printf("Parser: %s\n", retrieved.ParserVersion)
+fmt.Printf("Elements: %d\n", retrieved.ElementCount)
+```
+
+**2. Schema Upgrade Tracking:**
+```go
+// Version 1.0.0: Initial schema with 6 promoted fields
+v1 := &versioning.VersionMetadata{
+    Version:         "1.0.0",
+    ParserVersion:   "2.1.0",
+    OntologyVersion: "1.0.0",
+    SchemaChanges: map[string]interface{}{
+        "promoted_fields": []string{
+            "page_number", "section_level", "row_index",
+            "column_index", "temporal_type", "tag_name",
+        },
+    },
+    Notes:         "Initial UDML with 6 promoted fields",
+    ElementCount:  1000000,
+    DocumentCount: 5000,
+    Tags:          []string{"production"},
+}
+vm.CreateVersion(ctx, v1)
+
+// Version 1.1.0: Add 2 new promoted fields
+v2 := &versioning.VersionMetadata{
+    Version:         "1.1.0",
+    ParserVersion:   "2.2.0",
+    OntologyVersion: "1.1.0",
+    SchemaChanges: map[string]interface{}{
+        "promoted_fields": []string{
+            "page_number", "section_level", "row_index",
+            "column_index", "temporal_type", "tag_name",
+            "speaker_id", "geo_location", // NEW fields
+        },
+        "fields_added": []string{"speaker_id", "geo_location"},
+    },
+    Notes:         "Added speaker and geolocation support for transcripts",
+    ElementCount:  1200000,
+    DocumentCount: 6000,
+    Tags:          []string{"production", "latest"},
+}
+vm.CreateVersion(ctx, v2)
+
+// Compare versions
+diff, _ := vm.CompareVersions(ctx, "1.0.0", "1.1.0")
+fmt.Printf("From: %s\n", diff.FromVersion)
+fmt.Printf("To: %s\n", diff.ToVersion)
+fmt.Printf("Elements added: %d\n", diff.ElementsAdded)      // 200000
+fmt.Printf("Documents added: %d\n", diff.DocumentsAdded)    // 1000
+```
+
+**3. Time-Travel Queries:**
+```go
+now := time.Now()
+
+// Create versions at different times
+v1 := &versioning.VersionMetadata{
+    Version:   "1.0.0",
+    CreatedAt: now.Add(-2 * time.Hour),
+    Notes:     "Initial release",
+}
+v2 := &versioning.VersionMetadata{
+    Version:   "1.1.0",
+    CreatedAt: now.Add(-1 * time.Hour),
+    Notes:     "Added geolocation",
+}
+v3 := &versioning.VersionMetadata{
+    Version:   "2.0.0",
+    CreatedAt: now,
+    Notes:     "Major schema refactor",
+}
+
+vm.CreateVersion(ctx, v1)
+vm.CreateVersion(ctx, v2)
+vm.CreateVersion(ctx, v3)
+
+// Time-travel: What version was active 90 minutes ago?
+timestamp := now.Add(-90 * time.Minute)
+version, _ := vm.GetVersionAtTime(ctx, timestamp)
+fmt.Printf("Version at 90 min ago: %s\n", version.Version)  // "1.0.0"
+
+// Get latest version
+latest, _ := vm.GetLatestVersion(ctx)
+fmt.Printf("Latest: %s\n", latest.Version)  // "2.0.0"
+```
+
+**4. Version Tagging and Filtering:**
+```go
+// Create versions with different tags
+v1 := &versioning.VersionMetadata{
+    Version: "1.0.0",
+    Tags:    []string{"production", "stable"},
+}
+v2 := &versioning.VersionMetadata{
+    Version: "1.1.0-beta",
+    Tags:    []string{"beta", "testing"},
+}
+v3 := &versioning.VersionMetadata{
+    Version: "2.0.0",
+    Tags:    []string{"production", "latest"},
+}
+
+vm.CreateVersion(ctx, v1)
+vm.CreateVersion(ctx, v2)
+vm.CreateVersion(ctx, v3)
+
+// Query production versions only
+query := &versioning.VersionQuery{
+    Tags: []string{"production"},
+}
+prodVersions, _ := vm.ListVersions(ctx, query)
+fmt.Printf("Production versions: %d\n", len(prodVersions))  // 2
+for _, v := range prodVersions {
+    fmt.Printf("  - %s\n", v.Version)  // "2.0.0", "1.0.0"
+}
+```
+
+**5. Version Deprecation:**
+```go
+// Create old version
+v1 := &versioning.VersionMetadata{
+    Version: "1.0.0",
+    Notes:   "Old version",
+}
+vm.CreateVersion(ctx, v1)
+
+// Deprecate it
+err := vm.DeprecateVersion(ctx, "1.0.0", "Superseded by 2.0.0 with better performance")
+
+// Check deprecation status
+deprecated, _ := vm.GetVersion(ctx, "1.0.0")
+fmt.Printf("Deprecated: %v\n", deprecated.Deprecated)           // true
+fmt.Printf("Has deprecation time: %v\n", deprecated.DeprecatedAt != nil)  // true
+```
+
+**6. Migration Tracking:**
+```go
+// Create versions
+v1 := &versioning.VersionMetadata{Version: "1.0.0"}
+v2 := &versioning.VersionMetadata{Version: "2.0.0"}
+vm.CreateVersion(ctx, v1)
+vm.CreateVersion(ctx, v2)
+
+// Start migration
+migration, _ := vm.CreateMigration(ctx, "1.0.0", "2.0.0")
+fmt.Printf("Migration: %s -> %s\n", migration.FromVersion, migration.ToVersion)
+fmt.Printf("Status: %s\n", migration.Status)  // "pending"
+
+// Update migration progress
+migration.Status = versioning.MigrationRunning
+migration.TotalRecords = 1000000
+migration.ProcessedRecords = 500000
+vm.UpdateMigration(ctx, migration)
+
+// Check progress
+updated, _ := vm.GetMigration(ctx, "1.0.0", "2.0.0")
+fmt.Printf("Progress: %d/%d\n", updated.ProcessedRecords, updated.TotalRecords)  // 500000/1000000
+```
+
+**7. Version Statistics:**
+```go
+// Create version with stats
+v1 := &versioning.VersionMetadata{
+    Version:       "1.0.0",
+    ElementCount:  1000000,
+    DocumentCount: 5000,
+    SizeBytes:     10 * 1024 * 1024 * 1024, // 10GB
+}
+vm.CreateVersion(ctx, v1)
+
+// Get statistics
+stats, _ := vm.GetStats(ctx, "1.0.0")
+fmt.Printf("Elements: %d\n", stats.TotalElements)     // 1000000
+fmt.Printf("Documents: %d\n", stats.TotalDocuments)   // 5000
+fmt.Printf("Size: %.2f GB\n", float64(stats.SizeBytes)/(1024*1024*1024))  // 10.00 GB
+```
+
+**8. Real-World Workflow (Complete UDML Upgrade):**
+```go
+// Step 1: Deploy new UDML version
+newVersion := &versioning.VersionMetadata{
+    Version:         "1.2.0",
+    ParserVersion:   "2.3.0",
+    EmbeddingModel:  "text-embedding-3-small",
+    OntologyVersion: "1.2.0",
+    SchemaChanges: map[string]interface{}{
+        "embedding_model_changed": "ada-002 -> embedding-3-small",
+        "parser_improvements":     "Better table extraction",
+    },
+    Notes:         "Upgraded to GPT-4 era embeddings",
+    CreatedBy:     "deploy-bot",
+    Tags:          []string{"production"},
+    ElementCount:  0, // Will grow as documents are reprocessed
+    DocumentCount: 0,
+}
+vm.CreateVersion(ctx, newVersion)
+
+// Step 2: Tag as current production version
+vm.TagVersion(ctx, "1.2.0", "current", "latest")
+
+// Step 3: Deprecate old version
+vm.DeprecateVersion(ctx, "1.0.0", "Use 1.2.0 for better embeddings")
+
+// Step 4: Start migration
+oldVersion := &versioning.VersionMetadata{
+    Version:       "1.0.0",
+    ElementCount:  1000000,
+    DocumentCount: 5000,
+}
+vm.CreateVersion(ctx, oldVersion)
+
+migration, _ := vm.CreateMigration(ctx, "1.0.0", "1.2.0")
+migration.Status = versioning.MigrationRunning
+migration.TotalRecords = 5000
+vm.UpdateMigration(ctx, migration)
+
+// Step 5: Track reprocessing progress
+// (In real code, this would be updated by the ingestion worker)
+newVersion.ElementCount = 50000
+newVersion.DocumentCount = 250
+vm.UpdateVersion(ctx, newVersion)
+
+// Step 6: Check deployment status
+current, _ := vm.GetVersion(ctx, "1.2.0")
+fmt.Printf("Version %s deployed\n", current.Version)
+fmt.Printf("Embedding model: %s\n", current.EmbeddingModel)
+fmt.Printf("Documents processed: %d\n", current.DocumentCount)
+```
+
+#### 6.5 Comprehensive Test Suite ✅
+
+**Implemented:** 30 tests + 8 examples (920+ lines)
+
+**Manager Tests (`manager_test.go` - 580+ lines):**
+- `TestVersionManager_CreateVersion` - Version creation
+- `TestVersionManager_GetVersionNotFound` - Error handling
+- `TestVersionManager_GetLatestVersion` - Latest version retrieval
+- `TestVersionManager_UpdateVersion` - Version updates
+- `TestVersionManager_DeleteVersion` - Version deletion
+- `TestVersionManager_ListVersions` - Querying versions
+- `TestVersionManager_ListVersionsWithFilters` - Tag filtering
+- `TestVersionManager_GetVersionAtTime` - Time-travel queries
+- `TestVersionManager_CompareVersions` - Version comparison
+- `TestVersionManager_GetStats` - Statistics retrieval
+- `TestVersionManager_DeprecateVersion` - Deprecation
+- `TestVersionManager_TagVersion` - Tagging
+- `TestVersionManager_UntagVersion` - Tag removal
+- `TestVersionManager_TagVersionDeduplication` - Duplicate tag handling
+- `TestVersionManager_CreateMigration` - Migration creation
+- `TestVersionManager_UpdateMigration` - Migration updates
+- `TestVersionManager_GetMigration` - Migration retrieval
+- `TestVersionManager_ExportMetadata` - JSON export
+
+**Backend Tests (`memory_backend_test.go` - 481 lines):**
+- `TestMemoryBackend_CreateAndGetVersion` - CRUD operations
+- `TestMemoryBackend_CreateDuplicateVersion` - Duplicate handling
+- `TestMemoryBackend_UpdateVersion` - Version updates
+- `TestMemoryBackend_DeleteVersion` - Version deletion
+- `TestMemoryBackend_ListVersions` - List all versions
+- `TestMemoryBackend_ListVersionsWithTagFilter` - Tag filtering
+- `TestMemoryBackend_GetVersionAtTime` - Time-travel
+- `TestMemoryBackend_GetVersionsInRange` - Time-range queries
+- `TestMemoryBackend_ComputeDiff` - Diff calculation
+- `TestMemoryBackend_GetStats` - Statistics
+- `TestMemoryBackend_Migrations` - Migration CRUD
+- `TestMemoryBackend_ConcurrentAccess` - Thread safety
+
+**Test Results:**
+```
+=== RUN   TestVersionManager_CreateVersion
+--- PASS: TestVersionManager_CreateVersion (0.00s)
+=== RUN   TestVersionManager_GetVersionNotFound
+--- PASS: TestVersionManager_GetVersionNotFound (0.00s)
+=== RUN   TestVersionManager_GetLatestVersion
+--- PASS: TestVersionManager_GetLatestVersion (0.00s)
+=== RUN   TestVersionManager_UpdateVersion
+--- PASS: TestVersionManager_UpdateVersion (0.00s)
+=== RUN   TestVersionManager_DeleteVersion
+--- PASS: TestVersionManager_DeleteVersion (0.00s)
+=== RUN   TestVersionManager_ListVersions
+--- PASS: TestVersionManager_ListVersions (0.00s)
+=== RUN   TestVersionManager_ListVersionsWithFilters
+--- PASS: TestVersionManager_ListVersionsWithFilters (0.00s)
+=== RUN   TestVersionManager_GetVersionAtTime
+--- PASS: TestVersionManager_GetVersionAtTime (0.00s)
+=== RUN   TestVersionManager_CompareVersions
+--- PASS: TestVersionManager_CompareVersions (0.00s)
+=== RUN   TestVersionManager_GetStats
+--- PASS: TestVersionManager_GetStats (0.00s)
+=== RUN   TestVersionManager_DeprecateVersion
+--- PASS: TestVersionManager_DeprecateVersion (0.00s)
+=== RUN   TestVersionManager_TagVersion
+--- PASS: TestVersionManager_TagVersion (0.00s)
+=== RUN   TestVersionManager_UntagVersion
+--- PASS: TestVersionManager_UntagVersion (0.00s)
+=== RUN   TestVersionManager_TagVersionDeduplication
+--- PASS: TestVersionManager_TagVersionDeduplication (0.00s)
+=== RUN   TestVersionManager_CreateMigration
+--- PASS: TestVersionManager_CreateMigration (0.00s)
+=== RUN   TestVersionManager_UpdateMigration
+--- PASS: TestVersionManager_UpdateMigration (0.00s)
+=== RUN   TestVersionManager_GetMigration
+--- PASS: TestVersionManager_GetMigration (0.00s)
+=== RUN   TestVersionManager_ExportMetadata
+--- PASS: TestVersionManager_ExportMetadata (0.00s)
+=== RUN   TestMemoryBackend_CreateAndGetVersion
+--- PASS: TestMemoryBackend_CreateAndGetVersion (0.00s)
+=== RUN   TestMemoryBackend_CreateDuplicateVersion
+--- PASS: TestMemoryBackend_CreateDuplicateVersion (0.00s)
+=== RUN   TestMemoryBackend_UpdateVersion
+--- PASS: TestMemoryBackend_UpdateVersion (0.00s)
+=== RUN   TestMemoryBackend_DeleteVersion
+--- PASS: TestMemoryBackend_DeleteVersion (0.00s)
+=== RUN   TestMemoryBackend_ListVersions
+--- PASS: TestMemoryBackend_ListVersions (0.00s)
+=== RUN   TestMemoryBackend_ListVersionsWithTagFilter
+--- PASS: TestMemoryBackend_ListVersionsWithTagFilter (0.00s)
+=== RUN   TestMemoryBackend_GetVersionAtTime
+--- PASS: TestMemoryBackend_GetVersionAtTime (0.00s)
+=== RUN   TestMemoryBackend_GetVersionsInRange
+--- PASS: TestMemoryBackend_GetVersionsInRange (0.00s)
+=== RUN   TestMemoryBackend_ComputeDiff
+--- PASS: TestMemoryBackend_ComputeDiff (0.00s)
+=== RUN   TestMemoryBackend_GetStats
+--- PASS: TestMemoryBackend_GetStats (0.00s)
+=== RUN   TestMemoryBackend_Migrations
+--- PASS: TestMemoryBackend_Migrations (0.00s)
+=== RUN   TestMemoryBackend_ConcurrentAccess
+--- PASS: TestMemoryBackend_ConcurrentAccess (0.00s)
+PASS
+coverage: 81.3% of statements
+ok  	github.com/kennethstott/doculyzer-go-conversion/internal/udml/versioning	0.295s
+```
+
+**Test Coverage: 81.3%** ✅ (exceeds 80% target)
+
+**Coverage Breakdown:**
+- types.go: 100% (all type definitions)
+- manager.go: 82.7% (core manager functionality)
+- memory_backend.go: 79.1% (backend implementation)
+- All CRUD operations tested
+- Time-travel queries tested
+- Migration tracking tested
+- Concurrent access tested
+- Error cases covered
+
+### Files Created
+
+**Core Implementation:**
+- ✅ `go/internal/udml/versioning/types.go` (130 lines) - Version metadata types
+- ✅ `go/internal/udml/versioning/manager.go` (382 lines) - VersionManager
+- ✅ `go/internal/udml/versioning/memory_backend.go` (422 lines) - Memory backend
+
+**Test Suite:**
+- ✅ `go/internal/udml/versioning/manager_test.go` (580+ lines) - 18 manager tests
+- ✅ `go/internal/udml/versioning/memory_backend_test.go` (481 lines) - 12 backend tests
+- ✅ `go/internal/udml/versioning/example_test.go` (384 lines) - 8 usage examples
+
+**Total:** ~2,379 lines of production code and tests
+
+### Architecture Benefits
+
+**1. System Evolution Tracking:**
+- Track UDML schema changes over time
+- Record parser version upgrades
+- Document embedding model changes
+- Maintain ontology version history
+- Enable audit trails for compliance
+
+**2. Time-Travel Capabilities:**
+- Query system state at any point in time
+- Compare versions to understand changes
+- Retrieve historical configurations
+- Support reproducible research and debugging
+
+**3. Migration Management:**
+- Track data migrations between versions
+- Monitor migration progress
+- Record migration errors
+- Support rollback strategies
+
+**4. Flexible Backend Architecture:**
+- Pluggable storage backends via interface
+- MemoryBackend for testing and development
+- Can add DuckDBBackend for production persistence
+- Can add ParquetBackend for archival storage
+
+**5. Caching Performance:**
+- In-memory cache for frequently accessed versions
+- Configurable cache size (default: 100 versions)
+- Configurable TTL (default: 5 minutes)
+- Thread-safe concurrent access
+
+**6. Production-Ready Features:**
+- Version tagging (production, beta, latest)
+- Version deprecation with reasoning
+- Statistics tracking (elements, documents, size)
+- JSON metadata export
+- Semantic versioning support
+
+**7. Use Cases:**
+
+**Schema Evolution:**
+```
+UDML 1.0.0 (6 promoted fields)
+  → UDML 1.1.0 (8 promoted fields: +speaker_id, +geo_location)
+  → UDML 2.0.0 (10 promoted fields: +sentiment, +language)
+```
+
+**Embedding Model Upgrades:**
+```
+text-embedding-ada-002
+  → text-embedding-3-small
+  → text-embedding-3-large
+```
+
+**Parser Improvements:**
+```
+Parser 2.1.0 (basic table extraction)
+  → Parser 2.2.0 (improved table extraction)
+  → Parser 2.3.0 (nested table support)
+```
+
+**Audit Trail Example:**
+```
+Query: "What version was in production on 2024-01-15?"
+Answer: GetVersionAtTime(2024-01-15) → "1.0.0"
+
+Query: "What changed between 1.0.0 and 2.0.0?"
+Answer: CompareVersions("1.0.0", "2.0.0") → VersionDiff{
+  SchemaChanges: 4 fields added,
+  ElementsAdded: 500000,
+  EmbeddingModel: "ada-002 → embedding-3-small"
+}
+
+Query: "When was version 1.0.0 deprecated?"
+Answer: GetVersion("1.0.0").DeprecatedAt → 2024-02-01
+```
+
+### Phase 6 Summary
+
+**Status:** ✅ COMPLETED
+**Lines of Code:** ~2,379
+**Tests:** 30 passing + 8 examples (100% pass rate)
+**Coverage:** 81.3% (exceeds 80% target)
+**Duration:** 1 day
+**Key Achievement:** Complete UDML system versioning with time-travel queries, migration tracking, and flexible backend architecture, enabling full audit trails of schema evolution, parser upgrades, and embedding model changes.
+
+**Note:** This is **UDML System Versioning** (tracking versions of the UDML system itself - schema, parsers, models), NOT document versioning (tracking changes to individual documents). Document versioning would be a separate feature if needed.
+
+**Next Steps:** Ready for Phase 7 (Testing & Documentation) or Phase 8 (Performance Optimization).
+
 ---
-/sm
+/sm3
