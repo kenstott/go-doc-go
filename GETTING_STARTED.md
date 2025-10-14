@@ -1,325 +1,378 @@
 # Getting Started with Go-Doc-Go
 
-## 🚀 Quick Start (2 minutes)
+**Version 1.0** - Quick start guide to get you processing documents in minutes.
+
+## 🚀 Quick Start (5 minutes)
+
+### 1. Prerequisites
 
 ```bash
-# 1. Install Go-Doc-Go
-pip install go-doc-go
+# Go 1.24 or later
+go version
 
-# 2. Create a basic configuration
-cat > config.yaml << EOF
-storage:
-  backend: sqlite
-  path: ./documents.db
-
-content_sources:
-  - name: my_docs
-    type: file
-    base_path: ./documents
-EOF
-
-# 3. Process your documents
-python -m go_doc_go worker --max-documents 10
-
-# 4. Search your documents
-python -m go_doc_go search "important topic"
+# Clone the repository
+git clone https://github.com/kenstott/go-doc-go.git
+cd go-doc-go
 ```
 
-That's it! You're now processing and searching documents.
+### 2. Build the Worker
+
+```bash
+cd go
+go build -o ../bin/goworker ./cmd/worker
+```
+
+### 3. Create Configuration
+
+```bash
+cd ..
+cat > config.toml << 'EOF'
+[processing.job_control]
+backend = "sqlite"
+path = "./data/jobs.db"
+
+[[content_sources]]
+name = "documents"
+type = "file"
+base_path = "./docs"
+file_pattern = "**/*.{pdf,docx,xlsx,json,html,md}"
+
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./data/analytics.parquet"
+
+[embedding]
+enabled = false
+EOF
+```
+
+### 4. Add Your Documents
+
+```bash
+mkdir -p docs
+# Copy your PDF, DOCX, XLSX, or other documents to ./docs/
+```
+
+### 5. Run the Worker
+
+```bash
+./bin/goworker --config config.toml --workers 4
+```
+
+**That's it!** The worker will:
+- Discover documents from `./docs`
+- Parse them into UDML (Universal Document Markup Language)
+- Extract elements, relationships, and metadata
+- Store results in `./data/analytics.parquet`
+
+---
+
+## 📊 Query Your Data
+
+### Using DuckDB
+
+```bash
+# Install DuckDB
+brew install duckdb  # macOS
+# or download from https://duckdb.org
+
+# Query your documents
+duckdb
+
+D SELECT element_type, COUNT(*) as count
+  FROM read_parquet('./data/analytics.parquet/elements/*.parquet')
+  GROUP BY element_type
+  ORDER BY count DESC;
+
+# View document list
+D SELECT doc_id, source_name, metadata
+  FROM read_parquet('./data/analytics.parquet/documents/*.parquet')
+  LIMIT 10;
+
+# Search content
+D SELECT element_id, element_type, content_preview
+  FROM read_parquet('./data/analytics.parquet/elements/*.parquet')
+  WHERE content_preview LIKE '%search term%'
+  LIMIT 20;
+```
+
+### Using Python/Pandas
+
+```python
+import pandas as pd
+
+# Load elements
+elements = pd.read_parquet('./data/analytics.parquet/elements')
+
+# View element types
+print(elements.groupby('element_type').size())
+
+# Filter by type
+paragraphs = elements[elements['element_type'] == 'paragraph']
+print(paragraphs[['element_id', 'content_preview']].head())
+
+# Load relationships
+relationships = pd.read_parquet('./data/analytics.parquet/relationships')
+print(relationships.head())
+```
+
+---
 
 ## What You Just Got
 
 ### ✅ Document Processing Pipeline
-- **Parse any document format** - PDF, DOCX, HTML, Markdown, and more
-- **Extract structured content** - Elements, metadata, relationships
-- **Generate embeddings** - For semantic search
-- **Store in queryable format** - SQLite, PostgreSQL, MongoDB, etc.
+- **Parse any document format** - PDF, DOCX, XLSX, PPTX, JSON, CSV, HTML, Markdown, XML
+- **Extract structured content** - Elements with types (paragraph, table, header, etc.)
+- **Capture relationships** - Parent-child hierarchy, references, links
+- **Store in analytics format** - Columnar Parquet for fast querying
 
-### ✅ Command-Line Tools
-- **`worker`** - Process documents from configured sources
-- **`search`** - Search processed documents
-- **`analytics`** - View processing statistics
-- **`status`** - Monitor processing in real-time
+### ✅ Universal Document Model (UDML)
+- **5 Element Categories**: Container, Content, Structure, Component, Metadata
+- **Standard Relationships**: contains, references, next, links_to
+- **Cross-format compatibility**: Query PDFs, Word docs, and Excel sheets identically
 
-## First Steps
+---
 
-### 1. Check Everything is Working
+## Next Steps
 
-```bash
-# Show available commands
-python -m go_doc_go --help
+### 1. Process from Multiple Sources
 
-# Check your configuration
-python -m go_doc_go analytics
+```toml
+# Add to config.toml
+
+# S3/MinIO
+[[content_sources]]
+name = "s3_docs"
+type = "s3"
+bucket = "my-documents"
+prefix = "uploads/"
+region = "us-east-1"
+
+# Web scraping
+[[content_sources]]
+name = "documentation"
+type = "web"
+base_url = "https://docs.example.com"
+follow_links = true
+max_link_depth = 2
 ```
 
-### 2. Add Your Documents
+### 2. Enable Embeddings for Semantic Search
 
-Create a directory with some documents:
+```toml
+[embedding]
+enabled = true
+provider = "onnx"
+model_path = "./models/all-MiniLM-L6-v2"
 
-```bash
-mkdir documents
-# Add PDFs, Word docs, text files, etc. to this directory
+# Contextual embeddings
+contextual = true
+predecessor_count = 2
+successor_count = 2
 ```
 
-### 3. Process Documents
-
+**Setup**:
 ```bash
-# Process all documents
-python -m go_doc_go worker
+# Export model to ONNX format
+pip install onnx sentence-transformers torch
+python scripts/export_model_to_onnx.py
 
-# Or process a specific number
-python -m go_doc_go worker --max-documents 100
-
-# Monitor progress in another terminal
-python -m go_doc_go status --follow
+# Set ONNX Runtime path
+export ONNXRUNTIME_SHARED_LIBRARY_PATH=".venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime.1.23.0.dylib"
 ```
 
-### 4. Search Your Documents
+### 3. Export to Neo4j Graph Database
 
-```bash
-# Basic search
-python -m go_doc_go search "quarterly revenue"
+```toml
+[processing.neo4j_export]
+enabled = true
+empty_queue_wait_time = 60
 
-# Search with filters
-python -m go_doc_go search "project plan" --include-types heading,paragraph
-
-# Export results
-python -m go_doc_go search "analysis" --output json > results.json
+[processing.neo4j_export.connection]
+uri = "bolt://localhost:7687"
+username = "neo4j"
+password = "password"
 ```
 
-## Configuration Basics
+The worker will automatically export to Neo4j when the queue is empty.
 
-### Minimal Configuration
+### 4. Extract Domain Entities with Ontologies
 
 ```yaml
-# config.yaml - Minimal setup
-storage:
-  backend: sqlite
-  path: ./documents.db
+# ontologies/financial.yaml
+name: financial
+domain: business
+version: "1.0"
 
-content_sources:
-  - name: local_docs
-    type: file
-    base_path: ./documents
+element_entity_mappings:
+  - domain: "business"
+    entity_type: "Company"
+    element_types: ["paragraph"]
+    extraction_rules:
+      - type: "regex_pattern"
+        pattern: '\b([A-Z][a-z]+\s+(?:Inc|LLC|Corp|Corporation))\b'
 ```
 
-### Adding Embeddings for Semantic Search
-
-```yaml
-# config.yaml - With semantic search
-storage:
-  backend: sqlite
-  path: ./documents.db
-
-content_sources:
-  - name: local_docs
-    type: file
-    base_path: ./documents
-
-embedding:
-  enabled: true
-  provider: fastembed
-  model: BAAI/bge-small-en-v1.5
+```toml
+# config.toml
+[ontology]
+enabled = true
+schema_path = "./ontologies/financial.yaml"
 ```
 
-### Processing from Multiple Sources
+### 5. Scale to Distributed Processing
 
-```yaml
-# config.yaml - Multiple sources
-storage:
-  backend: sqlite
-  path: ./documents.db
-
-content_sources:
-  # Local files
-  - name: local_docs
-    type: file
-    base_path: ./documents
-
-  # Database content
-  - name: cms_content
-    type: database
-    connection_string: postgresql://user:pass@host/db
-    query: SELECT id, title, content FROM articles
-
-  # Web scraping
-  - name: wiki
-    type: web
-    url_list:
-      - https://wiki.example.com/docs
-    max_link_depth: 2
+```toml
+# config.toml - use PostgreSQL for job coordination
+[processing.job_control]
+backend = "postgres"
+path = "postgres://user:pass@db-server:5432/godocgo"
 ```
+
+```bash
+# Run multiple workers on different servers
+# Server 1
+./bin/goworker --config config.toml --worker-id "worker-01" --workers 8
+
+# Server 2
+./bin/goworker --config config.toml --worker-id "worker-02" --workers 8
+
+# They coordinate automatically via PostgreSQL!
+```
+
+---
 
 ## Common Workflows
 
-### Initial Setup and Processing
+### Development: Process a few test documents
 
 ```bash
-# 1. Install with desired features
-pip install "go-doc-go[fastembed]"  # Include fast embeddings
-
-# 2. Create configuration
-cp config.yaml.example config.yaml
-# Edit config.yaml with your settings
-
-# 3. Test with small batch
-python -m go_doc_go worker --max-documents 10
-
-# 4. Check results
-python -m go_doc_go analytics
-
-# 5. Process everything
-python -m go_doc_go worker
+# Process just 10 documents to test configuration
+./bin/goworker --config config.toml --max-documents 10
 ```
 
-### Daily Usage
+### Production: Continuous processing
 
 ```bash
-# Start processing new documents
-python -m go_doc_go worker
+# Run worker continuously, processing new documents as they appear
+./bin/goworker --config config.toml --workers 8
 
-# Search for information
-python -m go_doc_go search "meeting notes from January"
-
-# Check processing status
-python -m go_doc_go status --detailed
-
-# View analytics
-python -m go_doc_go analytics --detailed
+# Or with Docker
+docker run -v $(pwd)/config.toml:/etc/config.toml \
+           -v $(pwd)/docs:/docs \
+           -v $(pwd)/data:/data \
+           godocgo/worker:latest --workers 8
 ```
 
-### Monitoring and Troubleshooting
+### Analytics: Query processed data
 
 ```bash
-# Live monitoring
-python -m go_doc_go status --follow
+# DuckDB - Fast SQL queries
+duckdb
+D FROM read_parquet('./data/analytics.parquet/elements/*.parquet') LIMIT 10;
 
-# Check for failures
-python -m go_doc_go deadletter list
-
-# Retry failed documents
-python -m go_doc_go deadletter retry
-
-# Debug mode
-python -m go_doc_go worker --log-level debug --max-documents 1
+# Python - Data science workflows
+python
+>>> import pandas as pd
+>>> df = pd.read_parquet('./data/analytics.parquet/elements')
+>>> df.head()
 ```
 
-## File Structure
-
-After running Go-Doc-Go, your directory will contain:
-
-```
-📁 Project Directory
-├── 📄 config.yaml           # Your configuration
-├── 🗄️ documents.db          # SQLite database (if using SQLite)
-├── 📁 documents/            # Your source documents
-├── 📁 analytics-output/     # Analytics data (if configured)
-├── 📁 logs/                 # Processing logs
-└── 🗄️ job_queue.db          # Job coordination database
-```
+---
 
 ## Tips for Success
 
 ### Start Small
-Test with a few documents first:
+Test with a few documents first to verify configuration:
 ```bash
-python -m go_doc_go worker --max-documents 5 --log-level debug
-```
-
-### Use Appropriate Storage
-- **Development**: SQLite (simple, no setup)
-- **Production**: PostgreSQL (scalable, reliable)
-- **Search-heavy**: Elasticsearch (optimized for search)
-
-### Enable Embeddings for Better Search
-```yaml
-embedding:
-  enabled: true
-  provider: fastembed  # 15x faster than transformers
+mkdir docs/test
+# Add 2-3 test documents
+./bin/goworker --config config.toml --max-documents 5
 ```
 
 ### Monitor Progress
-Keep a status window open:
 ```bash
-watch -n 5 'python -m go_doc_go status'
+# Check log output for processing status
+./bin/goworker --config config.toml 2>&1 | tee worker.log
+
+# In another terminal, watch the analytics output
+watch -n 5 'ls -lh ./data/analytics.parquet/*/*.parquet'
 ```
 
-### Check the Logs
+### Choose Appropriate Storage
+- **Development**: SQLite job control + Parquet analytics (simple, no setup)
+- **Production**: PostgreSQL job control + Parquet analytics (scalable, reliable)
+- **Graph queries**: Add Neo4j export for relationship analysis
+
+### Verify Output
 ```bash
-python -m go_doc_go status --follow --lines 50
+# Check that Parquet files were created
+ls -la ./data/analytics.parquet/
+
+# Quick stats with DuckDB
+duckdb -c "SELECT COUNT(*) FROM read_parquet('./data/analytics.parquet/documents/*.parquet')"
+duckdb -c "SELECT COUNT(*) FROM read_parquet('./data/analytics.parquet/elements/*.parquet')"
 ```
 
-## Next Steps
-
-### Explore More Commands
-
-```bash
-# See all available commands
-python -m go_doc_go --help
-
-# Get help for specific commands
-python -m go_doc_go search --help
-python -m go_doc_go worker --help
-```
-
-### Advanced Configuration
-
-- **[Configuration Guide](docs/configuration.md)** - All configuration options
-- **[Data Sources](docs/sources.md)** - Configure different content sources
-- **[Storage Backends](docs/storage.md)** - Choose the right storage
-- **[CLI Reference](docs/cli.md)** - Complete command reference
-
-### Scale Up
-
-- Process from databases, APIs, cloud storage
-- Deploy distributed workers for large-scale processing
-- Configure knowledge graph extraction with ontologies
-- Set up production monitoring and analytics
+---
 
 ## Troubleshooting
 
-### Common Issues
+### No documents found
 
-**No documents found**
 ```bash
-# Check your base_path in config.yaml
-# Verify file patterns match your documents
-python -m go_doc_go worker --log-level debug
+# Verify file pattern matches your documents
+ls docs/**/*.pdf
+
+# Check configuration
+cat config.toml | grep -A 5 content_sources
+
+# Run with debug logging
+./bin/goworker --config config.toml --max-documents 1
 ```
 
-**Search returns no results**
+### Worker exits immediately
+
 ```bash
-# Ensure documents were processed successfully
-python -m go_doc_go analytics
+# Check if SQLite job control database exists
+ls -la ./data/jobs.db
 
-# Check if embeddings are enabled for semantic search
-grep "embedding:" config.yaml
+# Create data directory if needed
+mkdir -p ./data
 ```
 
-**Processing is slow**
-```yaml
-# config.yaml - Optimize performance
-processing:
-  batch_size: 100    # Increase batch size
-  max_workers: 8     # Use more CPU cores
+### Out of memory
 
-embedding:
-  provider: fastembed  # Use faster embedding provider
-  batch_size: 64      # Process embeddings in batches
+```bash
+# Reduce concurrent workers
+./bin/goworker --config config.toml --workers 2
+
+# Process in smaller batches
+./bin/goworker --config config.toml --max-documents 100
 ```
 
-### Getting Help
+---
 
-- Use `--help` with any command for options
-- Check logs: `python -m go_doc_go status --follow`
-- Review failed documents: `python -m go_doc_go deadletter list`
+## Documentation
+
+- **[README](README.md)** - Project overview and features
+- **[Go Implementation Guide](go/README.md)** - Detailed Go worker documentation
+- **[UDML Specification](docs/UDML_SPECIFICATION.md)** - Complete UDML spec
+- **[Configuration Reference](go/README.md#configuration-reference)** - All config options
+- **[Ontology System](docs/ontology.md)** - Knowledge graph extraction
+- **[Embeddings Guide](docs/embeddings.md)** - Semantic search setup
+
+---
 
 ## What's Next?
 
-1. **Process your real documents** - Point to your actual document directory
-2. **Configure more sources** - Add databases, APIs, cloud storage
-3. **Enable knowledge extraction** - Set up ontologies for your domain
-4. **Deploy for production** - Scale with PostgreSQL and distributed workers
+1. **Process your real documents** - Point `base_path` to your actual document directory
+2. **Enable embeddings** - Add semantic search capabilities
+3. **Configure more sources** - Add S3, web scraping, databases
+4. **Extract domain knowledge** - Set up ontologies for your industry
+5. **Deploy at scale** - Use PostgreSQL and distribute across multiple workers
 
 **Happy document processing! 🎉**

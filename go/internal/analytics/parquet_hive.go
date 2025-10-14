@@ -175,10 +175,12 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 		var columnIndex sql.NullInt64
 		var temporalType sql.NullString
 		var tagName sql.NullString
+		var contentHash sql.NullString
+		var parentID sql.NullString
 
 		err := rows.Scan(
 			&elem.ElementID, &elem.DocID, &elem.SourceName, &elem.ElementType, &elem.ElementCategory,
-			&elem.Content, &elem.ContentPreview, &elem.ContentHash, &elem.ParentID,
+			&elem.Content, &elem.ContentPreview, &contentHash, &parentID,
 			&elem.ElementOrder, &elem.DocumentPosition,
 			&pageNumber, &sectionLevel, &rowIndex, &columnIndex, &temporalType, &tagName,
 			&contentLocationJSON, &metadataJSON, &temporalMetadataJSON,
@@ -186,6 +188,14 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 		if err != nil {
 			log.Printf("Failed to scan element row: %v", err)
 			continue
+		}
+
+		// Parse nullable string fields
+		if contentHash.Valid {
+			elem.ContentHash = contentHash.String
+		}
+		if parentID.Valid {
+			elem.ParentID = parentID.String
 		}
 
 		// Parse nullable integer fields
