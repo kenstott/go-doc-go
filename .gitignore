@@ -213,6 +213,10 @@ test_simple_python/
 test-analytics-output-python/
 test_containers/
 
+# Analytics output directories
+go/analytics-output/
+analytics-output/
+
 # Go worker binary
 go/worker
 
