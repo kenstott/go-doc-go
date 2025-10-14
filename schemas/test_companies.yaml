@@ -5,22 +5,22 @@ description: Test schema for extracting company and location entities
 
 element_entity_mappings:
   - domain: "business"
-    element_type: "paragraph"
     entity_type: "Organization"
-    patterns:
-      - regex: "\\b([A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*\\s+(?:Inc|LLC|Corp|Corporation|Ltd|Limited))\\b"
-        confidence: 0.9
-      - regex: "\\b([A-Z][A-Z]+)\\b"
-        confidence: 0.6
-        min_length: 3
-        max_length: 10
+    element_types: ["paragraph"]
+    confidence: 0.9
+    extraction_rules:
+      - type: "regex_pattern"
+        pattern: '\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Inc|LLC|Corp|Corporation|Ltd|Limited))\b'
+      - type: "regex_pattern"
+        pattern: '\b(IBM|MSFT|GOOG)\b'
 
   - domain: "business"
-    element_type: "paragraph"
     entity_type: "Location"
-    patterns:
-      - regex: "\\b([A-Z][a-z]+(?:,\\s*[A-Z]{2})?|[A-Z][a-z]+)\\b"
-        confidence: 0.7
+    element_types: ["paragraph"]
+    confidence: 0.7
+    extraction_rules:
+      - type: "regex_pattern"
+        pattern: '\b([A-Z][a-z]+(?:,\s*[A-Z]{2})?)\b'
 
 entity_relationship_rules:
   - source_type: "Organization"
