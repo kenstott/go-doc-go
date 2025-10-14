@@ -38,7 +38,9 @@ We'll use the existing test assets which include realistic business documents:
 
 ---
 
-## Step 1: Build the Worker Binary
+## Step 1: Setup - Build Binary and Download ONNX Model
+
+### 1.1: Build the Worker Binary
 
 ```bash
 cd /Users/kennethstott/PycharmProjects/doculyzer-go-conversion
@@ -51,6 +53,50 @@ cd ..
 ```
 # No message, but you will see a new binary created at bin/goworker
 ```
+
+### 1.2: Download ONNX Model (Optional - for embeddings)
+
+This step prepares the ONNX model for semantic embedding features. While not used in this basic demo, it's useful to have ready for production use.
+
+```bash
+# Install Python dependencies (if not already installed)
+pip install -q onnx sentence-transformers torch optimum[onnxruntime]
+
+# Export model to ONNX format
+python3 << 'EOF'
+from optimum.onnxruntime import ORTModelForFeatureExtraction
+from transformers import AutoTokenizer
+import os
+
+model_id = 'sentence-transformers/all-MiniLM-L6-v2'
+output_dir = './models/all-MiniLM-L6-v2'
+
+print(f"Downloading and converting {model_id} to ONNX format...")
+
+# Create output directory
+os.makedirs(output_dir, exist_ok=True)
+
+# Export model
+ort_model = ORTModelForFeatureExtraction.from_pretrained(model_id, export=True)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+# Save
+ort_model.save_pretrained(output_dir)
+tokenizer.save_pretrained(output_dir)
+
+print(f"✓ Model saved to {output_dir}")
+print(f"  Size: ~90MB")
+EOF
+```
+
+**Expected output:**
+```
+Downloading and converting sentence-transformers/all-MiniLM-L6-v2 to ONNX format...
+✓ Model saved to ./models/all-MiniLM-L6-v2
+  Size: ~90MB
+```
+
+**Note**: You can skip this step if you don't plan to use embeddings. The demo works without it.
 
 ---
 
