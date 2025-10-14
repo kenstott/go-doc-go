@@ -54,9 +54,9 @@ cd ..
 # No message, but you will see a new binary created at bin/goworker
 ```
 
-### 1.2: Download ONNX Model (Optional - for embeddings)
+### 1.2: Download ONNX Model (Required for semantic relationships)
 
-This step prepares the ONNX model for semantic embedding features. While not used in this basic demo, it's useful to have ready for production use.
+This step downloads the ONNX model required for semantic relationship detection and contextual embeddings.
 
 ```bash
 # Install Python dependencies (if not already installed)
@@ -95,8 +95,6 @@ Downloading and converting sentence-transformers/all-MiniLM-L6-v2 to ONNX format
 ✓ Model saved to ./models/all-MiniLM-L6-v2
   Size: ~90MB
 ```
-
-**Note**: You can skip this step if you don't plan to use embeddings. The demo works without it.
 
 ---
 
@@ -369,7 +367,7 @@ max_link_depth = 0
 [relationship_detection]
 enabled = true
 structural = true
-semantic = false
+semantic = true
 
 # UDML-O: Ontology extraction configuration
 [ontology]
@@ -378,7 +376,12 @@ schema_path = "./demo/ontologies"  # Directory containing YAML schemas
 queue_idle_trigger_minutes = 0  # Run immediately after queue is empty (30 second idle)
 
 [embedding]
-enabled = false
+enabled = true
+provider = "onnx"
+model_path = "./models/all-MiniLM-L6-v2"
+contextual = true
+predecessor_count = 2
+successor_count = 2
 
 [analytics]
 enabled = true

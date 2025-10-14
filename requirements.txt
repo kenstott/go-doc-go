@@ -1,9 +1,17 @@
-# ONNX Runtime with CoreML support for macOS
-# This is required by the Go worker binary for ONNX-based embeddings
+# ONNX Runtime and Model Export Dependencies
+# Required for:
+# 1. Go worker binary ONNX-based embeddings (runtime)
+# 2. Exporting models from Hugging Face to ONNX format (setup)
 # Install with: pip install -r requirements.txt
 
 # ONNX Runtime with CoreML support (for GPU acceleration on macOS)
 onnxruntime-coreml>=1.23.0
+
+# Model export dependencies (for one-time ONNX model setup)
+onnx>=1.14.0
+sentence-transformers>=2.2.0
+torch>=2.0.0
+optimum[onnxruntime]>=1.13.0
 
 # Note: The Go worker binary dynamically links to the ONNX Runtime library
 # located at: .venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime.1.23.0.dylib
