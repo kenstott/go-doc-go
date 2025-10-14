@@ -176,11 +176,26 @@ successor_count = 2
 
 **Setup**:
 ```bash
-# Export model to ONNX format
-pip install onnx sentence-transformers torch
-python scripts/export_model_to_onnx.py
+# Export model to ONNX format (one-time setup)
+pip install onnx sentence-transformers torch optimum[onnxruntime]
 
-# Set ONNX Runtime path
+# Export using Python
+python -c "
+from optimum.onnxruntime import ORTModelForFeatureExtraction
+from transformers import AutoTokenizer
+
+model_id = 'sentence-transformers/all-MiniLM-L6-v2'
+ort_model = ORTModelForFeatureExtraction.from_pretrained(model_id, export=True)
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+ort_model.save_pretrained('./models/all-MiniLM-L6-v2')
+tokenizer.save_pretrained('./models/all-MiniLM-L6-v2')
+"
+
+# Install ONNX Runtime library
+pip install onnxruntime  # or onnxruntime-coreml for macOS
+
+# Set library path (if not using system-wide install)
 export ONNXRUNTIME_SHARED_LIBRARY_PATH=".venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime.1.23.0.dylib"
 ```
 
