@@ -54,22 +54,11 @@ cd ..
 
 ---
 
-## Step 2: Prepare Demo Output Directory
-
-```bash
-# Create demo output directory for analytics and job control
-mkdir -p demo/output
-```
-
-No document copying needed - the demo will use existing assets from `tests/assets/` and fetch Wikipedia content dynamically via the web content source.
-
----
-
-## Step 3: Initial Document Ingestion (No Ontology)
+## Step 2: Initial Document Ingestion (No Ontology)
 
 Let's first process the documents without ontology extraction to create the base UDML elements.
 
-### 3.1: Create Initial Configuration
+### 2.1: Create Initial Configuration
 
 ```bash
 cat > demo/config_initial.toml << 'EOF'
@@ -119,7 +108,7 @@ level = "INFO"
 EOF
 ```
 
-### 3.2: Run Initial Ingestion
+### 2.2: Run Initial Ingestion
 
 ```bash
 ./bin/goworker --config demo/config_initial.toml --max-documents 10 --workers 1
@@ -131,16 +120,16 @@ EOF
 2025/10/13 22:30:00 Creating job control with backend: sqlite
 2025/10/13 22:30:00 ANALYTICS: Initialized Hive-partitioned Parquet storage
 2025/10/13 22:30:00 Starting worker worker_xxxx with 1 goroutine workers
-2025/10/13 22:30:01 Enqueued document: ./demo/documents/company_profiles.md
-2025/10/13 22:30:01 Enqueued document: ./demo/documents/partnership_agreements.md
-2025/10/13 22:30:01 Enqueued document: ./demo/documents/wikipedia_sample.md
-2025/10/13 22:30:02 Successfully processed document ./demo/documents/company_profiles.md
-2025/10/13 22:30:03 Successfully processed document ./demo/documents/partnership_agreements.md
-2025/10/13 22:30:04 Successfully processed document ./demo/documents/wikipedia_sample.md
-2025/10/13 22:30:04 Worker completed. Processed 3 documents
+2025/10/13 22:30:01 Enqueued document: ./tests/assets/introduction.md
+2025/10/13 22:30:01 Enqueued document: ./tests/assets/technical-details.md
+2025/10/13 22:30:01 Enqueued document: https://en.wikipedia.org/wiki/GraphQL
+2025/10/13 22:30:02 Successfully processed document ./tests/assets/introduction.md
+2025/10/13 22:30:03 Successfully processed document ./tests/assets/technical-details.md
+2025/10/13 22:30:05 Successfully processed document https://en.wikipedia.org/wiki/GraphQL
+2025/10/13 22:30:05 Worker completed. Processed 3 documents
 ```
 
-### 3.3: Verify UDML Output
+### 2.3: Verify UDML Output
 
 ```bash
 # Check that Parquet files were created
@@ -169,11 +158,11 @@ ORDER BY count DESC"
 
 ---
 
-## Step 4: Create Ontology Schema
+## Step 3: Create Ontology Schema
 
 Now we'll define extraction rules to discover entities and relationships from our elements.
 
-### 4.1: Create Initial Ontology Schema
+### 3.1: Create Initial Ontology Schema
 
 ```bash
 mkdir -p demo/ontologies
