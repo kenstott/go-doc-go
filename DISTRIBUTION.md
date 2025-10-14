@@ -1,304 +1,443 @@
 # Go-Doc-Go Distribution Guide
 
-This document explains how to build and distribute the Go-Doc-Go worker for all supported platforms from a single development machine.
+**Version 1.0** - Building and distributing the Go-Doc-Go worker for production deployment.
 
 ## Quick Start
 
-Build distributions for **all platforms** with a single command:
+Build the worker binary for your platform:
 
 ```bash
-./scripts/build-all-distributions.sh
+cd go
+go build -o ../bin/goworker ./cmd/worker
 ```
 
-This creates ready-to-deploy tarballs for:
-- ✅ macOS (Intel & Apple Silicon)
-- ✅ Linux x86_64
-- ✅ Linux ARM64 (AWS Graviton, Raspberry Pi)
-- ✅ Windows x86_64
+**That's it!** You now have a standalone binary that can be deployed to any machine running the same OS/architecture.
 
-## What's Included in Each Distribution
+## What You Get
 
-Every distribution is a **complete, standalone package** (~120MB):
+A **single, statically-compiled binary** (~25-30MB):
+- ✅ No runtime dependencies (except optional ONNX Runtime for embeddings)
+- ✅ No Python interpreter
+- ✅ No pip packages
+- ✅ No configuration beyond your TOML file
+- ✅ Just copy and run
 
-```
-worker-{platform}-{arch}/
-├── worker                          # Platform-specific binary (69MB)
-├── libonnxruntime.{dylib,so,dll}  # ONNX Runtime library (26MB)
-├── models/all-MiniLM-L6-v2/       # Pre-exported ONNX model (88MB)
-│   ├── model.onnx
-│   ├── config.json
-│   ├── tokenizer.json
-│   └── vocab.txt
-├── run-worker.sh                   # Launcher script
-├── config.example.toml             # Example configuration
-└── README.md                       # Distribution documentation
-```
+## Cross-Platform Builds
 
-**No dependencies required on target machine!**
-- No Python
-- No pip install
-- No model download
-- Just extract and run
+Build for different platforms from a single development machine:
 
-## Prerequisites (Development Machine Only)
+### Linux (Production)
 
 ```bash
-# 1. Go 1.24+ (for compilation)
-go version
+# Linux AMD64 (Ubuntu, RHEL, Amazon Linux)
+cd go
+GOOS=linux GOARCH=amd64 go build -o ../bin/goworker-linux-amd64 ./cmd/worker
 
-# 2. Python 3.12+ with packages (for model export)
-pip install onnx sentence-transformers torch
-
-# 3. Bash shell (macOS, Linux, WSL on Windows, or Git Bash)
+# Linux ARM64 (AWS Graviton, Raspberry Pi)
+GOOS=linux GOARCH=arm64 go build -o ../bin/goworker-linux-arm64 ./cmd/worker
 ```
 
-## Step-by-Step Build Process
-
-### Step 1: Download ONNX Runtime Libraries
-
-Download pre-built ONNX Runtime libraries for all platforms:
+### macOS
 
 ```bash
-./scripts/download_onnx_runtime.sh
+# macOS Intel
+GOOS=darwin GOARCH=amd64 go build -o ../bin/goworker-darwin-amd64 ./cmd/worker
+
+# macOS Apple Silicon
+GOOS=darwin GOARCH=arm64 go build -o ../bin/goworker-darwin-arm64 ./cmd/worker
 ```
 
-This downloads (~100MB total):
-- `lib/onnxruntime/libonnxruntime-macos.dylib` (macOS Universal)
-- `lib/onnxruntime/libonnxruntime-linux-x64.so` (Linux x86_64)
-- `lib/onnxruntime/libonnxruntime-linux-arm64.so` (Linux ARM64)
-- `lib/onnxruntime/onnxruntime-windows-x64.dll` (Windows)
-
-**This step is cached** - only needs to be run once (or after ONNX Runtime version updates).
-
-### Step 2: Export ONNX Model
-
-Export the embedding model to ONNX format:
+### Windows
 
 ```bash
-python scripts/export_model_to_onnx.py
-```
-
-Creates (~88MB):
-- `go/models/all-MiniLM-L6-v2/model.onnx`
-- `go/models/all-MiniLM-L6-v2/config.json`
-- Tokenizer files
-
-**Supported models**:
-- `sentence-transformers/all-MiniLM-L6-v2` (default, 384 dims, recommended)
-- `sentence-transformers/all-mpnet-base-v2` (768 dims, higher quality)
-- `BAAI/bge-small-en-v1.5` (384 dims, good balance)
-- `BAAI/bge-base-en-v1.5` (768 dims, best quality)
-
-To export a different model:
-
-```bash
-python scripts/export_model_to_onnx.py \
-  "sentence-transformers/all-mpnet-base-v2" \
-  "go/models/all-mpnet-base-v2"
-```
-
-**This step is also cached** - only run once per model.
-
-### Step 3: Build All Distributions
-
-Build for all platforms:
-
-```bash
-./scripts/build-all-distributions.sh
-```
-
-This script:
-1. ✅ Verifies prerequisites (Go, model files, ONNX libraries)
-2. ✅ Cross-compiles Go binaries for all platforms
-3. ✅ Packages each binary with:
-   - Platform-specific ONNX Runtime library
-   - ONNX model files (shared across all platforms)
-   - Launcher scripts
-   - Documentation
-4. ✅ Creates compressed tarballs in `dist/`
-
-**Output**:
-```
-dist/
-├── go-doc-go-worker-darwin-x86_64.tar.gz   # macOS (Intel & Apple Silicon)
-├── go-doc-go-worker-linux-x86_64.tar.gz    # Linux x86_64
-├── go-doc-go-worker-linux-arm64.tar.gz     # Linux ARM64
-└── go-doc-go-worker-windows-x86_64.tar.gz  # Windows x86_64
-```
-
-**Build time**: ~2-5 minutes (depending on machine)
-
-## Building for a Single Platform
-
-To build just one platform:
-
-```bash
-# macOS only
-TARGET_PLATFORM=darwin TARGET_ARCH=x86_64 ./scripts/build-worker-dist.sh
-
-# Linux x86_64 only
-TARGET_PLATFORM=linux TARGET_ARCH=x86_64 ./scripts/build-worker-dist.sh
-
-# Linux ARM64 only
-TARGET_PLATFORM=linux TARGET_ARCH=arm64 ./scripts/build-worker-dist.sh
-
-# Windows only
-TARGET_PLATFORM=windows TARGET_ARCH=x86_64 ./scripts/build-worker-dist.sh
+# Windows
+GOOS=windows GOARCH=amd64 go build -o ../bin/goworker-windows-amd64.exe ./cmd/worker
 ```
 
 ## Deployment
 
-### On Target Machine
+### Simple Deployment (No Embeddings)
+
+The easiest deployment requires just 2 files:
 
 ```bash
-# 1. Extract distribution
-tar -xzf go-doc-go-worker-linux-x86_64.tar.gz
-cd worker-linux-x86_64
+# 1. Copy binary to target server
+scp bin/goworker-linux-amd64 user@server:/opt/godocgo/goworker
 
-# 2. Create configuration
-cp config.example.toml config.toml
-# Edit config.toml with your settings
+# 2. Copy configuration
+scp config.toml user@server:/opt/godocgo/config.toml
 
-# 3. Run worker
-./run-worker.sh --config config.toml --workers 4
+# 3. Run on target server
+ssh user@server
+cd /opt/godocgo
+chmod +x goworker
+./goworker --config config.toml --workers 4
 ```
 
-### Example Deployment Configurations
+### With Embeddings (ONNX Runtime Required)
 
-#### Single Server
+If you want vector embeddings, you'll need the ONNX Runtime library:
+
+#### Option 1: Install ONNX Runtime System-Wide
+
+**Linux (Ubuntu/Debian)**:
+```bash
+# Install from package manager (if available)
+apt-get install libonnxruntime
+
+# Or download from GitHub releases
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.23.0/onnxruntime-linux-x64-1.23.0.tgz
+tar -xzf onnxruntime-linux-x64-1.23.0.tgz
+sudo cp onnxruntime-linux-x64-1.23.0/lib/libonnxruntime.so* /usr/local/lib/
+sudo ldconfig
+```
+
+**macOS (Homebrew)**:
+```bash
+brew install onnxruntime
+```
+
+#### Option 2: Bundle ONNX Runtime with Binary
 
 ```bash
-# Process 10,000 documents with 8 concurrent workers
-./run-worker.sh --config config.toml --workers 8 --max-documents 10000
+# On target server, place library next to binary
+/opt/godocgo/
+├── goworker
+├── libonnxruntime.so  # or .dylib on macOS
+└── config.toml
+
+# Set library path when running
+export LD_LIBRARY_PATH=/opt/godocgo:$LD_LIBRARY_PATH
+./goworker --config config.toml
 ```
 
-#### Distributed (Multiple Servers)
+#### Export ONNX Model
 
+To use embeddings, export a model to ONNX format (one-time setup):
+
+```bash
+# On development machine with Python
+pip install onnx sentence-transformers torch
+
+# Export model
+python -c "
+from sentence_transformers import SentenceTransformer
+import torch
+
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+model.save('models/all-MiniLM-L6-v2')
+
+# Convert to ONNX
+import onnx
+from optimum.onnxruntime import ORTModelForFeatureExtraction
+ort_model = ORTModelForFeatureExtraction.from_pretrained(
+    'models/all-MiniLM-L6-v2',
+    export=True
+)
+ort_model.save_pretrained('models/all-MiniLM-L6-v2-onnx')
+"
+
+# Copy model directory to target server
+scp -r models/all-MiniLM-L6-v2-onnx user@server:/opt/godocgo/models/
+```
+
+Configure in `config.toml`:
 ```toml
-# config.toml (shared via NFS or config management)
+[embedding]
+enabled = true
+provider = "onnx"
+model_path = "/opt/godocgo/models/all-MiniLM-L6-v2-onnx"
+```
+
+---
+
+## Deployment Patterns
+
+### Pattern 1: Single Server (Simple)
+
+```bash
+# Copy binary and config
+scp bin/goworker-linux-amd64 server:/opt/godocgo/goworker
+scp config.toml server:/opt/godocgo/
+
+# Run worker
+ssh server
+cd /opt/godocgo
+./goworker --config config.toml --workers 8
+```
+
+**Use when**:
+- <10,000 documents
+- Single machine is sufficient
+- Development/testing
+
+### Pattern 2: Systemd Service (Production)
+
+Create `/etc/systemd/system/godocgo.service`:
+
+```ini
+[Unit]
+Description=Go-Doc-Go Document Worker
+After=network.target
+
+[Service]
+Type=simple
+User=godocgo
+WorkingDirectory=/opt/godocgo
+Environment="LD_LIBRARY_PATH=/opt/godocgo"
+ExecStart=/opt/godocgo/goworker --config /opt/godocgo/config.toml --workers 8
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Enable and start
+sudo systemctl enable godocgo
+sudo systemctl start godocgo
+
+# Check status
+sudo systemctl status godocgo
+
+# View logs
+sudo journalctl -u godocgo -f
+```
+
+### Pattern 3: Distributed Workers (Multi-Server)
+
+**config.toml** (shared via NFS or config management):
+```toml
 [processing.job_control]
 backend = "postgres"
-path = "postgres://user:pass@db.example.com/godocgo"
+path = "postgres://user:pass@db.example.com:5432/godocgo"
 ```
 
+Deploy to multiple servers:
 ```bash
-# Server 1
-./run-worker.sh --config config.toml --worker-id "server-01" --workers 8
+# Deploy binary and config to all servers
+for server in server1 server2 server3; do
+    scp bin/goworker-linux-amd64 $server:/opt/godocgo/goworker
+    scp config.toml $server:/opt/godocgo/
+done
 
-# Server 2
-./run-worker.sh --config config.toml --worker-id "server-02" --workers 8
-
-# Server 3
-./run-worker.sh --config config.toml --worker-id "server-03" --workers 8
+# Start workers on each server
+for server in server1 server2 server3; do
+    ssh $server "cd /opt/godocgo && ./goworker --config config.toml --worker-id $server --workers 8 &"
+done
 ```
 
-#### Docker
+**Automatic coordination** via PostgreSQL - no conflicts!
 
+### Pattern 4: Docker
+
+**Dockerfile**:
 ```dockerfile
+FROM golang:1.24 AS builder
+WORKDIR /build
+COPY go/ .
+RUN go build -o worker ./cmd/worker
+
 FROM ubuntu:22.04
-
-# Copy distribution
-COPY go-doc-go-worker-linux-x86_64.tar.gz /tmp/
-RUN cd /opt && tar -xzf /tmp/go-doc-go-worker-linux-x86_64.tar.gz && \
-    mv worker-linux-x86_64 godocgo && \
-    rm /tmp/go-doc-go-worker-linux-x86_64.tar.gz
-
-WORKDIR /opt/godocgo
-
-# Config will be mounted as volume
-ENTRYPOINT ["./run-worker.sh"]
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /build/worker /usr/local/bin/goworker
+ENTRYPOINT ["/usr/local/bin/goworker"]
 CMD ["--config", "/config/config.toml"]
 ```
 
+Build and run:
 ```bash
-# Build and run
-docker build -t godocgo/worker:latest .
-docker run -v $(pwd)/config.toml:/config/config.toml godocgo/worker:latest
+docker build -t godocgo/worker:1.0 .
+docker run -v $(pwd)/config.toml:/config/config.toml godocgo/worker:1.0
 ```
 
-## Platform-Specific Notes
+### Pattern 5: Kubernetes
 
-### macOS
-
-**Universal Binary**: Works on both Intel and Apple Silicon
-**Hardware Acceleration**: CoreML (GPU/Neural Engine) automatically enabled
-**Library**: `libonnxruntime.dylib` (26MB)
-
-### Linux x86_64
-
-**Compatible with**: Ubuntu, Debian, RHEL, CentOS, Amazon Linux
-**Hardware Acceleration**: CPU optimizations (AVX2, etc.)
-**Library**: `libonnxruntime.so` (26MB)
-
-### Linux ARM64
-
-**Compatible with**: AWS Graviton, Raspberry Pi 4+, ARM servers
-**Hardware Acceleration**: CPU optimizations (NEON)
-**Library**: `libonnxruntime.so` (26MB)
-
-### Windows x86_64
-
-**Compatible with**: Windows 10+, Windows Server 2016+
-**Hardware Acceleration**: CPU optimizations (AVX2)
-**Library**: `onnxruntime.dll` (26MB)
-
-**Run on Windows**:
-```powershell
-# PowerShell
-.\worker.exe --config config.toml --workers 4
-
-# Or use the launcher script in Git Bash/WSL
-bash run-worker.sh --config config.toml --workers 4
+**deployment.yaml**:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: godocgo-worker
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: godocgo-worker
+  template:
+    metadata:
+      labels:
+        app: godocgo-worker
+    spec:
+      containers:
+      - name: worker
+        image: godocgo/worker:1.0
+        env:
+        - name: NUM_WORKERS
+          value: "4"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+      volumes:
+      - name: config
+        configMap:
+          name: godocgo-config
 ```
+
+Deploy:
+```bash
+# Create config
+kubectl create configmap godocgo-config --from-file=config.toml
+
+# Deploy workers
+kubectl apply -f deployment.yaml
+
+# Scale up
+kubectl scale deployment godocgo-worker --replicas=50
+```
+
+---
+
+## Configuration for Production
+
+### Minimal Production Config (No Embeddings)
+
+```toml
+# config.toml
+[processing.job_control]
+backend = "postgres"
+path = "postgres://user:pass@db.prod.example.com:5432/godocgo"
+
+[[content_sources]]
+name = "production_docs"
+type = "s3"
+bucket = "company-documents"
+region = "us-east-1"
+
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "/data/analytics.parquet"
+
+[embedding]
+enabled = false
+```
+
+### Full Production Config (With Embeddings)
+
+```toml
+[processing.job_control]
+backend = "postgres"
+path = "postgres://user:pass@db.prod.example.com:5432/godocgo"
+claim_timeout = 300
+heartbeat_interval = 30
+max_retries = 3
+
+[[content_sources]]
+name = "production_docs"
+type = "s3"
+bucket = "company-documents"
+region = "us-east-1"
+
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "/data/analytics.parquet"
+
+[embedding]
+enabled = true
+provider = "onnx"
+model_path = "/opt/godocgo/models/all-MiniLM-L6-v2-onnx"
+contextual = true
+predecessor_count = 2
+successor_count = 2
+
+[ontology]
+enabled = true
+schema_path = "/opt/godocgo/ontologies/financial.yaml"
+```
+
+---
+
+## Performance by Platform
+
+| Platform | Architecture | Throughput (no embeddings) | Throughput (with embeddings) |
+|----------|-------------|----------------------------|------------------------------|
+| Linux (AWS c6i.2xlarge) | x86_64 | 120-250 docs/sec | 60-100 docs/sec |
+| Linux (AWS c7g.2xlarge) | ARM64 Graviton | 140-280 docs/sec | 70-110 docs/sec |
+| macOS M2 | ARM64 | 150-300 docs/sec | 80-120 docs/sec (CoreML) |
+| macOS Intel | x86_64 | 100-200 docs/sec | 50-80 docs/sec |
+| Windows (Azure D4s_v5) | x86_64 | 110-220 docs/sec | 55-90 docs/sec |
+
+**Notes**:
+- Benchmarks with 4 concurrent workers per machine
+- Varies by document type (JSON fastest, PDF slowest)
+- Embedding performance includes contextual embedding generation
+
+---
 
 ## Troubleshooting
 
+### Binary Won't Run
+
+```bash
+# Check if binary is executable
+chmod +x goworker
+
+# Check architecture matches
+file goworker
+# Should show correct arch (x86-64, aarch64, etc.)
+
+# Check for missing libraries (if using ONNX)
+ldd goworker  # Linux
+otool -L goworker  # macOS
+```
+
 ### "ONNX Runtime library not found"
 
-The ONNX Runtime library is bundled with the distribution. If you see this error:
-
-1. Check the distribution was extracted completely
-2. Verify `libonnxruntime.{dylib,so,dll}` exists in the directory
-3. Use the launcher script (`run-worker.sh`) which sets up paths automatically
-
-### "ONNX model not found"
-
-The model files should be in `models/all-MiniLM-L6-v2/`. If missing:
-
-1. Rebuild distribution after running `python scripts/export_model_to_onnx.py`
-2. Or manually copy model directory to target machine
-3. Update `embedding.model_path` in config.toml
-
-### Disable Embeddings
-
-If you don't need embeddings or encounter issues:
-
+**Solution 1**: Disable embeddings
 ```toml
 [embedding]
 enabled = false
 ```
 
-Documents will still be parsed and stored, just without vector embeddings.
+**Solution 2**: Set library path
+```bash
+# Linux
+export LD_LIBRARY_PATH=/path/to/lib:$LD_LIBRARY_PATH
 
-### Cross-Platform Build Errors
+# macOS
+export DYLD_LIBRARY_PATH=/path/to/lib:$DYLD_LIBRARY_PATH
 
-If cross-compilation fails:
+# Or set in systemd service (see Pattern 2 above)
+```
+
+### Worker Exits Immediately
 
 ```bash
-# Install cross-compilation support
-go env -w CGO_ENABLED=0  # Disable CGO for pure Go build
+# Check configuration
+./goworker --config config.toml --max-documents 1
 
-# Or install cross-compilation toolchains
-# For Linux ARM64 from macOS:
-brew install FiloSottile/musl-cross/musl-cross
+# Verify data directories exist
+mkdir -p /data
+
+# Check database connectivity (if using PostgreSQL)
+psql "postgres://user:pass@db:5432/godocgo" -c "SELECT 1"
 ```
+
+---
 
 ## CI/CD Integration
 
 ### GitHub Actions
 
 ```yaml
-name: Build Distributions
+name: Build and Release
 
 on:
   push:
@@ -308,6 +447,14 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+        exclude:
+          - goos: windows
+            goarch: arm64
+
     steps:
       - uses: actions/checkout@v3
 
@@ -316,155 +463,92 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
+      - name: Build
+        run: |
+          cd go
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -o ../bin/goworker-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/worker
 
-      - name: Install dependencies
-        run: pip install onnx sentence-transformers torch
-
-      - name: Download ONNX Runtime
-        run: ./scripts/download_onnx_runtime.sh
-
-      - name: Export ONNX model
-        run: python scripts/export_model_to_onnx.py
-
-      - name: Build all distributions
-        run: ./scripts/build-all-distributions.sh
-
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
-          name: distributions
-          path: dist/*.tar.gz
+          name: goworker-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/goworker-${{ matrix.goos }}-${{ matrix.goarch }}*
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/*.tar.gz
+          files: bin/goworker-${{ matrix.goos }}-${{ matrix.goarch }}*
 ```
 
 ### GitLab CI
 
 ```yaml
-build-distributions:
+build:
   stage: build
   image: golang:1.24
   script:
-    - apt-get update && apt-get install -y python3-pip
-    - pip3 install onnx sentence-transformers torch
-    - ./scripts/download_onnx_runtime.sh
-    - python3 scripts/export_model_to_onnx.py
-    - ./scripts/build-all-distributions.sh
+    - cd go
+    - GOOS=linux GOARCH=amd64 go build -o ../bin/goworker-linux-amd64 ./cmd/worker
+    - GOOS=linux GOARCH=arm64 go build -o ../bin/goworker-linux-arm64 ./cmd/worker
   artifacts:
     paths:
-      - dist/*.tar.gz
+      - bin/goworker-*
     expire_in: 1 week
   only:
     - tags
 ```
 
-## Performance Benchmarks by Platform
+---
 
-| Platform | Architecture | Docs/sec (no embeddings) | Docs/sec (with embeddings) |
-|----------|-------------|--------------------------|----------------------------|
-| macOS M2 | ARM64 | 150-300 | 80-120 (CoreML) |
-| macOS Intel | x86_64 | 100-200 | 50-80 |
-| Linux (AWS c6i.2xlarge) | x86_64 | 120-250 | 60-100 |
-| Linux (AWS c7g.2xlarge) | ARM64 | 140-280 | 70-110 |
-| Windows (Azure D4s_v5) | x86_64 | 110-220 | 55-90 |
+## Binary Size Optimization
 
-**Notes**:
-- Benchmarks with 4 concurrent workers
-- Document processing depends on document type and size
-- Embedding performance includes contextual embedding generation
-
-## Distribution Size Optimization
-
-To reduce distribution size:
-
-### Option 1: Exclude Model Files
-
-Build without bundling the model (user provides it):
+Default binary size is ~25-30MB. To reduce:
 
 ```bash
-# Remove model before building
-rm -rf go/models/all-MiniLM-L6-v2
-./scripts/build-all-distributions.sh
-# Distributions will be ~30MB instead of ~120MB
+# Strip debug symbols
+go build -ldflags="-s -w" -o bin/goworker ./cmd/worker
+
+# With UPX compression (requires upx tool)
+upx --best --lzma bin/goworker
+# Reduces to ~8-10MB
 ```
 
-### Option 2: Use Smaller Model
+---
 
-Export a smaller model:
+## Security Considerations
 
+### Binary Signing
+
+**macOS**:
 ```bash
-python scripts/export_model_to_onnx.py \
-  "sentence-transformers/all-MiniLM-L6-v2" \
-  "go/models/all-MiniLM-L6-v2"
-# 87MB model
-
-# vs larger, higher quality:
-python scripts/export_model_to_onnx.py \
-  "sentence-transformers/all-mpnet-base-v2" \
-  "go/models/all-mpnet-base-v2"
-# 420MB model
+codesign --sign "Developer ID" bin/goworker-darwin-amd64
 ```
 
-### Option 3: Separate Model Package
-
-Distribute model separately:
-
+**Windows**:
 ```bash
-# Create model-only tarball
-tar -czf go-doc-go-models-all-MiniLM-L6-v2.tar.gz \
-  go/models/all-MiniLM-L6-v2/
-
-# User downloads both:
-# - go-doc-go-worker-linux-x86_64.tar.gz (32MB)
-# - go-doc-go-models-all-MiniLM-L6-v2.tar.gz (88MB)
+signtool sign /f certificate.pfx /p password /tr http://timestamp.digicert.com bin/goworker-windows-amd64.exe
 ```
 
-## Maintenance
+### Container Security
 
-### Updating ONNX Runtime Version
-
-1. Edit `scripts/download_onnx_runtime.sh`
-2. Update `VERSION="1.23.0"` to new version
-3. Run `./scripts/download_onnx_runtime.sh`
-4. Rebuild distributions
-
-### Updating Embedding Model
-
-```bash
-# Export new model
-python scripts/export_model_to_onnx.py \
-  "new-model/name" \
-  "go/models/new-model-name"
-
-# Update default in build scripts if needed
-# Edit scripts/build-worker-dist.sh: MODEL_DIR="go/models/new-model-name"
-
-# Rebuild distributions
-./scripts/build-all-distributions.sh
+```dockerfile
+# Use distroless for minimal attack surface
+FROM gcr.io/distroless/static:nonroot
+COPY --from=builder /build/worker /worker
+USER nonroot:nonroot
+ENTRYPOINT ["/worker"]
 ```
 
-### Adding New Platforms
-
-To add support for new platforms (e.g., Linux RISC-V):
-
-1. Add platform to `scripts/download_onnx_runtime.sh`
-2. Add build step to `scripts/build-all-distributions.sh`
-3. Update `scripts/build-worker-dist.sh` library search paths
+---
 
 ## Support
 
-For issues with:
-- **Building**: Check Go installation, Python packages
-- **Model export**: Ensure `onnx`, `torch`, `sentence-transformers` installed
-- **Distribution**: Verify ONNX Runtime libraries downloaded
-- **Deployment**: Check platform compatibility, library paths
+For issues:
+- **Building**: Ensure Go 1.24+ installed
+- **Deployment**: Check binary matches target platform
+- **ONNX Runtime**: Use `ldd`/`otool` to verify library paths
+- **Performance**: Start with --workers=4, scale up based on CPU cores
 
-**Documentation**: See `go/README.md` for detailed Go worker documentation
-**Issues**: https://github.com/kennethstott/go-doc-go/issues
+**Documentation**: See [go/README.md](go/README.md) for detailed configuration
+**Issues**: https://github.com/kenstott/go-doc-go/issues
