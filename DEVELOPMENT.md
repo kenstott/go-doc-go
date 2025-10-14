@@ -1,53 +1,77 @@
 # Go-Doc-Go Development Guide
 
+**Version 1.0** - Development guide for contributing to the Go-Doc-Go document processing engine.
+
 ## Development Setup
 
 ### Prerequisites
 
-- Python 3.9+
+- Go 1.24 or later
 - Git
-- Virtual environment tool (venv, conda, etc.)
+- Optional: Docker for containerized testing
+- Optional: PostgreSQL for distributed worker testing
+- Optional: Neo4j for graph export testing
 
 ### Local Development Environment
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/go-doc-go.git
+git clone https://github.com/kenstott/go-doc-go.git
 cd go-doc-go
 
-# 2. Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# 2. Build the worker
+cd go
+go build -o ../bin/goworker ./cmd/worker
 
-# 3. Install in development mode
-pip install -e ".[dev]"
+# 3. Run tests
+go test ./...
 
-# 4. Install pre-commit hooks (optional)
-pre-commit install
+# 4. Build all parsers (for testing individual parsers)
+cd cmd
+for dir in */; do
+    go build -o ../../bin/$(basename $dir) ./$dir
+done
 ```
 
 ## Project Structure
 
 ```
 go-doc-go/
-├── src/
-│   └── go_doc_go/
-│       ├── __init__.py
-│       ├── main.py              # CLI entry point
-│       ├── cli/                 # CLI commands
-│       │   ├── worker.py        # Document processing
-│       │   ├── search.py        # Search interface
-│       │   ├── analytics.py     # Analytics interface
-│       │   └── status.py        # Status monitoring
-│       ├── document_parser/     # Document parsers
-│       ├── storage/             # Storage backends
-│       ├── embeddings/          # Embedding providers
-│       ├── content_source/      # Content sources
-│       └── config.py            # Configuration handling
-├── tests/                       # Test suite
+├── go/                          # Go implementation
+│   ├── cmd/                     # Command-line binaries
+│   │   ├── worker/             # Main worker binary
+│   │   ├── csvparser/          # Standalone CSV parser
+│   │   ├── docxparser/         # Standalone DOCX parser
+│   │   ├── pdfparser/          # Standalone PDF parser
+│   │   ├── xlsxparser/         # Standalone XLSX parser
+│   │   ├── pptxparser/         # Standalone PPTX parser
+│   │   ├── jsonparser/         # Standalone JSON parser
+│   │   ├── htmlparser/         # Standalone HTML parser
+│   │   ├── markdownparser/     # Standalone Markdown parser
+│   │   ├── xmlparser/          # Standalone XML parser
+│   │   ├── ontology/           # Ontology CLI tool
+│   │   └── parquetparser/      # Standalone Parquet parser
+│   ├── internal/               # Private packages
+│   │   ├── analytics/          # Analytics storage (Parquet, Neo4j)
+│   │   ├── cache/              # LRU and memory-mapped caching
+│   │   ├── contentsource/      # Content source implementations
+│   │   ├── detector/           # Document type detection
+│   │   ├── embeddings/         # ONNX embedding generation
+│   │   ├── export/             # Neo4j graph export
+│   │   ├── jobcontrol/         # Job control (SQLite, PostgreSQL)
+│   │   ├── ontology/           # Ontology-based extraction
+│   │   ├── parser/             # All document parsers
+│   │   ├── resolver/           # Content resolution
+│   │   ├── temporal/           # Temporal analysis
+│   │   ├── udml/               # UDML query and builder
+│   │   └── worker/             # Worker orchestration
+│   ├── go.mod                  # Go module definition
+│   └── go.sum                  # Dependency checksums
+├── bin/                         # Compiled binaries (gitignored)
 ├── docs/                        # Documentation
-├── examples/                    # Example configurations
-└── pyproject.toml              # Project metadata
+├── schemas/                     # UDML JSON schemas
+├── tests/                       # Test fixtures and assets
+└── config.toml                  # Example configuration
 ```
 
 ## Development Workflow
@@ -58,165 +82,277 @@ go-doc-go/
 # Create a feature branch
 git checkout -b feature/your-feature-name
 
-# Make your changes
-# ... edit files ...
+# Make your changes in go/internal/ or go/cmd/
 
-# Test your changes locally
-python -m go_doc_go worker --config test_config.yaml --max-documents 5
+# Test your changes
+cd go
+go test ./internal/parser  # Test specific package
+go test ./...              # Test all packages
+
+# Build and test the worker
+go build -o ../bin/goworker ./cmd/worker
+../bin/goworker --config ../config.toml --max-documents 5
 ```
 
 ### 2. Running Tests
 
 ```bash
-# Run all tests
-pytest
+cd go
 
-# Run specific test file
-pytest tests/test_worker.py
+# Run all tests
+go test ./...
+
+# Run specific package tests
+go test ./internal/parser
+go test ./internal/worker
+go test ./internal/analytics
 
 # Run with coverage
-pytest --cov=go_doc_go --cov-report=term-missing
+go test -cover ./...
+
+# Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
+
+# Run with race detector
+go test -race ./...
 
 # Run specific test
-pytest tests/test_worker.py::TestWorker::test_process_document
+go test -run TestPDFParser ./internal/parser
+
+# Verbose output
+go test -v ./internal/parser
 ```
 
 ### 3. Code Quality Checks
 
 ```bash
-# Format code with black
-black src/ tests/
+# Format code
+go fmt ./...
 
-# Sort imports
-isort src/ tests/
+# Vet code
+go vet ./...
 
-# Type checking
-mypy src/
+# Run linter (install golangci-lint first)
+golangci-lint run
 
-# Linting
-flake8 src/ tests/
+# Check for common issues
+go vet ./...
 
-# All checks at once
-make lint  # If Makefile is available
+# Static analysis
+staticcheck ./...
 ```
 
-### 4. Testing CLI Commands
+### 4. Testing Worker Locally
 
 ```bash
-# Test worker command
-PYTHONPATH=src python -m go_doc_go worker --help
-PYTHONPATH=src python -m go_doc_go worker --config test_config.yaml --max-documents 1
+# Build worker
+cd go
+go build -o ../bin/goworker ./cmd/worker
 
-# Test search command
-PYTHONPATH=src python -m go_doc_go search "test query"
+# Test with minimal config
+../bin/goworker --config ../config.toml --max-documents 1
 
-# Test analytics
-PYTHONPATH=src python -m go_doc_go analytics --detailed
+# Test with debug output
+../bin/goworker --config ../config.toml --max-documents 5 --workers 1
 
-# Test status monitoring
-PYTHONPATH=src python -m go_doc_go status --follow
+# Test distributed workers (requires PostgreSQL)
+# Terminal 1
+../bin/goworker --config ../config_postgres.toml --worker-id worker-01 --workers 2
+
+# Terminal 2
+../bin/goworker --config ../config_postgres.toml --worker-id worker-02 --workers 2
 ```
 
 ## Adding New Features
 
-### Adding a New CLI Command
-
-1. Create a new file in `src/go_doc_go/cli/`:
-
-```python
-# src/go_doc_go/cli/mycommand.py
-import click
-
-@click.command()
-@click.option('--config', '-c', default='config.yaml', help='Configuration file')
-def main(config):
-    """My new command description."""
-    click.echo(f"Running my command with config: {config}")
-    # Your command logic here
-
-if __name__ == '__main__':
-    main()
-```
-
-2. Register it in `src/go_doc_go/main.py`:
-
-```python
-# Add import
-from .cli.mycommand import main as mycommand_cmd
-
-# Register command
-cli.add_command(mycommand_cmd, name='mycommand')
-```
-
-3. Test the new command:
-
-```bash
-python -m go_doc_go mycommand --help
-```
-
 ### Adding a New Document Parser
 
-1. Create parser in `src/go_doc_go/document_parser/`:
+1. **Create parser in `go/internal/parser/`**:
 
-```python
-# src/go_doc_go/document_parser/myformat.py
-from .base import BaseParser
+```go
+// go/internal/parser/myformat.go
+package parser
 
-class MyFormatParser(BaseParser):
-    def parse(self, content, metadata=None):
-        """Parse my format documents."""
-        elements = []
-        # Your parsing logic here
-        return {
-            'document': {...},
-            'elements': elements,
-            'relationships': []
-        }
-```
+import (
+    "fmt"
+    "github.com/kennethstott/doculyzer-go-conversion/go/internal/udml"
+)
 
-2. Register in parser factory:
+type MyFormatParser struct {
+    config ParserConfig
+}
 
-```python
-# src/go_doc_go/document_parser/factory.py
-from .myformat import MyFormatParser
+func NewMyFormatParser(config ParserConfig) *MyFormatParser {
+    return &MyFormatParser{config: config}
+}
 
-PARSERS = {
-    # ... existing parsers ...
-    'myformat': MyFormatParser,
+func (p *MyFormatParser) Parse(content []byte, docID string) (*udml.ParseResult, error) {
+    elements := []udml.Element{}
+
+    // Your parsing logic here
+    // Extract elements from the document
+
+    return &udml.ParseResult{
+        Elements: elements,
+    }, nil
+}
+
+func (p *MyFormatParser) Name() string {
+    return "myformat"
+}
+
+func (p *MyFormatParser) SupportedTypes() []string {
+    return []string{".myformat", "application/x-myformat"}
 }
 ```
 
-### Adding a New Storage Backend
+2. **Register parser in factory**:
 
-1. Create storage backend in `src/go_doc_go/storage/`:
-
-```python
-# src/go_doc_go/storage/mybackend.py
-from .base import BaseStorage
-
-class MyBackendStorage(BaseStorage):
-    def __init__(self, config):
-        self.config = config
-        # Initialize connection
-
-    def store_document(self, doc):
-        # Store document logic
-        pass
-
-    def search(self, query, **kwargs):
-        # Search logic
-        pass
+```go
+// go/internal/parser/factory.go
+func NewParser(docType string, config ParserConfig) (Parser, error) {
+    switch docType {
+    case "myformat":
+        return NewMyFormatParser(config), nil
+    // ... existing parsers ...
+    default:
+        return nil, fmt.Errorf("unknown document type: %s", docType)
+    }
+}
 ```
 
-2. Register in storage factory:
+3. **Add tests**:
 
-```python
-# src/go_doc_go/storage/__init__.py
-from .mybackend import MyBackendStorage
+```go
+// go/internal/parser/myformat_test.go
+package parser
 
-STORAGE_BACKENDS = {
-    # ... existing backends ...
-    'mybackend': MyBackendStorage,
+import (
+    "testing"
+    "github.com/stretchr/testify/assert"
+)
+
+func TestMyFormatParser(t *testing.T) {
+    parser := NewMyFormatParser(ParserConfig{})
+    content := []byte("test content")
+
+    result, err := parser.Parse(content, "test-doc-id")
+
+    assert.NoError(t, err)
+    assert.NotNil(t, result)
+    assert.Greater(t, len(result.Elements), 0)
+}
+```
+
+4. **Create standalone CLI (optional)**:
+
+```go
+// go/cmd/myformatparser/main.go
+package main
+
+import (
+    "flag"
+    "fmt"
+    "os"
+    "github.com/kennethstott/doculyzer-go-conversion/go/internal/parser"
+)
+
+func main() {
+    flag.Parse()
+
+    if flag.NArg() < 1 {
+        fmt.Println("Usage: myformatparser <file>")
+        os.Exit(1)
+    }
+
+    // Parser implementation
+}
+```
+
+### Adding a New Content Source
+
+1. **Create source in `go/internal/contentsource/`**:
+
+```go
+// go/internal/contentsource/mysource.go
+package contentsource
+
+import (
+    "context"
+)
+
+type MySource struct {
+    config map[string]interface{}
+}
+
+func NewMySource(config map[string]interface{}) (*MySource, error) {
+    return &MySource{config: config}, nil
+}
+
+func (s *MySource) Discover(ctx context.Context) ([]Document, error) {
+    documents := []Document{}
+
+    // Your discovery logic here
+    // Return list of documents to process
+
+    return documents, nil
+}
+
+func (s *MySource) Fetch(ctx context.Context, doc Document) ([]byte, error) {
+    // Your fetch logic here
+    // Return document content as bytes
+
+    return nil, nil
+}
+```
+
+2. **Register in factory**:
+
+```go
+// go/internal/contentsource/factory.go
+func NewContentSource(sourceType string, config map[string]interface{}) (ContentSource, error) {
+    switch sourceType {
+    case "mysource":
+        return NewMySource(config)
+    // ... existing sources ...
+    }
+}
+```
+
+### Adding a New Analytics Output
+
+1. **Create output in `go/internal/analytics/`**:
+
+```go
+// go/internal/analytics/mybackend.go
+package analytics
+
+import (
+    "github.com/kennethstott/doculyzer-go-conversion/go/internal/udml"
+)
+
+type MyBackendStorage struct {
+    config map[string]interface{}
+}
+
+func NewMyBackendStorage(config map[string]interface{}) (*MyBackendStorage, error) {
+    return &MyBackendStorage{config: config}, nil
+}
+
+func (s *MyBackendStorage) StoreDocument(doc *udml.Document) error {
+    // Store document logic
+    return nil
+}
+
+func (s *MyBackendStorage) StoreElements(elements []udml.Element) error {
+    // Store elements logic
+    return nil
+}
+
+func (s *MyBackendStorage) Close() error {
+    // Cleanup logic
+    return nil
 }
 ```
 
@@ -224,121 +360,148 @@ STORAGE_BACKENDS = {
 
 ### Unit Tests
 
-```python
-# tests/test_myfeature.py
-import pytest
-from go_doc_go.myfeature import MyFeature
+Test individual functions and methods:
 
-class TestMyFeature:
-    def test_basic_functionality(self):
-        feature = MyFeature()
-        result = feature.process("input")
-        assert result == "expected"
+```go
+func TestParseElement(t *testing.T) {
+    parser := NewMyParser(ParserConfig{})
+    element := parser.ParseElement([]byte("test"))
 
-    def test_edge_case(self):
-        feature = MyFeature()
-        with pytest.raises(ValueError):
-            feature.process(None)
+    assert.Equal(t, "paragraph", element.ElementType)
+    assert.NotEmpty(t, element.Content)
+}
 ```
 
 ### Integration Tests
 
-```python
-# tests/integration/test_pipeline.py
-import tempfile
-from go_doc_go.cli.worker import process_documents
+Test complete workflows:
 
-def test_end_to_end_processing():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        config = {
-            'storage': {'backend': 'sqlite', 'path': f'{tmpdir}/test.db'},
-            'content_sources': [{'type': 'file', 'base_path': './test_data'}]
-        }
-        result = process_documents(config, max_documents=1)
-        assert result['processed'] == 1
+```go
+func TestWorkerProcessing(t *testing.T) {
+    // Setup test environment
+    tmpDir := t.TempDir()
+
+    // Create test configuration
+    config := &WorkerConfig{
+        JobControl: JobControlConfig{
+            Backend: "sqlite",
+            Path:    filepath.Join(tmpDir, "test.db"),
+        },
+    }
+
+    // Run worker
+    worker := NewWorker(config)
+    err := worker.ProcessDocuments(context.Background(), 1)
+
+    assert.NoError(t, err)
+}
 ```
 
-### CLI Tests
+### Table-Driven Tests
 
-```python
-# tests/test_cli.py
-from click.testing import CliRunner
-from go_doc_go.main import cli
+Test multiple scenarios efficiently:
 
-def test_worker_command():
-    runner = CliRunner()
-    result = runner.invoke(cli, ['worker', '--help'])
-    assert result.exit_code == 0
-    assert 'worker' in result.output
+```go
+func TestParserFormats(t *testing.T) {
+    tests := []struct {
+        name     string
+        input    []byte
+        expected int  // expected element count
+    }{
+        {"simple", []byte("test"), 1},
+        {"complex", []byte("multiple\nparagraphs"), 2},
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            result, err := parser.Parse(tt.input, "test-id")
+            assert.NoError(t, err)
+            assert.Len(t, result.Elements, tt.expected)
+        })
+    }
+}
 ```
 
 ## Debugging
 
-### Enable Debug Logging
+### Enable Verbose Logging
 
-```python
-# In your code
-import logging
-logging.basicConfig(level=logging.DEBUG)
+```go
+// Add logging in your code
+import "log"
 
-# Or via CLI
-python -m go_doc_go worker --log-level debug
+log.Printf("Processing document: %s", docID)
+log.Printf("Found %d elements", len(elements))
 ```
 
-### Use Python Debugger
+### Use Delve Debugger
 
-```python
-# Add breakpoint in code
-import pdb; pdb.set_trace()
+```bash
+# Install delve
+go install github.com/go-delve/delve/cmd/dlv@latest
 
-# Or use breakpoint() in Python 3.7+
-breakpoint()
+# Debug worker
+dlv debug ./cmd/worker -- --config ../config.toml
+
+# Set breakpoint
+(dlv) break parser.Parse
+(dlv) continue
+(dlv) print element
 ```
 
 ### Profile Performance
 
 ```bash
-# Profile a command
-python -m cProfile -o profile.stats -m go_doc_go worker --max-documents 100
+# CPU profiling
+go test -cpuprofile=cpu.prof -bench=. ./internal/parser
+go tool pprof cpu.prof
 
-# Analyze profile
-python -m pstats profile.stats
+# Memory profiling
+go test -memprofile=mem.prof -bench=. ./internal/parser
+go tool pprof mem.prof
+
+# Profile running worker
+# Add to worker code:
+import "runtime/pprof"
+
+f, _ := os.Create("cpu.prof")
+pprof.StartCPUProfile(f)
+defer pprof.StopCPUProfile()
 ```
 
 ## Configuration for Development
 
 ### Test Configuration
 
-Create a `test_config.yaml` for development:
+```toml
+# config_dev.toml
+[processing.job_control]
+backend = "sqlite"
+path = "./test_data/jobs.db"
 
-```yaml
-# test_config.yaml
-storage:
-  backend: sqlite
-  path: ./test_data/test.db
+[[content_sources]]
+name = "test_docs"
+type = "file"
+base_path = "./test_data/documents"
+file_pattern = "*.{pdf,docx}"
 
-content_sources:
-  - name: test_docs
-    type: file
-    base_path: ./test_data/documents
+[analytics]
+enabled = true
 
-processing:
-  batch_size: 10
-  max_workers: 2
+[[analytics.outputs]]
+type = "parquet"
+path = "./test_data/analytics.parquet"
 
-logging:
-  level: DEBUG
+[embedding]
+enabled = false  # Disable for faster testing
 ```
 
 ### Environment Variables
 
-Create a `.env` file for development:
-
 ```bash
 # .env
-GO_DOC_GO_CONFIG_PATH=./test_config.yaml
-GO_DOC_GO_LOG_LEVEL=DEBUG
-PYTHONPATH=src
+GO_DOC_GO_CONFIG_PATH=./config_dev.toml
+ONNXRUNTIME_SHARED_LIBRARY_PATH=/path/to/libonnxruntime.so
 ```
 
 ## Common Development Tasks
@@ -346,35 +509,48 @@ PYTHONPATH=src
 ### Update Dependencies
 
 ```bash
-# Update requirements
-pip-compile pyproject.toml -o requirements.txt
+# Update all dependencies
+go get -u ./...
 
-# Install updated dependencies
-pip install -r requirements.txt
+# Update specific dependency
+go get -u github.com/xuri/excelize/v2
+
+# Tidy dependencies
+go mod tidy
+
+# Verify dependencies
+go mod verify
 ```
 
-### Build Documentation
+### Build All Binaries
 
 ```bash
-# Build docs with Sphinx (if configured)
-cd docs
-make html
-
-# Or with mkdocs
-mkdocs build
+# Build script
+#!/bin/bash
+cd go/cmd
+for dir in */; do
+    echo "Building $(basename $dir)..."
+    go build -o ../../bin/$(basename $dir) ./$dir
+done
 ```
 
-### Create Distribution
+### Cross-Compile for Different Platforms
 
 ```bash
-# Build package
-python -m build
+# Linux AMD64
+GOOS=linux GOARCH=amd64 go build -o bin/worker-linux-amd64 ./cmd/worker
 
-# Check distribution
-twine check dist/*
+# Linux ARM64 (Raspberry Pi, AWS Graviton)
+GOOS=linux GOARCH=arm64 go build -o bin/worker-linux-arm64 ./cmd/worker
 
-# Upload to PyPI (requires credentials)
-twine upload dist/*
+# macOS Intel
+GOOS=darwin GOARCH=amd64 go build -o bin/worker-darwin-amd64 ./cmd/worker
+
+# macOS Apple Silicon
+GOOS=darwin GOARCH=arm64 go build -o bin/worker-darwin-arm64 ./cmd/worker
+
+# Windows
+GOOS=windows GOARCH=amd64 go build -o bin/worker-windows-amd64.exe ./cmd/worker
 ```
 
 ## Git Workflow
@@ -384,106 +560,144 @@ twine upload dist/*
 Follow conventional commits:
 
 ```bash
-feat: add new parser for XML documents
-fix: resolve memory leak in embedding generation
-docs: update configuration examples
-test: add tests for worker command
-refactor: simplify storage backend interface
+feat(parser): add support for MyFormat documents
+fix(worker): resolve race condition in job claiming
+docs(readme): update installation instructions
+test(parser): add tests for edge cases
+refactor(analytics): simplify Parquet storage interface
+perf(embeddings): optimize batch processing
 ```
 
 ### Pull Request Process
 
-1. Create feature branch
+1. Create feature branch: `git checkout -b feature/my-feature`
 2. Make changes with tests
-3. Run tests and linting
-4. Push branch
-5. Create pull request
-6. Address review comments
-7. Merge after approval
+3. Run full test suite: `go test ./...`
+4. Run code quality checks: `go fmt ./... && go vet ./...`
+5. Push branch: `git push origin feature/my-feature`
+6. Create pull request on GitHub
+7. Address review comments
+8. Merge after approval
 
 ## Troubleshooting Development Issues
 
 ### Import Errors
 
 ```bash
-# Ensure PYTHONPATH is set
-export PYTHONPATH=src
+# Verify Go module path
+go mod edit -module=github.com/kennethstott/doculyzer-go-conversion
 
-# Or install in development mode
-pip install -e .
+# Update imports
+goimports -w .
 ```
 
-### Database Lock Issues (SQLite)
-
-```python
-# Use WAL mode for concurrent access
-storage:
-  backend: sqlite
-  journal_mode: WAL
-```
-
-### Memory Issues During Testing
+### Build Errors
 
 ```bash
-# Limit test scope
-pytest -m "not memory_intensive"
+# Clean build cache
+go clean -cache
 
-# Or increase memory
-ulimit -v unlimited
+# Rebuild with verbose output
+go build -v ./cmd/worker
+
+# Check for missing dependencies
+go mod tidy
+```
+
+### Test Failures
+
+```bash
+# Run tests with verbose output
+go test -v ./internal/parser
+
+# Run single test
+go test -run TestSpecificTest ./internal/parser
+
+# Skip cache
+go test -count=1 ./...
 ```
 
 ## Performance Optimization
 
-### Profiling
+### Benchmarking
 
-```python
-import cProfile
-import pstats
+```go
+// parser_bench_test.go
+func BenchmarkPDFParser(b *testing.B) {
+    content, _ := os.ReadFile("testdata/sample.pdf")
+    parser := NewPDFParser(ParserConfig{})
 
-profiler = cProfile.Profile()
-profiler.enable()
+    b.ResetTimer()
+    for i := 0; i < b.N; i++ {
+        parser.Parse(content, "test-id")
+    }
+}
+```
 
-# Your code here
-process_documents(config)
+Run benchmarks:
 
-profiler.disable()
-stats = pstats.Stats(profiler)
-stats.sort_stats('cumulative')
-stats.print_stats(10)
+```bash
+# Run all benchmarks
+go test -bench=. ./...
+
+# Run specific benchmark
+go test -bench=BenchmarkPDFParser ./internal/parser
+
+# With memory stats
+go test -bench=. -benchmem ./internal/parser
+
+# Save results for comparison
+go test -bench=. ./... > bench_old.txt
+# Make changes
+go test -bench=. ./... > bench_new.txt
+benchcmp bench_old.txt bench_new.txt
 ```
 
 ### Memory Profiling
 
 ```bash
-# Install memory profiler
-pip install memory_profiler
-
 # Profile memory usage
-python -m memory_profiler your_script.py
+go test -memprofile=mem.prof -bench=. ./internal/parser
+go tool pprof -http=:8080 mem.prof
 ```
 
 ## Release Process
 
-1. Update version in `pyproject.toml`
+1. Update version in code (if applicable)
 2. Update CHANGELOG.md
-3. Run full test suite
-4. Create git tag: `git tag v1.2.3`
-5. Push tag: `git push origin v1.2.3`
-6. Build and upload to PyPI
+3. Run full test suite: `go test ./...`
+4. Build binaries for all platforms
+5. Create git tag: `git tag v1.0.0`
+6. Push tag: `git push origin v1.0.0`
+7. Create GitHub release with binaries
 
 ## Contributing Guidelines
 
 1. Fork the repository
 2. Create feature branch
 3. Write tests for new features
-4. Ensure all tests pass
-5. Update documentation
-6. Submit pull request
+4. Ensure all tests pass: `go test ./...`
+5. Format code: `go fmt ./...`
+6. Update documentation
+7. Submit pull request
 
 ## Resources
 
-- [Click Documentation](https://click.palletsprojects.com/) - CLI framework
-- [SQLAlchemy Docs](https://www.sqlalchemy.org/) - Database toolkit
-- [pytest Documentation](https://docs.pytest.org/) - Testing framework
-- [Black](https://black.readthedocs.io/) - Code formatter
-- [mypy](https://mypy.readthedocs.io/) - Type checker
+- [Go Documentation](https://golang.org/doc/) - Official Go docs
+- [Effective Go](https://golang.org/doc/effective_go) - Go best practices
+- [Go by Example](https://gobyexample.com/) - Practical examples
+- [Apache Arrow Go](https://pkg.go.dev/github.com/apache/arrow/go/v14) - Parquet support
+- [excelize](https://pkg.go.dev/github.com/xuri/excelize/v2) - Excel parsing
+- [goquery](https://pkg.go.dev/github.com/PuerkitoBio/goquery) - HTML parsing
+- [ONNX Runtime Go](https://github.com/yalue/onnxruntime_go) - ML inference
+
+## Development Tips
+
+1. **Start small**: Test with 1-5 documents first
+2. **Use race detector**: `go test -race ./...` catches concurrency bugs
+3. **Profile early**: Don't guess at performance issues
+4. **Write tests first**: TDD helps design better APIs
+5. **Keep binaries in bin/**: Consistent with project structure
+6. **Use table-driven tests**: More maintainable test code
+7. **Leverage Go tools**: `go fmt`, `go vet`, `golangci-lint`
+8. **Document public APIs**: Good godoc comments help users
