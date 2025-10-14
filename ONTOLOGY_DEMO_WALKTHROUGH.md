@@ -60,7 +60,7 @@ This step downloads the ONNX model required for semantic relationship detection 
 
 ```bash
 # Install Python dependencies (if not already installed)
-pip install -q onnx sentence-transformers torch optimum[onnxruntime]
+pip install -r requirements.txt
 
 # Export model to ONNX format
 python3 << 'EOF'
