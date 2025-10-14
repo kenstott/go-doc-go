@@ -1,5 +1,0 @@
-   include README.md
-   include LICENSE
-
-   # Include all files in vendor/libmagic
-   recursive-include src/go_doc_go/vendor/libmagic *
