@@ -213,9 +213,11 @@ test_simple_python/
 test-analytics-output-python/
 test_containers/
 
-# Analytics output directories
+# Analytics and test output directories
 go/analytics-output/
 analytics-output/
+go/test_ontology_output/
+test_ontology_output/
 
 # Go worker binary
 go/worker
