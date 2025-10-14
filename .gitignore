@@ -230,3 +230,4 @@ go/*.html
 go/**/*.bak
 go/**/*.bak2
 go/**/*.skip
+/go/ontology
