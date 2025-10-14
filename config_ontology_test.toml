@@ -1,0 +1,52 @@
+# Minimal config for ontology extraction test
+
+[embedding]
+enabled = false  # Disable embeddings for faster testing
+
+# Single test document
+[[content_sources]]
+name = "test-doc"
+type = "file"
+base_path = "/Users/kennethstott/PycharmProjects/doculyzer-go-conversion"
+file_pattern = "test_doc.txt"
+watch_for_changes = false
+max_link_depth = 0
+
+[relationship_detection]
+enabled = true
+structural = true
+semantic = false
+
+[relationship_detection.cross_document_semantic]
+enabled = false  # Disable for faster testing
+
+# UDML-O: Ontology-based entity and relationship extraction
+[ontology]
+enabled = true
+schema_path = "/Users/kennethstott/PycharmProjects/doculyzer-go-conversion/schemas"
+queue_idle_trigger_minutes = 0  # Run immediately after queue idle
+
+# Processing configuration
+[processing]
+batch_size = 10
+max_workers = 1
+timeout_seconds = 60
+
+[processing.job_control]
+backend = "sqlite"
+path = "./test_ontology_queue.db"
+claim_timeout = 60
+heartbeat_interval = 10
+max_retries = 1
+
+# Analytics outputs configuration
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "hive"
+path = "./test_ontology_output"
+partitioning = ["date", "source"]
+
+[logging]
+level = "INFO"
