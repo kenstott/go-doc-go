@@ -136,10 +136,15 @@ max_link_depth = 0
 [relationship_detection]
 enabled = true
 structural = true
-semantic = false
+semantic = true
 
 [embedding]
-enabled = false
+enabled = true
+provider = "onnx"
+model_path = "./models/all-MiniLM-L6-v2"
+contextual = true
+predecessor_count = 2
+successor_count = 2
 
 [analytics]
 enabled = true
