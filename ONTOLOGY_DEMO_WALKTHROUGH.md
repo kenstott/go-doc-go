@@ -49,43 +49,19 @@ cd ..
 
 **Expected output:**
 ```
-# Binary created at bin/goworker
+# No message, but you will see a new binary created at bin/goworker
 ```
 
 ---
 
-## Step 2: Prepare Demo Documents
-
-### 2.1: Copy Test Assets and Fetch Wikipedia Page
+## Step 2: Prepare Demo Output Directory
 
 ```bash
-# Create demo documents directory
-mkdir -p demo/documents
-
-# Copy existing test assets
-cp tests/assets/*.{md,docx,pdf} demo/documents/ 2>/dev/null || true
-
-# Fetch a relevant Wikipedia page about GraphQL (related to Hasura)
-curl -s "https://en.wikipedia.org/wiki/GraphQL" | \
-  sed -n '/<div id="mw-content-text"/,/<div id="catlinks"/p' | \
-  pandoc -f html -t markdown -o demo/documents/wikipedia_graphql.md 2>/dev/null || \
-  echo "# GraphQL\n\nGraphQL is an open-source data query and manipulation language for APIs. It was developed internally by Facebook in 2012 and publicly released in 2015." > demo/documents/wikipedia_graphql.md
-
-# List documents
-echo "Demo documents prepared:"
-ls -lh demo/documents/
+# Create demo output directory for analytics and job control
+mkdir -p demo/output
 ```
 
-**Expected output:**
-```
-Demo documents prepared:
--rw-r--r--  Beautiful.ai - Hasura Professional Service Offerings for Financial Services.pdf
--rw-r--r--  Cash Management Research Report.docx
--rw-r--r--  Hasura Professional Service Offerings for Financial Services.docx
--rw-r--r--  introduction.md
--rw-r--r--  technical-details.md
--rw-r--r--  wikipedia_graphql.md
-```
+No document copying needed - the demo will use existing assets from `tests/assets/` and fetch Wikipedia content dynamically via the web content source.
 
 ---
 
@@ -96,7 +72,6 @@ Let's first process the documents without ontology extraction to create the base
 ### 3.1: Create Initial Configuration
 
 ```bash
-mkdir -p demo/output
 cat > demo/config_initial.toml << 'EOF'
 # Initial ingestion configuration (no ontology extraction)
 
@@ -107,12 +82,20 @@ claim_timeout = 60
 heartbeat_interval = 10
 max_retries = 1
 
+# Local files from test assets
 [[content_sources]]
-name = "demo-docs"
+name = "test-docs"
 type = "file"
-base_path = "./demo/documents"
-file_pattern = "*.md"
+base_path = "./tests/assets"
+file_pattern = "*.{md,docx,pdf}"
 watch_for_changes = false
+
+# Wikipedia page via web crawler
+[[content_sources]]
+name = "wikipedia"
+type = "web"
+base_url = "https://en.wikipedia.org/wiki/GraphQL"
+follow_links = false
 max_link_depth = 0
 
 [relationship_detection]
@@ -326,14 +309,22 @@ claim_timeout = 60
 heartbeat_interval = 10
 max_retries = 1
 
+# Local files from test assets
 [[content_sources]]
-name = "demo-docs"
+name = "test-docs"
 type = "file"
-base_path = "./demo/documents"
-file_pattern = "*.md"
+base_path = "./tests/assets"
+file_pattern = "*.{md,docx,pdf}"
 watch_for_changes = false
-max_link_depth = 0
 refresh_interval = 5  # Check every 5 seconds for fast demo
+
+# Wikipedia page via web crawler
+[[content_sources]]
+name = "wikipedia"
+type = "web"
+base_url = "https://en.wikipedia.org/wiki/GraphQL"
+follow_links = false
+max_link_depth = 0
 
 [relationship_detection]
 enabled = true
@@ -565,12 +556,22 @@ cat > demo/config_with_neo4j.toml << 'EOF'
 backend = "sqlite"
 path = "./demo/output/jobs.db"
 
+# Local files from test assets
 [[content_sources]]
-name = "demo-docs"
+name = "test-docs"
 type = "file"
-base_path = "./demo/documents"
-file_pattern = "*.md"
+base_path = "./tests/assets"
+file_pattern = "*.{md,docx,pdf}"
+watch_for_changes = false
 refresh_interval = 5
+
+# Wikipedia page via web crawler
+[[content_sources]]
+name = "wikipedia"
+type = "web"
+base_url = "https://en.wikipedia.org/wiki/GraphQL"
+follow_links = false
+max_link_depth = 0
 
 [relationship_detection]
 enabled = true
