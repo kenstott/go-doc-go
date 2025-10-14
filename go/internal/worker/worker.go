@@ -889,6 +889,8 @@ func (w *Worker) perSourceDiscoveryLoop(sourceName string) {
 	discoveryInterval := 3600 // Default: 1 hour
 	if refreshInterval, ok := sourceConfig["refresh_interval"].(int); ok {
 		discoveryInterval = refreshInterval
+	} else if refreshInterval, ok := sourceConfig["refresh_interval"].(int64); ok {
+		discoveryInterval = int(refreshInterval)
 	} else if refreshInterval, ok := sourceConfig["refresh_interval"].(float64); ok {
 		discoveryInterval = int(refreshInterval)
 	}
@@ -1008,9 +1010,33 @@ func (w *Worker) perSourceDiscoveryLoop(sourceName string) {
 			log.Printf("Source leader for %s queued %d new documents", sourceName, queued)
 		}
 
-		// Check queue status for Neo4j export (only if leader)
+		// Check queue status for Neo4j export and finalization tasks (only if leader)
 		if isSourceLeader {
 			w.checkQueueForNeo4jExport()
+
+			// Also check finalization independently (for when Neo4j export is disabled)
+			status, err := w.jobControl.GetProcessingStatus()
+			if err == nil {
+				pendingDocs := status.Documents["pending"]
+				processingDocs := status.Documents["processing"]
+				isQueueEmpty := (pendingDocs == 0 && processingDocs == 0)
+				currentTime := time.Now()
+
+				// Track queue empty time
+				if isQueueEmpty {
+					if w.lastQueueEmptyTime == nil {
+						w.lastQueueEmptyTime = &currentTime
+						log.Println("Queue became empty, starting idle timer for finalization tasks")
+					}
+				} else {
+					// Reset timer if queue is not empty
+					if w.lastQueueEmptyTime != nil {
+						w.lastQueueEmptyTime = nil
+					}
+				}
+
+				w.checkQueueForFinalization(isQueueEmpty, currentTime)
+			}
 		}
 
 		// Sleep for configured interval (with context-aware sleep)

@@ -11,6 +11,7 @@ base_path = "/Users/kennethstott/PycharmProjects/doculyzer-go-conversion"
 file_pattern = "test_doc.txt"
 watch_for_changes = false
 max_link_depth = 0
+refresh_interval = 5  # Check every 5 seconds for fast testing
 
 [relationship_detection]
 enabled = true
