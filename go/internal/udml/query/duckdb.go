@@ -182,17 +182,57 @@ func (d *DuckDBBackend) buildFromClause(tableName string, enablePartitions bool)
 		return fmt.Sprintf("FROM %s", tableName)
 	}
 
-	if enablePartitions {
-		// Use Hive partition glob pattern
-		// e.g., 'analytics/elements/element_type=*/version=*/date=*/source=*/*.parquet'
-		pattern := fmt.Sprintf("'%s/%s/element_type=*/version=*/date=*/source=*/*.parquet'",
-			d.parquetPath, tableName)
-		return fmt.Sprintf("FROM %s", pattern)
+	// Check if this is a JOIN expression (contains "JOIN" keyword)
+	if strings.Contains(strings.ToUpper(tableName), " JOIN ") {
+		// Parse JOIN expression and build paths for each table
+		return d.buildJoinFromClause(tableName)
 	}
 
-	// Flat pattern (no partition pruning)
-	pattern := fmt.Sprintf("'%s/%s/**/*.parquet'", d.parquetPath, tableName)
+	// Simple table name - use wildcard pattern with AS alias
+	// Partition pruning handled by DuckDB
+	pattern := fmt.Sprintf("'%s/%s/**/*.parquet' AS %s", d.parquetPath, tableName, tableName)
 	return fmt.Sprintf("FROM %s", pattern)
+}
+
+// buildJoinFromClause handles JOIN expressions by expanding table names to parquet paths
+func (d *DuckDBBackend) buildJoinFromClause(joinExpr string) string {
+	// Replace table names with parquet paths
+	// Example: "elements INNER JOIN embeddings ON elements.element_id = embeddings.element_id"
+	// Becomes: "'path/elements/**/*.parquet' AS elements INNER JOIN 'path/embeddings/**/*.parquet' AS embeddings ON elements.element_id = embeddings.element_id"
+
+	result := joinExpr
+
+	// Find all table names (words before JOIN or ON keywords)
+	// Simple heuristic: look for table names that are valid identifiers
+	tableNames := []string{"elements", "embeddings", "documents", "relationships"}
+
+	for _, table := range tableNames {
+		// Replace standalone table name (not part of a qualified column reference)
+		// We need to be careful not to replace "elements.element_id" -> only replace the table reference itself
+		pattern := fmt.Sprintf("'%s/%s/**/*.parquet' AS %s", d.parquetPath, table, table)
+
+		// Replace patterns like "elements INNER JOIN" with pattern
+		result = strings.Replace(result, table+" INNER JOIN", pattern+" INNER JOIN", -1)
+		result = strings.Replace(result, table+" LEFT JOIN", pattern+" LEFT JOIN", -1)
+		result = strings.Replace(result, table+" RIGHT JOIN", pattern+" RIGHT JOIN", -1)
+		result = strings.Replace(result, table+" JOIN", pattern+" JOIN", -1)
+
+		// Handle "INNER JOIN tablename ON" - replace the table after JOIN
+		result = strings.Replace(result, "INNER JOIN "+table+" ON", "INNER JOIN "+pattern+" ON", -1)
+		result = strings.Replace(result, "LEFT JOIN "+table+" ON", "LEFT JOIN "+pattern+" ON", -1)
+		result = strings.Replace(result, "RIGHT JOIN "+table+" ON", "RIGHT JOIN "+pattern+" ON", -1)
+		result = strings.Replace(result, "JOIN "+table+" ON", "JOIN "+pattern+" ON", -1)
+
+		// Handle case where table is at the start
+		if strings.HasPrefix(result, table+" ") {
+			result = pattern + result[len(table):]
+		}
+
+		// Handle "ON table.column" - need to keep the alias
+		result = strings.Replace(result, "ON "+table+".", "ON "+table+".", -1)
+	}
+
+	return "FROM " + result
 }
 
 // buildWhereClause builds WHERE clause from predicate

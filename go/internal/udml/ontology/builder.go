@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/sampler"
+	"gopkg.in/yaml.v3"
 )
 
 // OntologyBuilder orchestrates the automatic ontology schema creation process
@@ -20,8 +25,9 @@ type OntologyBuilder struct {
 // BuilderConfig configures the ontology building process
 type BuilderConfig struct {
 	// Sampling
-	SampleSize    int    // Number of elements to sample
-	ParquetPath   string // Path to UDML Parquet storage
+	SampleSize          int     // Number of elements to sample
+	ParquetPath         string  // Path to UDML Parquet storage
+	DiversityThreshold  float64 // Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse)
 
 	// LLM
 	LLMProvider   string // "anthropic", "openai", etc.
@@ -75,17 +81,40 @@ type BuildResult struct {
 // NewOntologyBuilder creates a new ontology builder
 func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 	// Create sampler
+	// For ontology building, focus on substantive element types with rich content
+	substantiveTypes := []string{"paragraph", "header", "list_item", "table_cell", "caption"}
+
+	// Determine diversity threshold - use config value or default
+	diversityThreshold := config.DiversityThreshold
+	if diversityThreshold == 0.0 {
+		diversityThreshold = 0.0001 // Very low threshold to effectively disable diversity filtering
+	}
+	fmt.Printf("DEBUG: BuilderConfig.DiversityThreshold = %.6f, using = %.6f\n", config.DiversityThreshold, diversityThreshold)
+
 	samplerConfig := sampler.SamplerConfig{
-		ParquetPath:      config.ParquetPath,
-		SampleSize:       config.SampleSize,
-		MaxTextLength:    2000,
-		IncludeMetadata:  true,
-		IncludeEmbedding: false,
+		ParquetPath:         config.ParquetPath,
+		SampleSize:          config.SampleSize,
+		MaxTextLength:       2000,
+		ElementTypes:        substantiveTypes,    // Focus sampling on substantive content (excludes links, images, divs)
+		IncludeMetadata:     false,               // Skip metadata (not present in older Parquet schemas)
+		IncludeEmbedding:    true,                // Include embedding vectors for cosine similarity diversity
+		PreferEmbeddingText: true,                // Use embeddings.text when available (richer context)
+		ExcludeContainers:   true,                // Only sample leaf elements with actual content (fallback for non-embedding path)
+		MinPerStratum:       5,                   // Ensure minimum representation from each substantive type
+		DiversityThreshold:  diversityThreshold,  // Cosine similarity threshold for diversity filtering
 	}
 
 	samp, err := sampler.NewSampler(samplerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sampler: %w", err)
+	}
+
+	// Configure sampler with resolver from analytics storage
+	// This enables content resolution from content_location pointers
+	if err := configureResolverFromStorage(samp, config.ParquetPath); err != nil {
+		// Log warning but don't fail - sampler can work without resolver (falls back to content_preview)
+		fmt.Printf("Warning: Failed to configure content resolver: %v\n", err)
+		fmt.Println("  Sampler will fall back to content_preview (100 chars)")
 	}
 
 	// Create LLM client
@@ -209,6 +238,7 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 		Name:                    b.config.SchemaName,
 		Version:                 b.config.SchemaVersion,
 		Description:             fmt.Sprintf("Automatically generated ontology for %s domain(s)", primaryDomain),
+		Domain:                  primaryDomain,          // Deprecated: set for backward compatibility
 		Domains:                 domains,
 		KeyConcepts:             keyConcepts,
 		ElementEntityMappings:   entityMappings,
@@ -219,39 +249,131 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 	return schema, llmCalls, totalTokens, nil
 }
 
+// loadPredefinedDomains loads domain names from catalog YAML files
+func loadPredefinedDomains() []string {
+	catalogPaths := []string{}
+
+	// Check environment variable first - allows user to specify catalog location
+	if envPath := os.Getenv("ONTOLOGY_CATALOG_PATH"); envPath != "" {
+		catalogPaths = append(catalogPaths, envPath)
+	}
+
+	// Fallback to relative paths for local development
+	catalogPaths = append(catalogPaths,
+		"./examples/ontologies",
+		"../examples/ontologies",
+		"../../examples/ontologies",
+	)
+
+	var catalogPath string
+	for _, path := range catalogPaths {
+		if _, err := os.Stat(path); err == nil {
+			catalogPath = path
+			break
+		}
+	}
+
+	if catalogPath == "" {
+		// Fallback to hardcoded list if catalog not found
+		fmt.Println("⚠️  Domain catalogs not found - using fallback list")
+		fmt.Println("   Set ONTOLOGY_CATALOG_PATH environment variable to use rich domain catalogs")
+		return []string{
+			"compliance", "financial", "human_resources", "legal", "logistics", "manufacturing",
+			"marketing", "retail", "sales", "supply_chain", "banking", "entertainment_media",
+			"healthcare", "insurance", "leisure", "education", "medical", "technical",
+			"nonprofit", "religion",
+		}
+	}
+
+	fmt.Printf("✓ Loading domain catalogs from: %s\n", catalogPath)
+	domains := make([]string, 0, 20)
+
+	// Walk through all subdirectories and find YAML files
+	filepath.Walk(catalogPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return nil
+		}
+
+		// Read YAML file to extract domain name
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var catalog struct {
+			Domain string `yaml:"domain"`
+		}
+
+		if err := yaml.Unmarshal(data, &catalog); err != nil {
+			return nil
+		}
+
+		if catalog.Domain != "" {
+			domains = append(domains, catalog.Domain)
+		}
+
+		return nil
+	})
+
+	return domains
+}
+
 // identifyDomains asks LLM to identify domains and key concepts
 func (b *OntologyBuilder) identifyDomains(ctx context.Context, samples *sampler.SamplingResult) ([]Domain, []string, int, int, error) {
 	// Prepare sample text
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 20)
 
+	// Load predefined domains from catalog
+	predefinedDomains := loadPredefinedDomains()
+	domainListFormatted := strings.Join(predefinedDomains, ", ")
+
 	prompt := fmt.Sprintf(`Analyze the following document samples and identify ALL distinct domains present in the corpus.
 
 ## DOMAIN IDENTIFICATION PRINCIPLES
 
-A **domain** represents a COHERENT SUBJECT AREA with:
-- **Clear ownership boundary** (who owns this data?)
+A **domain** represents a SUBJECT AREA or ORGANIZATIONAL FUNCTION with:
+- **Clear ownership boundary** (which team/department/discipline owns this?)
 - **Distinct vocabulary** (specialized terminology)
 - **Logical cohesion** (concepts naturally group together)
 
-## DATA MESH ALIGNMENT
+## PREDEFINED DOMAINS
 
-Each domain you identify should represent a potential **data product** with:
-- **Domain Owner**: The team/department responsible for this data
-- **Bounded Context**: Clear scope of what belongs in this domain
-- **Autonomy**: Domain can be managed independently
+**IMPORTANT**: Try to use these PRE-DEFINED domains first: **%s**
+
+Only create new domains if the corpus content clearly doesn't fit any predefined domain.
+
+**Domain categories include**:
+- **Business Functions**: compliance, financial, human_resources, legal, logistics, manufacturing, marketing, retail, sales, supply_chain
+- **Industry Sectors**: banking, entertainment_media, healthcare, insurance, leisure
+- **Academic Disciplines**: education, medical, technical
+- **Organizational Types**: nonprofit, religion
+
+## INVALID "DOMAINS" (DO NOT use these)
+
+**DO NOT** classify these as domains:
+- ❌ Data types (temporal data, spatial data, binary data)
+- ❌ Technical concerns (authentication, logging, caching)
+- ❌ Document formats (JSON, XML, CSV, markdown)
+- ❌ Infrastructure (storage, networking, compute)
+- ❌ Generic attributes (dates, timestamps, IDs, names)
+
+**Examples of WRONG domains**:
+- ❌ "temporal_event_tracking" → This is a data type, not a domain
+- ❌ "document_metadata" → This is technical metadata, not a subject area
+- ❌ "authentication_system" → This is infrastructure, not a domain
 
 ## MULTI-DOMAIN DETECTION
 
-Look for MULTIPLE domains in the corpus. Common patterns:
-- **Financial domain** + **Legal domain** in annual reports
-- **Technical domain** + **Product domain** in product documentation
-- **Medical domain** + **Administrative domain** in healthcare records
-- **Engineering domain** + **Safety domain** in manufacturing docs
+Look for MULTIPLE domains. Common patterns:
+- **financial** + **legal** in annual reports
+- **medical** + **insurance** in healthcare records
+- **retail** + **logistics** in e-commerce
+- **manufacturing** + **logistics** in supply chain
 
 For each domain, identify:
-1. **Name**: Short, descriptive name (e.g., "financial", "legal", "technical")
+1. **Name**: Use predefined domain name when applicable (e.g., "financial", "legal", "medical")
 2. **Description**: What this domain covers (1-2 sentences)
-3. **Owner**: Likely organizational owner (e.g., "CFO Office", "Legal Department", "Engineering Team")
+3. **Owner**: Team/department/discipline owner
 4. **Key Concepts**: 3-5 domain-specific concepts
 
 Sample texts:
@@ -276,15 +398,22 @@ Return JSON format:
   "overall_key_concepts": ["concept1", "concept2", ...]
 }
 
+**SELECTION PROCESS**:
+1. **First**, review the PRE-DEFINED domains above
+2. **Match** corpus content to existing domains where possible
+3. **Only create new domains** if content truly doesn't fit any pre-defined domain
+4. Use consistent naming from the pre-defined list (e.g., "financial" not "finance", "legal" not "legal_affairs")
+
 **IMPORTANT**:
 - Identify ALL distinct domains (typically 1-5 domains per corpus)
 - If truly single-domain, return ONE domain
-- Multi-domain is common for enterprise documents (reports, filings, documentation)`, sampleTexts)
+- Multi-domain is common for enterprise documents (reports, filings, documentation)
+- ALWAYS prefer pre-defined domains over creating new ones`, domainListFormatted, sampleTexts)
 
 	response, err := b.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:   2000,
 		Temperature: 0.3,
-		SystemPrompt: "You are an expert at analyzing document corpora and identifying domain boundaries using data mesh principles. Your goal is to discover ALL distinct domains present in the corpus, thinking about organizational ownership and data product boundaries.",
+		SystemPrompt: "You are an expert at identifying BUSINESS domains using data mesh principles. A domain is a BUSINESS CAPABILITY owned by a business team, NOT a data type, technical concern, or infrastructure component. Focus on business value and organizational ownership. Examples: Financial Management, Legal & Compliance, Healthcare Services, Sales & Marketing.",
 	})
 	if err != nil {
 		return nil, nil, 1, 0, err
@@ -664,7 +793,7 @@ func (b *OntologyBuilder) prepareSampleTexts(samples []sampler.Sample, maxSample
 }
 
 func (b *OntologyBuilder) extractJSON(response string, target interface{}) error {
-	// Find JSON in response (handle markdown code blocks)
+	// Find JSON in response (handle markdown code blocks and preamble text)
 	jsonStr := response
 
 	// Try to extract from ```json code block
@@ -677,6 +806,77 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 		start += 3
 		if end := strings.Index(response[start:], "```"); end != -1 {
 			jsonStr = response[start : start+end]
+		}
+	} else {
+		// No code fence - try to find valid JSON by searching for { or [ and attempting to parse
+		// We may encounter false positives like [header] in text, so we try each candidate
+		for startIdx := 0; startIdx < len(response); startIdx++ {
+			// Find next { or [ character
+			jsonStart := -1
+			for i := startIdx; i < len(response); i++ {
+				if response[i] == '{' || response[i] == '[' {
+					jsonStart = i
+					break
+				}
+			}
+
+			if jsonStart == -1 {
+				break // No more candidates
+			}
+
+			// Find the matching closing brace/bracket
+			candidateStr := response[jsonStart:]
+
+			// Attempt to parse incrementally to find the complete JSON
+			// This handles cases where there's text after the JSON
+			depth := 0
+			inString := false
+			escaped := false
+			jsonEnd := -1
+
+			for i, ch := range candidateStr {
+				if escaped {
+					escaped = false
+					continue
+				}
+
+				if ch == '\\' {
+					escaped = true
+					continue
+				}
+
+				if ch == '"' {
+					inString = !inString
+					continue
+				}
+
+				if !inString {
+					if ch == '{' || ch == '[' {
+						depth++
+					} else if ch == '}' || ch == ']' {
+						depth--
+						if depth == 0 {
+							jsonEnd = i + 1
+							break
+						}
+					}
+				}
+			}
+
+			if jsonEnd != -1 {
+				candidate := candidateStr[:jsonEnd]
+				// Try to parse this candidate - if it works, we found valid JSON
+				var test interface{}
+				if err := json.Unmarshal([]byte(candidate), &test); err == nil {
+					jsonStr = candidate
+					break // Found valid JSON!
+				}
+				// This candidate didn't parse, try next { or [
+				startIdx = jsonStart + 1
+			} else {
+				// Couldn't find closing brace, try next { or [
+				startIdx = jsonStart + 1
+			}
 		}
 	}
 
@@ -698,5 +898,36 @@ func (b *OntologyBuilder) Close() error {
 	if b.sampler != nil {
 		return b.sampler.Close()
 	}
+	return nil
+}
+
+// configureResolverFromStorage opens the analytics storage and configures the sampler's content resolver
+func configureResolverFromStorage(samp *sampler.Sampler, parquetPath string) error {
+	// Create analytics storage to get the resolver
+	storageConfig := map[string]interface{}{
+		"path": parquetPath,
+	}
+
+	storage, err := analytics.NewHiveParquetStorage(storageConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create analytics storage: %w", err)
+	}
+	defer storage.Close()
+
+	// Get resolver from storage
+	resolverInterface := storage.GetContentResolver()
+	if resolverInterface == nil {
+		return fmt.Errorf("storage did not provide a content resolver")
+	}
+
+	// Type assert to ContentResolver
+	contentResolver, ok := resolverInterface.(resolver.ContentResolver)
+	if !ok {
+		return fmt.Errorf("storage resolver has wrong type: %T", resolverInterface)
+	}
+
+	// Configure sampler with the resolver
+	samp.SetResolver(contentResolver)
+
 	return nil
 }
