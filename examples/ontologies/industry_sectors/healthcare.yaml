@@ -1,0 +1,131 @@
+domain: healthcare
+description: Patient care, medical treatments, diagnoses, healthcare providers, medical records, and clinical operations
+subdomains:
+  - clinical_care
+  - patient_records
+  - pharmacy
+  - radiology
+  - laboratory
+  - billing_coding
+
+entity_types:
+  - entity_type: patient
+    description: Individual receiving medical care
+    aliases: [individual, subject, medical record number, MRN]
+    element_types: [paragraph, heading, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [patient, MRN, medical record, individual, subject]
+
+  - entity_type: provider
+    description: Healthcare provider or medical professional
+    aliases: [physician, doctor, nurse, clinician, practitioner]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [physician, doctor, MD, DO, nurse, NP, PA, clinician, provider]
+
+  - entity_type: diagnosis
+    description: Medical diagnosis or condition
+    aliases: [condition, disease, disorder, illness]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [diagnosis, ICD-10, condition, disease, disorder, illness, syndrome]
+
+  - entity_type: procedure
+    description: Medical procedure or treatment
+    aliases: [treatment, operation, surgery, intervention]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [procedure, CPT, treatment, surgery, operation, intervention, therapy]
+
+  - entity_type: medication
+    description: Pharmaceutical medication or drug
+    aliases: [drug, pharmaceutical, prescription, medicine]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [medication, drug, prescription, pharmaceutical, medicine, dosage, mg, ml]
+
+  - entity_type: lab_test
+    description: Laboratory test or diagnostic test
+    aliases: [diagnostic test, lab work, laboratory test]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [lab test, laboratory, blood test, diagnostic test, screening, culture]
+
+  - entity_type: imaging_study
+    description: Radiology or imaging study
+    aliases: [scan, x-ray, MRI, CT scan, ultrasound]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [MRI, CT scan, x-ray, ultrasound, imaging, radiology, scan]
+
+  - entity_type: encounter
+    description: Patient visit or clinical encounter
+    aliases: [visit, appointment, admission, consultation]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [visit, encounter, appointment, admission, consultation, outpatient, inpatient]
+
+relationship_types:
+  - relationship_type: treated_by
+    description: Patient treated by provider
+    source_entity: patient
+    target_entity: provider
+    sample_rules:
+      - type: keyword_match
+        keywords: [treated by, under care of, physician, doctor, provider]
+
+  - relationship_type: diagnosed_with
+    description: Patient diagnosed with condition
+    source_entity: patient
+    target_entity: diagnosis
+    sample_rules:
+      - type: keyword_match
+        keywords: [diagnosed with, diagnosis, condition, suffers from]
+
+  - relationship_type: underwent_procedure
+    description: Patient underwent procedure
+    source_entity: patient
+    target_entity: procedure
+    sample_rules:
+      - type: keyword_match
+        keywords: [underwent, received, had, procedure, surgery, treatment]
+
+  - relationship_type: prescribed_medication
+    description: Provider prescribed medication
+    source_entity: provider
+    target_entity: medication
+    sample_rules:
+      - type: keyword_match
+        keywords: [prescribed, medication, drug, prescription]
+
+  - relationship_type: ordered_test
+    description: Provider ordered lab test
+    source_entity: provider
+    target_entity: lab_test
+    sample_rules:
+      - type: keyword_match
+        keywords: [ordered, lab test, diagnostic test, requested]
+
+  - relationship_type: ordered_imaging
+    description: Provider ordered imaging study
+    source_entity: provider
+    target_entity: imaging_study
+    sample_rules:
+      - type: keyword_match
+        keywords: [ordered, imaging, scan, MRI, CT, x-ray]
+
+  - relationship_type: part_of_encounter
+    description: Procedure part of encounter
+    source_entity: procedure
+    target_entity: encounter
+    sample_rules:
+      - type: keyword_match
+        keywords: [during, part of, visit, encounter, performed during]

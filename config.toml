@@ -1,0 +1,125 @@
+# Go-Doc-Go Configuration (TOML format)
+
+[embedding]
+enabled = true
+provider = "onnx"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+dimensions = 384
+chunk_size = 512
+overlap = 128
+contextual = true
+predecessor_count = 1
+successor_count = 1
+
+# Content Sources Configuration
+[[content_sources]]
+name = "wikipedia"
+type = "web"
+base_url = "https://en.wikipedia.org"
+url_list = [
+    "https://en.wikipedia.org/wiki/Banking",
+    "https://en.wikipedia.org/wiki/Insurance",
+    "https://en.wikipedia.org/wiki/Medicine",
+    "https://en.wikipedia.org/wiki/Cardiology",
+    "https://en.wikipedia.org/wiki/Surgery",
+    "https://en.wikipedia.org/wiki/Neurology"
+]
+include_patterns = [
+    "^https://en.wikipedia.org/wiki/"
+]
+exclude_patterns = [
+    "/Special:",
+    "/Talk:",
+    "/Category:",
+    "/File:"
+]
+max_link_depth = 1
+refresh_interval = 604800  # 7 days in seconds
+
+[content_sources.headers]
+User-Agent = "Go-Doc-Go/1.0 (educational project; ken@kenstott.com)"
+
+# Example Confluence source (commented out)
+# [[content_sources]]run againain
+# name = "Company Confluence"
+# type = "confluence"
+# base_url = "https://your-instance.atlassian.net"
+# username = "your-email@example.com"
+# api_token = "your-api-token"  # Generate from Atlassian account settings
+# # Alternatively, use password instead of api_token (not recommended)
+# # password = "your-password"
+#
+# # Optional: Specific spaces to process, leave empty to fetch all
+# spaces = ["TEAM", "DOC", "KB"]
+#
+# # Content type filters
+# include_pages = true
+# include_blogs = true
+# include_comments = false
+# include_attachments = false
+# exclude_personal_spaces = true
+#
+# # Optional: Content filters with regex patterns
+# include_patterns = ["Project.*", "Architecture"]
+# exclude_patterns = ["Draft.*", "OLD"]
+#
+# # Link following settings
+# max_link_depth = 2
+#
+# # API settings
+# expand_macros = true
+# limit = 500
+
+# Example file source (commented out)
+# [[content_sources]]
+# name = "file-docs"
+# type = "file"
+# base_path = "./assets"
+# file_pattern = "**/*.md"
+# watch_for_changes = true
+# max_link_depth = 2
+
+[relationship_detection]
+enabled = true
+structural = true
+semantic = false
+
+[relationship_detection.cross_document_semantic]
+enabled = true
+similarity_threshold = 0.70
+queue_idle_trigger_minutes = 0  # 0 minutes for immediate testing (30 seconds via code)
+rate_limit_batch_size = 1000
+rate_limit_sleep_ms = 100
+min_interval_minutes = 1  # 1 minute minimum interval for testing
+
+# UDML-O: Ontology-based entity and relationship extraction
+[ontology]
+enabled = true
+schema_path = "./schemas"  # Directory containing ontology schema YAML/JSON files
+diversity_threshold = 0.0001  # Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse). Default: 0.0001
+queue_idle_trigger_minutes = 0  # Run after queue idle (0 = 30 seconds via code)
+
+# Processing configuration
+[processing]
+batch_size = 100
+max_workers = 4
+timeout_seconds = 300
+
+[processing.job_control]
+backend = "sqlite"
+path = "./job_queue.db"
+claim_timeout = 300
+heartbeat_interval = 30
+max_retries = 3
+
+# Analytics outputs configuration
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./analytics-output"
+
+[logging]
+level = "INFO"
+file = "./logs/go-doc-go.log"

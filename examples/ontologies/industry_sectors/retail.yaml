@@ -1,0 +1,397 @@
+domain: retail
+description: Retail sales reports, inventory documents, pricing catalogs, customer analytics, and merchandising documentation
+subdomains:
+    - sales
+    - inventory
+    - merchandising
+    - customer_service
+    - ecommerce
+terms:
+    - name: transaction
+      synonyms:
+        - sale
+        - purchase
+        - order
+        - checkout
+      description: Retail sales transaction
+    - name: SKU
+      synonyms:
+        - stock keeping unit
+        - product code
+        - item number
+      description: Stock keeping unit identifier
+    - name: inventory
+      synonyms:
+        - stock
+        - merchandise
+        - goods
+        - on hand
+      description: Available stock or merchandise
+    - name: promotion
+      synonyms:
+        - sale
+        - discount
+        - offer
+        - deal
+      description: Sales promotion or discount
+    - name: customer
+      synonyms:
+        - shopper
+        - buyer
+        - client
+        - consumer
+      description: Retail customer
+    - name: revenue
+      synonyms:
+        - sales
+        - income
+        - receipts
+        - turnover
+      description: Sales revenue
+    - name: margin
+      synonyms:
+        - profit margin
+        - markup
+        - gross margin
+      description: Profit margin on sales
+    - name: shrinkage
+      synonyms:
+        - loss
+        - theft
+        - waste
+        - inventory loss
+      description: Inventory loss due to theft or damage
+    - name: planogram
+      synonyms:
+        - display plan
+        - shelf layout
+        - merchandising plan
+      description: Visual merchandising layout plan
+    - name: footfall
+      synonyms:
+        - foot traffic
+        - customer traffic
+        - store visits
+      description: Customer traffic in store
+entity_types:
+    - entity_type: product
+      description: Retail product or merchandise
+      aliases:
+        - item
+        - merchandise
+        - SKU
+        - good
+      element_types:
+        - paragraph
+        - table_cell
+        - heading
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - product
+            - item
+            - SKU
+            - merchandise
+        - type: regex_pattern
+          pattern: \bSKU\s*#?\s*[A-Z0-9\-]+
+    - entity_type: customer
+      description: Retail customer or shopper
+      aliases:
+        - shopper
+        - buyer
+        - client
+        - consumer
+        - member
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - customer
+            - shopper
+            - buyer
+            - member
+    - entity_type: transaction
+      description: Sales transaction or purchase
+      aliases:
+        - sale
+        - purchase
+        - order
+        - checkout
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - transaction
+            - sale
+            - purchase
+            - order
+        - type: regex_pattern
+          pattern: \b(?:Order|Transaction|Receipt)\s*#?\s*[A-Z0-9\-]+
+    - entity_type: price
+      description: Product price or cost
+      aliases:
+        - cost
+        - retail price
+        - sale price
+        - MSRP
+      element_types:
+        - table_cell
+        - paragraph
+      sample_rules:
+        - type: regex_pattern
+          pattern: \$[\d,]+(?:\.\d{2})?
+        - type: keyword_match
+          keywords:
+            - price
+            - MSRP
+            - retail price
+            - sale price
+    - entity_type: promotion
+      description: Sales promotion or discount
+      aliases:
+        - discount
+        - sale
+        - offer
+        - deal
+        - coupon
+      element_types:
+        - paragraph
+        - heading
+        - list_item
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - promotion
+            - discount
+            - sale
+            - offer
+            - coupon
+        - type: regex_pattern
+          pattern: \b\d+%\s+off\b
+    - entity_type: store
+      description: Retail store or location
+      aliases:
+        - location
+        - outlet
+        - shop
+        - branch
+      element_types:
+        - paragraph
+        - heading
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - store
+            - location
+            - outlet
+            - branch
+        - type: regex_pattern
+          pattern: \bStore\s*#?\s*\d+
+    - entity_type: category
+      description: Product category or department
+      aliases:
+        - department
+        - classification
+        - segment
+      element_types:
+        - paragraph
+        - heading
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - category
+            - department
+            - electronics
+            - apparel
+            - home goods
+            - groceries
+    - entity_type: brand
+      description: Product brand or manufacturer
+      aliases:
+        - manufacturer
+        - label
+        - make
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - brand
+            - manufacturer
+            - private label
+    - entity_type: inventory_level
+      description: Stock or inventory level
+      aliases:
+        - stock level
+        - on hand
+        - available stock
+      element_types:
+        - table_cell
+        - paragraph
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - inventory
+            - stock
+            - on hand
+            - available
+    - entity_type: sales_metric
+      description: Sales performance metric
+      aliases:
+        - KPI
+        - metric
+        - performance indicator
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - sales
+            - revenue
+            - units sold
+            - conversion rate
+            - basket size
+            - same-store sales
+    - entity_type: payment_method
+      description: Payment method or type
+      aliases:
+        - payment type
+        - tender type
+      element_types:
+        - table_cell
+        - paragraph
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - cash
+            - credit card
+            - debit card
+            - mobile payment
+            - gift card
+            - payment method
+    - entity_type: return
+      description: Product return or refund
+      aliases:
+        - refund
+        - exchange
+        - return merchandise
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - return
+            - refund
+            - exchange
+            - RMA
+common_entity_refs:
+    - person
+    - employee
+    - role
+    - date
+    - time
+    - duration
+    - address
+    - city
+    - region
+    - country
+    - postal_code
+    - email
+    - phone
+    - url
+    - percentage
+    - number
+    - size
+    - color
+    - dimension
+    - weight
+relationships:
+    - name: customer_purchased_product
+      source_type: customer
+      target_type: product
+      relationship_type: related_to
+      description: Customer purchased product
+      sample_patterns:
+        - '{customer} purchased {product}'
+        - '{product} bought by {customer}'
+    - name: transaction_includes_product
+      source_type: transaction
+      target_type: product
+      relationship_type: contains
+      description: Transaction includes product
+      sample_patterns:
+        - '{transaction} includes {product}'
+        - '{product} in {transaction}'
+    - name: product_has_price
+      source_type: product
+      target_type: price
+      relationship_type: related_to
+      description: Product has price
+      sample_patterns:
+        - '{product} priced at {price}'
+        - '{price} for {product}'
+    - name: promotion_applies_to_product
+      source_type: promotion
+      target_type: product
+      relationship_type: related_to
+      description: Promotion applies to product
+      sample_patterns:
+        - '{promotion} on {product}'
+        - '{product} on {promotion}'
+    - name: product_sold_at_store
+      source_type: product
+      target_type: store
+      relationship_type: located_in
+      description: Product sold at store
+      sample_patterns:
+        - '{product} available at {store}'
+        - '{store} sells {product}'
+    - name: product_in_category
+      source_type: product
+      target_type: category
+      relationship_type: part_of
+      description: Product in category
+      sample_patterns:
+        - '{product} in {category}'
+        - '{category}: {product}'
+    - name: product_made_by_brand
+      source_type: product
+      target_type: brand
+      relationship_type: created_by
+      description: Product made by brand
+      sample_patterns:
+        - '{product} by {brand}'
+        - '{brand} {product}'
+    - name: store_has_inventory
+      source_type: store
+      target_type: inventory_level
+      relationship_type: related_to
+      description: Store has inventory level
+      sample_patterns:
+        - '{store} inventory: {inventory}'
+        - '{inventory} at {store}'
+    - name: transaction_used_payment_method
+      source_type: transaction
+      target_type: payment_method
+      relationship_type: related_to
+      description: Transaction used payment method
+      sample_patterns:
+        - '{transaction} paid with {payment}'
+        - '{payment} for {transaction}'
+    - name: customer_returned_product
+      source_type: customer
+      target_type: product
+      relationship_type: related_to
+      description: Customer returned product
+      sample_patterns:
+        - '{customer} returned {product}'
+        - '{product} return by {customer}'

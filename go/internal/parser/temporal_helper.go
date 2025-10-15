@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/temporal"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/temporal"
 )
 
 // ExtractTemporalFromText is a helper function used by all parsers to extract temporal metadata

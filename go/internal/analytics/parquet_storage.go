@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -19,14 +20,14 @@ import (
 	"github.com/apache/arrow/go/v18/parquet"
 	"github.com/apache/arrow/go/v18/parquet/compress"
 	"github.com/apache/arrow/go/v18/parquet/pqarrow"
+	_ "github.com/marcboeker/go-duckdb"
 )
 
 // ParquetStorage implements Storage interface with native Go Parquet writing
 type ParquetStorage struct {
-	basePath     string
-	partitioning []string // e.g., ["date", "source"]
-	mu           sync.Mutex
-	allocator    memory.Allocator
+	basePath  string
+	mu        sync.Mutex
+	allocator memory.Allocator
 }
 
 // NewParquetStorage creates a new Parquet storage backend
@@ -37,19 +38,6 @@ func NewParquetStorage(config map[string]interface{}) (*ParquetStorage, error) {
 		return nil, fmt.Errorf("missing required 'path' in config")
 	}
 
-	// Extract partitioning configuration (default: date, source)
-	var partitioning []string
-	if partConfig, ok := config["partitioning"].([]interface{}); ok {
-		for _, p := range partConfig {
-			if pStr, ok := p.(string); ok {
-				partitioning = append(partitioning, pStr)
-			}
-		}
-	}
-	if len(partitioning) == 0 {
-		partitioning = []string{"date", "source"}
-	}
-
 	// Create base directory if it doesn't exist
 	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create base path: %w", err)
@@ -58,14 +46,13 @@ func NewParquetStorage(config map[string]interface{}) (*ParquetStorage, error) {
 	log.Printf("========================================")
 	log.Printf("ANALYTICS: Initialized native Go Parquet storage")
 	log.Printf("  Path: %s", basePath)
-	log.Printf("  Partitioning: %v", partitioning)
+	log.Printf("  Partitioning: element_type -> version -> date -> source (Hive standard)")
 	log.Printf("  Storage type: Native Go (NO Python shims)")
 	log.Printf("========================================")
 
 	return &ParquetStorage{
-		basePath:     basePath,
-		partitioning: partitioning,
-		allocator:    memory.NewGoAllocator(),
+		basePath:  basePath,
+		allocator: memory.NewGoAllocator(),
 	}, nil
 }
 
@@ -164,6 +151,148 @@ func (s *ParquetStorage) AppendLinks(links []Link) error {
 	return nil
 }
 
+// QueryEmbeddings queries embeddings from Parquet files using DuckDB
+func (s *ParquetStorage) QueryEmbeddings(filters map[string]interface{}) ([]Embedding, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query based on filters
+	query := fmt.Sprintf("SELECT element_id, doc_id, source_name, embedding, text FROM '%s/embeddings/**/*.parquet'",
+		s.basePath)
+
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query embeddings: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	var embeddings []Embedding
+	for rows.Next() {
+		var emb Embedding
+		var embeddingJSON string
+
+		err := rows.Scan(&emb.ElementID, &emb.DocID, &emb.SourceName, &embeddingJSON, &emb.Text)
+		if err != nil {
+			log.Printf("Failed to scan embedding row: %v", err)
+			continue
+		}
+
+		// Parse embedding from JSON array string
+		if err := json.Unmarshal([]byte(embeddingJSON), &emb.Embedding); err != nil {
+			log.Printf("Failed to unmarshal embedding for element %s: %v", emb.ElementID, err)
+			continue
+		}
+
+		embeddings = append(embeddings, emb)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d embeddings from Parquet", len(embeddings))
+	return embeddings, nil
+}
+
+// QueryElements queries elements from Parquet files using DuckDB
+func (s *ParquetStorage) QueryElements(filters map[string]interface{}) ([]Element, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query - select all element fields
+	query := fmt.Sprintf(`SELECT
+		element_id, doc_id, source_name, element_type, element_category,
+		content, content_preview, content_hash, parent_id,
+		element_order, document_position, content_location
+		FROM '%s/elements/**/*.parquet'`, s.basePath)
+
+	// Build WHERE clauses from filters
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+	if elementType, ok := filters["element_type"].(string); ok && elementType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("element_type = '%s'", elementType))
+	}
+	if elementCategory, ok := filters["element_category"].(string); ok && elementCategory != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("element_category = '%s'", elementCategory))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query elements: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results (ParquetStorage doesn't have promoted fields)
+	var elements []Element
+	for rows.Next() {
+		var elem Element
+		var contentLocationJSON sql.NullString
+
+		err := rows.Scan(
+			&elem.ElementID, &elem.DocID, &elem.SourceName, &elem.ElementType, &elem.ElementCategory,
+			&elem.Content, &elem.ContentPreview, &elem.ContentHash, &elem.ParentID,
+			&elem.ElementOrder, &elem.DocumentPosition, &contentLocationJSON,
+		)
+		if err != nil {
+			log.Printf("Failed to scan element row: %v", err)
+			continue
+		}
+
+		// Parse JSON fields
+		if contentLocationJSON.Valid && contentLocationJSON.String != "" {
+			if err := json.Unmarshal([]byte(contentLocationJSON.String), &elem.ContentLocation); err != nil {
+				log.Printf("Failed to unmarshal content_location for element %s: %v", elem.ElementID, err)
+			}
+		}
+
+		elements = append(elements, elem)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating element rows: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d elements from Parquet", len(elements))
+	return elements, nil
+}
+
+// GetContentResolver returns nil for ParquetStorage (content resolution not supported)
+func (s *ParquetStorage) GetContentResolver() interface{} {
+	return nil // ParquetStorage does not support content resolution
+}
+
 // Close closes the storage (no-op for Parquet)
 func (s *ParquetStorage) Close() error {
 	log.Println("Closing Parquet storage")
@@ -171,10 +300,12 @@ func (s *ParquetStorage) Close() error {
 }
 
 // partitionDocuments groups documents by partition keys
+// Documents don't have element_type, so they use a flat date/source scheme
 func (s *ParquetStorage) partitionDocuments(documents []Document) map[string][]Document {
 	partitioned := make(map[string][]Document)
 	for _, doc := range documents {
-		key := s.getPartitionKey(doc.ProcessedAt, doc.SourceName)
+		date := doc.ProcessedAt.Format("2006-01-02")
+		key := fmt.Sprintf("date=%s/source=%s", date, doc.SourceName)
 		partitioned[key] = append(partitioned[key], doc)
 	}
 	return partitioned
@@ -184,37 +315,43 @@ func (s *ParquetStorage) partitionDocuments(documents []Document) map[string][]D
 func (s *ParquetStorage) partitionElements(elements []Element) map[string][]Element {
 	partitioned := make(map[string][]Element)
 	for _, elem := range elements {
-		// Use current time for partitioning (could be enhanced to use document processed time)
-		key := s.getPartitionKey(time.Now(), elem.SourceName)
+		// Standard partitioning: element_type -> version -> date -> source
+		version := "v1" // Default version
+		key := s.getPartitionKey(elem.ElementType, version, time.Now(), elem.SourceName)
 		partitioned[key] = append(partitioned[key], elem)
 	}
 	return partitioned
 }
 
 // partitionRelationships groups relationships by partition keys
+// Relationships use flat date/source scheme like documents
 func (s *ParquetStorage) partitionRelationships(relationships []Relationship) map[string][]Relationship {
 	partitioned := make(map[string][]Relationship)
 	for _, rel := range relationships {
-		key := s.getPartitionKey(time.Now(), rel.SourceName)
+		date := time.Now().Format("2006-01-02")
+		key := fmt.Sprintf("date=%s/source=%s", date, rel.SourceName)
 		partitioned[key] = append(partitioned[key], rel)
 	}
 	return partitioned
 }
 
 // partitionEmbeddings groups embeddings by partition keys
+// Embeddings use flat date/source scheme like documents
 func (s *ParquetStorage) partitionEmbeddings(embeddings []Embedding) map[string][]Embedding {
 	partitioned := make(map[string][]Embedding)
 	for _, emb := range embeddings {
-		key := s.getPartitionKey(time.Now(), emb.SourceName)
+		date := time.Now().Format("2006-01-02")
+		key := fmt.Sprintf("date=%s/source=%s", date, emb.SourceName)
 		partitioned[key] = append(partitioned[key], emb)
 	}
 	return partitioned
 }
 
-// getPartitionKey generates a partition key based on date and source
-func (s *ParquetStorage) getPartitionKey(timestamp time.Time, sourceName string) string {
+// getPartitionKey generates a partition key using standard Hive partitioning scheme
+// Standard partitioning: element_type=X/version=Y/date=Z/source=W
+func (s *ParquetStorage) getPartitionKey(elementType string, version string, timestamp time.Time, sourceName string) string {
 	date := timestamp.Format("2006-01-02")
-	return fmt.Sprintf("date=%s/source=%s", date, sourceName)
+	return fmt.Sprintf("element_type=%s/version=%s/date=%s/source=%s", elementType, version, date, sourceName)
 }
 
 // getPartitionPath returns the full partition path for a given table and partition key
@@ -328,6 +465,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		{Name: "parent_id", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "element_order", Type: arrow.PrimitiveTypes.Float64, Nullable: true},
 		{Name: "document_position", Type: arrow.PrimitiveTypes.Float64, Nullable: true},
+		{Name: "metadata", Type: arrow.BinaryTypes.String, Nullable: true}, // JSON string
 	}
 	schema := arrow.NewSchema(fields, nil)
 
@@ -344,6 +482,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 	parentIDBuilder := array.NewStringBuilder(s.allocator)
 	elementOrderBuilder := array.NewFloat64Builder(s.allocator)
 	documentPositionBuilder := array.NewFloat64Builder(s.allocator)
+	metadataBuilder := array.NewStringBuilder(s.allocator)
 
 	defer elementIDBuilder.Release()
 	defer docIDBuilder.Release()
@@ -357,6 +496,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 	defer parentIDBuilder.Release()
 	defer elementOrderBuilder.Release()
 	defer documentPositionBuilder.Release()
+	defer metadataBuilder.Release()
 
 	// Append data
 	for _, elem := range elements {
@@ -367,12 +507,12 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		elementCategoryBuilder.Append(elem.ElementCategory)
 
 		if elem.Content != "" {
-			contentBuilder.Append(elem.Content)
+			contentBuilder.Append(sanitizeUTF8(elem.Content))
 		} else {
 			contentBuilder.AppendNull()
 		}
 
-		contentPreviewBuilder.Append(elem.ContentPreview)
+		contentPreviewBuilder.Append(sanitizeUTF8(elem.ContentPreview))
 
 		// Serialize content_location as JSON string
 		if elem.ContentLocation != nil {
@@ -401,6 +541,19 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 
 		elementOrderBuilder.Append(elem.ElementOrder)
 		documentPositionBuilder.Append(elem.DocumentPosition)
+
+		// Serialize metadata as JSON string
+		if elem.Metadata != nil {
+			metadataJSON, err := json.Marshal(elem.Metadata)
+			if err != nil {
+				log.Printf("WARNING: Failed to marshal metadata for element %s: %v", elem.ElementID, err)
+				metadataBuilder.AppendNull()
+			} else {
+				metadataBuilder.Append(string(metadataJSON))
+			}
+		} else {
+			metadataBuilder.AppendNull()
+		}
 	}
 
 	// Build record
@@ -417,6 +570,7 @@ func (s *ParquetStorage) writeElementsToParquet(partKey string, elements []Eleme
 		parentIDBuilder.NewArray(),
 		elementOrderBuilder.NewArray(),
 		documentPositionBuilder.NewArray(),
+		metadataBuilder.NewArray(),
 	}
 	defer func() {
 		for _, col := range columns {
@@ -572,10 +726,12 @@ func (s *ParquetStorage) writeEmbeddingsToParquet(partKey string, embeddings []E
 }
 
 // partitionLinks groups links by partition keys
+// Links use flat date/source scheme like documents
 func (s *ParquetStorage) partitionLinks(links []Link) map[string][]Link {
 	partitioned := make(map[string][]Link)
 	for _, link := range links {
-		key := s.getPartitionKey(time.Now(), link.SourceName)
+		date := time.Now().Format("2006-01-02")
+		key := fmt.Sprintf("date=%s/source=%s", date, link.SourceName)
 		partitioned[key] = append(partitioned[key], link)
 	}
 	return partitioned
@@ -700,4 +856,32 @@ func (s *ParquetStorage) writeRecordToFile(filepath string, schema *arrow.Schema
 	}
 
 	return nil
+}
+
+// ============================================================================
+// UDML-O: Stub implementations (not yet fully implemented for non-Hive storage)
+// ============================================================================
+
+// AppendOntologyEntities is not yet implemented for ParquetStorage (use HiveParquetStorage)
+func (s *ParquetStorage) AppendOntologyEntities(entities []OntologyEntity) error {
+	log.Printf("WARNING: Ontology entities not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil
+}
+
+// AppendOntologyRelationships is not yet implemented for ParquetStorage
+func (s *ParquetStorage) AppendOntologyRelationships(relationships []OntologyRelationship) error {
+	log.Printf("WARNING: Ontology relationships not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil
+}
+
+// AppendOntologyMentions is not yet implemented for ParquetStorage
+func (s *ParquetStorage) AppendOntologyMentions(mentions []OntologyMention) error {
+	log.Printf("WARNING: Ontology mentions not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil
+}
+
+// QueryOntologyEntities is not yet implemented for ParquetStorage
+func (s *ParquetStorage) QueryOntologyEntities(filters map[string]interface{}) ([]OntologyEntity, error) {
+	log.Printf("WARNING: Ontology entity queries not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil, nil
 }

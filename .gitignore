@@ -21,7 +21,8 @@ wheels/
 *.egg
 
 # Virtual Environment
-.venv/
+# NOTE: .venv/ is NOT ignored - it contains ONNX Runtime library needed by Go
+# See PYTHON_REMOVAL.md for details
 venv/
 ENV/
 env/
@@ -139,8 +140,9 @@ go/pkg/
 go/assets/
 go/models/
 go/tests/assets/
+tests/test_output/
 tests/test_output_go/
-tests/test_output_go/
+tests/test_output_python/
 tests/test_output_native_go/
 
 # Performance and analysis reports
@@ -149,13 +151,89 @@ EMBEDDING_PARITY_RESULTS.md
 NATIVE_ANALYTICS_IMPLEMENTATION.md
 PERFORMANCE_COMPARISON.md
 WORKER_PARALLELISM.md
+DOCX_PARSER_NOTES.md
+*_NOTES.md
+*_FINDINGS.md
+*_RESULTS.md
+*_IMPLEMENTATION.md
 
-# Test and debug scripts
-analyze_embedding_text_format.py
-compare_contextual_text.py
+# Test and debug scripts at root
+analyze_*.py
+debug_*.py
+test_*.py
+compare_*.py
+benchmark_*.py
+controlled_*.py
+automated_*.py
+*_test.py
+*_test.sh
 performance_test.sh
 test_embedding_fix.sh
 test_worker_env.sh
+quick_worker_test.sh
+full_system_test.sh
+
+# Discovery/extraction temporary files
+*_extraction_results.json
+*_discovered_ontology.yaml
+*_discovery*.json
+*_discovery*.yaml
+*_discovery*.py
+*_interview*.json
+*_interview*.py
+*_ontology*.json
+*_ontology*.yaml
+*_semantic*.json
+*_semantic*.yaml
+extraction_results.json
+conversation*.json
+domain_info.json
+realistic_*.json
+terms_table.json
+relationship_rules_table.json
+ontology_tables.*
+element_taxonomy.json
+prompt_analysis.md
+*_validation*.md
+
+# Temporary analysis/demo scripts
+demo_*.py
+generate_*.py
+export_*.py
+extract_*.py
+show_demo.py
+audit_*.py
+process_*.sh
+create_test_*.py
+analyze_*.sh
+add_temporal_to_parsers.sh
+
+# Temporary test directories
+test_simple_python/
+test-analytics-output-python/
+test_containers/
+
+# Analytics and test output directories
+go/analytics-output/
+analytics-output/
+go/test_ontology_output/
+test_ontology_output/
 
 # Go worker binary
 go/worker
+
+# Test and debug commands
+go/cmd/test_duckdb_query/
+go/cmd/test_jsonpath/
+go/cmd/test_*/
+
+# Coverage reports
+go/coverage.html
+go/coverage_*.html
+go/*.html
+
+# Backup and skip files
+go/**/*.bak
+go/**/*.bak2
+go/**/*.skip
+/go/ontology

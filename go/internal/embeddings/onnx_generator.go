@@ -20,11 +20,11 @@ type SessionWrapper struct {
 	session            *ort.AdvancedSession
 	inputTensor        *ort.Tensor[int64]
 	maskTensor         *ort.Tensor[int64]
-	tokenTypeTensor    *ort.Tensor[int64]
+	tokenTypeIDsTensor *ort.Tensor[int64]
 	outputTensor       *ort.Tensor[float32]
 	inputData          []int64
 	maskData           []int64
-	tokenTypeData      []int64
+	tokenTypeIDsData   []int64
 	batchSize          int64
 	seqLength          int64
 }
@@ -147,12 +147,15 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		modelConfig.ModelType, embeddingDimension, maxSeqLength)
 
 	// Fixed dimensions for session reuse
-	// Use batch_size=1 for optimal CoreML performance (batching at ONNX level slower than parallel single items)
-	const fixedBatchSize = 1
+	// Batch size can be configured for performance tuning (default: 32 for good throughput)
+	fixedBatchSize := int64(config.BatchSize)
+	if fixedBatchSize == 0 {
+		fixedBatchSize = 32 // Default to 32 for efficient batch processing
+	}
 	fixedSeqLength := int64(maxSeqLength)
 
 	// Create session pool with pre-allocated sessions and tensors
-	// This is THE KEY to performance - sessions are expensive to create with CoreML
+	// Pool size should match expected concurrency level
 	poolSize := config.PoolSize
 	if poolSize == 0 {
 		poolSize = 4 // Default to 4 if not specified
@@ -174,10 +177,11 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 			// Log GPU setup only for first session to avoid spam
 			if runtime.GOOS == "darwin" {
 				// macOS - use CoreML for Apple Silicon GPU/Neural Engine
+				// Since we're using FIXED batch sizes, we REQUIRE static input shapes
 				coreMLOptions := map[string]string{
 					"ModelFormat":                        "NeuralNetwork", // Use NeuralNetwork format for stability
 					"MLComputeUnits":                     "ALL",           // Enable all compute units (CPU, GPU, Neural Engine)
-					"RequireStaticInputShapes":           "0",             // Allow dynamic shapes (important for BERT)
+					"RequireStaticInputShapes":           "1",             // REQUIRE static shapes for CoreML (we use fixed batch_size=32)
 					"EnableOnSubgraphs":                  "0",             // Don't enable on subgraphs
 					"AllowLowPrecisionAccumulationOnGPU": "1",             // Enable low precision acceleration
 				}
@@ -186,7 +190,7 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 					log.Printf("WARNING: CoreML execution provider NOT available: %v", err)
 					log.Printf("INFO: Falling back to CPU execution provider (no GPU acceleration)")
 				} else {
-					log.Printf("SUCCESS: CoreML execution provider enabled with GPU/Neural Engine (MLComputeUnits=ALL)")
+					log.Printf("SUCCESS: CoreML execution provider enabled with GPU/Neural Engine (MLComputeUnits=ALL, StaticShapes=REQUIRED)")
 				}
 			} else if runtime.GOOS == "linux" {
 				// Linux - try CUDA for NVIDIA GPU acceleration
@@ -227,7 +231,7 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 				coreMLOptions := map[string]string{
 					"ModelFormat":                        "NeuralNetwork",
 					"MLComputeUnits":                     "ALL",
-					"RequireStaticInputShapes":           "0",
+					"RequireStaticInputShapes":           "1",             // REQUIRE static shapes
 					"EnableOnSubgraphs":                  "0",
 					"AllowLowPrecisionAccumulationOnGPU": "1",
 				}
@@ -253,7 +257,7 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		// Pre-allocate tensors with FIXED shapes
 		inputData := make([]int64, fixedBatchSize*fixedSeqLength)
 		maskData := make([]int64, fixedBatchSize*fixedSeqLength)
-		tokenTypeData := make([]int64, fixedBatchSize*fixedSeqLength)
+		tokenTypeIDsData := make([]int64, fixedBatchSize*fixedSeqLength) // All zeros for sentence-transformers
 
 		inputTensor, err := ort.NewTensor(ort.NewShape(fixedBatchSize, fixedSeqLength), inputData)
 		if err != nil {
@@ -268,12 +272,12 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 			return nil, fmt.Errorf("failed to create mask tensor: %w", err)
 		}
 
-		tokenTypeTensor, err := ort.NewTensor(ort.NewShape(fixedBatchSize, fixedSeqLength), tokenTypeData)
+		tokenTypeIDsTensor, err := ort.NewTensor(ort.NewShape(fixedBatchSize, fixedSeqLength), tokenTypeIDsData)
 		if err != nil {
 			inputTensor.Destroy()
 			maskTensor.Destroy()
 			sessionOptions.Destroy()
-			return nil, fmt.Errorf("failed to create token type tensor: %w", err)
+			return nil, fmt.Errorf("failed to create token_type_ids tensor: %w", err)
 		}
 
 		outputShape := ort.NewShape(fixedBatchSize, fixedSeqLength, int64(embeddingDimension))
@@ -281,25 +285,26 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		if err != nil {
 			inputTensor.Destroy()
 			maskTensor.Destroy()
-			tokenTypeTensor.Destroy()
+			tokenTypeIDsTensor.Destroy()
 			sessionOptions.Destroy()
 			return nil, fmt.Errorf("failed to create output tensor: %w", err)
 		}
 
 		// Create the session ONCE with these fixed tensors
 		// This is where CoreML initialization happens - very expensive!
+		// BERT models require three inputs: input_ids, attention_mask, and token_type_ids
 		session, err := ort.NewAdvancedSession(
 			modelPath,
 			[]string{"input_ids", "attention_mask", "token_type_ids"},
 			[]string{"last_hidden_state"},
-			[]ort.Value{inputTensor, maskTensor, tokenTypeTensor},
+			[]ort.Value{inputTensor, maskTensor, tokenTypeIDsTensor},
 			[]ort.Value{outputTensor},
 			sessionOptions,
 		)
 		if err != nil {
 			inputTensor.Destroy()
 			maskTensor.Destroy()
-			tokenTypeTensor.Destroy()
+			tokenTypeIDsTensor.Destroy()
 			outputTensor.Destroy()
 			sessionOptions.Destroy()
 			return nil, fmt.Errorf("failed to create ONNX session: %w", err)
@@ -310,16 +315,16 @@ func NewOnnxEmbeddingGenerator(config Config, modelDir string) (*OnnxEmbeddingGe
 		}
 
 		wrapper := &SessionWrapper{
-			session:         session,
-			inputTensor:     inputTensor,
-			maskTensor:      maskTensor,
-			tokenTypeTensor: tokenTypeTensor,
-			outputTensor:    outputTensor,
-			inputData:       inputData,
-			maskData:        maskData,
-			tokenTypeData:   tokenTypeData,
-			batchSize:       fixedBatchSize,
-			seqLength:       fixedSeqLength,
+			session:            session,
+			inputTensor:        inputTensor,
+			maskTensor:         maskTensor,
+			tokenTypeIDsTensor: tokenTypeIDsTensor,
+			outputTensor:       outputTensor,
+			inputData:          inputData,
+			maskData:           maskData,
+			tokenTypeIDsData:   tokenTypeIDsData,
+			batchSize:          fixedBatchSize,
+			seqLength:          fixedSeqLength,
 		}
 
 		sessionPool <- wrapper
@@ -386,14 +391,6 @@ func (g *OnnxEmbeddingGenerator) Generate(text string) ([]float64, error) {
 	}
 	defer maskTensor.Destroy()
 
-	// Create token_type_ids (all zeros for single sentence)
-	tokenTypeIDs := make([]int64, len(inputIDs))
-	tokenTypeTensor, err := ort.NewTensor(ort.NewShape(1, seqLen), tokenTypeIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token type tensor: %w", err)
-	}
-	defer tokenTypeTensor.Destroy()
-
 	// Create output tensor (pre-allocated)
 	// Output shape: [batch_size, sequence_length, hidden_size] = [1, seqLen, dimensions]
 	outputShape := ort.NewShape(1, seqLen, int64(g.dimensions))
@@ -417,11 +414,12 @@ func (g *OnnxEmbeddingGenerator) Generate(text string) ([]float64, error) {
 
 	// Create session - each session is independent, no mutex needed
 	// Sessions are created per-call for thread safety (no shared state)
+	// Note: Most sentence-transformers models only need input_ids and attention_mask
 	session, err := ort.NewAdvancedSession(
 		g.modelPath,
-		[]string{"input_ids", "attention_mask", "token_type_ids"},
+		[]string{"input_ids", "attention_mask"},
 		[]string{"last_hidden_state"},
-		[]ort.Value{inputTensor, maskTensor, tokenTypeTensor},
+		[]ort.Value{inputTensor, maskTensor},
 		[]ort.Value{outputTensor},
 		sessionOptions,
 	)
@@ -528,12 +526,13 @@ func (g *OnnxEmbeddingGenerator) generateBatchSingle(texts []string) ([][]float6
 		for j := 0; j < int(wrapper.seqLength); j++ {
 			wrapper.inputData[offset+j] = g.tokenizer.padToken
 			wrapper.maskData[offset+j] = 0
-			wrapper.tokenTypeData[offset+j] = 0
+			wrapper.tokenTypeIDsData[offset+j] = 0 // All zeros for single sentence (sentence-transformers)
 		}
 
 		// Copy actual tokens
 		copy(wrapper.inputData[offset:offset+seqLen], batchInputIDs[i])
 		copy(wrapper.maskData[offset:offset+seqLen], batchAttentionMasks[i])
+		// token_type_ids remain zeros (already set above)
 	}
 	log.Printf("TIMING: Tensor fill took %v", time.Since(startFill))
 
@@ -584,6 +583,11 @@ func (g *OnnxEmbeddingGenerator) GetModelName() string {
 	return g.config.Model
 }
 
+// GetBatchSize returns the configured batch size for this generator
+func (g *OnnxEmbeddingGenerator) GetBatchSize() int {
+	return int(g.fixedBatchSize)
+}
+
 // Close releases resources
 func (g *OnnxEmbeddingGenerator) Close() error {
 	// Clean up session pool
@@ -598,8 +602,8 @@ func (g *OnnxEmbeddingGenerator) Close() error {
 		if wrapper.maskTensor != nil {
 			wrapper.maskTensor.Destroy()
 		}
-		if wrapper.tokenTypeTensor != nil {
-			wrapper.tokenTypeTensor.Destroy()
+		if wrapper.tokenTypeIDsTensor != nil {
+			wrapper.tokenTypeIDsTensor.Destroy()
 		}
 		if wrapper.outputTensor != nil {
 			wrapper.outputTensor.Destroy()

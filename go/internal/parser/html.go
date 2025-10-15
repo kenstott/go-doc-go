@@ -1,12 +1,14 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
@@ -35,6 +37,8 @@ const (
 	HTMLElementTypeSpan        HTMLElementType = "span"
 	HTMLElementTypeBody        HTMLElementType = "body"
 	HTMLElementTypeText        HTMLElementType = "text"
+	HTMLElementTypeLink        HTMLElementType = "link"
+	HTMLElementTypeTemporal    HTMLElementType = "temporal"
 )
 
 // HTMLElement represents a parsed HTML element
@@ -52,26 +56,9 @@ type HTMLElement struct {
 	Content         string                 `json:"content,omitempty"`
 }
 
-// HTMLLink represents an extracted link
-type HTMLLink struct {
-	SourceID   string `json:"source_id"`
-	LinkText   string `json:"link_text"`
-	LinkTarget string `json:"link_target"`
-	LinkType   string `json:"link_type"`
-}
-
-// HTMLRelationship represents a relationship between elements
-type HTMLRelationship struct {
-	RelationshipID   string `json:"relationship_id"`
-	SourceElementID  string `json:"source_element_id"`
-	TargetElementID  string `json:"target_element_id"`
-	RelationshipType string `json:"relationship_type"`
-	Confidence       float64 `json:"confidence"`
-	Metadata         map[string]interface{} `json:"metadata"`
-}
-
-// ParseRequest represents the input for HTML parsing
-type ParseRequest struct {
+// HTMLParseRequest represents the input for HTML parsing (deprecated - use parser.ParseRequest)
+// Kept temporarily during migration to new Parser interface
+type HTMLParseRequest struct {
 	ID       string                 `json:"id"`
 	Content  string                 `json:"content"`
 	Metadata map[string]interface{} `json:"metadata"`
@@ -79,11 +66,9 @@ type ParseRequest struct {
 
 // ParseResponse represents the output of HTML parsing
 type ParseResponse struct {
-	Document      map[string]interface{} `json:"document"`
-	Elements      []HTMLElement          `json:"elements"`
-	Links         []HTMLLink             `json:"links"`
-	Relationships []HTMLRelationship     `json:"relationships"`
-	Dates         map[string]interface{} `json:"dates,omitempty"`
+	Document map[string]interface{} `json:"document"`
+	Elements []HTMLElement          `json:"elements"`
+	Dates    map[string]interface{} `json:"dates,omitempty"`
 }
 
 // HTMLParser handles HTML document parsing
@@ -91,7 +76,9 @@ type HTMLParser struct {
 	MaxContentPreview int
 	ExtractDates      bool
 	EnableCaching     bool
-	StoreFullContent  bool // If true, populate Content field with full (untruncated) text
+	StoreFullContent  bool           // If true, populate Content field with full (untruncated) text
+	documentCache     map[string]string // Cache of HTML content by source URL
+	cacheMu           sync.RWMutex      // Mutex for thread-safe cache access
 }
 
 // NewHTMLParser creates a new HTML parser instance
@@ -101,11 +88,72 @@ func NewHTMLParser() *HTMLParser {
 		ExtractDates:      true,
 		StoreFullContent:  false, // Default: don't store full content
 		EnableCaching:     true,
+		documentCache:     make(map[string]string),
 	}
 }
 
-// Parse is the universal interface that converts HTML content to ParseResult
-func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// Parser interface implementation
+
+// GetName returns the parser name
+func (p *HTMLParser) GetName() string {
+	return "html"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *HTMLParser) GetSupportedFormats() []string {
+	return []string{".html", ".htm", "html"}
+}
+
+// Parse implements the Parser interface for HTML documents
+func (p *HTMLParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request
+	var htmlContent string
+	switch v := req.Content.(type) {
+	case string:
+		htmlContent = v
+	case []byte:
+		htmlContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Cache the HTML content for later resolution
+	p.cacheMu.Lock()
+	p.documentCache[req.ID] = htmlContent
+	p.cacheMu.Unlock()
+
+	// Create HTML-specific request
+	htmlRequest := HTMLParseRequest{
+		ID:       req.ID,
+		Content:  htmlContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseHTML(htmlRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *HTMLParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *HTMLParser) Close() error {
+	p.cacheMu.Lock()
+	defer p.cacheMu.Unlock()
+	p.documentCache = make(map[string]string)
+	return nil
+}
+
+// ParseLegacy is the legacy interface that converts HTML content to ParseResult (deprecated)
+func (p *HTMLParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
 	var htmlContent string
 	switch v := content.(type) {
@@ -117,8 +165,13 @@ func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, err
 		return nil, fmt.Errorf("unsupported content type: %T", content)
 	}
 
+	// Cache the HTML content for later resolution (contextual embeddings)
+	p.cacheMu.Lock()
+	p.documentCache[docID] = htmlContent
+	p.cacheMu.Unlock()
+
 	// Create request structure for compatibility
-	request := ParseRequest{
+	request := HTMLParseRequest{
 		ID:       docID,
 		Content:  htmlContent,
 		Metadata: make(map[string]interface{}),
@@ -135,7 +188,7 @@ func (p *HTMLParser) Parse(docID string, content interface{}) (*ParseResult, err
 }
 
 // parseHTML parses an HTML document into structured elements (internal implementation)
-func (p *HTMLParser) parseHTML(request ParseRequest) (*ParseResponse, error) {
+func (p *HTMLParser) parseHTML(request HTMLParseRequest) (*ParseResponse, error) {
 	// Parse HTML content
 	doc, err := html.Parse(strings.NewReader(request.Content))
 	if err != nil {
@@ -151,9 +204,7 @@ func (p *HTMLParser) parseHTML(request ParseRequest) (*ParseResponse, error) {
 			"metadata":     request.Metadata,
 			"content_hash": p.generateHash(request.Content),
 		},
-		Elements:      []HTMLElement{},
-		Links:         []HTMLLink{},
-		Relationships: []HTMLRelationship{},
+		Elements: []HTMLElement{},
 	}
 
 	// Create root element
@@ -171,23 +222,19 @@ func (p *HTMLParser) parseHTML(request ParseRequest) (*ParseResponse, error) {
 
 	// Parse document elements
 	elementCounter := 1
-	p.parseNode(doc, &response.Elements, &response.Links, &response.Relationships,
-		rootElement.ElementID, request.ID, &elementCounter)
-
-	// Extract links from anchor tags
-	p.extractLinks(doc, &response.Links, response.Elements)
+	p.parseNode(doc, &response.Elements, rootElement.ElementID, request.ID, &elementCounter)
 
 	return response, nil
 }
 
 // parseNode recursively parses HTML nodes and returns the ID of the element created (if any)
-func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *[]HTMLLink,
-	relationships *[]HTMLRelationship, parentID, sourceID string, counter *int) string {
+func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement,
+	parentID, sourceID string, counter *int) string {
 
 	if node.Type == html.DocumentNode {
 		// Document node - recurse into children without creating element
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
+			p.parseNode(child, elements, parentID, sourceID, counter)
 		}
 		return ""
 	} else if node.Type == html.ElementNode {
@@ -198,12 +245,17 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 			return ""
 		}
 
+		// Special handling for anchor tags - create link elements
+		if strings.ToLower(node.Data) == "a" {
+			return p.parseAnchorTag(node, elements, parentID, sourceID, counter)
+		}
+
 		// Check if this tag should get a dedicated element (semantic tags only)
 		// This matches Python's selective element creation in html.py:942-944
 		if !p.shouldCreateElement(node.Data) {
 			// Don't create element, but process children with same parent
 			for child := node.FirstChild; child != nil; child = child.NextSibling {
-				p.parseNode(child, elements, links, relationships, parentID, sourceID, counter)
+				p.parseNode(child, elements, parentID, sourceID, counter)
 			}
 			return ""
 		}
@@ -254,38 +306,9 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement, links *
 		*elements = append(*elements, element)
 		*counter++
 
-		// Create bidirectional parent-child relationships
-		if parentID != "" {
-			// Determine relationship type - use contains_text for paragraph tags
-			relType := "contains"
-			if node.Data == "p" {
-				relType = "contains_text"
-			}
-
-			// Parent contains child
-			containsRel := HTMLRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  parentID,
-				TargetElementID:  element.ElementID,
-				RelationshipType: relType,
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			// Child contained by parent
-			containedByRel := HTMLRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  element.ElementID,
-				TargetElementID:  parentID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			*relationships = append(*relationships, containsRel, containedByRel)
-		}
-
 		// Recursively parse children
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			p.parseNode(child, elements, links, relationships, element.ElementID, sourceID, counter)
+			p.parseNode(child, elements, element.ElementID, sourceID, counter)
 		}
 
 		return element.ElementID
@@ -474,38 +497,54 @@ func (p *HTMLParser) extractTextRecursive(node *html.Node, text *strings.Builder
 	}
 }
 
-// extractLinks extracts anchor links from the HTML document
-func (p *HTMLParser) extractLinks(doc *html.Node, links *[]HTMLLink, elements []HTMLElement) {
-	p.extractLinksRecursive(doc, links, elements)
-}
+// parseAnchorTag creates a link element for an HTML anchor tag
+// Link elements are containers that can have text/image children
+func (p *HTMLParser) parseAnchorTag(node *html.Node, elements *[]HTMLElement,
+	parentID, sourceID string, counter *int) string {
 
-// extractLinksRecursive recursively extracts links from HTML nodes
-func (p *HTMLParser) extractLinksRecursive(node *html.Node, links *[]HTMLLink, elements []HTMLElement) {
-	if node.Type == html.ElementNode && node.Data == "a" {
-		// Find href attribute
-		var href string
-		for _, attr := range node.Attr {
-			if attr.Key == "href" {
-				href = attr.Val
-				break
-			}
-		}
-
-		if href != "" {
-			linkText := p.extractTextContent(node)
-			link := HTMLLink{
-				SourceID:   elements[0].ElementID, // Will be updated later to correct element
-				LinkText:   linkText,
-				LinkTarget: href,
-				LinkType:   "html",
-			}
-			*links = append(*links, link)
+	// Find href attribute
+	var href string
+	for _, attr := range node.Attr {
+		if attr.Key == "href" {
+			href = attr.Val
+			break
 		}
 	}
 
+	// Extract text content for preview (truncated)
+	linkText := p.extractTextContent(node)
+
+	// Create link element
+	linkElement := HTMLElement{
+		ElementID:       p.generateID("link_"),
+		ElementType:     HTMLElementTypeLink,
+		ParentID:        parentID,
+		ContentPreview:  linkText,
+		ContentLocation: p.createContentLocationForNode(sourceID, HTMLElementTypeLink, node),
+		ContentHash:     p.generateHash(linkText),
+		ElementOrder:    *counter,
+		DocumentOrder:   *counter,
+		Metadata: map[string]interface{}{
+			"link_target": href,
+			"link_type":   "html",
+		},
+	}
+
+	// Store full text if enabled
+	if p.StoreFullContent {
+		fullText := p.extractFullTextContent(node)
+		linkElement.Content = fullText
+	}
+
+	*elements = append(*elements, linkElement)
+	*counter++
+
+	// Recursively parse children (text, images, etc.) with link as parent
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
-		p.extractLinksRecursive(child, links, elements)
+		p.parseNode(child, elements, linkElement.ElementID, sourceID, counter)
 	}
+
+	return linkElement.ElementID
 }
 
 // extractMetadata extracts metadata from HTML attributes
@@ -522,6 +561,14 @@ func (p *HTMLParser) extractMetadata(node *html.Node) map[string]interface{} {
 				metadata[attr.Key] = attr.Val
 			}
 		}
+	}
+
+	// Extract header level for h1-h6 tags
+	tagName := strings.ToLower(node.Data)
+	if len(tagName) == 2 && tagName[0] == 'h' && tagName[1] >= '1' && tagName[1] <= '6' {
+		level := int(tagName[1] - '0')
+		metadata["level"] = level
+		metadata["tag"] = tagName
 	}
 
 	// Set default values for table cells if not present
@@ -654,8 +701,8 @@ func (r *ParseResponse) ToJSON() (string, error) {
 	return string(data), nil
 }
 
-// FromJSON creates a ParseRequest from JSON
-func (r *ParseRequest) FromJSON(jsonStr string) error {
+// FromJSON creates an HTMLParseRequest from JSON
+func (r *HTMLParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
 }
 
@@ -666,9 +713,7 @@ func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult 
 			ID:      response.Document["doc_id"].(string),
 			DocType: response.Document["doc_type"].(string),
 		},
-		Elements:      make([]Element, 0, len(response.Elements)),
-		Relationships: make([]Relationship, 0, len(response.Relationships)),
-		Links:         make([]Link, 0, len(response.Links)),
+		Elements: make([]Element, 0, len(response.Elements)),
 	}
 
 	// Convert metadata if present
@@ -689,32 +734,41 @@ func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult 
 			ContentLocation: htmlElem.ContentLocation,
 			Metadata:        htmlElem.Metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// TagName - store the HTML tag name for all HTML elements
+		tagName := string(htmlElem.ElementType)
+		element.TagName = &tagName
+
+		// SectionLevel - for header elements (h1-h6)
+		if htmlElem.ElementType == HTMLElementTypeHeader {
+			// Extract level from element type or ID
+			level := extractHeaderLevel(htmlElem.ElementID, htmlElem.Metadata)
+			if level > 0 {
+				element.SectionLevel = &level
+			}
+		}
+
+		// RowIndex and ColumnIndex - for table cells
+		if htmlElem.ElementType == HTMLElementTypeTableCell || htmlElem.ElementType == HTMLElementTypeTableHeader {
+			if row, ok := htmlElem.Metadata["row"].(int); ok {
+				element.RowIndex = &row
+			}
+			if col, ok := htmlElem.Metadata["col"].(int); ok {
+				element.ColumnIndex = &col
+			}
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := htmlElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// ElementCategory
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
-	}
-
-	// Convert relationships
-	for _, htmlRel := range response.Relationships {
-		relationship := Relationship{
-			RelationshipID:   htmlRel.RelationshipID,
-			RelationshipType: htmlRel.RelationshipType,
-			SourceElementID:  htmlRel.SourceElementID,
-			TargetElementID:  htmlRel.TargetElementID,
-			Confidence:       htmlRel.Confidence,
-			Metadata:         htmlRel.Metadata,
-		}
-		result.Relationships = append(result.Relationships, relationship)
-	}
-
-	// Convert links
-	for _, htmlLink := range response.Links {
-		link := Link{
-			LinkID:          generateID("link"),
-			SourceElementID: htmlLink.SourceID,
-			LinkType:        htmlLink.LinkType,
-			LinkTarget:      htmlLink.LinkTarget,
-			LinkText:        htmlLink.LinkText,
-		}
-		result.Links = append(result.Links, link)
 	}
 
 	return result
@@ -739,6 +793,25 @@ func calculateDepth(elementType HTMLElementType) int {
 	}
 }
 
+// extractHeaderLevel extracts the heading level (1-6) from header element metadata
+func extractHeaderLevel(elementID string, metadata map[string]interface{}) int {
+	// Try to get from metadata first
+	if level, ok := metadata["level"].(int); ok && level >= 1 && level <= 6 {
+		return level
+	}
+
+	// Extract from element ID (e.g., "h1_123" or "header_h2_456")
+	idLower := strings.ToLower(elementID)
+	for level := 1; level <= 6; level++ {
+		tag := fmt.Sprintf("h%d", level)
+		if strings.Contains(idLower, tag) {
+			return level
+		}
+	}
+
+	return 0 // Unknown level
+}
+
 // SupportsLocation checks if this parser can resolve the given content location
 func (p *HTMLParser) SupportsLocation(contentLocation map[string]interface{}) bool {
 	if contentLocation == nil {
@@ -751,7 +824,15 @@ func (p *HTMLParser) SupportsLocation(contentLocation map[string]interface{}) bo
 		return false
 	}
 
-	// Check if file exists
+	// Support both URLs and local files
+	// For URLs, check if it looks like HTML (has CSS selector)
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		// CSS selectors are HTML-specific, so presence of selector indicates HTML
+		_, hasSelector := contentLocation["selector"]
+		return hasSelector
+	}
+
+	// For local files, check if file exists and is HTML
 	if _, err := os.Stat(source); os.IsNotExist(err) {
 		return false
 	}
@@ -768,7 +849,7 @@ func (p *HTMLParser) resolveElementSelection(contentLocation map[string]interfac
 		return nil, fmt.Errorf("content_location is nil")
 	}
 
-	// Get source file path
+	// Get source file path or URL
 	source, ok := contentLocation["source"].(string)
 	if !ok || source == "" {
 		return nil, fmt.Errorf("missing or invalid 'source' field in content_location")
@@ -780,14 +861,30 @@ func (p *HTMLParser) resolveElementSelection(contentLocation map[string]interfac
 		return nil, fmt.Errorf("missing or invalid 'selector' field in content_location")
 	}
 
-	// Read source file
-	fileContent, err := os.ReadFile(source)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read source file %s: %w", source, err)
+	var htmlContent string
+
+	// Check if source is a URL (web content)
+	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		// Try to get from cache
+		p.cacheMu.RLock()
+		cached, found := p.documentCache[source]
+		p.cacheMu.RUnlock()
+
+		if !found {
+			return nil, fmt.Errorf("HTML content not cached for URL: %s", source)
+		}
+		htmlContent = cached
+	} else {
+		// Local file - read from disk
+		fileContent, err := os.ReadFile(source)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read source file %s: %w", source, err)
+		}
+		htmlContent = string(fileContent)
 	}
 
 	// Parse HTML
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(fileContent)))
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(htmlContent))
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse HTML: %w", err)
 	}

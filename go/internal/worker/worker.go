@@ -14,26 +14,42 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kennethstott/go-doc-go/internal/analytics"
-	"github.com/kennethstott/go-doc-go/internal/contentsource"
-	"github.com/kennethstott/go-doc-go/internal/embeddings"
-	"github.com/kennethstott/go-doc-go/internal/jobcontrol"
-	"github.com/kennethstott/go-doc-go/internal/parser"
-	"github.com/kennethstott/go-doc-go/internal/resolver"
-	"golang.org/x/net/html"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/contentsource"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/jobcontrol"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 )
+
+// EmbeddingBatchItem represents a single embedding request
+type EmbeddingBatchItem struct {
+	DocID     string
+	ElementID string
+	Text      string
+}
+
+// EmbeddingBatchAggregator collects embeddings across documents for efficient batching
+type EmbeddingBatchAggregator struct {
+	mu            sync.Mutex
+	items         []EmbeddingBatchItem
+	itemIndex     map[string]int // ElementID -> index in items
+	maxBatchSize  int
+	generator     embeddings.EmbeddingGenerator
+	flushCallback func(map[string][]float64) // Called when batch is flushed
+}
 
 // Worker represents a document processing worker
 type Worker struct {
 	workerID             string
 	numWorkers           int
-	batchClaimSize       int
 	jobControl           jobcontrol.JobControl
 	contentSources       map[string]contentsource.ContentSource
 	contentSourceConfigs map[string]map[string]interface{}
 	analyticsStorages    []analytics.Storage
-	embeddingService     *embeddings.Service
+	embeddingGenerator   embeddings.EmbeddingGenerator // Native ONNX generator (thread-safe)
 	contextualBuilder    *embeddings.ContextualTextBuilder
+	embeddingAggregator  *EmbeddingBatchAggregator      // Cross-document batch aggregator
 	maxDocuments         int
 	documentsProcessed   int32 // atomic counter for goroutine safety
 	isLeader             bool
@@ -41,32 +57,154 @@ type Worker struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	wg                   sync.WaitGroup
+
+	// Neo4j export state
+	neo4jExportConfig     *Neo4jExportConfig
+	lastQueueEmptyTime    *time.Time
+	lastNeo4jExportTime   *time.Time
+
+	// Semantic analysis state
+	semanticConfig           *SemanticConfig
+	semanticAnalyzer         *SemanticAnalyzer
+	semanticAnalysisRunning  atomic.Bool
+	lastSemanticAnalysisTime *time.Time
+
+	// Ontology extraction state
+	ontologyConfig            *OntologyConfig
+	ontologyExtractor         *OntologyExtractor
+	ontologyExtractionRunning atomic.Bool
+	lastOntologyExtractionTime *time.Time
+}
+
+// Neo4jExportConfig holds Neo4j export configuration
+type Neo4jExportConfig struct {
+	Enabled            bool
+	EmptyQueueWaitTime int    // Seconds to wait before triggering export
+	SourceAnalytics    string // Source analytics type (e.g., "parquet")
+	SourcePath         string // Path to source analytics
+	Connection         map[string]interface{}
+	BatchSize          int
+}
+
+// NewEmbeddingBatchAggregator creates a new batch aggregator
+func NewEmbeddingBatchAggregator(maxBatchSize int, generator embeddings.EmbeddingGenerator) *EmbeddingBatchAggregator {
+	return &EmbeddingBatchAggregator{
+		items:        make([]EmbeddingBatchItem, 0, maxBatchSize),
+		itemIndex:    make(map[string]int),
+		maxBatchSize: maxBatchSize,
+		generator:    generator,
+	}
+}
+
+// Add adds an embedding request to the batch
+func (a *EmbeddingBatchAggregator) Add(docID, elementID, text string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	// Add to batch
+	a.items = append(a.items, EmbeddingBatchItem{
+		DocID:     docID,
+		ElementID: elementID,
+		Text:      text,
+	})
+	a.itemIndex[elementID] = len(a.items) - 1
+}
+
+// Flush processes all accumulated embeddings and returns results
+func (a *EmbeddingBatchAggregator) Flush() (map[string][]float64, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if len(a.items) == 0 {
+		return make(map[string][]float64), nil
+	}
+
+	log.Printf("CROSS-DOC BATCH: Flushing %d embeddings across multiple documents", len(a.items))
+
+	// Extract texts
+	texts := make([]string, len(a.items))
+	for i, item := range a.items {
+		texts[i] = item.Text
+	}
+
+	// Generate embeddings in one or more batches
+	startTime := time.Now()
+	vectors, err := a.generator.GenerateBatch(texts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate embeddings: %w", err)
+	}
+	duration := time.Since(startTime)
+
+	log.Printf("CROSS-DOC BATCH: Generated %d embeddings in %v (%.2f embeddings/sec)",
+		len(vectors), duration, float64(len(vectors))/duration.Seconds())
+
+	// Build result map
+	result := make(map[string][]float64, len(a.items))
+	for i, item := range a.items {
+		if i < len(vectors) {
+			result[item.ElementID] = vectors[i]
+		}
+	}
+
+	// Clear batch
+	a.items = a.items[:0]
+	a.itemIndex = make(map[string]int)
+
+	return result, nil
+}
+
+// ShouldFlush returns true if the batch is full
+func (a *EmbeddingBatchAggregator) ShouldFlush() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.items) >= a.maxBatchSize
+}
+
+// Size returns current batch size
+func (a *EmbeddingBatchAggregator) Size() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.items)
+}
+
+// SemanticConfig holds configuration for cross-document semantic relationship detection
+type SemanticConfig struct {
+	Enabled                  bool
+	SimilarityThreshold      float64
+	QueueIdleTriggerMinutes  int
+	RateLimitBatchSize       int
+	RateLimitSleepMs         int
+	MinIntervalMinutes       int
+}
+
+// OntologyConfig holds configuration for ontology-based entity extraction
+type OntologyConfig struct {
+	Enabled                 bool
+	SchemaPath              string  // Path to ontology schema files (YAML/JSON)
+	DiversityThreshold      float64 // Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse samples)
+	QueueIdleTriggerMinutes int
+	MinIntervalMinutes      int
 }
 
 // Config holds worker configuration
 type Config struct {
 	WorkerID          string
 	NumWorkers        int // Number of concurrent goroutine workers (default: 1)
-	BatchClaimSize    int // Number of documents to claim at once (default: 5)
 	JobControlConfig  jobcontrol.Config
 	ContentSources    []map[string]interface{}
 	AnalyticsConfigs  []map[string]interface{}
 	EmbeddingConfig   *embeddings.Config // Optional embedding configuration
 	MaxDocuments      int
 	DiscoveryInterval int // seconds
-}
-
-// ProcessResult represents the result of processing a document
-type ProcessResult struct {
-	DocID   string
-	Success bool
-	Error   string
+	Neo4jExportConfig *Neo4jExportConfig // Optional Neo4j export configuration
+	SemanticConfig    *SemanticConfig    // Optional semantic relationship detection configuration
+	OntologyConfig    *OntologyConfig    // Optional ontology extraction configuration
 }
 
 // NewWorker creates a new document processing worker
 func NewWorker(config Config) (*Worker, error) {
-	// Create job control
-	jc, err := jobcontrol.NewSQLiteJobControl(config.JobControlConfig)
+	// Create job control using factory (supports SQLite and PostgreSQL)
+	jc, err := jobcontrol.NewJobControl(config.JobControlConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create job control: %w", err)
 	}
@@ -99,27 +237,25 @@ func NewWorker(config Config) (*Worker, error) {
 		storages = append(storages, storage)
 	}
 
-	// Create embedding service if configured
-	var embeddingService *embeddings.Service
+	// Create embedding generator if configured (ONNX only)
+	var embeddingGenerator embeddings.EmbeddingGenerator
 	var contextualBuilder *embeddings.ContextualTextBuilder
+	var embeddingAggregator *EmbeddingBatchAggregator
 	if config.EmbeddingConfig != nil && config.EmbeddingConfig.Enabled {
-		// Create generator using factory (supports both Python shim and ONNX)
+		// Create ONNX generator (only supported provider in Go)
 		gen, err := embeddings.CreateEmbeddingGenerator(*config.EmbeddingConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create embedding generator: %w", err)
 		}
+		embeddingGenerator = gen
 
-		// ONNX provider uses direct generator access (thread-safe, parallel inference)
-		// Python shim uses Service wrapper (serialized access)
-		if config.EmbeddingConfig.Provider == "onnx" {
-			log.Println("Using native ONNX embedding generator (parallel inference enabled)")
-			// Bypass Service wrapper - ONNX sessions are thread-safe
-			embeddingService = embeddings.NewService(gen) // Still wrap for now for API compatibility
-		} else {
-			// Python shim needs serialized access through Service
-			embeddingService = embeddings.NewService(gen)
-			log.Println("Using Python shim embedding generator (serialized access)")
+		// Create cross-document batch aggregator for efficient batching
+		batchSize := gen.GetBatchSize()
+		if batchSize == 0 {
+			batchSize = 32
 		}
+		embeddingAggregator = NewEmbeddingBatchAggregator(batchSize, gen)
+		log.Printf("Cross-document batch aggregator enabled (batch size: %d)", batchSize)
 
 		// Create contextual text builder if contextual mode enabled
 		if config.EmbeddingConfig.Contextual {
@@ -149,31 +285,65 @@ func NewWorker(config Config) (*Worker, error) {
 	if numWorkers == 0 {
 		numWorkers = 1
 	}
-	batchClaimSize := config.BatchClaimSize
-	if batchClaimSize == 0 {
-		batchClaimSize = 5
+
+	// Create semantic analyzer if configured
+	var semanticAnalyzer *SemanticAnalyzer
+	if config.SemanticConfig != nil && config.SemanticConfig.Enabled {
+		semanticAnalyzer = NewSemanticAnalyzer(config.SemanticConfig, storages)
+		log.Printf("Semantic analysis enabled (threshold: %.2f, idle trigger: %d min)",
+			config.SemanticConfig.SimilarityThreshold, config.SemanticConfig.QueueIdleTriggerMinutes)
+	}
+
+	// Create ontology extractor if configured
+	var ontologyExtractor *OntologyExtractor
+	if config.OntologyConfig != nil && config.OntologyConfig.Enabled {
+		extractor, err := NewOntologyExtractor(config.OntologyConfig, storages)
+		if err != nil {
+			log.Printf("WARNING: Failed to create ontology extractor: %v", err)
+			log.Printf("Ontology extraction will be disabled")
+		} else {
+			ontologyExtractor = extractor
+			log.Printf("Ontology extraction enabled (schema path: %s, idle trigger: %d min)",
+				config.OntologyConfig.SchemaPath, config.OntologyConfig.QueueIdleTriggerMinutes)
+		}
 	}
 
 	worker := &Worker{
 		workerID:             config.WorkerID,
 		numWorkers:           numWorkers,
-		batchClaimSize:       batchClaimSize,
 		jobControl:           jc,
 		contentSources:       sources,
 		contentSourceConfigs: sourceConfigs,
 		analyticsStorages:    storages,
-		embeddingService:     embeddingService,
+		embeddingGenerator:   embeddingGenerator,
 		contextualBuilder:    contextualBuilder,
+		embeddingAggregator:  embeddingAggregator,
 		maxDocuments:         config.MaxDocuments,
 		ctx:                  ctx,
 		cancel:               cancel,
+		neo4jExportConfig:    config.Neo4jExportConfig,
+		semanticConfig:       config.SemanticConfig,
+		semanticAnalyzer:     semanticAnalyzer,
+		ontologyConfig:       config.OntologyConfig,
+		ontologyExtractor:    ontologyExtractor,
 	}
 
 	log.Printf("Initialized worker: %s", worker.workerID)
 	log.Printf("Content sources: %d", len(sources))
 	log.Printf("Analytics storages: %d", len(storages))
-	if embeddingService != nil {
-		log.Printf("Embeddings enabled: %s (dimensions: %d)", embeddingService.GetModelName(), embeddingService.GetDimensions())
+	if embeddingGenerator != nil {
+		log.Printf("Embeddings enabled (ONNX): %s (dimensions: %d)", embeddingGenerator.GetModelName(), embeddingGenerator.GetDimensions())
+	}
+	if config.Neo4jExportConfig != nil && config.Neo4jExportConfig.Enabled {
+		log.Printf("Neo4j export enabled (wait time: %d seconds)", config.Neo4jExportConfig.EmptyQueueWaitTime)
+	}
+	if semanticAnalyzer != nil {
+		log.Printf("Semantic analysis enabled (queue idle: %d min, min interval: %d min)",
+			config.SemanticConfig.QueueIdleTriggerMinutes, config.SemanticConfig.MinIntervalMinutes)
+	}
+	if ontologyExtractor != nil {
+		log.Printf("Ontology extraction enabled (queue idle: %d min, min interval: %d min)",
+			config.OntologyConfig.QueueIdleTriggerMinutes, config.OntologyConfig.MinIntervalMinutes)
 	}
 
 	return worker, nil
@@ -186,14 +356,6 @@ func (w *Worker) Run() error {
 
 	// Setup signal handlers
 	w.setupSignalHandlers()
-
-	// Start embedding service if configured
-	if w.embeddingService != nil {
-		if err := w.embeddingService.Start(); err != nil {
-			return fmt.Errorf("failed to start embedding service: %w", err)
-		}
-		defer w.embeddingService.Stop()
-	}
 
 	// Register worker
 	workerInfo := map[string]interface{}{
@@ -300,25 +462,13 @@ func (w *Worker) Run() error {
 
 // runWithPool runs the worker with a goroutine pool
 func (w *Worker) runWithPool() error {
-	log.Printf("Starting goroutine pool with %d workers, batch claim size: %d", w.numWorkers, w.batchClaimSize)
+	log.Printf("Starting worker pool with %d goroutines", w.numWorkers)
 
-	// Create channels
-	workChan := make(chan *jobcontrol.DocumentInfo, w.numWorkers*2)
-	resultChan := make(chan ProcessResult, w.numWorkers)
-
-	// Start worker goroutines
+	// Start worker goroutines - each claims and processes its own documents
 	for i := 0; i < w.numWorkers; i++ {
 		w.wg.Add(1)
-		go w.workerGoroutine(i, workChan, resultChan)
+		go w.independentWorkerGoroutine(i)
 	}
-
-	// Start document claimer goroutine
-	w.wg.Add(1)
-	go w.documentClaimerGoroutine(workChan)
-
-	// Start result handler goroutine
-	w.wg.Add(1)
-	go w.resultHandlerGoroutine(resultChan)
 
 	// Wait for all goroutines to complete
 	w.wg.Wait()
@@ -333,145 +483,112 @@ func (w *Worker) runWithPool() error {
 	return nil
 }
 
-// workerGoroutine processes documents from the work channel
-func (w *Worker) workerGoroutine(id int, workChan <-chan *jobcontrol.DocumentInfo, resultChan chan<- ProcessResult) {
+// independentWorkerGoroutine - each goroutine claims and processes its own documents
+func (w *Worker) independentWorkerGoroutine(id int) {
 	defer w.wg.Done()
 
 	log.Printf("Worker goroutine %d started", id)
 
-	for {
+	// Track last heartbeat time
+	lastHeartbeat := time.Now()
+	heartbeatInterval := 30 * time.Second
+
+	for w.running {
+		// Check document limit
+		if w.maxDocuments > 0 && atomic.LoadInt32(&w.documentsProcessed) >= int32(w.maxDocuments) {
+			log.Printf("Worker goroutine %d: reached max documents", id)
+			return
+		}
+
+		// Check context cancellation
 		select {
-		case docInfo := <-workChan:
-			if docInfo == nil {
-				log.Printf("Worker goroutine %d shutting down", id)
-				return
-			}
-
-			// Process document
-			success := w.processDocument(docInfo)
-
-			// Send result
-			resultChan <- ProcessResult{
-				DocID:   docInfo.DocID,
-				Success: success,
-			}
-
 		case <-w.ctx.Done():
 			log.Printf("Worker goroutine %d cancelled", id)
 			return
+		default:
 		}
-	}
-}
 
-// documentClaimerGoroutine claims documents in batches and sends to work channel
-func (w *Worker) documentClaimerGoroutine(workChan chan<- *jobcontrol.DocumentInfo) {
-	defer w.wg.Done()
-	defer close(workChan)
-
-	log.Printf("Document claimer started (batch size: %d)", w.batchClaimSize)
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// Check document limit
-			if w.maxDocuments > 0 && atomic.LoadInt32(&w.documentsProcessed) >= int32(w.maxDocuments) {
-				log.Printf("Reached maximum document limit (%d)", w.maxDocuments)
-				// Trigger shutdown of all goroutines
-				w.running = false
-				w.cancel() // Cancel context to stop all goroutines
-				return
-			}
-
-			// Update worker heartbeat
+		// Update heartbeat periodically (only every 30 seconds, not on every iteration)
+		if time.Since(lastHeartbeat) > heartbeatInterval {
 			if err := w.jobControl.UpdateWorkerHeartbeat(w.workerID); err != nil {
-				log.Printf("Failed to update heartbeat: %v", err)
+				log.Printf("Worker goroutine %d: failed to update heartbeat: %v", id, err)
 			}
+			lastHeartbeat = time.Now()
+		}
 
-			// Claim multiple documents at once
-			claimed := 0
-			for i := 0; i < w.batchClaimSize; i++ {
-				docInfo, err := w.jobControl.ClaimNextDocument(w.workerID)
-				if err != nil {
-					log.Printf("Failed to claim document: %v", err)
-					break
-				}
-				if docInfo == nil {
-					break // No more documents available
-				}
+		// Claim next document
+		docInfo, err := w.jobControl.ClaimNextDocument(w.workerID)
+		if err != nil {
+			log.Printf("Worker goroutine %d: failed to claim document: %v", id, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
 
-				// Send to worker pool
-				workChan <- docInfo
-				claimed++
-			}
+		if docInfo == nil {
+			// No documents available - short sleep and retry
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
 
-			if claimed == 0 {
-				// No documents available, try to become leader if needed
-				if !w.isLeader && atomic.LoadInt32(&w.documentsProcessed) == 0 {
-					log.Println("No documents available to process")
-				}
+		// Log the claim
+		log.Printf("Worker goroutine %d claimed document %s", id, docInfo.DocID)
 
-				if !w.isLeader {
-					leader, err := w.jobControl.GetCurrentLeader()
-					if err == nil && leader == nil {
-						workerInfo := map[string]interface{}{
-							"hostname":   getHostname(),
-							"pid":        os.Getpid(),
-							"started_at": time.Now().Format(time.RFC3339),
-						}
-						success, err := w.jobControl.ElectLeader(w.workerID, workerInfo)
-						if err == nil && success {
-							w.isLeader = true
-							log.Printf("Worker %s became leader", w.workerID)
-							go w.discoveryLoop()
-						}
+		// Process document with timing and heartbeat ticker
+		startTime := time.Now()
+
+		// Start heartbeat ticker during processing to keep claim alive
+		// Heartbeat every 30 seconds to prevent claim timeout (default timeout: 300s)
+		heartbeatTicker := time.NewTicker(30 * time.Second)
+		heartbeatDone := make(chan struct{})
+
+		go func() {
+			tickCount := 0
+			for {
+				select {
+				case <-heartbeatTicker.C:
+					tickCount++
+					log.Printf("Worker goroutine %d: heartbeat tick %d for document %s", id, tickCount, docInfo.DocID)
+
+					// Update BOTH worker heartbeat AND document claim timestamp
+					if err := w.jobControl.UpdateWorkerHeartbeat(w.workerID); err != nil {
+						log.Printf("Worker goroutine %d: failed to update worker heartbeat: %v", id, err)
 					}
+
+					// CRITICAL: Update the document's claimed_at timestamp to prevent timeout
+					if err := w.jobControl.UpdateDocumentClaimHeartbeat(docInfo.DocID, w.workerID); err != nil {
+						log.Printf("Worker goroutine %d: failed to update document claim heartbeat for %s: %v", id, docInfo.DocID, err)
+					} else {
+						log.Printf("Worker goroutine %d: successfully updated claim heartbeat for %s", id, docInfo.DocID)
+					}
+				case <-heartbeatDone:
+					log.Printf("Worker goroutine %d: stopping heartbeat for document %s after %d ticks", id, docInfo.DocID, tickCount)
+					return
 				}
 			}
+		}()
 
-		case <-w.ctx.Done():
-			log.Println("Document claimer shutting down")
-			return
-		}
+		success := w.processDocument(docInfo)
 
-		if !w.running {
-			log.Println("Document claimer stopping")
-			return
-		}
-	}
-}
+		// Stop heartbeat ticker
+		heartbeatTicker.Stop()
+		close(heartbeatDone)
 
-// resultHandlerGoroutine processes results from worker goroutines
-func (w *Worker) resultHandlerGoroutine(resultChan <-chan ProcessResult) {
-	defer w.wg.Done()
+		processingTime := time.Since(startTime)
 
-	log.Println("Result handler started")
-
-	for {
-		select {
-		case result := <-resultChan:
-			if result.Success {
-				w.jobControl.CompleteDocument(result.DocID, w.workerID, true, "")
-				count := atomic.AddInt32(&w.documentsProcessed, 1)
-				log.Printf("Worker %s completed document %s (%d total)", w.workerID, result.DocID, count)
-			} else {
-				w.jobControl.CompleteDocument(result.DocID, w.workerID, false, result.Error)
-				log.Printf("Worker %s failed to process document %s: %s", w.workerID, result.DocID, result.Error)
-			}
-
-		case <-w.ctx.Done():
-			log.Println("Result handler shutting down")
-			return
-		}
-
-		if !w.running {
-			log.Println("Result handler stopping")
-			return
+		// Complete document
+		if success {
+			w.jobControl.CompleteDocument(docInfo.DocID, w.workerID, true, "")
+			count := atomic.AddInt32(&w.documentsProcessed, 1)
+			log.Printf("Worker goroutine %d completed document %s in %.2fs (%d total)", id, docInfo.DocID, processingTime.Seconds(), count)
+		} else {
+			w.jobControl.CompleteDocument(docInfo.DocID, w.workerID, false, "Processing failed")
+			log.Printf("Worker goroutine %d failed to process document %s after %.2fs", id, docInfo.DocID, processingTime.Seconds())
 		}
 	}
+
+	log.Printf("Worker goroutine %d stopped", id)
 }
+
 
 // processDocument processes a single document
 func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
@@ -531,74 +648,89 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 
 	log.Printf("DEBUG: Determined docType=%s for document %s", docType, docInfo.DocID)
 
-	// Parse the document using appropriate parser
+	// Parse the document using appropriate parser with unified Parser interface
+	ctx := context.Background()
 	switch docType {
 	case "docx":
 		log.Printf("DEBUG: Parsing DOCX with BinaryPath=%s", docContent.BinaryPath)
 		docxParser := parser.NewDocxParser()
-		docxResult, docxErr := docxParser.Parse(parser.DocxParseRequest{
+		parseResult, err = docxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: docContent.BinaryPath, // DOCX parser expects file path
+			Config:  parser.DefaultParserConfig(),
 		})
-		if docxErr != nil {
-			log.Printf("ERROR: DOCX parse error: %v", docxErr)
-			err = docxErr
-		} else {
-			log.Printf("DEBUG: DOCX parsed successfully: %d elements, %d relationships",
-				len(docxResult.Elements), len(docxResult.Relationships))
-			parseResult = docxResult.ToParseResult()
-		}
 	case "pptx", "ppt":
 		log.Printf("DEBUG: Parsing PPTX with BinaryPath=%s", docContent.BinaryPath)
 		pptxParser := parser.NewPptxParser()
-		pptxResult, pptxErr := pptxParser.Parse(parser.PptxParseRequest{
+		parseResult, err = pptxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: docContent.BinaryPath, // PPTX parser expects file path
+			Config:  parser.DefaultParserConfig(),
 		})
-		if pptxErr != nil {
-			log.Printf("ERROR: PPTX parse error: %v", pptxErr)
-			err = pptxErr
-		} else {
-			log.Printf("DEBUG: PPTX parsed successfully: %d elements, %d relationships",
-				len(pptxResult.Elements), len(pptxResult.Relationships))
-			parseResult = pptxResult.ToParseResult()
-		}
 	case "xlsx", "xls":
 		xlsxParser := parser.NewXLSXParser()
-		parseResult, err = xlsxParser.Parse(docInfo.DocID, contentToUse)
-	case "pdf":
-		pdfParser := parser.NewPDFParser()
-		parseResult, err = pdfParser.Parse(docInfo.DocID, contentToUse)
-	case "csv":
-		csvParser := parser.NewCSVParser()
-		parseResult, err = csvParser.Parse(docInfo.DocID, contentToUse)
-	case "json":
-		jsonParser := parser.NewJSONParser()
-		parseResult, err = jsonParser.Parse(docInfo.DocID, contentToUse)
-	case "xml":
-		xmlParser := parser.NewXMLParser()
-		parseResult, err = xmlParser.Parse(docInfo.DocID, contentToUse)
-	case "html":
-		htmlParser := parser.NewHTMLParser()
-		parseResult, err = htmlParser.Parse(docInfo.DocID, contentToUse)
-	case "markdown", "md":
-		markdownParser := parser.NewMarkdownParser()
-		mdResult, mdErr := markdownParser.Parse(parser.MarkdownParseRequest{
+		parseResult, err = xlsxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
 		})
-		if mdErr != nil {
-			err = mdErr
-		} else {
-			parseResult = mdResult.ToParseResult()
-		}
+	case "pdf":
+		pdfParser := parser.NewPDFParser()
+		parseResult, err = pdfParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "csv":
+		csvParser := parser.NewCSVParser()
+		parseResult, err = csvParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "json":
+		jsonParser := parser.NewJSONParser()
+		parseResult, err = jsonParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "xml":
+		xmlParser := parser.NewXMLParser()
+		parseResult, err = xmlParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "html":
+		htmlParser := parser.NewHTMLParser()
+		parseResult, err = htmlParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
+	case "markdown", "md":
+		markdownParser := parser.NewMarkdownParser()
+		parseResult, err = markdownParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
 	case "text", "txt":
 		textParser := parser.NewTextParser()
-		parseResult, err = textParser.Parse(docInfo.DocID, contentToUse)
+		parseResult, err = textParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
 	default:
 		// Default to text parser
 		textParser := parser.NewTextParser()
-		parseResult, err = textParser.Parse(docInfo.DocID, contentToUse)
+		parseResult, err = textParser.Parse(ctx, parser.ParseRequest{
+			ID:      docInfo.DocID,
+			Content: contentToUse,
+			Config:  parser.DefaultParserConfig(),
+		})
 	}
 
 	if err != nil {
@@ -606,15 +738,14 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		return false
 	}
 
-	// Create sequential (sibling) relationships between elements with the same parent
-	// This matches Python's StructuralRelationshipDetector behavior
-	sequentialRels := parser.CreateSequentialRelationships(parseResult.Elements)
-	parseResult.Relationships = append(parseResult.Relationships, sequentialRels...)
+	// Note: Relationships and Links were removed during UDML migration
+	// They are now handled by UDML graph extraction instead
 
 	// Generate embeddings if enabled
 	var embeddingMap map[string][]float64
 	var embeddingTextMap map[string]string // Track the text used for each embedding
-	if w.embeddingService != nil && len(parseResult.Elements) > 0 {
+	log.Printf("DEBUG: Embedding check - embeddingGenerator=%v, elements=%d", w.embeddingGenerator != nil, len(parseResult.Elements))
+	if w.embeddingGenerator != nil && len(parseResult.Elements) > 0 {
 		// Collect texts for batch embedding (with contextual text if enabled)
 		var texts []string
 		var elementIDs []string
@@ -630,7 +761,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 
 			// Use contextual text if builder is configured
 			if w.contextualBuilder != nil {
-				embeddingText = w.contextualBuilder.BuildContextualText(elem, parseResult.Elements, parseResult.Relationships)
+				embeddingText = w.contextualBuilder.BuildContextualText(elem, parseResult.Elements)
 			} else {
 				// Simple mode: use content preview
 				embeddingText = elem.ContentPreview
@@ -648,41 +779,34 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		}
 
 		if len(texts) > 0 {
-			// Batch embeddings for efficient processing
-			// Native ONNX can handle larger batches efficiently
-			const maxBatchSize = 100  // Increased from 10 for better performance with native ONNX
+			log.Printf("EMBEDDINGS: Adding %d elements from document %s to cross-document batch (current size: %d/%d)",
+				len(texts), docInfo.DocID, w.embeddingAggregator.Size(), w.embeddingAggregator.maxBatchSize)
+
+			// Add embedding requests to cross-document aggregator
 			embeddingMap = make(map[string][]float64)
-			log.Printf("EMBEDDINGS: Generating for %d elements in document %s (batch size: %d)", len(texts), docInfo.DocID, maxBatchSize)
-
-			for i := 0; i < len(texts); i += maxBatchSize {
-				end := i + maxBatchSize
-				if end > len(texts) {
-					end = len(texts)
-				}
-
-				batchTexts := texts[i:end]
-				batchIDs := elementIDs[i:end]
-
-				// Use embedding service (serialized access, thread-safe)
-				embeddingVectors, err := w.embeddingService.GenerateBatch(batchTexts)
-				if err != nil {
-					log.Printf("Failed to generate embeddings for batch %d-%d: %v", i, end, err)
-					continue
-				}
-
-				log.Printf("DEBUG: Batch %d-%d returned %d embedding vectors for %d texts", i, end, len(embeddingVectors), len(batchTexts))
-				for j, elementID := range batchIDs {
-					if j < len(embeddingVectors) {
-						embeddingMap[elementID] = embeddingVectors[j]
-						log.Printf("DEBUG: Stored embedding for %s (vector length: %d)", elementID, len(embeddingVectors[j]))
-					} else {
-						log.Printf("DEBUG: WARNING - No embedding vector for element %s at index %d", elementID, j)
-					}
-				}
+			for i, text := range texts {
+				elementID := elementIDs[i]
+				w.embeddingAggregator.Add(docInfo.DocID, elementID, text)
 			}
 
-			totalBatches := (len(texts) + maxBatchSize - 1) / maxBatchSize
-			log.Printf("EMBEDDINGS: Generated %d embeddings in %d batches for document %s", len(embeddingMap), totalBatches, docInfo.DocID)
+			// Strategy: Always flush to get embeddings for this document immediately
+			// This ensures we can store complete data, while still benefiting from
+			// cross-document batching when multiple small documents accumulate
+			log.Printf("EMBEDDINGS: Flushing batch with %d total items (includes current document)",
+				w.embeddingAggregator.Size())
+			flushedEmbeddings, err := w.embeddingAggregator.Flush()
+			if err != nil {
+				log.Printf("Failed to flush embeddings: %v", err)
+			} else {
+				// Store flushed embeddings that belong to this document
+				for _, elementID := range elementIDs {
+					if embedding, ok := flushedEmbeddings[elementID]; ok {
+						embeddingMap[elementID] = embedding
+					}
+				}
+				log.Printf("EMBEDDINGS: Document %s received %d/%d embeddings from flush (total flushed: %d)",
+					docInfo.DocID, len(embeddingMap), len(elementIDs), len(flushedEmbeddings))
+			}
 		}
 	}
 
@@ -697,7 +821,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 			ContentType:       docContent.DocType,
 			ProcessedAt:       time.Now(),
 			ElementCount:      len(parseResult.Elements),
-			RelationshipCount: len(parseResult.Relationships),
+			RelationshipCount: 0, // Relationships removed during UDML migration
 		}}
 		if err := storage.AppendDocuments(docs); err != nil {
 			log.Printf("Failed to store documents: %v", err)
@@ -749,45 +873,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 			}
 		}
 
-		// Store relationships
-		var relationships []analytics.Relationship
-		for _, rel := range parseResult.Relationships {
-			relationships = append(relationships, analytics.Relationship{
-				SourceElementID:  rel.SourceElementID,
-				TargetElementID:  rel.TargetElementID,
-				RelationshipType: rel.RelationshipType,
-				DocID:            docInfo.DocID,
-				SourceName:       docInfo.Source,
-				Metadata:         rel.Metadata,
-			})
-		}
-		if len(relationships) > 0 {
-			if err := storage.AppendRelationships(relationships); err != nil {
-				log.Printf("Failed to store relationships: %v", err)
-				return false
-			}
-		}
-
-		// Store links
-		if parseResult != nil && len(parseResult.Links) > 0 {
-			var links []analytics.Link
-			for _, link := range parseResult.Links {
-				links = append(links, analytics.Link{
-					LinkID:          link.LinkID,
-					SourceElementID: link.SourceElementID,
-					DocID:           docInfo.DocID,
-					SourceName:      docInfo.Source,
-					LinkType:        link.LinkType,
-					LinkTarget:      link.LinkTarget,
-					LinkText:        link.LinkText,
-				})
-			}
-
-			if err := storage.AppendLinks(links); err != nil {
-				log.Printf("Failed to store links: %v", err)
-				// Don't return false - links are optional
-			}
-		}
+		// Note: Relationships and Links storage removed during UDML migration
+		// UDML graph extraction will handle these via separate process
 
 		// Store embeddings
 		if embeddingMap != nil && len(embeddingMap) > 0 {
@@ -812,10 +899,11 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		}
 	}
 
-	// Queue links from parseResult (works for all document types including HTML, DOCX, PDF, etc.)
+	// Queue links discovered during parsing (works for all document types)
+	// Parsers create link elements with element_type="link" and metadata["link_target"]
 	sourceConfig, hasConfig := w.contentSourceConfigs[docInfo.Source]
-	if parseResult != nil && len(parseResult.Links) > 0 && hasConfig {
-		w.queueLinksFromParseResult(docInfo, parseResult, sourceConfig)
+	if hasConfig {
+		w.queueDiscoveredLinks(docInfo, parseResult, sourceConfig)
 	}
 
 	log.Printf("Successfully processed document %s", docInfo.DocID)
@@ -842,6 +930,8 @@ func (w *Worker) perSourceDiscoveryLoop(sourceName string) {
 	discoveryInterval := 3600 // Default: 1 hour
 	if refreshInterval, ok := sourceConfig["refresh_interval"].(int); ok {
 		discoveryInterval = refreshInterval
+	} else if refreshInterval, ok := sourceConfig["refresh_interval"].(int64); ok {
+		discoveryInterval = int(refreshInterval)
 	} else if refreshInterval, ok := sourceConfig["refresh_interval"].(float64); ok {
 		discoveryInterval = int(refreshInterval)
 	}
@@ -961,6 +1051,35 @@ func (w *Worker) perSourceDiscoveryLoop(sourceName string) {
 			log.Printf("Source leader for %s queued %d new documents", sourceName, queued)
 		}
 
+		// Check queue status for Neo4j export and finalization tasks (only if leader)
+		if isSourceLeader {
+			w.checkQueueForNeo4jExport()
+
+			// Also check finalization independently (for when Neo4j export is disabled)
+			status, err := w.jobControl.GetProcessingStatus()
+			if err == nil {
+				pendingDocs := status.Documents["pending"]
+				processingDocs := status.Documents["processing"]
+				isQueueEmpty := (pendingDocs == 0 && processingDocs == 0)
+				currentTime := time.Now()
+
+				// Track queue empty time
+				if isQueueEmpty {
+					if w.lastQueueEmptyTime == nil {
+						w.lastQueueEmptyTime = &currentTime
+						log.Println("Queue became empty, starting idle timer for finalization tasks")
+					}
+				} else {
+					// Reset timer if queue is not empty
+					if w.lastQueueEmptyTime != nil {
+						w.lastQueueEmptyTime = nil
+					}
+				}
+
+				w.checkQueueForFinalization(isQueueEmpty, currentTime)
+			}
+		}
+
 		// Sleep for configured interval (with context-aware sleep)
 		select {
 		case <-time.After(time.Duration(discoveryInterval) * time.Second):
@@ -1062,6 +1181,9 @@ func (w *Worker) discoveryLoop() {
 			log.Printf("Leader queued %d total new documents", totalQueued)
 		}
 
+		// Check queue status for Neo4j export
+		w.checkQueueForNeo4jExport()
+
 		// Context-aware sleep
 		select {
 		case <-time.After(60 * time.Second):
@@ -1094,13 +1216,6 @@ func (w *Worker) Stop() {
 
 // Close closes the worker and releases resources
 func (w *Worker) Close() error {
-	// Stop embedding service
-	if w.embeddingService != nil {
-		if err := w.embeddingService.Stop(); err != nil {
-			log.Printf("Error stopping embedding service: %v", err)
-		}
-	}
-
 	for _, storage := range w.analyticsStorages {
 		if err := storage.Close(); err != nil {
 			log.Printf("Error closing analytics storage: %v", err)
@@ -1109,110 +1224,10 @@ func (w *Worker) Close() error {
 	return w.jobControl.Close()
 }
 
-// extractAndQueueLinks extracts links from HTML content and queues them for processing
-func (w *Worker) extractAndQueueLinks(docInfo *jobcontrol.DocumentInfo, htmlContent string, sourceConfig map[string]interface{}) {
-	// Get current depth from metadata
-	currentDepth := 0
-	if depth, ok := docInfo.Metadata["discovery_depth"].(float64); ok {
-		currentDepth = int(depth)
-	}
-
-	// Get max depth from source config (not from document metadata)
-	maxDepth := 1 // default
-	if configDepth, ok := sourceConfig["max_link_depth"].(int); ok {
-		maxDepth = configDepth
-	} else if configDepth, ok := sourceConfig["max_link_depth"].(float64); ok {
-		maxDepth = int(configDepth)
-	}
-
-	// Check if we've reached max depth
-	if currentDepth >= maxDepth {
-		log.Printf("Not extracting links from %s - at max depth %d", docInfo.DocID, maxDepth)
-		return
-	}
-
-	// Parse HTML
-	doc, err := html.Parse(strings.NewReader(htmlContent))
-	if err != nil {
-		log.Printf("Failed to parse HTML for link extraction: %v", err)
-		return
-	}
-
-	// Parse base URL
-	baseURL, err := url.Parse(docInfo.DocID)
-	if err != nil {
-		log.Printf("Failed to parse base URL %s: %v", docInfo.DocID, err)
-		return
-	}
-
-	// Extract links
-	links := make(map[string]bool)
-	var extract func(*html.Node)
-	extract = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "a" {
-			for _, attr := range n.Attr {
-				if attr.Key == "href" {
-					// Resolve relative URL
-					linkURL, err := url.Parse(attr.Val)
-					if err != nil {
-						continue
-					}
-					absoluteURL := baseURL.ResolveReference(linkURL)
-
-					// Skip if different domain
-					if absoluteURL.Host != baseURL.Host {
-						continue
-					}
-
-					// Skip fragments
-					absoluteURL.Fragment = ""
-					linkStr := absoluteURL.String()
-
-					// Skip if same as base URL
-					if linkStr == docInfo.DocID {
-						continue
-					}
-
-					// Apply filters
-					if w.shouldIncludeLink(linkStr, sourceConfig) {
-						links[linkStr] = true
-					}
-					break
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			extract(c)
-		}
-	}
-	extract(doc)
-
-	// Queue discovered links
-	queued := 0
-	for link := range links {
-		metadata := map[string]interface{}{
-			"url":             link,
-			"parent_url":      docInfo.DocID,
-			"discovery_depth": currentDepth + 1,
-			"source_name":     docInfo.Source,
-		}
-
-		if err := w.jobControl.EnqueueDocument(link, docInfo.Source, metadata); err != nil {
-			log.Printf("Failed to enqueue link %s: %v", link, err)
-		} else {
-			queued++
-		}
-	}
-
-	if queued > 0 {
-		log.Printf("Queued %d links from %s for processing", queued, docInfo.DocID)
-	}
-}
-
-// queueLinksFromParseResult queues links from parseResult.Links via job control
-func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, parseResult *parser.ParseResult, sourceConfig map[string]interface{}) {
+// queueDiscoveredLinks queues links discovered during parsing
+// All parsers create link elements with element_type="link" and metadata["link_target"]
+func (w *Worker) queueDiscoveredLinks(docInfo *jobcontrol.DocumentInfo, parseResult *parser.ParseResult, sourceConfig map[string]interface{}) {
 	if sourceConfig == nil {
-		// No source config, can't determine depth or filtering
 		return
 	}
 
@@ -1236,22 +1251,29 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 		return
 	}
 
-	// Queue each link
+	// Find all link elements and queue their targets
 	queued := 0
-	for _, link := range parseResult.Links {
-		// Skip empty links
-		if link.LinkTarget == "" {
+	for _, elem := range parseResult.Elements {
+		// Check if this is a link element
+		if elem.ElementType != "link" {
 			continue
 		}
 
-		// Skip wiki, mailto, and image links (not processable as documents)
-		if link.LinkType == "wiki" || link.LinkType == "email" || link.LinkType == "image" ||
-		   strings.HasPrefix(link.LinkTarget, "mailto:") {
+		// Extract link target from metadata
+		linkTarget, ok := elem.Metadata["link_target"].(string)
+		if !ok || linkTarget == "" {
+			continue
+		}
+
+		// Skip mailto, javascript, and anchor-only links
+		if strings.HasPrefix(linkTarget, "mailto:") ||
+		   strings.HasPrefix(linkTarget, "javascript:") ||
+		   strings.HasPrefix(linkTarget, "#") {
 			continue
 		}
 
 		// Skip links to common image file extensions
-		lowerTarget := strings.ToLower(link.LinkTarget)
+		lowerTarget := strings.ToLower(linkTarget)
 		if strings.HasSuffix(lowerTarget, ".png") || strings.HasSuffix(lowerTarget, ".jpg") ||
 		   strings.HasSuffix(lowerTarget, ".jpeg") || strings.HasSuffix(lowerTarget, ".gif") ||
 		   strings.HasSuffix(lowerTarget, ".bmp") || strings.HasSuffix(lowerTarget, ".svg") ||
@@ -1260,7 +1282,7 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 		}
 
 		// Resolve relative links to absolute URLs
-		targetURL := link.LinkTarget
+		targetURL := linkTarget
 		hasProtocol := strings.Contains(targetURL, "://")
 
 		if !hasProtocol {
@@ -1271,19 +1293,26 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 			}
 		}
 
-		// Apply filters if this is a URL with a protocol (http://, https://, s3://, file://, sharepoint://, etc.)
+		// Apply filters if this is a URL with a protocol
 		if strings.Contains(targetURL, "://") {
 			if !w.shouldIncludeLink(targetURL, sourceConfig) {
 				continue
 			}
 		}
 
+		// Get link type from metadata (if available)
+		linkType, _ := elem.Metadata["link_type"].(string)
+		if linkType == "" {
+			linkType = "discovered"
+		}
+
+		// Queue the link for processing
 		metadata := map[string]interface{}{
 			"url":             targetURL,
 			"parent_url":      docInfo.DocID,
 			"discovery_depth": currentDepth + 1,
 			"source_name":     docInfo.Source,
-			"link_type":       link.LinkType,
+			"link_type":       linkType,
 		}
 
 		if err := w.jobControl.EnqueueDocument(targetURL, docInfo.Source, metadata); err != nil {
@@ -1294,7 +1323,7 @@ func (w *Worker) queueLinksFromParseResult(docInfo *jobcontrol.DocumentInfo, par
 	}
 
 	if queued > 0 {
-		log.Printf("Queued %d links from %s parseResult for processing", queued, docInfo.DocID)
+		log.Printf("Queued %d discovered links from %s for processing", queued, docInfo.DocID)
 	}
 }
 
@@ -1424,4 +1453,260 @@ func inferDocType(filename string) string {
 	default:
 		return "text"
 	}
+}
+
+// checkQueueForNeo4jExport checks if queue is empty and triggers Neo4j export if conditions are met
+func (w *Worker) checkQueueForNeo4jExport() {
+	// Only perform checks if Neo4j export is enabled
+	if w.neo4jExportConfig == nil || !w.neo4jExportConfig.Enabled {
+		return
+	}
+
+	// Get processing status
+	status, err := w.jobControl.GetProcessingStatus()
+	if err != nil {
+		log.Printf("Warning: failed to get processing status for Neo4j export check: %v", err)
+		return
+	}
+
+	// Check if queue is empty
+	pendingDocs := status.Documents["pending"]
+	processingDocs := status.Documents["processing"]
+
+	isQueueEmpty := (pendingDocs == 0 && processingDocs == 0)
+	currentTime := time.Now()
+
+	if isQueueEmpty {
+		if w.lastQueueEmptyTime == nil {
+			// Queue just became empty
+			w.lastQueueEmptyTime = &currentTime
+			log.Println("Queue is now empty, starting timer for Neo4j export")
+		} else {
+			// Check if queue has been empty long enough
+			timeSinceEmpty := currentTime.Sub(*w.lastQueueEmptyTime).Seconds()
+			if timeSinceEmpty >= float64(w.neo4jExportConfig.EmptyQueueWaitTime) {
+				// Check if enough time has passed since last export
+				timeSinceLastExport := float64(999999)
+				if w.lastNeo4jExportTime != nil {
+					timeSinceLastExport = currentTime.Sub(*w.lastNeo4jExportTime).Seconds()
+				}
+
+				if timeSinceLastExport >= float64(w.neo4jExportConfig.EmptyQueueWaitTime) {
+					log.Println("Queue has been empty long enough, triggering Neo4j export")
+					w.triggerNeo4jExport()
+					w.lastNeo4jExportTime = &currentTime
+					w.lastQueueEmptyTime = nil // Reset timer
+				} else {
+					log.Printf("Queue empty but exported recently, waiting %.1f seconds", float64(w.neo4jExportConfig.EmptyQueueWaitTime)-timeSinceLastExport)
+				}
+			}
+		}
+
+		// Also check for finalization triggers (semantic analysis and ontology extraction)
+		w.checkQueueForFinalization(isQueueEmpty, currentTime)
+	} else {
+		// Queue is not empty, reset timer
+		if w.lastQueueEmptyTime != nil {
+			log.Println("Queue is no longer empty, resetting export timer")
+			w.lastQueueEmptyTime = nil
+		}
+	}
+}
+
+// checkQueueForFinalization checks if queue is idle and triggers finalization tasks (semantic + ontology)
+func (w *Worker) checkQueueForFinalization(isQueueEmpty bool, currentTime time.Time) {
+	// Trigger semantic analysis first (if enabled)
+	w.checkQueueForSemanticAnalysis(isQueueEmpty, currentTime)
+
+	// Then trigger ontology extraction (if enabled)
+	w.checkQueueForOntologyExtraction(isQueueEmpty, currentTime)
+}
+
+// checkQueueForSemanticAnalysis checks if queue is idle and triggers semantic analysis
+func (w *Worker) checkQueueForSemanticAnalysis(isQueueEmpty bool, currentTime time.Time) {
+	// Only perform checks if semantic analysis is enabled
+	if w.semanticConfig == nil || !w.semanticConfig.Enabled || w.semanticAnalyzer == nil {
+		return
+	}
+
+	// Check if already running
+	if w.semanticAnalysisRunning.Load() {
+		return
+	}
+
+	// Check if queue is empty
+	if !isQueueEmpty {
+		return
+	}
+
+	// Calculate time since queue became empty
+	// Use 30 seconds for testing when QueueIdleTriggerMinutes is 0
+	idleTriggerSeconds := float64(w.semanticConfig.QueueIdleTriggerMinutes * 60)
+	if idleTriggerSeconds == 0 {
+		idleTriggerSeconds = 30 // 30 seconds for immediate testing
+	}
+	if w.lastQueueEmptyTime != nil {
+		timeSinceEmpty := currentTime.Sub(*w.lastQueueEmptyTime).Seconds()
+		if timeSinceEmpty < idleTriggerSeconds {
+			return // Not idle long enough yet
+		}
+	}
+
+	// Check minimum interval since last analysis
+	minIntervalSeconds := float64(w.semanticConfig.MinIntervalMinutes * 60)
+	if w.lastSemanticAnalysisTime != nil {
+		timeSinceLastAnalysis := currentTime.Sub(*w.lastSemanticAnalysisTime).Seconds()
+		if timeSinceLastAnalysis < minIntervalSeconds {
+			log.Printf("SEMANTIC ANALYSIS: Skipping (ran %.1f min ago, min interval: %d min)",
+				timeSinceLastAnalysis/60, w.semanticConfig.MinIntervalMinutes)
+			return
+		}
+	}
+
+	// Trigger semantic analysis in background
+	log.Println("SEMANTIC ANALYSIS: Queue idle long enough, triggering analysis")
+	w.wg.Add(1)
+	go w.runSemanticAnalysis()
+}
+
+// runSemanticAnalysis runs semantic relationship detection in background
+func (w *Worker) runSemanticAnalysis() {
+	defer w.wg.Done()
+
+	// Set running flag
+	if !w.semanticAnalysisRunning.CompareAndSwap(false, true) {
+		log.Println("SEMANTIC ANALYSIS: Already running, skipping")
+		return
+	}
+	defer w.semanticAnalysisRunning.Store(false)
+
+	// Update last analysis time
+	now := time.Now()
+	w.lastSemanticAnalysisTime = &now
+
+	// Run analysis
+	if err := w.semanticAnalyzer.AnalyzeAndStore(); err != nil {
+		log.Printf("SEMANTIC ANALYSIS: Failed: %v", err)
+	}
+}
+
+// checkQueueForOntologyExtraction checks if queue is idle and triggers ontology extraction
+func (w *Worker) checkQueueForOntologyExtraction(isQueueEmpty bool, currentTime time.Time) {
+	// Only perform checks if ontology extraction is enabled
+	if w.ontologyConfig == nil || !w.ontologyConfig.Enabled || w.ontologyExtractor == nil {
+		return
+	}
+
+	// Check if already running
+	if w.ontologyExtractionRunning.Load() {
+		return
+	}
+
+	// Check if queue is empty
+	if !isQueueEmpty {
+		return
+	}
+
+	// Calculate time since queue became empty
+	// Use 30 seconds for testing when QueueIdleTriggerMinutes is 0
+	idleTriggerSeconds := float64(w.ontologyConfig.QueueIdleTriggerMinutes * 60)
+	if idleTriggerSeconds == 0 {
+		idleTriggerSeconds = 30 // 30 seconds for immediate testing
+	}
+	if w.lastQueueEmptyTime != nil {
+		timeSinceEmpty := currentTime.Sub(*w.lastQueueEmptyTime).Seconds()
+		if timeSinceEmpty < idleTriggerSeconds {
+			return // Not idle long enough yet
+		}
+	}
+
+	// Check minimum interval since last extraction
+	minIntervalSeconds := float64(w.ontologyConfig.MinIntervalMinutes * 60)
+	if w.lastOntologyExtractionTime != nil {
+		timeSinceLastExtraction := currentTime.Sub(*w.lastOntologyExtractionTime).Seconds()
+		if timeSinceLastExtraction < minIntervalSeconds {
+			log.Printf("ONTOLOGY EXTRACTION: Skipping (ran %.1f min ago, min interval: %d min)",
+				timeSinceLastExtraction/60, w.ontologyConfig.MinIntervalMinutes)
+			return
+		}
+	}
+
+	// Trigger ontology extraction in background
+	log.Println("ONTOLOGY EXTRACTION: Queue idle long enough, triggering extraction")
+	w.wg.Add(1)
+	go w.runOntologyExtraction()
+}
+
+// runOntologyExtraction runs ontology entity extraction in background
+func (w *Worker) runOntologyExtraction() {
+	defer w.wg.Done()
+
+	// Set running flag
+	if !w.ontologyExtractionRunning.CompareAndSwap(false, true) {
+		log.Println("ONTOLOGY EXTRACTION: Already running, skipping")
+		return
+	}
+	defer w.ontologyExtractionRunning.Store(false)
+
+	// Update last extraction time
+	now := time.Now()
+	w.lastOntologyExtractionTime = &now
+
+	// Run extraction
+	if err := w.ontologyExtractor.ExtractAndStore(); err != nil {
+		log.Printf("ONTOLOGY EXTRACTION: Failed: %v", err)
+	}
+}
+
+// triggerNeo4jExport triggers Neo4j graph export
+func (w *Worker) triggerNeo4jExport() {
+	log.Println("========================================")
+	log.Println("TRIGGERING NEO4J GRAPH EXPORT")
+	log.Println("========================================")
+
+	// Import export package
+	// Dynamically build configuration from worker settings
+	sourceAnalytics := w.neo4jExportConfig.SourceAnalytics
+	if sourceAnalytics == "" {
+		sourceAnalytics = "parquet"
+	}
+
+	// Find source path from analytics configs
+	sourcePath := w.neo4jExportConfig.SourcePath
+	if sourcePath == "" {
+		// Use configured source path from Neo4j export config
+		// Fallback to /tmp if not available
+		sourcePath = "/tmp"
+		log.Printf("Warning: No source path configured for Neo4j export, using fallback: %s", sourcePath)
+	}
+
+	// This will be implemented in the next step - for now just log
+	log.Printf("Would export from %s at %s to Neo4j", sourceAnalytics, sourcePath)
+	log.Printf("Neo4j connection: %v", w.neo4jExportConfig.Connection)
+
+	// TODO: Implement actual export using graph exporter
+	// exporter, err := export.NewGraphExporter(export.Config{
+	// 	SourceType:       sourceAnalytics,
+	// 	SourcePath:       sourcePath,
+	// 	TargetType:       "neo4j",
+	// 	TargetConnection: w.neo4jExportConfig.Connection,
+	// 	BatchSize:        w.neo4jExportConfig.BatchSize,
+	// })
+	// if err != nil {
+	// 	log.Printf("ERROR: Failed to create graph exporter: %v", err)
+	// 	return
+	// }
+	// defer exporter.Close()
+	//
+	// result := exporter.ExportToNeo4j()
+	// if result.Success {
+	// 	log.Printf("✓ Neo4j export completed successfully")
+	// 	log.Printf("  Documents: %d", result.DocumentCount)
+	// 	log.Printf("  Elements: %d", result.ElementCount)
+	// 	log.Printf("  Relationships: %d", result.RelationshipCount)
+	// } else {
+	// 	log.Printf("ERROR: Neo4j export failed: %s", result.Error)
+	// }
+
+	log.Println("========================================")
 }

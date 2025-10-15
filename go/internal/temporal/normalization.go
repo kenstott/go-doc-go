@@ -19,6 +19,8 @@ func NormalizeTemporal(value string, temporalType TemporalType) string {
 		return normalizeTime(value)
 	case TemporalTypeTimeRange:
 		return normalizeTimeRange(value)
+	case TemporalTypeMonthYear:
+		return normalizeMonthYear(value)
 	default:
 		return value
 	}
@@ -92,6 +94,52 @@ func normalizeTimeRange(rangeStr string) string {
 	return fmt.Sprintf("%s - %s", startNorm, endNorm)
 }
 
+// normalizeMonthYear normalizes month-year to 'Nov 2023' format
+func normalizeMonthYear(monthYearStr string) string {
+	monthYearStr = strings.TrimSpace(monthYearStr)
+
+	// Parse various formats
+	monthNames := map[string]string{
+		"january": "Jan", "february": "Feb", "march": "Mar", "april": "Apr",
+		"may": "May", "june": "Jun", "july": "Jul", "august": "Aug",
+		"september": "Sep", "october": "Oct", "november": "Nov", "december": "Dec",
+	}
+
+	// Handle "November 2023" or "november 2023"
+	parts := strings.Fields(monthYearStr)
+	if len(parts) == 2 {
+		monthStr := strings.ToLower(parts[0])
+		yearStr := parts[1]
+
+		// Check if it's already abbreviated (3 chars)
+		if len(parts[0]) == 3 {
+			return fmt.Sprintf("%s %s", strings.Title(parts[0]), yearStr)
+		}
+
+		// Convert full month name to abbreviation
+		if abbr, ok := monthNames[monthStr]; ok {
+			return fmt.Sprintf("%s %s", abbr, yearStr)
+		}
+	}
+
+	// Handle "2023-11" format
+	if len(monthYearStr) == 7 && monthYearStr[4] == '-' {
+		year := monthYearStr[0:4]
+		month := monthYearStr[5:7]
+
+		// Convert numeric month to abbreviation
+		monthMap := []string{"", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+			"Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+
+		var monthNum int
+		if n, _ := fmt.Sscanf(month, "%d", &monthNum); n == 1 && monthNum >= 1 && monthNum <= 12 {
+			return fmt.Sprintf("%s %s", monthMap[monthNum], year)
+		}
+	}
+
+	return monthYearStr
+}
+
 // CreateTemporalValue creates a complete temporal_value object with precomputed parts
 func CreateTemporalValue(value string, temporalType TemporalType) map[string]interface{} {
 	temporalValue := map[string]interface{}{
@@ -109,6 +157,8 @@ func CreateTemporalValue(value string, temporalType TemporalType) map[string]int
 		addTimeParts(temporalValue, value)
 	case TemporalTypeTimeRange:
 		addTimeRangeParts(temporalValue, value)
+	case TemporalTypeMonthYear:
+		addMonthYearParts(temporalValue, value)
 	}
 
 	return temporalValue
@@ -248,6 +298,75 @@ func addTimeRangeParts(temporalValue map[string]interface{}, rangeStr string) {
 	parts["business_hours"] = startTime.Hour() >= 9 && endTime.Hour() <= 17
 
 	temporalValue["parts"] = parts
+}
+
+// addMonthYearParts adds precomputed month-year parts to temporal_value
+func addMonthYearParts(temporalValue map[string]interface{}, monthYearStr string) {
+	// Parse the month and year
+	normalized := normalizeMonthYear(monthYearStr)
+	parts := strings.Fields(normalized)
+
+	if len(parts) != 2 {
+		log.Printf("Failed to parse month-year parts for %s", monthYearStr)
+		return
+	}
+
+	monthAbbr := parts[0]
+	yearStr := parts[1]
+
+	var year int
+	if _, err := fmt.Sscanf(yearStr, "%d", &year); err != nil {
+		log.Printf("Failed to parse year from %s: %v", yearStr, err)
+		return
+	}
+
+	// Map month abbreviation to number
+	monthMap := map[string]int{
+		"Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+		"Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12,
+	}
+
+	month, ok := monthMap[monthAbbr]
+	if !ok {
+		log.Printf("Unknown month abbreviation: %s", monthAbbr)
+		return
+	}
+
+	// Create first and last day of the month
+	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0, 1, -1) // Last day of the month
+
+	temporalValue["iso_format"] = fmt.Sprintf("%04d-%02d", year, month)
+
+	monthNames := []string{"", "January", "February", "March", "April", "May", "June",
+		"July", "August", "September", "October", "November", "December"}
+
+	parts_map := map[string]interface{}{
+		"year":         year,
+		"month":        month,
+		"month_name":   monthNames[month],
+		"month_abbr":   monthAbbr,
+		"quarter":      (month-1)/3 + 1,
+		"quarter_name": fmt.Sprintf("Q%d", (month-1)/3+1),
+		"start_date":   startDate.Format("2006-01-02"),
+		"end_date":     endDate.Format("2006-01-02"),
+		"days_in_month": endDate.Day(),
+		"decade":       fmt.Sprintf("%ds", (year/10)*10),
+	}
+
+	// Add season
+	switch {
+	case month == 12 || month <= 2:
+		parts_map["season"] = "Winter"
+	case month >= 3 && month <= 5:
+		parts_map["season"] = "Spring"
+	case month >= 6 && month <= 8:
+		parts_map["season"] = "Summer"
+	default:
+		parts_map["season"] = "Fall"
+	}
+
+	temporalValue["parts"] = parts_map
 }
 
 // TemporalMatch represents a temporal pattern found in text
@@ -431,6 +550,8 @@ func temporalTypeName(t TemporalType) string {
 		return "datetime"
 	case TemporalTypeTimeRange:
 		return "time_range"
+	case TemporalTypeMonthYear:
+		return "month_year"
 	default:
 		return "none"
 	}

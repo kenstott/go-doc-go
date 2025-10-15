@@ -1,0 +1,323 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/udml-1.0.schema.json",
+  "title": "UDML Persistence Format Schema (UDML-S)",
+  "description": "Universal Document Model Language (UDML) v1.0 - Persistence/Storage Format. Flat array structure optimized for databases, Parquet files, and SQL queries. Also known as UDML-S (Storage).",
+  "type": "object",
+  "required": ["document_id", "metadata", "elements"],
+  "properties": {
+    "document_id": {
+      "type": "string",
+      "description": "Unique identifier for the document",
+      "minLength": 1
+    },
+    "schema_version": {
+      "type": "string",
+      "description": "UDML schema version",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "default": "1.0.0"
+    },
+    "metadata": {
+      "$ref": "#/definitions/DocumentMetadata"
+    },
+    "elements": {
+      "type": "array",
+      "description": "Flat array of document elements",
+      "items": {
+        "$ref": "#/definitions/Element"
+      }
+    }
+  },
+  "definitions": {
+    "DocumentMetadata": {
+      "type": "object",
+      "required": ["source_type"],
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Document title"
+        },
+        "author": {
+          "type": "string",
+          "description": "Document author"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document creation timestamp (ISO8601)"
+        },
+        "modified_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Document modification timestamp (ISO8601)"
+        },
+        "source_type": {
+          "type": "string",
+          "description": "Document source type",
+          "enum": [
+            "pdf",
+            "docx",
+            "xlsx",
+            "pptx",
+            "html",
+            "markdown",
+            "text",
+            "json",
+            "xml",
+            "csv",
+            "other"
+          ]
+        },
+        "source_path": {
+          "type": "string",
+          "description": "Path or URL to source document"
+        },
+        "page_count": {
+          "type": "integer",
+          "description": "Number of pages",
+          "minimum": 0
+        },
+        "word_count": {
+          "type": "integer",
+          "description": "Number of words",
+          "minimum": 0
+        },
+        "language": {
+          "type": "string",
+          "description": "Document language (ISO 639-1 code)",
+          "pattern": "^[a-z]{2}$"
+        },
+        "custom": {
+          "type": "object",
+          "description": "Custom metadata fields",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "Element": {
+      "type": "object",
+      "required": ["element_id", "element_type", "content"],
+      "properties": {
+        "element_id": {
+          "type": "string",
+          "description": "Unique element identifier",
+          "minLength": 1
+        },
+        "element_type": {
+          "type": "string",
+          "description": "Element type classification",
+          "enum": [
+            "root",
+            "body",
+            "section",
+            "document",
+            "paragraph",
+            "text",
+            "heading",
+            "header",
+            "list",
+            "list_item",
+            "link",
+            "temporal",
+            "table",
+            "data_table",
+            "data_tables",
+            "table_header",
+            "table_header_row",
+            "table_header_cell",
+            "table_row",
+            "table_cell",
+            "code_block",
+            "image",
+            "figure",
+            "chart",
+            "div",
+            "span",
+            "article",
+            "blockquote",
+            "json_field",
+            "json_object",
+            "json_array",
+            "json_item",
+            "xml_element",
+            "headers",
+            "footers",
+            "comments",
+            "sheet",
+            "workbook",
+            "comment",
+            "slide",
+            "slide_notes",
+            "shape_group",
+            "page",
+            "front_matter",
+            "line",
+            "range",
+            "substring",
+            "formula",
+            "footnote",
+            "quote",
+            "caption",
+            "metadata",
+            "other"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "description": "Primary element content"
+        },
+        "properties": {
+          "type": "object",
+          "description": "Extensible properties bag",
+          "properties": {
+            "page_number": {
+              "type": "integer",
+              "description": "Page number (1-indexed)",
+              "minimum": 1
+            },
+            "section_level": {
+              "type": "integer",
+              "description": "Section/heading level (1-6)",
+              "minimum": 1,
+              "maximum": 6
+            },
+            "row_index": {
+              "type": "integer",
+              "description": "Table row index (0-indexed)",
+              "minimum": 0
+            },
+            "column_index": {
+              "type": "integer",
+              "description": "Table column index (0-indexed)",
+              "minimum": 0
+            },
+            "temporal_type": {
+              "type": "string",
+              "description": "Temporal classification",
+              "enum": ["date", "time", "duration", "timestamp"]
+            },
+            "tag_name": {
+              "type": "string",
+              "description": "HTML/XML tag name"
+            },
+            "row_span": {
+              "type": "integer",
+              "description": "Number of rows this cell spans (default 1)",
+              "minimum": 1,
+              "default": 1
+            },
+            "column_span": {
+              "type": "integer",
+              "description": "Number of columns this cell spans (default 1)",
+              "minimum": 1,
+              "default": 1
+            },
+            "is_header": {
+              "type": "boolean",
+              "description": "Whether this cell is a header cell",
+              "default": false
+            },
+            "header_scope": {
+              "type": "string",
+              "description": "Scope of header cell (HTML-style)",
+              "enum": ["row", "col", "rowgroup", "colgroup"]
+            },
+            "complexity": {
+              "type": "string",
+              "description": "Table complexity classification",
+              "enum": ["simple", "complex"]
+            },
+            "header_rows": {
+              "type": "array",
+              "description": "Array of row indices that contain column headers",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "header_columns": {
+              "type": "array",
+              "description": "Array of column indices that contain row headers",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "data_start_row": {
+              "type": "integer",
+              "description": "Row index where data starts (after headers)",
+              "minimum": 0
+            },
+            "data_start_column": {
+              "type": "integer",
+              "description": "Column index where data starts (after row headers)",
+              "minimum": 0
+            },
+            "detection_method": {
+              "type": "string",
+              "description": "Method used to detect this table",
+              "enum": ["explicit", "layout_analysis", "heuristic", "alignment"]
+            },
+            "detection_confidence": {
+              "type": "number",
+              "description": "Confidence score for table detection (0.0-1.0)",
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "source_format": {
+              "type": "string",
+              "description": "Original source format for this element",
+              "enum": ["pdf", "docx", "xlsx", "pptx", "html", "markdown", "csv", "other"]
+            }
+          },
+          "additionalProperties": true
+        },
+        "provider_name": {
+          "type": "string",
+          "description": "Parser/provider that created this element"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Confidence score for this element",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "embeddings": {
+          "$ref": "#/definitions/Embeddings"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Embeddings": {
+      "type": "object",
+      "description": "Vector embeddings for element",
+      "required": ["model", "vector", "dimensions"],
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Embedding model name",
+          "examples": [
+            "text-embedding-ada-002",
+            "text-embedding-3-small",
+            "text-embedding-3-large"
+          ]
+        },
+        "vector": {
+          "type": "array",
+          "description": "Embedding vector",
+          "items": {
+            "type": "number"
+          }
+        },
+        "dimensions": {
+          "type": "integer",
+          "description": "Vector dimensions",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

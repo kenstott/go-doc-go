@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -34,8 +35,36 @@ func NewPDFParser() *PDFParser {
 	}
 }
 
-// Parse parses PDF content using go-fitz (MuPDF wrapper)
-func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// GetName returns the parser name
+func (p *PDFParser) GetName() string {
+	return "pdf"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *PDFParser) GetSupportedFormats() []string {
+	return []string{".pdf", "pdf"}
+}
+
+// Parse implements the Parser interface for PDF documents
+func (p *PDFParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request - PDF parser expects file path or []byte
+	return p.ParseLegacy(req.ID, req.Content)
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *PDFParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *PDFParser) Close() error {
+	// PDF parser has no persistent resources to clean up
+	return nil
+}
+
+// ParseLegacy parses PDF content using go-fitz (MuPDF wrapper)
+// Deprecated: Use Parse(ctx, ParseRequest) instead
+func (p *PDFParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	var data []byte
 	var err error
 
@@ -76,19 +105,18 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 			ID:      docID,
 			DocType: "pdf",
 		},
-		Elements:      []Element{},
-		Relationships: []Relationship{},
-		Links:         []Link{},
+		Elements: []Element{},
 	}
 
 	// Create root element
 	rootID := generateID("root_")
 	rootElement := Element{
-		ElementID:      rootID,
-		ElementType:    "root",
-		ContentPreview: "PDF Document",
-		Position:       0,
-		Depth:          0,
+		ElementID:       rootID,
+		ElementType:     "root",
+		ContentPreview:  "PDF Document",
+		Position:        0,
+		Depth:           0,
+		ElementCategory: GetElementCategory("root"),
 	}
 	result.Elements = append(result.Elements, rootElement)
 
@@ -98,30 +126,15 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 	// Create body element
 	bodyID := generateID("body_")
 	bodyElement := Element{
-		ElementID:      bodyID,
-		ElementType:    "body",
-		ContentPreview: fmt.Sprintf("PDF content with %d pages", numPages),
-		ParentID:       rootID,
-		Position:       1,
-		Depth:          1,
+		ElementID:       bodyID,
+		ElementType:     "body",
+		ContentPreview:  fmt.Sprintf("PDF content with %d pages", numPages),
+		ParentID:        rootID,
+		Position:        1,
+		Depth:           1,
+		ElementCategory: GetElementCategory("body"),
 	}
 	result.Elements = append(result.Elements, bodyElement)
-
-	// Add root->body relationships
-	result.Relationships = append(result.Relationships,
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contains",
-			SourceElementID:  rootID,
-			TargetElementID:  bodyID,
-		},
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contained_by",
-			SourceElementID:  bodyID,
-			TargetElementID:  rootID,
-		},
-	)
 
 	// Process pages
 	pageCount := numPages
@@ -131,9 +144,8 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 
 	elementPosition := 2
 	for pageNum := 0; pageNum < pageCount; pageNum++ {
-		pageElements, pageRels, pos := p.processPage(doc, pageNum, bodyID, &elementPosition)
+		pageElements, pos := p.processPage(doc, pageNum, bodyID, &elementPosition)
 		result.Elements = append(result.Elements, pageElements...)
-		result.Relationships = append(result.Relationships, pageRels...)
 		elementPosition = pos
 	}
 
@@ -141,53 +153,39 @@ func (p *PDFParser) Parse(docID string, content interface{}) (*ParseResult, erro
 }
 
 // processPage processes a single PDF page
-func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, elementPosition *int) ([]Element, []Relationship, int) {
+func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, elementPosition *int) ([]Element, int) {
 	elements := []Element{}
-	relationships := []Relationship{}
 
 	// Create page element
 	pageID := generateID(fmt.Sprintf("page_%d_", pageNum+1))
+	pageNumber := pageNum + 1
 	pageElement := Element{
 		ElementID:      pageID,
 		ElementType:    "page",
-		ContentPreview: fmt.Sprintf("Page %d", pageNum+1),
+		ContentPreview: fmt.Sprintf("Page %d", pageNumber),
 		ParentID:       bodyID,
 		Position:       *elementPosition,
 		Depth:          2,
 		ContentLocation: map[string]interface{}{
-			"page_number": pageNum + 1,
+			"page_number": pageNumber,
 		},
+		// UDML Phase 1: Populate promoted fields
+		PageNumber:      &pageNumber,
+		ElementCategory: GetElementCategory("page"),
 	}
 	elements = append(elements, pageElement)
 	*elementPosition++
 
-	// Add body->page relationships
-	relationships = append(relationships,
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contains",
-			SourceElementID:  bodyID,
-			TargetElementID:  pageID,
-		},
-		Relationship{
-			RelationshipID:   generateID("rel_"),
-			RelationshipType: "contained_by",
-			SourceElementID:  pageID,
-			TargetElementID:  bodyID,
-		},
-	)
-
 	// Extract text from page
 	pageText, err := doc.Text(pageNum)
 	if err != nil || pageText == "" {
-		return elements, relationships, *elementPosition
+		return elements, *elementPosition
 	}
 
 	// Get text blocks with positioning information
 	textBlocks := p.extractTextBlocks(doc, pageNum, pageText)
 
 	// Process text blocks
-	var prevBlockID string
 	for _, block := range textBlocks {
 		blockID := generateID("block_")
 		blockType := "paragraph"
@@ -205,53 +203,31 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 		ProcessTemporalContent(block.Text, metadata)
 
 		blockElement := Element{
-			ElementID:      blockID,
-			ElementType:    blockType,
-			Content:        block.Text,
-			ContentPreview: p.truncateText(block.Text, p.MaxContentPreview),
-			ParentID:       pageID,
-			Position:       *elementPosition,
-			Depth:          3,
+			ElementID:       blockID,
+			ElementType:     blockType,
+			Content:         block.Text,
+			ContentPreview:  p.truncateText(block.Text, p.MaxContentPreview),
+			ParentID:        pageID,
+			Position:        *elementPosition,
+			Depth:           3,
 			ContentLocation: metadata,
-			Metadata:       metadata,
+			Metadata:        metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+		pageNum := pageNum + 1
+		blockElement.PageNumber = &pageNum
+
+		// TemporalType from temporal metadata
+		if temporalType, ok := metadata["temporal_type"].(string); ok && temporalType != "" {
+			blockElement.TemporalType = &temporalType
+		}
+
+		// ElementCategory
+		blockElement.ElementCategory = GetElementCategory(blockType)
+
 		elements = append(elements, blockElement)
 		*elementPosition++
-
-		// Add page->block relationships
-		relationships = append(relationships,
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contains",
-				SourceElementID:  pageID,
-				TargetElementID:  blockID,
-			},
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contained_by",
-				SourceElementID:  blockID,
-				TargetElementID:  pageID,
-			},
-		)
-
-		// Add sibling relationships (previous/next)
-		if prevBlockID != "" {
-			relationships = append(relationships,
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "next_sibling",
-					SourceElementID:  prevBlockID,
-					TargetElementID:  blockID,
-				},
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "previous_sibling",
-					SourceElementID:  blockID,
-					TargetElementID:  prevBlockID,
-				},
-			)
-		}
-		prevBlockID = blockID
 
 		// Extract links if enabled
 		if p.ExtractLinks {
@@ -264,13 +240,12 @@ func (p *PDFParser) processPage(doc *fitz.Document, pageNum int, bodyID string, 
 
 	// Extract tables if enabled
 	if p.ExtractTables {
-		tableElements, tableRels, pos := p.extractTables(doc, pageNum, pageID, elementPosition)
+		tableElements, pos := p.extractTables(doc, pageNum, pageID, elementPosition)
 		elements = append(elements, tableElements...)
-		relationships = append(relationships, tableRels...)
 		*elementPosition = pos
 	}
 
-	return elements, relationships, *elementPosition
+	return elements, *elementPosition
 }
 
 // TextBlock represents a block of text with metadata
@@ -360,9 +335,8 @@ type Table struct {
 }
 
 // extractTables extracts tables from a PDF page using heuristic detection
-func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string, elementPosition *int) ([]Element, []Relationship, int) {
+func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string, elementPosition *int) ([]Element, int) {
 	elements := []Element{}
-	relationships := []Relationship{}
 
 	// Detect tables using heuristics
 	tables := p.detectTablesHeuristic(doc, pageNum)
@@ -374,6 +348,7 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 		contentPreview := fmt.Sprintf("Table with %d rows and %d columns", table.Rows, table.Cols)
 
 		// Create table element
+		tablePageNum := pageNum + 1
 		tableElement := Element{
 			ElementID:      tableID,
 			ElementType:    "table",
@@ -382,28 +357,15 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			Position:       *elementPosition,
 			Depth:          3,
 			ContentLocation: map[string]interface{}{
-				"page_number": pageNum + 1,
+				"page_number": tablePageNum,
 				"table_index": tableIdx,
 			},
+			// UDML Phase 1: Populate promoted fields
+			PageNumber:      &tablePageNum,
+			ElementCategory: GetElementCategory("table"),
 		}
 		elements = append(elements, tableElement)
 		*elementPosition++
-
-		// Add page->table relationships
-		relationships = append(relationships,
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contains",
-				SourceElementID:  pageID,
-				TargetElementID:  tableID,
-			},
-			Relationship{
-				RelationshipID:   generateID("rel_"),
-				RelationshipType: "contained_by",
-				SourceElementID:  tableID,
-				TargetElementID:  pageID,
-			},
-		)
 
 		// Add header row if exists
 		if table.Rows > 0 {
@@ -427,6 +389,7 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			headerText := strings.Join(headerTexts, "\t")
 
 			// Create header row element
+			headerRowPageNum := pageNum + 1
 			headerRowElement := Element{
 				ElementID:      headerRowID,
 				ElementType:    "table_header_row",
@@ -435,29 +398,16 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				Position:       *elementPosition,
 				Depth:          4,
 				ContentLocation: map[string]interface{}{
-					"page_number": pageNum + 1,
+					"page_number": headerRowPageNum,
 					"table_index": tableIdx,
 					"row":         0,
 				},
+				// UDML Phase 1: Populate promoted fields
+				PageNumber:      &headerRowPageNum,
+				ElementCategory: GetElementCategory("table_header_row"),
 			}
 			elements = append(elements, headerRowElement)
 			*elementPosition++
-
-			// Add table->header_row relationships
-			relationships = append(relationships,
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contains_table_row",
-					SourceElementID:  tableID,
-					TargetElementID:  headerRowID,
-				},
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contained_by",
-					SourceElementID:  headerRowID,
-					TargetElementID:  tableID,
-				},
-			)
 
 			// Add header cells
 			for colIdx, colKey := range colKeys {
@@ -475,34 +425,35 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				ProcessTemporalContent(cellText, headerMetadata)
 
 				headerCellElement := Element{
-					ElementID:      headerCellID,
-					ElementType:    "table_header",
-					Content:        cellText,
-					ContentPreview: p.truncateText(cellText, p.MaxContentPreview),
-					ParentID:       headerRowID,
-					Position:       *elementPosition,
-					Depth:          5,
+					ElementID:       headerCellID,
+					ElementType:     "table_header",
+					Content:         cellText,
+					ContentPreview:  p.truncateText(cellText, p.MaxContentPreview),
+					ParentID:        headerRowID,
+					Position:        *elementPosition,
+					Depth:           5,
 					ContentLocation: headerMetadata,
-					Metadata:       headerMetadata,
+					Metadata:        headerMetadata,
 				}
+
+				// UDML Phase 1: Populate promoted fields
+				headerCellPageNum := pageNum + 1
+				headerCellRowIdx := 0
+				headerCellColIdx := colKey
+				headerCellElement.PageNumber = &headerCellPageNum
+				headerCellElement.RowIndex = &headerCellRowIdx
+				headerCellElement.ColumnIndex = &headerCellColIdx
+
+				// TemporalType from temporal metadata
+				if temporalType, ok := headerMetadata["temporal_type"].(string); ok && temporalType != "" {
+					headerCellElement.TemporalType = &temporalType
+				}
+
+				// ElementCategory
+				headerCellElement.ElementCategory = GetElementCategory("table_header")
+
 				elements = append(elements, headerCellElement)
 				*elementPosition++
-
-				// Add header_row->header_cell relationships
-				relationships = append(relationships,
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contains_table_header",
-						SourceElementID:  headerRowID,
-						TargetElementID:  headerCellID,
-					},
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contained_by",
-						SourceElementID:  headerCellID,
-						TargetElementID:  headerRowID,
-					},
-				)
 			}
 		}
 
@@ -533,6 +484,7 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 			rowText := strings.Join(rowTexts, "\t")
 
 			// Create row element
+			rowPageNum := pageNum + 1
 			rowElement := Element{
 				ElementID:      rowID,
 				ElementType:    "table_row",
@@ -541,29 +493,16 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				Position:       *elementPosition,
 				Depth:          4,
 				ContentLocation: map[string]interface{}{
-					"page_number": pageNum + 1,
+					"page_number": rowPageNum,
 					"table_index": tableIdx,
 					"row":         row,
 				},
+				// UDML Phase 1: Populate promoted fields
+				PageNumber:      &rowPageNum,
+				ElementCategory: GetElementCategory("table_row"),
 			}
 			elements = append(elements, rowElement)
 			*elementPosition++
-
-			// Add table->row relationships
-			relationships = append(relationships,
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contains_table_row",
-					SourceElementID:  tableID,
-					TargetElementID:  rowID,
-				},
-				Relationship{
-					RelationshipID:   generateID("rel_"),
-					RelationshipType: "contained_by",
-					SourceElementID:  rowID,
-					TargetElementID:  tableID,
-				},
-			)
 
 			// Add cells
 			for colIdx, col := range colKeys {
@@ -581,39 +520,40 @@ func (p *PDFParser) extractTables(doc *fitz.Document, pageNum int, pageID string
 				ProcessTemporalContent(cellText, cellMetadata)
 
 				cellElement := Element{
-					ElementID:      cellID,
-					ElementType:    "table_cell",
-					Content:        cellText,
-					ContentPreview: p.truncateText(cellText, p.MaxContentPreview),
-					ParentID:       rowID,
-					Position:       *elementPosition,
-					Depth:          5,
+					ElementID:       cellID,
+					ElementType:     "table_cell",
+					Content:         cellText,
+					ContentPreview:  p.truncateText(cellText, p.MaxContentPreview),
+					ParentID:        rowID,
+					Position:        *elementPosition,
+					Depth:           5,
 					ContentLocation: cellMetadata,
-					Metadata:       cellMetadata,
+					Metadata:        cellMetadata,
 				}
+
+				// UDML Phase 1: Populate promoted fields
+				cellPageNum := pageNum + 1
+				cellRowIdx := row
+				cellColIdx := col
+				cellElement.PageNumber = &cellPageNum
+				cellElement.RowIndex = &cellRowIdx
+				cellElement.ColumnIndex = &cellColIdx
+
+				// TemporalType from temporal metadata
+				if temporalType, ok := cellMetadata["temporal_type"].(string); ok && temporalType != "" {
+					cellElement.TemporalType = &temporalType
+				}
+
+				// ElementCategory
+				cellElement.ElementCategory = GetElementCategory("table_cell")
+
 				elements = append(elements, cellElement)
 				*elementPosition++
-
-				// Add row->cell relationships
-				relationships = append(relationships,
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contains_table_cell",
-						SourceElementID:  rowID,
-						TargetElementID:  cellID,
-					},
-					Relationship{
-						RelationshipID:   generateID("rel_"),
-						RelationshipType: "contained_by",
-						SourceElementID:  cellID,
-						TargetElementID:  rowID,
-					},
-				)
 			}
 		}
 	}
 
-	return elements, relationships, *elementPosition
+	return elements, *elementPosition
 }
 
 // detectTablesHeuristic detects tables using positioned text from HTML output
@@ -1012,35 +952,17 @@ func (p *PDFParser) formatTableText(table Table) string {
 	return strings.Join(lines, "\n")
 }
 
-// extractLinks extracts URLs and emails from text
-func (p *PDFParser) extractLinks(text string, sourceID string) []Link {
-	var links []Link
-
+// extractLinks extracts URLs and emails from text (returns count for compatibility)
+func (p *PDFParser) extractLinks(text string, sourceID string) int {
 	// URL pattern
 	urlPattern := regexp.MustCompile(`https?://[^\s]+`)
 	urls := urlPattern.FindAllString(text, -1)
-	for _, url := range urls {
-		links = append(links, Link{
-			LinkID:          generateID("link_"),
-			SourceElementID: sourceID,
-			LinkType:        "url",
-			LinkTarget:      url,
-		})
-	}
 
 	// Email pattern
 	emailPattern := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 	emails := emailPattern.FindAllString(text, -1)
-	for _, email := range emails {
-		links = append(links, Link{
-			LinkID:          generateID("link_"),
-			SourceElementID: sourceID,
-			LinkType:        "email",
-			LinkTarget:      email,
-		})
-	}
 
-	return links
+	return len(urls) + len(emails)
 }
 
 // truncateText truncates text to specified length

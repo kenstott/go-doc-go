@@ -3,8 +3,8 @@ package embeddings
 import (
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/parser"
-	"github.com/kennethstott/go-doc-go/internal/resolver"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 )
 
 // ContextualTextBuilder builds context-aware text for embeddings
@@ -65,7 +65,6 @@ func (b *ContextualTextBuilder) getElementText(element parser.Element) string {
 func (b *ContextualTextBuilder) BuildContextualText(
 	element parser.Element,
 	allElements []parser.Element,
-	relationships []parser.Relationship,
 ) string {
 	// Build element map (for parent traversal)
 	elementMap := buildElementMap(allElements)

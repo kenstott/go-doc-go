@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,8 @@ const (
 	MarkdownElementTypeTableRow    MarkdownElementType = "table_row"
 	MarkdownElementTypeTableCell   MarkdownElementType = "table_cell"
 	MarkdownElementTypeFrontMatter MarkdownElementType = "front_matter"
+	MarkdownElementTypeLink        MarkdownElementType = "link"
+	MarkdownElementTypeTemporal    MarkdownElementType = "temporal"
 )
 
 // String returns the string representation of MarkdownElementType
@@ -48,25 +51,6 @@ type MarkdownElement struct {
 	Metadata        map[string]interface{} `json:"metadata"`
 }
 
-// MarkdownRelationship represents a relationship between markdown elements
-type MarkdownRelationship struct {
-	RelationshipID   string                 `json:"relationship_id"`
-	SourceElementID  string                 `json:"source_element_id"`
-	TargetElementID  string                 `json:"target_element_id"`
-	RelationshipType string                 `json:"relationship_type"`
-	Confidence       float64                `json:"confidence"`
-	Metadata         map[string]interface{} `json:"metadata"`
-}
-
-// MarkdownLink represents an extracted link
-type MarkdownLink struct {
-	LinkID     string `json:"link_id"`
-	LinkType   string `json:"link_type"`
-	LinkTarget string `json:"link_target"`
-	ElementID  string `json:"element_id"`
-	LinkText   string `json:"link_text,omitempty"`
-}
-
 // MarkdownParseRequest represents a request to parse markdown content
 type MarkdownParseRequest struct {
 	ID       string                 `json:"id"`
@@ -76,10 +60,8 @@ type MarkdownParseRequest struct {
 
 // MarkdownParseResponse represents the response from parsing markdown content
 type MarkdownParseResponse struct {
-	Document      map[string]interface{} `json:"document"`
-	Elements      []MarkdownElement      `json:"elements"`
-	Relationships []MarkdownRelationship `json:"relationships"`
-	Links         []MarkdownLink         `json:"links"`
+	Document map[string]interface{} `json:"document"`
+	Elements []MarkdownElement      `json:"elements"`
 }
 
 // ToJSON converts the response to JSON string
@@ -91,62 +73,74 @@ func (r *MarkdownParseResponse) ToJSON() (string, error) {
 	return string(data), nil
 }
 
-// ToParseResult converts MarkdownParseResponse to the standard ParseResult format
-func (r *MarkdownParseResponse) ToParseResult() *ParseResult {
-	// Convert document metadata
-	var doc Document
-	if docID, ok := r.Document["doc_id"].(string); ok {
-		doc.ID = docID
+// convertToParseResult converts MarkdownParseResponse to universal ParseResult with promoted fields
+func (p *MarkdownParser) convertToParseResult(response *MarkdownParseResponse) *ParseResult {
+	result := &ParseResult{
+		Document: Document{
+			ID:      response.Document["doc_id"].(string),
+			DocType: "markdown",
+		},
+		Elements: make([]Element, 0, len(response.Elements)),
 	}
-	if title, ok := r.Document["title"].(string); ok {
-		doc.Title = title
-	}
-	if contentType, ok := r.Document["content_type"].(string); ok {
-		doc.DocType = contentType
-	}
-	doc.Metadata = r.Document
 
-	// Convert elements
-	elements := make([]Element, len(r.Elements))
-	for i, mdElem := range r.Elements {
-		elements[i] = Element{
+	// Convert metadata if present
+	if meta, ok := response.Document["metadata"]; ok {
+		result.Document.Metadata = meta.(map[string]interface{})
+	}
+
+	// Convert elements with promoted fields
+	for i, mdElem := range response.Elements {
+		element := Element{
 			ElementID:       mdElem.ElementID,
 			ElementType:     string(mdElem.ElementType),
 			Content:         mdElem.Text,
 			ContentPreview:  mdElem.ContentPreview,
 			ParentID:        mdElem.ParentID,
-			Metadata:        mdElem.Metadata,
+			Position:        i,
+			Depth:           calculateMarkdownDepth(mdElem.ElementType),
 			ContentLocation: mdElem.ContentLocation,
+			Metadata:        mdElem.Metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// SectionLevel - for header elements
+		if mdElem.ElementType == MarkdownElementTypeHeader {
+			if level, ok := mdElem.Metadata["level"].(int); ok {
+				element.SectionLevel = &level
+			}
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := mdElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// ElementCategory
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
+		result.Elements = append(result.Elements, element)
 	}
 
-	// Convert relationships
-	relationships := make([]Relationship, len(r.Relationships))
-	for i, mdRel := range r.Relationships {
-		relationships[i] = Relationship{
-			SourceElementID:  mdRel.SourceElementID,
-			TargetElementID:  mdRel.TargetElementID,
-			RelationshipType: mdRel.RelationshipType,
-			Metadata:         mdRel.Metadata,
-		}
-	}
+	return result
+}
 
-	// Convert links
-	links := make([]Link, len(r.Links))
-	for i, mdLink := range r.Links {
-		links[i] = Link{
-			SourceElementID: mdLink.ElementID,
-			LinkTarget:      mdLink.LinkTarget,
-			LinkText:        mdLink.LinkText,
-			LinkType:        mdLink.LinkType,
-		}
-	}
-
-	return &ParseResult{
-		Document:      doc,
-		Elements:      elements,
-		Relationships: relationships,
-		Links:         links,
+// calculateMarkdownDepth calculates element depth based on markdown element type
+func calculateMarkdownDepth(elementType MarkdownElementType) int {
+	switch elementType {
+	case MarkdownElementTypeRoot:
+		return 0
+	case MarkdownElementTypeFrontMatter:
+		return 1
+	case MarkdownElementTypeHeader, MarkdownElementTypeParagraph, MarkdownElementTypeCodeBlock,
+		MarkdownElementTypeList, MarkdownElementTypeBlockquote, MarkdownElementTypeTable:
+		return 2
+	case MarkdownElementTypeListItem, MarkdownElementTypeTableRow:
+		return 3
+	case MarkdownElementTypeTableCell:
+		return 4
+	default:
+		return 2 // Default depth for unknown elements
 	}
 }
 
@@ -182,8 +176,60 @@ func NewMarkdownParser() *MarkdownParser {
 	}
 }
 
-// Parse parses markdown content and returns structured elements
-func (p *MarkdownParser) Parse(request MarkdownParseRequest) (*MarkdownParseResponse, error) {
+// Parser interface implementation
+
+// GetName returns the parser name
+func (p *MarkdownParser) GetName() string {
+	return "markdown"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *MarkdownParser) GetSupportedFormats() []string {
+	return []string{".md", ".markdown", "markdown"}
+}
+
+// Parse implements the Parser interface for Markdown documents
+func (p *MarkdownParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request
+	var mdContent string
+	switch v := req.Content.(type) {
+	case string:
+		mdContent = v
+	case []byte:
+		mdContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Create Markdown-specific request
+	mdRequest := MarkdownParseRequest{
+		ID:       req.ID,
+		Content:  mdContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseMarkdown(mdRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *MarkdownParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *MarkdownParser) Close() error {
+	return nil
+}
+
+// parseMarkdown parses markdown content and returns structured elements (internal method)
+func (p *MarkdownParser) parseMarkdown(request MarkdownParseRequest) (*MarkdownParseResponse, error) {
 	if request.ID == "" {
 		return nil, fmt.Errorf("document ID is required")
 	}
@@ -195,14 +241,10 @@ func (p *MarkdownParser) Parse(request MarkdownParseRequest) (*MarkdownParseResp
 
 	// Reset counters for each parse
 	p.ElementIDCounter = 0
-	p.RelationshipIDCounter = 0
-	p.LinkIDCounter = 0
 
 	response := &MarkdownParseResponse{
-		Document:      make(map[string]interface{}),
-		Elements:      []MarkdownElement{},
-		Relationships: []MarkdownRelationship{},
-		Links:         []MarkdownLink{},
+		Document: make(map[string]interface{}),
+		Elements: []MarkdownElement{},
 	}
 
 	// Extract front matter if enabled
@@ -222,14 +264,6 @@ func (p *MarkdownParser) Parse(request MarkdownParseRequest) (*MarkdownParseResp
 	if frontMatter != nil {
 		frontMatterElement := p.createFrontMatterElement(request.ID, frontMatter, rootElement.ElementID)
 		response.Elements = append(response.Elements, frontMatterElement)
-
-		// Create relationship
-		relationship := p.createRelationship(rootElement.ElementID, frontMatterElement.ElementID, "contains")
-		response.Relationships = append(response.Relationships, relationship)
-
-		// Create reverse contained_by relationship
-		containedByRel := p.createRelationship(frontMatterElement.ElementID, rootElement.ElementID, "contained_by")
-		response.Relationships = append(response.Relationships, containedByRel)
 	}
 
 	// Parse markdown content into elements
@@ -360,7 +394,6 @@ func (p *MarkdownParser) createFrontMatterElement(docID string, frontMatter map[
 // parseMarkdownContent parses markdown content into elements
 func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID string, response *MarkdownParseResponse) {
 	i := 0
-	var previousElementID string // Track previous element for sibling relationships
 
 	// Track section hierarchy for proper parent-child relationships (like Python)
 	currentParent := parentID
@@ -398,33 +431,17 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 			element := p.createHeaderElement(docID, match[2], level, i, currentParent)
 			response.Elements = append(response.Elements, element)
 
-			// Create parent-child relationship
-			relationship := p.createRelationship(currentParent, element.ElementID, "contains")
-			response.Relationships = append(response.Relationships, relationship)
-
-			// Create reverse contained_by relationship
-			containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
-			response.Relationships = append(response.Relationships, containedByRel)
-
 			// Push this header onto the stack and make it the new current parent
 			sectionStack = append(sectionStack, section{id: element.ElementID, level: level})
 			currentParent = element.ElementID
 
-			// Create sibling relationships
-			if previousElementID != "" {
-				prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
-				response.Relationships = append(response.Relationships, prevSibRel)
-
-				nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
-				response.Relationships = append(response.Relationships, nextSibRel)
-			}
-			previousElementID = element.ElementID
-
-			// Extract links from header
+			// Extract links from header as child elements
 			if p.EnableLinkExtraction {
-				links := p.extractLinks(match[2], element.ElementID)
-				response.Links = append(response.Links, links...)
+				p.createLinkElementsFromText(match[2], docID, element.ElementID, response)
 			}
+
+			// Extract temporal elements from header as child elements
+			p.createTemporalElementsFromText(match[2], docID, element.ElementID, response)
 
 			i++
 			continue
@@ -436,24 +453,6 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 			if codeContent != "" {
 				element := p.createCodeBlockElement(docID, codeContent, language, i, currentParent)
 				response.Elements = append(response.Elements, element)
-
-				// Create parent-child relationship
-				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
-				response.Relationships = append(response.Relationships, relationship)
-
-				// Create reverse contained_by relationship
-				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
-				response.Relationships = append(response.Relationships, containedByRel)
-
-				// Create sibling relationships
-				if previousElementID != "" {
-					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
-					response.Relationships = append(response.Relationships, prevSibRel)
-
-					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
-					response.Relationships = append(response.Relationships, nextSibRel)
-				}
-				previousElementID = element.ElementID
 
 				i = newIndex
 				continue
@@ -467,29 +466,13 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 				element := p.createBlockquoteElement(docID, quoteContent, i, currentParent)
 				response.Elements = append(response.Elements, element)
 
-				// Create parent-child relationship
-				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
-				response.Relationships = append(response.Relationships, relationship)
-
-				// Create reverse contained_by relationship
-				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
-				response.Relationships = append(response.Relationships, containedByRel)
-
-				// Create sibling relationships
-				if previousElementID != "" {
-					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
-					response.Relationships = append(response.Relationships, prevSibRel)
-
-					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
-					response.Relationships = append(response.Relationships, nextSibRel)
-				}
-				previousElementID = element.ElementID
-
-				// Extract links from blockquote
+				// Extract links from blockquote as child elements
 				if p.EnableLinkExtraction {
-					links := p.extractLinks(quoteContent, element.ElementID)
-					response.Links = append(response.Links, links...)
+					p.createLinkElementsFromText(quoteContent, docID, element.ElementID, response)
 				}
+
+				// Extract temporal elements from blockquote as child elements
+				p.createTemporalElementsFromText(quoteContent, docID, element.ElementID, response)
 			}
 			i = newIndex
 			continue
@@ -502,29 +485,13 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 				element := p.createListElement(docID, listContent, i, currentParent)
 				response.Elements = append(response.Elements, element)
 
-				// Create parent-child relationship
-				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
-				response.Relationships = append(response.Relationships, relationship)
-
-				// Create reverse contained_by relationship
-				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
-				response.Relationships = append(response.Relationships, containedByRel)
-
-				// Create sibling relationships
-				if previousElementID != "" {
-					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
-					response.Relationships = append(response.Relationships, prevSibRel)
-
-					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
-					response.Relationships = append(response.Relationships, nextSibRel)
-				}
-				previousElementID = element.ElementID
-
-				// Extract links from list
+				// Extract links from list as child elements
 				if p.EnableLinkExtraction {
-					links := p.extractLinks(listContent, element.ElementID)
-					response.Links = append(response.Links, links...)
+					p.createLinkElementsFromText(listContent, docID, element.ElementID, response)
 				}
+
+				// Extract temporal elements from list as child elements
+				p.createTemporalElementsFromText(listContent, docID, element.ElementID, response)
 
 				i = newIndex
 				continue
@@ -538,29 +505,13 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 				element := p.createTableElement(docID, tableContent, i, currentParent)
 				response.Elements = append(response.Elements, element)
 
-				// Create relationship
-				relationship := p.createRelationship(currentParent, element.ElementID, "contains")
-				response.Relationships = append(response.Relationships, relationship)
-
-				// Create reverse contained_by relationship
-				containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
-				response.Relationships = append(response.Relationships, containedByRel)
-
-				// Create sibling relationships
-				if previousElementID != "" {
-					prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
-					response.Relationships = append(response.Relationships, prevSibRel)
-
-					nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
-					response.Relationships = append(response.Relationships, nextSibRel)
-				}
-				previousElementID = element.ElementID
-
-				// Extract links from table
+				// Extract links from table as child elements
 				if p.EnableLinkExtraction {
-					links := p.extractLinks(tableContent, element.ElementID)
-					response.Links = append(response.Links, links...)
+					p.createLinkElementsFromText(tableContent, docID, element.ElementID, response)
 				}
+
+				// Extract temporal elements from table as child elements
+				p.createTemporalElementsFromText(tableContent, docID, element.ElementID, response)
 
 				i = newIndex
 				continue
@@ -573,29 +524,13 @@ func (p *MarkdownParser) parseMarkdownContent(lines []string, docID, parentID st
 			element := p.createParagraphElement(docID, paragraphContent, i, currentParent)
 			response.Elements = append(response.Elements, element)
 
-			// Create relationship
-			relationship := p.createRelationship(currentParent, element.ElementID, "contains")
-			response.Relationships = append(response.Relationships, relationship)
-
-			// Create reverse contained_by relationship
-			containedByRel := p.createRelationship(element.ElementID, currentParent, "contained_by")
-			response.Relationships = append(response.Relationships, containedByRel)
-
-			// Create sibling relationships
-			if previousElementID != "" {
-				prevSibRel := p.createRelationship(element.ElementID, previousElementID, "previous_sibling")
-				response.Relationships = append(response.Relationships, prevSibRel)
-
-				nextSibRel := p.createRelationship(previousElementID, element.ElementID, "next_sibling")
-				response.Relationships = append(response.Relationships, nextSibRel)
-			}
-			previousElementID = element.ElementID
-
-			// Extract links from paragraph
+			// Extract links from paragraph as child elements
 			if p.EnableLinkExtraction {
-				links := p.extractLinks(paragraphContent, element.ElementID)
-				response.Links = append(response.Links, links...)
+				p.createLinkElementsFromText(paragraphContent, docID, element.ElementID, response)
 			}
+
+			// Extract temporal elements from paragraph as child elements
+			p.createTemporalElementsFromText(paragraphContent, docID, element.ElementID, response)
 		}
 
 		i = newIndex
@@ -1089,30 +1024,13 @@ func (p *MarkdownParser) parseParagraph(lines []string, startIndex int) (string,
 	return strings.Join(paragraphLines, "\n"), i
 }
 
-// createRelationship creates a relationship between elements
-func (p *MarkdownParser) createRelationship(sourceID, targetID, relType string) MarkdownRelationship {
-	relationshipID := p.generateRelationshipID()
-
-	return MarkdownRelationship{
-		RelationshipID:   relationshipID,
-		SourceElementID:  sourceID,
-		TargetElementID:  targetID,
-		RelationshipType: relType,
-		Confidence:       1.0,
-		Metadata:         map[string]interface{}{"relationship_type": relType},
-	}
-}
-
-// extractLinks extracts links from content
-func (p *MarkdownParser) extractLinks(content, elementID string) []MarkdownLink {
-	var links []MarkdownLink
-
+// createLinkElementsFromText extracts links from markdown text and creates link elements
+func (p *MarkdownParser) createLinkElementsFromText(content, docID, parentID string, response *MarkdownParseResponse) {
 	// Markdown links [text](url)
 	markdownLinkPattern := regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 	matches := markdownLinkPattern.FindAllStringSubmatch(content, -1)
 	for _, match := range matches {
 		if len(match) == 3 {
-			linkID := p.generateLinkID()
 			linkType := "markdown"
 			if strings.HasPrefix(match[2], "http") {
 				linkType = "url"
@@ -1122,13 +1040,22 @@ func (p *MarkdownParser) extractLinks(content, elementID string) []MarkdownLink 
 				linkType = "document"
 			}
 
-			links = append(links, MarkdownLink{
-				LinkID:     linkID,
-				LinkType:   linkType,
-				LinkTarget: match[2],
-				ElementID:  elementID,
-				LinkText:   match[1],
-			})
+			linkElement := MarkdownElement{
+				ElementID:       p.generateElementID("md_link"),
+				DocumentID:      docID,
+				ElementType:     MarkdownElementTypeLink,
+				Text:            match[2],
+				ContentPreview:  p.truncateContent(match[2]),
+				ContentLocation: map[string]interface{}{"type": "link"},
+				ContentHash:     p.calculateContentHash(match[2]),
+				ParentID:        parentID,
+				Metadata: map[string]interface{}{
+					"link_target": match[2],
+					"link_text":   match[1],
+					"link_type":   linkType,
+				},
+			}
+			response.Elements = append(response.Elements, linkElement)
 		}
 	}
 
@@ -1137,44 +1064,135 @@ func (p *MarkdownParser) extractLinks(content, elementID string) []MarkdownLink 
 	wikiMatches := wikiLinkPattern.FindAllStringSubmatch(content, -1)
 	for _, match := range wikiMatches {
 		if len(match) == 2 {
-			linkID := p.generateLinkID()
-			links = append(links, MarkdownLink{
-				LinkID:     linkID,
-				LinkType:   "wiki",
-				LinkTarget: match[1],
-				ElementID:  elementID,
-				LinkText:   match[1],
-			})
+			linkElement := MarkdownElement{
+				ElementID:       p.generateElementID("md_link"),
+				DocumentID:      docID,
+				ElementType:     MarkdownElementTypeLink,
+				Text:            match[1],
+				ContentPreview:  p.truncateContent(match[1]),
+				ContentLocation: map[string]interface{}{"type": "link"},
+				ContentHash:     p.calculateContentHash(match[1]),
+				ParentID:        parentID,
+				Metadata: map[string]interface{}{
+					"link_target": match[1],
+					"link_text":   match[1],
+					"link_type":   "wiki",
+				},
+			}
+			response.Elements = append(response.Elements, linkElement)
 		}
 	}
 
-	// URL patterns
+	// URL patterns (bare URLs not in markdown syntax)
 	urlPattern := regexp.MustCompile(`https?://[^\s\)\]\}]+`)
 	urls := urlPattern.FindAllString(content, -1)
 	for _, url := range urls {
-		linkID := p.generateLinkID()
-		links = append(links, MarkdownLink{
-			LinkID:     linkID,
-			LinkType:   "url",
-			LinkTarget: url,
-			ElementID:  elementID,
-		})
+		// Skip URLs that are part of markdown syntax (already processed above)
+		if strings.Contains(content, "]("+url+")") {
+			continue
+		}
+
+		linkElement := MarkdownElement{
+			ElementID:       p.generateElementID("md_link"),
+			DocumentID:      docID,
+			ElementType:     MarkdownElementTypeLink,
+			Text:            url,
+			ContentPreview:  p.truncateContent(url),
+			ContentLocation: map[string]interface{}{"type": "link"},
+			ContentHash:     p.calculateContentHash(url),
+			ParentID:        parentID,
+			Metadata: map[string]interface{}{
+				"link_target": url,
+				"link_type":   "url",
+			},
+		}
+		response.Elements = append(response.Elements, linkElement)
 	}
 
-	// Email patterns
+	// Email patterns (bare emails)
 	emailPattern := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 	emails := emailPattern.FindAllString(content, -1)
 	for _, email := range emails {
-		linkID := p.generateLinkID()
-		links = append(links, MarkdownLink{
-			LinkID:     linkID,
-			LinkType:   "email",
-			LinkTarget: "mailto:" + email,
-			ElementID:  elementID,
-		})
+		// Skip emails that are part of markdown syntax
+		if strings.Contains(content, "mailto:"+email) {
+			continue
+		}
+
+		linkElement := MarkdownElement{
+			ElementID:       p.generateElementID("md_link"),
+			DocumentID:      docID,
+			ElementType:     MarkdownElementTypeLink,
+			Text:            email,
+			ContentPreview:  p.truncateContent(email),
+			ContentLocation: map[string]interface{}{"type": "link"},
+			ContentHash:     p.calculateContentHash(email),
+			ParentID:        parentID,
+			Metadata: map[string]interface{}{
+				"link_target": "mailto:" + email,
+				"link_type":   "email",
+			},
+		}
+		response.Elements = append(response.Elements, linkElement)
+	}
+}
+
+// createTemporalElementsFromText extracts temporal expressions from text and creates temporal elements
+func (p *MarkdownParser) createTemporalElementsFromText(content, docID, parentID string, response *MarkdownParseResponse) {
+	// Use the existing temporal extraction helper
+	temporalData := ExtractTemporalFromText(content)
+	if temporalData == nil {
+		return
 	}
 
-	return links
+	// Get the list of temporal values found
+	temporalValues, ok := temporalData["temporal_values_found"].([]string)
+	if !ok || len(temporalValues) == 0 {
+		return
+	}
+
+	// Create a temporal element for each unique temporal expression found
+	seen := make(map[string]bool)
+	for _, temporalValue := range temporalValues {
+		// Skip duplicates
+		if seen[temporalValue] {
+			continue
+		}
+		seen[temporalValue] = true
+
+		// Get metadata for this temporal value
+		var metadata map[string]interface{}
+		// Look for metadata in the temporalData map (keys like "date_1", "date_2", etc.)
+		for key, value := range temporalData {
+			if key != "temporal_values_found" && key != "temporal_count" {
+				if metaMap, ok := value.(map[string]interface{}); ok {
+					if rawValue, ok := metaMap["raw_value"].(string); ok && rawValue == temporalValue {
+						metadata = metaMap
+						break
+					}
+				}
+			}
+		}
+
+		// If no metadata found, create minimal metadata
+		if metadata == nil {
+			metadata = map[string]interface{}{
+				"raw_value": temporalValue,
+			}
+		}
+
+		temporalElement := MarkdownElement{
+			ElementID:       p.generateElementID("md_temporal"),
+			DocumentID:      docID,
+			ElementType:     MarkdownElementTypeTemporal,
+			Text:            temporalValue,
+			ContentPreview:  p.truncateContent(temporalValue),
+			ContentLocation: map[string]interface{}{"type": "temporal"},
+			ContentHash:     p.calculateContentHash(temporalValue),
+			ParentID:        parentID,
+			Metadata:        metadata,
+		}
+		response.Elements = append(response.Elements, temporalElement)
+	}
 }
 
 // extractDates extracts date patterns from content
@@ -1229,20 +1247,6 @@ func (p *MarkdownParser) generateElementID(prefix string) string {
 	p.ElementIDCounter++
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 	return fmt.Sprintf("%s_%d_%d", prefix, timestamp, p.ElementIDCounter)
-}
-
-// generateRelationshipID generates a unique relationship ID
-func (p *MarkdownParser) generateRelationshipID() string {
-	p.RelationshipIDCounter++
-	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-	return fmt.Sprintf("md_rel_%d_%d", timestamp, p.RelationshipIDCounter)
-}
-
-// generateLinkID generates a unique link ID
-func (p *MarkdownParser) generateLinkID() string {
-	p.LinkIDCounter++
-	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
-	return fmt.Sprintf("md_link_%d_%d", timestamp, p.LinkIDCounter)
 }
 
 // calculateContentHash calculates MD5 hash of content

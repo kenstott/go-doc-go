@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"encoding/xml"
@@ -42,24 +43,6 @@ type XMLElement struct {
 	TemporalValue   interface{}            `json:"temporal_value,omitempty"`
 }
 
-// XMLLink represents an extracted link
-type XMLLink struct {
-	SourceID   string `json:"source_id"`
-	LinkText   string `json:"link_text"`
-	LinkTarget string `json:"link_target"`
-	LinkType   string `json:"link_type"`
-}
-
-// XMLRelationship represents a relationship between elements
-type XMLRelationship struct {
-	RelationshipID   string                 `json:"relationship_id"`
-	SourceElementID  string                 `json:"source_element_id"`
-	TargetElementID  string                 `json:"target_element_id"`
-	RelationshipType string                 `json:"relationship_type"`
-	Confidence       float64                `json:"confidence"`
-	Metadata         map[string]interface{} `json:"metadata"`
-}
-
 // XMLParseRequest represents the input for XML parsing
 type XMLParseRequest struct {
 	ID       string                 `json:"id"`
@@ -69,11 +52,9 @@ type XMLParseRequest struct {
 
 // XMLParseResponse represents the output of XML parsing
 type XMLParseResponse struct {
-	Document      map[string]interface{} `json:"document"`
-	Elements      []XMLElement           `json:"elements"`
-	Links         []XMLLink              `json:"links"`
-	Relationships []XMLRelationship      `json:"relationships"`
-	Dates         map[string]interface{} `json:"dates,omitempty"`
+	Document map[string]interface{} `json:"document"`
+	Elements []XMLElement           `json:"elements"`
+	Dates    map[string]interface{} `json:"dates,omitempty"`
 }
 
 // XMLParser handles XML document parsing
@@ -98,8 +79,60 @@ func NewXMLParser() *XMLParser {
 	}
 }
 
-// Parse is the universal interface that converts XML content to ParseResult
-func (p *XMLParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// GetName returns the parser name
+func (p *XMLParser) GetName() string {
+	return "xml"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *XMLParser) GetSupportedFormats() []string {
+	return []string{".xml", "xml"}
+}
+
+// Parse implements the Parser interface for XML documents
+func (p *XMLParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract XML content from request
+	var xmlContent string
+	switch v := req.Content.(type) {
+	case string:
+		xmlContent = v
+	case []byte:
+		xmlContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Create XML-specific request
+	xmlRequest := XMLParseRequest{
+		ID:       req.ID,
+		Content:  xmlContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using internal implementation
+	response, err := p.parseXML(xmlRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult with promoted fields
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *XMLParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *XMLParser) Close() error {
+	// XML parser has no resources to clean up
+	return nil
+}
+
+// ParseLegacy is the legacy interface that converts XML content to ParseResult
+// Deprecated: Use Parse(ctx, ParseRequest) instead
+func (p *XMLParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
 	var xmlContent string
 	switch v := content.(type) {
@@ -139,9 +172,7 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 			"metadata":     request.Metadata,
 			"content_hash": p.generateHash(request.Content),
 		},
-		Elements:      []XMLElement{},
-		Links:         []XMLLink{},
-		Relationships: []XMLRelationship{},
+		Elements: []XMLElement{},
 	}
 
 	// Create root element
@@ -236,29 +267,6 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 			response.Elements = append(response.Elements, element)
 			elementCounter++
 
-			// Create bidirectional parent-child relationships
-			if parentID != "" {
-				// Parent contains child
-				containsRel := XMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  parentID,
-					TargetElementID:  elementID,
-					RelationshipType: "contains",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				// Child contained by parent
-				containedByRel := XMLRelationship{
-					RelationshipID:   p.generateID("rel_"),
-					SourceElementID:  elementID,
-					TargetElementID:  parentID,
-					RelationshipType: "contained_by",
-					Confidence:       1.0,
-					Metadata:         make(map[string]interface{}),
-				}
-				response.Relationships = append(response.Relationships, containsRel, containedByRel)
-			}
-
 			// Update stacks
 			elementStack = append(elementStack, elementID)
 			pathStack = append(pathStack, path)
@@ -301,8 +309,8 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 							}
 							// Extract temporal metadata from text
 							ProcessTemporalContent(text, response.Elements[i].Metadata)
-							// Extract links from text
-							p.extractLinksFromText(text, parentID, &response.Links)
+							// Extract links from text as child elements
+							p.extractAndCreateLinkElements(text, parentID, &response.Elements, &elementCounter)
 						}
 						break
 					}
@@ -339,27 +347,8 @@ func (p *XMLParser) parseXML(request XMLParseRequest) (*XMLParseResponse, error)
 					response.Elements = append(response.Elements, textElement)
 					elementCounter++
 
-					// Create bidirectional parent-text relationships
-					containsTextRel := XMLRelationship{
-						RelationshipID:   p.generateID("rel_"),
-						SourceElementID:  parentID,
-						TargetElementID:  textID,
-						RelationshipType: "contains_text",
-						Confidence:       1.0,
-						Metadata:         make(map[string]interface{}),
-					}
-					containedByRel := XMLRelationship{
-						RelationshipID:   p.generateID("rel_"),
-						SourceElementID:  textID,
-						TargetElementID:  parentID,
-						RelationshipType: "contained_by",
-						Confidence:       1.0,
-						Metadata:         make(map[string]interface{}),
-					}
-					response.Relationships = append(response.Relationships, containsTextRel, containedByRel)
-
-					// Extract links from text
-					p.extractLinksFromText(text, textID, &response.Links)
+					// Extract links from text as child elements
+					p.extractAndCreateLinkElements(text, textID, &response.Elements, &elementCounter)
 				}
 			}
 		}
@@ -434,31 +423,57 @@ func (p *XMLParser) createContentLocation(source string, elementType XMLElementT
 	}
 }
 
-func (p *XMLParser) extractLinksFromText(text string, sourceID string, links *[]XMLLink) {
+func (p *XMLParser) extractAndCreateLinkElements(text, parentID string, elements *[]XMLElement, counter *int) {
 	// Extract URLs
 	urlRegex := regexp.MustCompile(`https?://[^\s"'<>]+`)
 	urlMatches := urlRegex.FindAllString(text, -1)
-	for _, match := range urlMatches {
-		link := XMLLink{
-			SourceID:   sourceID,
-			LinkText:   match,
-			LinkTarget: match,
-			LinkType:   "url",
+	for _, url := range urlMatches {
+		linkElement := XMLElement{
+			ElementID:       p.generateID("link_"),
+			DocID:           (*elements)[0].DocID,
+			ElementType:     XMLElementTypeElement,
+			ParentID:        parentID,
+			ContentPreview:  p.truncateContent(url),
+			ContentLocation: p.createContentLocation((*elements)[0].DocID, XMLElementTypeElement, ""),
+			ContentHash:     p.generateHash(url),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Text:            url,
+			Content:         url,
+			Metadata: map[string]interface{}{
+				"link_target":  url,
+				"link_type":    "url",
+				"element_type": "link",
+			},
 		}
-		*links = append(*links, link)
+		*elements = append(*elements, linkElement)
+		*counter++
 	}
 
 	// Extract email addresses
 	emailRegex := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 	emailMatches := emailRegex.FindAllString(text, -1)
-	for _, match := range emailMatches {
-		link := XMLLink{
-			SourceID:   sourceID,
-			LinkText:   match,
-			LinkTarget: "mailto:" + match,
-			LinkType:   "email",
+	for _, email := range emailMatches {
+		linkElement := XMLElement{
+			ElementID:       p.generateID("link_"),
+			DocID:           (*elements)[0].DocID,
+			ElementType:     XMLElementTypeElement,
+			ParentID:        parentID,
+			ContentPreview:  p.truncateContent(email),
+			ContentLocation: p.createContentLocation((*elements)[0].DocID, XMLElementTypeElement, ""),
+			ContentHash:     p.generateHash(email),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Text:            email,
+			Content:         email,
+			Metadata: map[string]interface{}{
+				"link_target":  "mailto:" + email,
+				"link_type":    "email",
+				"element_type": "link",
+			},
 		}
-		*links = append(*links, link)
+		*elements = append(*elements, linkElement)
+		*counter++
 	}
 }
 
@@ -492,16 +507,14 @@ func (r *XMLParseRequest) FromJSON(jsonStr string) error {
 	return json.Unmarshal([]byte(jsonStr), r)
 }
 
-// convertToParseResult converts XMLParseResponse to universal ParseResult format
+// convertToParseResult converts XMLParseResponse to universal ParseResult format with promoted fields
 func (p *XMLParser) convertToParseResult(response *XMLParseResponse) *ParseResult {
 	result := &ParseResult{
 		Document: Document{
 			ID:      response.Document["doc_id"].(string),
 			DocType: response.Document["doc_type"].(string),
 		},
-		Elements:      make([]Element, 0, len(response.Elements)),
-		Relationships: make([]Relationship, 0, len(response.Relationships)),
-		Links:         make([]Link, 0, len(response.Links)),
+		Elements: make([]Element, 0, len(response.Elements)),
 	}
 
 	// Convert metadata if present
@@ -522,32 +535,23 @@ func (p *XMLParser) convertToParseResult(response *XMLParseResponse) *ParseResul
 			ContentLocation: xmlElem.ContentLocation,
 			Metadata:        xmlElem.Metadata,
 		}
+
+		// UDML Phase 1: Populate promoted fields
+
+		// TagName - for XML elements, store the tag name from metadata
+		if tagName, ok := xmlElem.Metadata["tag_name"].(string); ok && tagName != "" {
+			element.TagName = &tagName
+		}
+
+		// TemporalType - from temporal metadata
+		if temporalType, ok := xmlElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// ElementCategory - use taxonomy
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
-	}
-
-	// Convert relationships
-	for _, xmlRel := range response.Relationships {
-		relationship := Relationship{
-			RelationshipID:   xmlRel.RelationshipID,
-			RelationshipType: xmlRel.RelationshipType,
-			SourceElementID:  xmlRel.SourceElementID,
-			TargetElementID:  xmlRel.TargetElementID,
-			Confidence:       xmlRel.Confidence,
-			Metadata:         xmlRel.Metadata,
-		}
-		result.Relationships = append(result.Relationships, relationship)
-	}
-
-	// Convert links
-	for _, xmlLink := range response.Links {
-		link := Link{
-			LinkID:          generateID("link"),
-			SourceElementID: xmlLink.SourceID,
-			LinkType:        xmlLink.LinkType,
-			LinkTarget:      xmlLink.LinkTarget,
-			LinkText:        xmlLink.LinkText,
-		}
-		result.Links = append(result.Links, link)
 	}
 
 	return result

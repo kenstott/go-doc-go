@@ -2,7 +2,6 @@ package resolver
 
 import (
 	"fmt"
-	"log"
 	"sync"
 )
 
@@ -48,7 +47,8 @@ func (r *DefaultContentResolver) ResolveContent(contentLocation map[string]inter
 	}
 
 	if selectedParser == nil {
-		log.Printf("No parser found for content location: %v", contentLocation)
+		// No parser found - this is common for web content where original HTML isn't cached
+		// Silently return error to fall back to direct element content
 		return "", fmt.Errorf("no parser supports this content location")
 	}
 

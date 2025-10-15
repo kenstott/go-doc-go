@@ -1,0 +1,82 @@
+domain: hospitality
+description: Hotels, reservations, guests, events, food & beverage, and hospitality operations
+subdomains:
+  - reservations
+  - guest_services
+  - property_management
+  - events
+  - food_beverage
+
+entity_types:
+  - entity_type: guest
+    description: Hotel guest or customer
+    aliases: [customer, visitor, patron]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [guest, customer, visitor, patron, traveler]
+
+  - entity_type: reservation
+    description: Hotel reservation or booking
+    aliases: [booking, reservation, stay]
+    element_types: [paragraph, heading, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [reservation, booking, check-in, check-out, stay, confirmation]
+
+  - entity_type: room
+    description: Hotel room or accommodation
+    aliases: [accommodation, suite, unit]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [room, suite, accommodation, king, queen, double, single]
+
+  - entity_type: hotel_property
+    description: Hotel property or location
+    aliases: [hotel, property, location, resort]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [hotel, property, resort, location, branch]
+
+  - entity_type: event
+    description: Hotel event or function
+    aliases: [function, meeting, conference, banquet]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [event, function, meeting, conference, wedding, banquet]
+
+relationship_types:
+  - relationship_type: booked_by
+    description: Reservation booked by guest
+    source_entity: reservation
+    target_entity: guest
+    sample_rules:
+      - type: keyword_match
+        keywords: [booked by, reserved by, guest name]
+
+  - relationship_type: for_room
+    description: Reservation for room
+    source_entity: reservation
+    target_entity: room
+    sample_rules:
+      - type: keyword_match
+        keywords: [room, suite, accommodation type]
+
+  - relationship_type: at_property
+    description: Reservation at property
+    source_entity: reservation
+    target_entity: hotel_property
+    sample_rules:
+      - type: keyword_match
+        keywords: [at, location, property, hotel]
+
+  - relationship_type: hosted_at
+    description: Event hosted at property
+    source_entity: event
+    target_entity: hotel_property
+    sample_rules:
+      - type: keyword_match
+        keywords: [hosted at, held at, venue, location]

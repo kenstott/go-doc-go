@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/kennethstott/go-doc-go/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
 )
 
 func main() {
@@ -167,8 +167,8 @@ func showHelp() {
 	fmt.Println("  - links: Extracted hyperlinks and references")
 	fmt.Println()
 	fmt.Println("ELEMENT TYPES:")
-	fmt.Println("  - presentation_root: Root presentation element")
-	fmt.Println("  - presentation_body: Presentation body container")
+	fmt.Println("  - root: Root presentation element")
+	fmt.Println("  - body: Presentation body container")
 	fmt.Println("  - slide: Individual slide")
 	fmt.Println("  - title: Slide title text")
 	fmt.Println("  - subtitle: Slide subtitle text")

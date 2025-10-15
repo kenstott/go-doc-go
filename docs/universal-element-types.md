@@ -85,7 +85,6 @@ Native element types are format-specific types that parsers encounter in their r
 - **`footers`** - Container for footers
 - **`comment`** - Comment or annotation
 - **`comments`** - Container for comments
-- **`comments_container`** - Higher-level container for comment sections
 
 ### Special Type
 - **`unknown`** - Fallback for unrecognized element types
@@ -101,7 +100,7 @@ Elements that can contain other elements:
 - workbook, sheet
 - json_object, json_array
 - xml_list, xml_object
-- And various container types (headers, footers, comments_container, etc.)
+- And various container types (headers, footers, comments, etc.)
 
 ### Leaf Elements
 Elements that typically contain only content, not other elements:

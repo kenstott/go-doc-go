@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/detector"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/detector"
 )
 
 func main() {

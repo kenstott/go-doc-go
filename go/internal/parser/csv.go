@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/csv"
 	"encoding/json"
@@ -20,6 +21,8 @@ const (
 	CSVElementTypeTableRow       CSVElementType = "table_row"
 	CSVElementTypeTableHeaderRow CSVElementType = "table_header_row"
 	CSVElementTypeTableCell      CSVElementType = "table_cell"
+	CSVElementTypeLink           CSVElementType = "link"
+	CSVElementTypeTemporal       CSVElementType = "temporal"
 )
 
 // CSVElement represents a parsed CSV element
@@ -39,23 +42,6 @@ type CSVElement struct {
 	TemporalValue   interface{}            `json:"temporal_value,omitempty"`
 }
 
-// CSVLink represents an extracted link
-type CSVLink struct {
-	SourceID   string `json:"source_id"`
-	LinkText   string `json:"link_text"`
-	LinkTarget string `json:"link_target"`
-	LinkType   string `json:"link_type"`
-}
-
-// CSVRelationship represents a relationship between elements
-type CSVRelationship struct {
-	RelationshipID   string                 `json:"relationship_id"`
-	SourceElementID  string                 `json:"source_element_id"`
-	TargetElementID  string                 `json:"target_element_id"`
-	RelationshipType string                 `json:"relationship_type"`
-	Confidence       float64                `json:"confidence"`
-	Metadata         map[string]interface{} `json:"metadata"`
-}
 
 // CSVParseRequest represents the input for CSV parsing
 type CSVParseRequest struct {
@@ -66,11 +52,9 @@ type CSVParseRequest struct {
 
 // CSVParseResponse represents the output of CSV parsing
 type CSVParseResponse struct {
-	Document      map[string]interface{} `json:"document"`
-	Elements      []CSVElement           `json:"elements"`
-	Links         []CSVLink              `json:"links"`
-	Relationships []CSVRelationship      `json:"relationships"`
-	Dates         map[string]interface{} `json:"dates,omitempty"`
+	Document map[string]interface{} `json:"document"`
+	Elements []CSVElement           `json:"elements"`
+	Dates    map[string]interface{} `json:"dates,omitempty"`
 }
 
 // CSVParser handles CSV document parsing
@@ -98,34 +82,16 @@ func NewCSVParser() *CSVParser {
 	}
 }
 
-// Parse is the universal interface that converts CSV content to ParseResult
-func (p *CSVParser) Parse(docID string, content interface{}) (*ParseResult, error) {
-	// Handle different input types
-	var csvContent string
-	switch v := content.(type) {
-	case string:
-		csvContent = v
-	case []byte:
-		csvContent = string(v)
-	default:
-		return nil, fmt.Errorf("unsupported content type: %T", content)
+// ParseLegacy is the old interface (deprecated - use Parse with ParseRequest)
+// Kept for backward compatibility during migration
+func (p *CSVParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
+	// Delegate to new interface-compliant Parse method
+	req := ParseRequest{
+		ID:      docID,
+		Content: content,
+		Config:  DefaultParserConfig(),
 	}
-
-	// Create request structure for compatibility
-	request := CSVParseRequest{
-		ID:       docID,
-		Content:  csvContent,
-		Metadata: make(map[string]interface{}),
-	}
-
-	// Parse using existing implementation
-	response, err := p.parseCSV(request)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to universal ParseResult
-	return p.convertToParseResult(response), nil
+	return p.Parse(context.Background(), req)
 }
 
 // parseCSV parses a CSV document into structured elements (internal implementation)
@@ -150,9 +116,7 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 			"metadata":     request.Metadata,
 			"content_hash": p.generateHash(request.Content),
 		},
-		Elements:      []CSVElement{},
-		Links:         []CSVLink{},
-		Relationships: []CSVRelationship{},
+		Elements: []CSVElement{},
 	}
 
 	// Create root element
@@ -191,25 +155,6 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 	}
 	response.Elements = append(response.Elements, tableElement)
 
-	// Create bidirectional relationship from root to table
-	rootToTableRel := CSVRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  rootElement.ElementID,
-		TargetElementID:  tableElement.ElementID,
-		RelationshipType: "contains",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	tableToRootRel := CSVRelationship{
-		RelationshipID:   p.generateID("rel_"),
-		SourceElementID:  tableElement.ElementID,
-		TargetElementID:  rootElement.ElementID,
-		RelationshipType: "contained_by",
-		Confidence:       1.0,
-		Metadata:         make(map[string]interface{}),
-	}
-	response.Relationships = append(response.Relationships, rootToTableRel, tableToRootRel)
-
 	elementCounter := 2
 
 	// Process header row if enabled
@@ -220,49 +165,11 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 		response.Elements = append(response.Elements, headerElement)
 		elementCounter++
 
-		// Create bidirectional relationship from table to header
-		tableToHeaderRel := CSVRelationship{
-			RelationshipID:   p.generateID("rel_"),
-			SourceElementID:  tableElement.ElementID,
-			TargetElementID:  headerElement.ElementID,
-			RelationshipType: "contains",
-			Confidence:       1.0,
-			Metadata:         map[string]interface{}{"row": 0},
-		}
-		headerToTableRel := CSVRelationship{
-			RelationshipID:   p.generateID("rel_"),
-			SourceElementID:  headerElement.ElementID,
-			TargetElementID:  tableElement.ElementID,
-			RelationshipType: "contained_by",
-			Confidence:       1.0,
-			Metadata:         map[string]interface{}{"row": 0},
-		}
-		response.Relationships = append(response.Relationships, tableToHeaderRel, headerToTableRel)
-
 		// Create header cells
 		for colIdx, cellValue := range headerRow {
 			cellElement := p.createCellElement(request.ID, headerElement.ElementID, cellValue, 0, colIdx, nil, elementCounter)
 			response.Elements = append(response.Elements, cellElement)
 			elementCounter++
-
-			// Create bidirectional relationship from header row to cell
-			headerToCellRel := CSVRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  headerElement.ElementID,
-				TargetElementID:  cellElement.ElementID,
-				RelationshipType: "contains",
-				Confidence:       1.0,
-				Metadata:         map[string]interface{}{"col_index": colIdx, "is_header": true},
-			}
-			cellToHeaderRel := CSVRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  cellElement.ElementID,
-				TargetElementID:  headerElement.ElementID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         map[string]interface{}{"col_index": colIdx, "is_header": true},
-			}
-			response.Relationships = append(response.Relationships, headerToCellRel, cellToHeaderRel)
 		}
 	}
 
@@ -281,55 +188,19 @@ func (p *CSVParser) parseCSV(request CSVParseRequest) (*CSVParseResponse, error)
 		response.Elements = append(response.Elements, rowElement)
 		elementCounter++
 
-		// Create bidirectional relationship from table to row
-		tableToRowRel := CSVRelationship{
-			RelationshipID:   p.generateID("rel_"),
-			SourceElementID:  tableElement.ElementID,
-			TargetElementID:  rowElement.ElementID,
-			RelationshipType: "contains",
-			Confidence:       1.0,
-			Metadata:         map[string]interface{}{"row_index": rowIdx},
-		}
-		rowToTableRel := CSVRelationship{
-			RelationshipID:   p.generateID("rel_"),
-			SourceElementID:  rowElement.ElementID,
-			TargetElementID:  tableElement.ElementID,
-			RelationshipType: "contained_by",
-			Confidence:       1.0,
-			Metadata:         map[string]interface{}{"row_index": rowIdx},
-		}
-		response.Relationships = append(response.Relationships, tableToRowRel, rowToTableRel)
-
 		// Process cells in this row
 		for colIdx, cellValue := range row {
 			cellElement := p.createCellElement(request.ID, rowElement.ElementID, cellValue, rowIdx, colIdx, headerRow, elementCounter)
 			response.Elements = append(response.Elements, cellElement)
 			elementCounter++
 
-			// Create bidirectional relationship from row to cell
-			rowToCellRel := CSVRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  rowElement.ElementID,
-				TargetElementID:  cellElement.ElementID,
-				RelationshipType: "contains",
-				Confidence:       1.0,
-				Metadata:         map[string]interface{}{"col_index": colIdx},
-			}
-			cellToRowRel := CSVRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  cellElement.ElementID,
-				TargetElementID:  rowElement.ElementID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         map[string]interface{}{"col_index": colIdx},
-			}
-			response.Relationships = append(response.Relationships, rowToCellRel, cellToRowRel)
-
-			// Extract links from cell if enabled
+			// Extract links from cell if enabled - create as child elements
 			if p.EnableLinkExtraction {
-				cellLinks := p.extractLinksFromText(cellValue, cellElement.ElementID)
-				response.Links = append(response.Links, cellLinks...)
+				p.extractAndCreateLinkElements(cellValue, cellElement.ElementID, &response.Elements, &elementCounter)
 			}
+
+			// Extract temporal elements from cell - create as child elements
+			p.extractAndCreateTemporalElements(cellValue, cellElement.ElementID, &response.Elements, &elementCounter)
 		}
 	}
 
@@ -393,9 +264,7 @@ func (p *CSVParser) createEmptyResponse(request CSVParseRequest) *CSVParseRespon
 			"metadata":     request.Metadata,
 			"content_hash": p.generateHash(request.Content),
 		},
-		Elements:      []CSVElement{rootElement},
-		Links:         []CSVLink{},
-		Relationships: []CSVRelationship{},
+		Elements: []CSVElement{rootElement},
 	}
 }
 
@@ -626,36 +495,114 @@ func (p *CSVParser) detectColumnType(values []string) string {
 	return "string"
 }
 
-func (p *CSVParser) extractLinksFromText(text, sourceID string) []CSVLink {
-	var links []CSVLink
-
+func (p *CSVParser) extractAndCreateLinkElements(text, parentID string, elements *[]CSVElement, counter *int) {
 	// URL regex pattern
 	urlRegex := regexp.MustCompile(`https?://[^\s,\]"']+`)
 	urlMatches := urlRegex.FindAllString(text, -1)
-	for _, match := range urlMatches {
-		link := CSVLink{
-			SourceID:   sourceID,
-			LinkText:   match,
-			LinkTarget: match,
-			LinkType:   "url",
+	for _, url := range urlMatches {
+		linkElement := CSVElement{
+			ElementID:       p.generateID("link_"),
+			DocID:           (*elements)[0].DocID,
+			ElementType:     CSVElementTypeLink,
+			ParentID:        parentID,
+			ContentPreview:  p.truncateContent(url),
+			ContentLocation: p.createContentLocation((*elements)[0].DocID, CSVElementTypeLink, ""),
+			ContentHash:     p.generateHash(url),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Content:         url,
+			Metadata: map[string]interface{}{
+				"link_target": url,
+				"link_type":   "url",
+			},
 		}
-		links = append(links, link)
+		*elements = append(*elements, linkElement)
+		*counter++
 	}
 
 	// Email regex pattern
 	emailRegex := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
 	emailMatches := emailRegex.FindAllString(text, -1)
-	for _, match := range emailMatches {
-		link := CSVLink{
-			SourceID:   sourceID,
-			LinkText:   match,
-			LinkTarget: "mailto:" + match,
-			LinkType:   "email",
+	for _, email := range emailMatches {
+		linkElement := CSVElement{
+			ElementID:       p.generateID("link_"),
+			DocID:           (*elements)[0].DocID,
+			ElementType:     CSVElementTypeLink,
+			ParentID:        parentID,
+			ContentPreview:  p.truncateContent(email),
+			ContentLocation: p.createContentLocation((*elements)[0].DocID, CSVElementTypeLink, ""),
+			ContentHash:     p.generateHash(email),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Content:         email,
+			Metadata: map[string]interface{}{
+				"link_target": "mailto:" + email,
+				"link_type":   "email",
+			},
 		}
-		links = append(links, link)
+		*elements = append(*elements, linkElement)
+		*counter++
+	}
+}
+
+func (p *CSVParser) extractAndCreateTemporalElements(text, parentID string, elements *[]CSVElement, counter *int) {
+	// Use the existing temporal extraction helper
+	temporalData := ExtractTemporalFromText(text)
+	if temporalData == nil {
+		return
 	}
 
-	return links
+	// Get the list of temporal values found
+	temporalValues, ok := temporalData["temporal_values_found"].([]string)
+	if !ok || len(temporalValues) == 0 {
+		return
+	}
+
+	// Create a temporal element for each unique temporal expression found
+	seen := make(map[string]bool)
+	for _, temporalValue := range temporalValues {
+		// Skip duplicates
+		if seen[temporalValue] {
+			continue
+		}
+		seen[temporalValue] = true
+
+		// Get metadata for this temporal value
+		var metadata map[string]interface{}
+		for key, value := range temporalData {
+			if key != "temporal_values_found" && key != "temporal_count" {
+				if metaMap, ok := value.(map[string]interface{}); ok {
+					if rawValue, ok := metaMap["raw_value"].(string); ok && rawValue == temporalValue {
+						metadata = metaMap
+						break
+					}
+				}
+			}
+		}
+
+		// If no metadata found, create minimal metadata
+		if metadata == nil {
+			metadata = map[string]interface{}{
+				"raw_value": temporalValue,
+			}
+		}
+
+		temporalElement := CSVElement{
+			ElementID:       p.generateID("temporal_"),
+			DocID:           (*elements)[0].DocID,
+			ElementType:     CSVElementTypeTemporal,
+			ParentID:        parentID,
+			ContentPreview:  p.truncateContent(temporalValue),
+			ContentLocation: p.createContentLocation((*elements)[0].DocID, CSVElementTypeTemporal, ""),
+			ContentHash:     p.generateHash(temporalValue),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Content:         temporalValue,
+			Metadata:        metadata,
+		}
+		*elements = append(*elements, temporalElement)
+		*counter++
+	}
 }
 
 func (p *CSVParser) getColumnCount(csvData [][]string) int {
@@ -710,9 +657,7 @@ func (p *CSVParser) convertToParseResult(response *CSVParseResponse) *ParseResul
 			ID:      response.Document["doc_id"].(string),
 			DocType: response.Document["doc_type"].(string),
 		},
-		Elements:      make([]Element, 0, len(response.Elements)),
-		Relationships: make([]Relationship, 0, len(response.Relationships)),
-		Links:         make([]Link, 0, len(response.Links)),
+		Elements: make([]Element, 0, len(response.Elements)),
 	}
 
 	// Convert metadata if present
@@ -745,32 +690,27 @@ func (p *CSVParser) convertToParseResult(response *CSVParseResponse) *ParseResul
 			element.Depth = 3
 		}
 
+		// UDML Phase 1: Populate promoted fields for table cells
+		// RowIndex and ColumnIndex enable 60-1000x faster queries across all backends
+		if csvElem.ElementType == CSVElementTypeTableCell {
+			// Extract row and column indices from metadata
+			if row, ok := csvElem.Metadata["row"].(int); ok {
+				element.RowIndex = &row
+			}
+			if col, ok := csvElem.Metadata["col"].(int); ok {
+				element.ColumnIndex = &col
+			}
+
+			// Populate TemporalType if present in metadata
+			if temporalType, ok := csvElem.Metadata["temporal_type"].(string); ok {
+				element.TemporalType = &temporalType
+			}
+		}
+
+		// Set element category from taxonomy
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
-	}
-
-	// Convert relationships
-	for _, csvRel := range response.Relationships {
-		relationship := Relationship{
-			RelationshipID:   csvRel.RelationshipID,
-			RelationshipType: csvRel.RelationshipType,
-			SourceElementID:  csvRel.SourceElementID,
-			TargetElementID:  csvRel.TargetElementID,
-			Confidence:       csvRel.Confidence,
-			Metadata:         csvRel.Metadata,
-		}
-		result.Relationships = append(result.Relationships, relationship)
-	}
-
-	// Convert links
-	for _, csvLink := range response.Links {
-		link := Link{
-			LinkID:          generateID("link"),
-			SourceElementID: csvLink.SourceID,
-			LinkType:        csvLink.LinkType,
-			LinkTarget:      csvLink.LinkTarget,
-			LinkText:        csvLink.LinkText,
-		}
-		result.Links = append(result.Links, link)
 	}
 
 	return result
@@ -782,4 +722,68 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// ============================================================================
+// Parser Interface Implementation (UDML Phase 0)
+// ============================================================================
+
+// GetName returns the parser identifier
+func (p *CSVParser) GetName() string {
+	return "csv"
+}
+
+// GetSupportedFormats returns file extensions this parser handles
+func (p *CSVParser) GetSupportedFormats() []string {
+	return []string{".csv", "csv"}
+}
+
+// Parse implements the Parser interface with context support
+// This is the new UDML Phase 0 interface-compliant method
+func (p *CSVParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from ParseRequest
+	var csvContent string
+	switch v := req.Content.(type) {
+	case string:
+		csvContent = v
+	case []byte:
+		csvContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Merge metadata from request
+	metadata := make(map[string]interface{})
+	if req.Metadata != nil {
+		for k, v := range req.Metadata {
+			metadata[k] = v
+		}
+	}
+
+	// Create internal request structure
+	internalReq := CSVParseRequest{
+		ID:       req.ID,
+		Content:  csvContent,
+		Metadata: metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseCSV(internalReq)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming indicates if parser can handle streaming content
+func (p *CSVParser) SupportsStreaming() bool {
+	return false // CSV parser loads entire content into memory
+}
+
+// Close releases any resources held by the parser
+func (p *CSVParser) Close() error {
+	// CSV parser has no resources to release
+	return nil
 }

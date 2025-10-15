@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
 )
 
 func main() {

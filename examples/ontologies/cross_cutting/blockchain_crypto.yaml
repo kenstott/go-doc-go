@@ -1,0 +1,106 @@
+domain: blockchain_crypto
+description: Blockchain transactions, wallets, smart contracts, tokens, and cryptocurrency operations
+subdomains:
+  - blockchain_operations
+  - cryptocurrency
+  - smart_contracts
+  - token_management
+  - defi
+
+entity_types:
+  - entity_type: blockchain_transaction
+    description: Blockchain transaction or transfer
+    aliases: [transaction, transfer, payment, tx]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [transaction, transfer, payment, tx, blockchain transaction, hash]
+
+  - entity_type: wallet
+    description: Cryptocurrency wallet or address
+    aliases: [address, account, wallet address]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [wallet, address, account, wallet address, public key]
+
+  - entity_type: smart_contract
+    description: Smart contract or DApp
+    aliases: [contract, DApp, decentralized app, protocol]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [smart contract, contract, DApp, protocol, deployed contract]
+
+  - entity_type: token
+    description: Cryptocurrency token or coin
+    aliases: [coin, cryptocurrency, digital asset, crypto]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [token, coin, cryptocurrency, digital asset, ERC-20, NFT]
+
+  - entity_type: block
+    description: Blockchain block
+    aliases: [block, blockchain block, ledger entry]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [block, blockchain block, block height, block number]
+
+  - entity_type: defi_protocol
+    description: DeFi protocol or service
+    aliases: [protocol, DeFi service, decentralized protocol]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [DeFi, protocol, decentralized finance, lending, staking, yield]
+
+relationship_types:
+  - relationship_type: sent_from
+    description: Transaction sent from wallet
+    source_entity: blockchain_transaction
+    target_entity: wallet
+    sample_rules:
+      - type: keyword_match
+        keywords: [from, sent from, sender, source address]
+
+  - relationship_type: sent_to
+    description: Transaction sent to wallet
+    source_entity: blockchain_transaction
+    target_entity: wallet
+    sample_rules:
+      - type: keyword_match
+        keywords: [to, sent to, recipient, destination address]
+
+  - relationship_type: transfers_token
+    description: Transaction transfers token
+    source_entity: blockchain_transaction
+    target_entity: token
+    sample_rules:
+      - type: keyword_match
+        keywords: [transfers, sends, token, coin, amount]
+
+  - relationship_type: included_in
+    description: Transaction included in block
+    source_entity: blockchain_transaction
+    target_entity: block
+    sample_rules:
+      - type: keyword_match
+        keywords: [included in, in block, block, confirmed in]
+
+  - relationship_type: executed_by
+    description: Transaction executed by smart contract
+    source_entity: blockchain_transaction
+    target_entity: smart_contract
+    sample_rules:
+      - type: keyword_match
+        keywords: [executed by, called, contract, smart contract]
+
+  - relationship_type: uses_protocol
+    description: Smart contract uses DeFi protocol
+    source_entity: smart_contract
+    target_entity: defi_protocol
+    sample_rules:
+      - type: keyword_match
+        keywords: [uses, integrates with, protocol, DeFi]

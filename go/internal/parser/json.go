@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/kennethstott/go-doc-go/internal/temporal"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/temporal"
 	"github.com/oliveagle/jsonpath"
 )
 
@@ -41,23 +42,6 @@ type JSONElement struct {
 	TemporalValue   interface{}            `json:"temporal_value,omitempty"`
 }
 
-// JSONLink represents an extracted link
-type JSONLink struct {
-	SourceID   string `json:"source_id"`
-	LinkText   string `json:"link_text"`
-	LinkTarget string `json:"link_target"`
-	LinkType   string `json:"link_type"`
-}
-
-// JSONRelationship represents a relationship between elements
-type JSONRelationship struct {
-	RelationshipID   string                 `json:"relationship_id"`
-	SourceElementID  string                 `json:"source_element_id"`
-	TargetElementID  string                 `json:"target_element_id"`
-	RelationshipType string                 `json:"relationship_type"`
-	Confidence       float64                `json:"confidence"`
-	Metadata         map[string]interface{} `json:"metadata"`
-}
 
 // JSONParseRequest represents the input for JSON parsing
 type JSONParseRequest struct {
@@ -68,11 +52,9 @@ type JSONParseRequest struct {
 
 // JSONParseResponse represents the output of JSON parsing
 type JSONParseResponse struct {
-	Document      map[string]interface{} `json:"document"`
-	Elements      []JSONElement          `json:"elements"`
-	Links         []JSONLink             `json:"links"`
-	Relationships []JSONRelationship     `json:"relationships"`
-	Dates         map[string]interface{} `json:"dates,omitempty"`
+	Document map[string]interface{} `json:"document"`
+	Elements []JSONElement          `json:"elements"`
+	Dates    map[string]interface{} `json:"dates,omitempty"`
 }
 
 // JSONParser handles JSON document parsing
@@ -97,8 +79,60 @@ func NewJSONParser() *JSONParser {
 	}
 }
 
-// Parse is the universal interface that converts JSON content to ParseResult
-func (p *JSONParser) Parse(docID string, content interface{}) (*ParseResult, error) {
+// Parser interface implementation
+
+// GetName returns the parser name
+func (p *JSONParser) GetName() string {
+	return "json"
+}
+
+// GetSupportedFormats returns supported file formats
+func (p *JSONParser) GetSupportedFormats() []string {
+	return []string{".json", "json"}
+}
+
+// Parse implements the Parser interface for JSON documents
+func (p *JSONParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult, error) {
+	// Extract content from request
+	var jsonContent string
+	switch v := req.Content.(type) {
+	case string:
+		jsonContent = v
+	case []byte:
+		jsonContent = string(v)
+	default:
+		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Create JSON-specific request
+	jsonRequest := JSONParseRequest{
+		ID:       req.ID,
+		Content:  jsonContent,
+		Metadata: req.Metadata,
+	}
+
+	// Parse using existing implementation
+	response, err := p.parseJSON(jsonRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to universal ParseResult
+	return p.convertToParseResult(response), nil
+}
+
+// SupportsStreaming returns whether the parser supports streaming
+func (p *JSONParser) SupportsStreaming() bool {
+	return false
+}
+
+// Close releases any resources held by the parser
+func (p *JSONParser) Close() error {
+	return nil
+}
+
+// ParseLegacy is the legacy interface that converts JSON content to ParseResult (deprecated)
+func (p *JSONParser) ParseLegacy(docID string, content interface{}) (*ParseResult, error) {
 	// Handle different input types
 	var jsonContent string
 	switch v := content.(type) {
@@ -144,9 +178,7 @@ func (p *JSONParser) parseJSON(request JSONParseRequest) (*JSONParseResponse, er
 			"metadata":     request.Metadata,
 			"content_hash": p.generateHash(request.Content),
 		},
-		Elements:      []JSONElement{},
-		Links:         []JSONLink{},
-		Relationships: []JSONRelationship{},
+		Elements: []JSONElement{},
 	}
 
 	// Create root element
@@ -166,18 +198,14 @@ func (p *JSONParser) parseJSON(request JSONParseRequest) (*JSONParseResponse, er
 	// Parse JSON elements
 	elementCounter := 1
 	p.parseJSONElement(jsonData, request.ID, rootElement.ElementID, request.ID,
-		&response.Elements, &response.Relationships, "$", 0, &elementCounter)
-
-	// Extract links from the JSON content
-	p.extractLinks(jsonData, &response.Links, rootElement.ElementID)
+		&response.Elements, "$", 0, &elementCounter)
 
 	return response, nil
 }
 
 // parseJSONElement recursively parses JSON elements
 func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceID string,
-	elements *[]JSONElement, relationships *[]JSONRelationship,
-	jsonPath string, depth int, counter *int) {
+	elements *[]JSONElement, jsonPath string, depth int, counter *int) {
 
 	// Prevent infinite recursion
 	if depth > p.MaxDepth {
@@ -209,27 +237,6 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 
 		*elements = append(*elements, objectElement)
 		*counter++
-
-		// Create bidirectional parent-child relationships
-		if parentID != "" {
-			containsRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  parentID,
-				TargetElementID:  objectID,
-				RelationshipType: "contains",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			containedByRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  objectID,
-				TargetElementID:  parentID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			*relationships = append(*relationships, containsRel, containedByRel)
-		}
 
 		// Parse object fields
 		for key, value := range v {
@@ -282,28 +289,14 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 			*elements = append(*elements, fieldElement)
 			*counter++
 
-			// Create bidirectional parent-child relationships
-			containsRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  objectID,
-				TargetElementID:  fieldID,
-				RelationshipType: "contains",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
+			// Extract links from string field values
+			if strValue, ok := value.(string); ok {
+				p.extractAndCreateLinkElements(strValue, fieldID, elements, counter)
 			}
-			containedByRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  fieldID,
-				TargetElementID:  objectID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			*relationships = append(*relationships, containsRel, containedByRel)
 
 			// Recursively parse field value
 			if p.isComplexType(value) {
-				p.parseJSONElement(value, docID, fieldID, sourceID, elements, relationships,
+				p.parseJSONElement(value, docID, fieldID, sourceID, elements,
 					fieldPath, depth+1, counter)
 			}
 		}
@@ -331,27 +324,6 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 
 		*elements = append(*elements, arrayElement)
 		*counter++
-
-		// Create bidirectional parent-child relationships
-		if parentID != "" {
-			containsRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  parentID,
-				TargetElementID:  arrayID,
-				RelationshipType: "contains",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			containedByRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  arrayID,
-				TargetElementID:  parentID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			*relationships = append(*relationships, containsRel, containedByRel)
-		}
 
 		// Parse array items
 		for i, item := range v {
@@ -404,28 +376,14 @@ func (p *JSONParser) parseJSONElement(data interface{}, docID, parentID, sourceI
 			*elements = append(*elements, itemElement)
 			*counter++
 
-			// Create bidirectional parent-child relationships
-			containsRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  arrayID,
-				TargetElementID:  itemID,
-				RelationshipType: "contains_array_item",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
+			// Extract links from string array items
+			if strItem, ok := item.(string); ok {
+				p.extractAndCreateLinkElements(strItem, itemID, elements, counter)
 			}
-			containedByRel := JSONRelationship{
-				RelationshipID:   p.generateID("rel_"),
-				SourceElementID:  itemID,
-				TargetElementID:  arrayID,
-				RelationshipType: "contained_by",
-				Confidence:       1.0,
-				Metadata:         make(map[string]interface{}),
-			}
-			*relationships = append(*relationships, containsRel, containedByRel)
 
 			// Recursively parse item value
 			if p.isComplexType(item) {
-				p.parseJSONElement(item, docID, itemID, sourceID, elements, relationships,
+				p.parseJSONElement(item, docID, itemID, sourceID, elements,
 					itemPath, depth+1, counter)
 			}
 		}
@@ -541,50 +499,56 @@ func (p *JSONParser) getObjectKeys(obj map[string]interface{}) []string {
 	return keys
 }
 
-// extractLinks extracts URLs and email addresses from JSON string values
-func (p *JSONParser) extractLinks(data interface{}, links *[]JSONLink, sourceID string) {
+// extractAndCreateLinkElements extracts URLs and emails from text and creates link elements
+func (p *JSONParser) extractAndCreateLinkElements(text, parentID string, elements *[]JSONElement, counter *int) {
 	// URL regex pattern
 	urlRegex := regexp.MustCompile(`https?://[^\s"'<>]+`)
+	urlMatches := urlRegex.FindAllString(text, -1)
+	for _, url := range urlMatches {
+		linkElement := JSONElement{
+			ElementID:       p.generateID("link_"),
+			DocID:           (*elements)[0].DocID,
+			ElementType:     JSONElementTypeItem, // Reuse json_item type for now
+			ParentID:        parentID,
+			ContentPreview:  p.truncateContent(url),
+			ContentLocation: p.createContentLocation((*elements)[0].DocID, JSONElementTypeItem, ""),
+			ContentHash:     p.generateHash(url),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Content:         url,
+			Metadata: map[string]interface{}{
+				"link_target": url,
+				"link_type":   "url",
+				"element_type": "link",
+			},
+		}
+		*elements = append(*elements, linkElement)
+		*counter++
+	}
+
 	// Email regex pattern
 	emailRegex := regexp.MustCompile(`[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}`)
-
-	p.extractLinksRecursive(data, links, sourceID, urlRegex, emailRegex)
-}
-
-func (p *JSONParser) extractLinksRecursive(data interface{}, links *[]JSONLink, sourceID string, urlRegex *regexp.Regexp, emailRegex *regexp.Regexp) {
-	switch v := data.(type) {
-	case string:
-		// Look for URLs in string values
-		urlMatches := urlRegex.FindAllString(v, -1)
-		for _, match := range urlMatches {
-			link := JSONLink{
-				SourceID:   sourceID,
-				LinkText:   match,
-				LinkTarget: match,
-				LinkType:   "url",
-			}
-			*links = append(*links, link)
+	emailMatches := emailRegex.FindAllString(text, -1)
+	for _, email := range emailMatches {
+		linkElement := JSONElement{
+			ElementID:       p.generateID("link_"),
+			DocID:           (*elements)[0].DocID,
+			ElementType:     JSONElementTypeItem,
+			ParentID:        parentID,
+			ContentPreview:  p.truncateContent(email),
+			ContentLocation: p.createContentLocation((*elements)[0].DocID, JSONElementTypeItem, ""),
+			ContentHash:     p.generateHash(email),
+			ElementOrder:    *counter,
+			DocumentOrder:   *counter,
+			Content:         email,
+			Metadata: map[string]interface{}{
+				"link_target": "mailto:" + email,
+				"link_type":   "email",
+				"element_type": "link",
+			},
 		}
-
-		// Look for email addresses in string values
-		emailMatches := emailRegex.FindAllString(v, -1)
-		for _, match := range emailMatches {
-			link := JSONLink{
-				SourceID:   sourceID,
-				LinkText:   match,
-				LinkTarget: "mailto:" + match,
-				LinkType:   "url",
-			}
-			*links = append(*links, link)
-		}
-	case map[string]interface{}:
-		for _, value := range v {
-			p.extractLinksRecursive(value, links, sourceID, urlRegex, emailRegex)
-		}
-	case []interface{}:
-		for _, item := range v {
-			p.extractLinksRecursive(item, links, sourceID, urlRegex, emailRegex)
-		}
+		*elements = append(*elements, linkElement)
+		*counter++
 	}
 }
 
@@ -643,9 +607,7 @@ func (p *JSONParser) convertToParseResult(response *JSONParseResponse) *ParseRes
 			ID:      response.Document["doc_id"].(string),
 			DocType: response.Document["doc_type"].(string),
 		},
-		Elements:      make([]Element, 0, len(response.Elements)),
-		Relationships: make([]Relationship, 0, len(response.Relationships)),
-		Links:         make([]Link, 0, len(response.Links)),
+		Elements: make([]Element, 0, len(response.Elements)),
 	}
 
 	// Convert metadata if present
@@ -666,32 +628,16 @@ func (p *JSONParser) convertToParseResult(response *JSONParseResponse) *ParseRes
 			ContentLocation: jsonElem.ContentLocation,
 			Metadata:        jsonElem.Metadata,
 		}
+
+		// Populate TemporalType promoted field from metadata
+		if temporalType, ok := jsonElem.Metadata["temporal_type"].(string); ok && temporalType != "" {
+			element.TemporalType = &temporalType
+		}
+
+		// Set element category
+		element.ElementCategory = GetElementCategory(element.ElementType)
+
 		result.Elements = append(result.Elements, element)
-	}
-
-	// Convert relationships
-	for _, jsonRel := range response.Relationships {
-		relationship := Relationship{
-			RelationshipID:   jsonRel.RelationshipID,
-			RelationshipType: jsonRel.RelationshipType,
-			SourceElementID:  jsonRel.SourceElementID,
-			TargetElementID:  jsonRel.TargetElementID,
-			Confidence:       jsonRel.Confidence,
-			Metadata:         jsonRel.Metadata,
-		}
-		result.Relationships = append(result.Relationships, relationship)
-	}
-
-	// Convert links
-	for _, jsonLink := range response.Links {
-		link := Link{
-			LinkID:          generateID("link"),
-			SourceElementID: jsonLink.SourceID,
-			LinkType:        jsonLink.LinkType,
-			LinkTarget:      jsonLink.LinkTarget,
-			LinkText:        jsonLink.LinkText,
-		}
-		result.Links = append(result.Links, link)
 	}
 
 	return result
