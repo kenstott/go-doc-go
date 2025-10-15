@@ -180,7 +180,8 @@ type SemanticConfig struct {
 // OntologyConfig holds configuration for ontology-based entity extraction
 type OntologyConfig struct {
 	Enabled                 bool
-	SchemaPath              string // Path to ontology schema files (YAML/JSON)
+	SchemaPath              string  // Path to ontology schema files (YAML/JSON)
+	DiversityThreshold      float64 // Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse samples)
 	QueueIdleTriggerMinutes int
 	MinIntervalMinutes      int
 }
@@ -529,9 +530,49 @@ func (w *Worker) independentWorkerGoroutine(id int) {
 			continue
 		}
 
-		// Process document with timing
+		// Log the claim
+		log.Printf("Worker goroutine %d claimed document %s", id, docInfo.DocID)
+
+		// Process document with timing and heartbeat ticker
 		startTime := time.Now()
+
+		// Start heartbeat ticker during processing to keep claim alive
+		// Heartbeat every 30 seconds to prevent claim timeout (default timeout: 300s)
+		heartbeatTicker := time.NewTicker(30 * time.Second)
+		heartbeatDone := make(chan struct{})
+
+		go func() {
+			tickCount := 0
+			for {
+				select {
+				case <-heartbeatTicker.C:
+					tickCount++
+					log.Printf("Worker goroutine %d: heartbeat tick %d for document %s", id, tickCount, docInfo.DocID)
+
+					// Update BOTH worker heartbeat AND document claim timestamp
+					if err := w.jobControl.UpdateWorkerHeartbeat(w.workerID); err != nil {
+						log.Printf("Worker goroutine %d: failed to update worker heartbeat: %v", id, err)
+					}
+
+					// CRITICAL: Update the document's claimed_at timestamp to prevent timeout
+					if err := w.jobControl.UpdateDocumentClaimHeartbeat(docInfo.DocID, w.workerID); err != nil {
+						log.Printf("Worker goroutine %d: failed to update document claim heartbeat for %s: %v", id, docInfo.DocID, err)
+					} else {
+						log.Printf("Worker goroutine %d: successfully updated claim heartbeat for %s", id, docInfo.DocID)
+					}
+				case <-heartbeatDone:
+					log.Printf("Worker goroutine %d: stopping heartbeat for document %s after %d ticks", id, docInfo.DocID, tickCount)
+					return
+				}
+			}
+		}()
+
 		success := w.processDocument(docInfo)
+
+		// Stop heartbeat ticker
+		heartbeatTicker.Stop()
+		close(heartbeatDone)
+
 		processingTime := time.Since(startTime)
 
 		// Complete document
