@@ -1,0 +1,218 @@
+domain: financial
+description: Financial reports, earnings, transactions, investment documents, and financial analysis
+terms:
+    - name: revenue
+      synonyms:
+        - income
+        - sales
+        - turnover
+        - receipts
+        - top line
+      description: Money generated from business operations
+    - name: profit
+      synonyms:
+        - earnings
+        - net income
+        - bottom line
+        - profit margin
+      description: Revenue minus expenses
+    - name: expense
+      synonyms:
+        - cost
+        - expenditure
+        - outlay
+        - spending
+      description: Money spent on business operations
+    - name: asset
+      synonyms:
+        - property
+        - resource
+        - holding
+        - investment
+      description: Resources owned by the company
+    - name: liability
+      synonyms:
+        - debt
+        - obligation
+        - payable
+        - borrowing
+      description: Financial obligations
+    - name: equity
+      synonyms:
+        - shareholders equity
+        - net worth
+        - book value
+      description: Ownership interest in company
+    - name: cash flow
+      synonyms:
+        - cash generation
+        - liquidity
+        - operating cash
+      description: Movement of money in and out of business
+    - name: EBITDA
+      synonyms:
+        - earnings before interest tax depreciation amortization
+        - operating earnings
+      description: Earnings before interest, taxes, depreciation, and amortization
+entity_types:
+    - entity_type: company
+      description: Business organization or corporation
+      aliases:
+        - corporation
+        - firm
+        - enterprise
+        - business
+        - organization
+        - issuer
+      element_types:
+        - paragraph
+        - heading
+        - table_cell
+      sample_rules:
+        - type: regex_pattern
+          pattern: \b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\s+(?:Inc|Corp|LLC|Ltd|Company|Co)\b
+        - type: keyword_match
+          keywords:
+            - Inc
+            - Corp
+            - LLC
+            - Ltd
+            - Corporation
+            - Company
+    - entity_type: monetary_amount
+      description: Currency amount or financial value
+      aliases:
+        - amount
+        - value
+        - price
+        - cost
+        - payment
+        - sum
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: regex_pattern
+          pattern: \$[\d,]+(?:\.\d{2})?(?:\s*(?:billion|million|thousand|B|M|K))?
+        - type: regex_pattern
+          pattern: '[\d,]+(?:\.\d{2})?\s*(?:USD|EUR|GBP|dollars|euros)'
+    - entity_type: fiscal_period
+      description: Financial reporting period (quarter, fiscal year)
+      aliases:
+        - quarter
+        - fiscal year
+        - FY
+        - Q1
+        - Q2
+        - Q3
+        - Q4
+        - reporting period
+      element_types:
+        - paragraph
+        - heading
+        - table_cell
+      sample_rules:
+        - type: regex_pattern
+          pattern: \b(?:Q[1-4]|FY)?\s*\d{4}\b
+        - type: regex_pattern
+          pattern: \b(?:first|second|third|fourth)\s+quarter\s+\d{4}\b
+        - type: keyword_match
+          keywords:
+            - Q1
+            - Q2
+            - Q3
+            - Q4
+            - FY
+            - fiscal year
+    - entity_type: financial_metric
+      description: Financial performance metric or KPI
+      aliases:
+        - KPI
+        - metric
+        - ratio
+        - indicator
+        - measure
+      element_types:
+        - paragraph
+        - table_cell
+        - heading
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - revenue
+            - profit
+            - EBITDA
+            - earnings
+            - EPS
+            - ROI
+            - ROE
+            - ROA
+            - gross margin
+            - operating margin
+            - net margin
+            - cash flow
+            - free cash flow
+    - entity_type: stock_symbol
+      description: Stock exchange ticker symbol
+      aliases:
+        - ticker
+        - symbol
+        - stock code
+        - exchange symbol
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: regex_pattern
+          pattern: \b(?:NYSE|NASDAQ|LSE):\s*[A-Z]{1,5}\b
+        - type: regex_pattern
+          pattern: \b[A-Z]{2,5}\b
+common_entity_refs:
+    - person
+    - executive
+    - employee
+    - date
+    - time
+    - percentage
+    - number
+    - address
+    - city
+    - country
+    - region
+    - email
+    - phone
+    - url
+relationships:
+    - name: company_reports_metric
+      source_type: company
+      target_type: financial_metric
+      relationship_type: mentions
+      description: Company mentions/reports a financial metric
+      sample_patterns:
+        - '{company} reported {metric}'
+        - '{company} announced {metric}'
+        - '{metric} for {company}'
+    - name: company_has_revenue
+      source_type: company
+      target_type: monetary_amount
+      relationship_type: related_to
+      description: Company has revenue amount
+      sample_patterns:
+        - '{company} revenue of {amount}'
+        - '{company} reported revenue of {amount}'
+    - name: executive_leads_company
+      source_type: executive
+      target_type: company
+      relationship_type: part_of
+      description: Executive is part of company leadership
+      sample_patterns:
+        - '{executive}, CEO of {company}'
+        - '{executive} at {company}'
+    - name: metric_for_period
+      source_type: financial_metric
+      target_type: fiscal_period
+      relationship_type: occurred_at
+      description: Financial metric for specific period
+      sample_patterns:
+        - '{metric} in {period}'
+        - '{period} {metric}'

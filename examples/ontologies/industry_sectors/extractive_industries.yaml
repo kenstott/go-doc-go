@@ -1,0 +1,291 @@
+domain: extractive_industries
+description: Mining, oil and gas extraction, quarrying, drilling operations, resource exploration, and commodity production
+subdomains:
+  - mining
+  - oil_gas
+  - quarrying
+  - exploration
+  - processing
+  - commodity_trading
+
+entity_types:
+  - entity_type: mine_site
+    description: Mining site or operation location
+    aliases: [mine, pit, quarry, shaft, operation]
+    element_types: [paragraph, heading, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [mine, mine site, pit, quarry, shaft, mining operation, extraction site]
+
+  - entity_type: mineral_resource
+    description: Mineral, ore, or natural resource being extracted
+    aliases: [ore, mineral, commodity, resource, deposit]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [ore, mineral, coal, gold, copper, iron, lithium, uranium, deposit, reserve]
+
+  - entity_type: oil_gas_field
+    description: Oil or gas field or reservoir
+    aliases: [field, reservoir, basin, well, play]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [oil field, gas field, reservoir, basin, well, play, formation]
+
+  - entity_type: exploration_project
+    description: Exploration or prospecting project
+    aliases: [exploration, prospect, survey, drilling program]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [exploration, prospect, survey, drilling program, seismic, geophysical]
+
+  - entity_type: drilling_operation
+    description: Drilling or extraction operation
+    aliases: [drilling, well, borehole, extraction]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [drilling, well, borehole, extraction, drill rig, drilling operation]
+
+  - entity_type: processing_facility
+    description: Processing plant or refinery
+    aliases: [plant, mill, refinery, processing facility, concentrator]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [processing plant, mill, refinery, concentrator, smelter, processing facility]
+
+  - entity_type: reserve_estimate
+    description: Resource or reserve estimate
+    aliases: [reserve, resource, proven reserve, probable reserve, measured resource]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [reserve, resource, proven, probable, measured, indicated, inferred, tons, barrels]
+
+  - entity_type: production_volume
+    description: Production output or volume
+    aliases: [production, output, yield, extraction rate]
+    element_types: [paragraph, table_row, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [production, output, yield, tons per day, barrels per day, extraction rate]
+
+  - entity_type: mining_equipment
+    description: Mining or extraction equipment
+    aliases: [equipment, machinery, excavator, drill rig, haul truck]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [equipment, excavator, haul truck, drill rig, loader, crusher, conveyor]
+
+  - entity_type: geologic_formation
+    description: Geological formation or stratum
+    aliases: [formation, stratum, seam, layer, horizon]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [formation, stratum, seam, geological layer, horizon, rock unit]
+
+  - entity_type: permit_license
+    description: Mining or extraction permit or license
+    aliases: [permit, license, concession, lease, claim]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [permit, license, concession, mining lease, claim, exploration license]
+
+  - entity_type: environmental_impact
+    description: Environmental impact or remediation
+    aliases: [environmental impact, remediation, reclamation, rehabilitation]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [environmental impact, EIA, remediation, reclamation, rehabilitation, mine closure]
+
+  - entity_type: commodity_price
+    description: Commodity market price
+    aliases: [price, spot price, futures price, commodity price]
+    element_types: [paragraph, table_row, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [price, commodity price, spot price, futures, per ton, per barrel, per ounce]
+
+  - entity_type: operator
+    description: Mining or extraction company operator
+    aliases: [operator, mining company, producer, E&P company]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [operator, mining company, producer, E&P company, exploration company]
+
+  - entity_type: contractor
+    description: Mining contractor or service provider
+    aliases: [contractor, service provider, drilling contractor, mining contractor]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [contractor, service provider, drilling contractor, mining contractor, EPCM]
+
+  - entity_type: safety_incident
+    description: Safety incident or accident
+    aliases: [incident, accident, injury, fatality, safety event]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [safety incident, accident, injury, fatality, lost time injury, TRIFR]
+
+  - entity_type: grade_assay
+    description: Ore grade or assay result
+    aliases: [grade, assay, concentration, purity, quality]
+    element_types: [paragraph, table_row, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [grade, assay, g/t, percent, ppm, concentration, ore quality]
+
+  - entity_type: royalty_agreement
+    description: Royalty or revenue sharing agreement
+    aliases: [royalty, revenue share, net smelter return, NSR]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [royalty, revenue share, NSR, net smelter return, production payment]
+
+relationship_types:
+  - relationship_type: extracts_resource
+    description: Mine site extracts mineral resource
+    source_entity: mine_site
+    target_entity: mineral_resource
+    sample_rules:
+      - type: keyword_match
+        keywords: [extracts, produces, mines, recovers, yields]
+
+  - relationship_type: produces_from_field
+    description: Operator produces from oil/gas field
+    source_entity: operator
+    target_entity: oil_gas_field
+    sample_rules:
+      - type: keyword_match
+        keywords: [produces from, operates, extracts from, field operator]
+
+  - relationship_type: explores_for_resource
+    description: Exploration project targets resource
+    source_entity: exploration_project
+    target_entity: mineral_resource
+    sample_rules:
+      - type: keyword_match
+        keywords: [explores for, targets, searching for, prospecting for]
+
+  - relationship_type: drills_at_site
+    description: Drilling operation at mine site or field
+    source_entity: drilling_operation
+    target_entity: mine_site
+    sample_rules:
+      - type: keyword_match
+        keywords: [drilling at, located at, operating at]
+
+  - relationship_type: processes_ore
+    description: Processing facility processes ore
+    source_entity: processing_facility
+    target_entity: mineral_resource
+    sample_rules:
+      - type: keyword_match
+        keywords: [processes, treats, refines, concentrates, smelts]
+
+  - relationship_type: has_reserve_estimate
+    description: Mine site has reserve estimate
+    source_entity: mine_site
+    target_entity: reserve_estimate
+    sample_rules:
+      - type: keyword_match
+        keywords: [has reserves, reserves of, estimated reserves, resource estimate]
+
+  - relationship_type: achieves_production
+    description: Mine site achieves production volume
+    source_entity: mine_site
+    target_entity: production_volume
+    sample_rules:
+      - type: keyword_match
+        keywords: [produces, production of, output of, yields, achieves]
+
+  - relationship_type: uses_equipment
+    description: Mine site uses equipment
+    source_entity: mine_site
+    target_entity: mining_equipment
+    sample_rules:
+      - type: keyword_match
+        keywords: [uses, operates, deploys, equipped with]
+
+  - relationship_type: located_in_formation
+    description: Resource located in geological formation
+    source_entity: mineral_resource
+    target_entity: geologic_formation
+    sample_rules:
+      - type: keyword_match
+        keywords: [located in, found in, hosted in, within formation]
+
+  - relationship_type: authorized_by_permit
+    description: Operation authorized by permit
+    source_entity: mine_site
+    target_entity: permit_license
+    sample_rules:
+      - type: keyword_match
+        keywords: [authorized by, permitted by, licensed under, covered by]
+
+  - relationship_type: causes_impact
+    description: Operation causes environmental impact
+    source_entity: mine_site
+    target_entity: environmental_impact
+    sample_rules:
+      - type: keyword_match
+        keywords: [causes, results in, environmental impact, affects]
+
+  - relationship_type: traded_at_price
+    description: Commodity traded at price
+    source_entity: mineral_resource
+    target_entity: commodity_price
+    sample_rules:
+      - type: keyword_match
+        keywords: [traded at, priced at, selling for, market price]
+
+  - relationship_type: operated_by
+    description: Site operated by company
+    source_entity: mine_site
+    target_entity: operator
+    sample_rules:
+      - type: keyword_match
+        keywords: [operated by, owned by, managed by, operator]
+
+  - relationship_type: contracted_to
+    description: Contractor provides services to operator
+    source_entity: contractor
+    target_entity: operator
+    sample_rules:
+      - type: keyword_match
+        keywords: [contracted to, provides services to, working for, engaged by]
+
+  - relationship_type: reported_incident
+    description: Site reported safety incident
+    source_entity: mine_site
+    target_entity: safety_incident
+    sample_rules:
+      - type: keyword_match
+        keywords: [reported, incident at, accident at, occurred at]
+
+  - relationship_type: has_grade
+    description: Resource has grade/assay
+    source_entity: mineral_resource
+    target_entity: grade_assay
+    sample_rules:
+      - type: keyword_match
+        keywords: [grade of, assay of, concentration of, grading]
+
+  - relationship_type: subject_to_royalty
+    description: Production subject to royalty
+    source_entity: mine_site
+    target_entity: royalty_agreement
+    sample_rules:
+      - type: keyword_match
+        keywords: [subject to royalty, royalty on, NSR applies, revenue share]

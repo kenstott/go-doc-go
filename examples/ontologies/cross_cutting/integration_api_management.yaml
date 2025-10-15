@@ -1,0 +1,98 @@
+domain: integration_api_management
+description: APIs, integrations, data exchange, service orchestration, and API lifecycle management
+subdomains:
+  - api_development
+  - api_security
+  - service_integration
+  - data_exchange
+  - api_monitoring
+
+entity_types:
+  - entity_type: api
+    description: API or web service
+    aliases: [web service, REST API, API endpoint, service]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [API, web service, REST, endpoint, service, interface]
+
+  - entity_type: api_endpoint
+    description: API endpoint or route
+    aliases: [route, path, operation, method]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [endpoint, route, path, operation, GET, POST, PUT, DELETE]
+
+  - entity_type: integration
+    description: System integration or connector
+    aliases: [connector, integration point, connection]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [integration, connector, connection, integration point, interface]
+
+  - entity_type: data_format
+    description: Data format or schema
+    aliases: [schema, format, data structure, message format]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [format, schema, JSON, XML, data structure, message format]
+
+  - entity_type: api_consumer
+    description: API consumer or client
+    aliases: [client, application, consumer, subscriber]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [consumer, client, application, subscriber, API key]
+
+  - entity_type: api_key
+    description: API key or credential
+    aliases: [credential, access token, API token]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [API key, credential, access token, API token, secret]
+
+relationship_types:
+  - relationship_type: exposes_endpoint
+    description: API exposes endpoint
+    source_entity: api
+    target_entity: api_endpoint
+    sample_rules:
+      - type: keyword_match
+        keywords: [exposes, provides, offers, endpoint, route]
+
+  - relationship_type: uses_format
+    description: Endpoint uses data format
+    source_entity: api_endpoint
+    target_entity: data_format
+    sample_rules:
+      - type: keyword_match
+        keywords: [uses, accepts, returns, format, schema]
+
+  - relationship_type: integrates_with
+    description: Integration connects APIs
+    source_entity: integration
+    target_entity: api
+    sample_rules:
+      - type: keyword_match
+        keywords: [integrates with, connects to, calls, consumes]
+
+  - relationship_type: consumed_by
+    description: API consumed by consumer
+    source_entity: api
+    target_entity: api_consumer
+    sample_rules:
+      - type: keyword_match
+        keywords: [consumed by, used by, client, consumer]
+
+  - relationship_type: authenticated_with
+    description: Consumer authenticated with API key
+    source_entity: api_consumer
+    target_entity: api_key
+    sample_rules:
+      - type: keyword_match
+        keywords: [authenticated with, uses key, API key, credential]

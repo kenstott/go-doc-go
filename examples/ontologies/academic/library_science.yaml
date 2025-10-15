@@ -1,0 +1,98 @@
+domain: library_science
+description: Library cataloging, circulation, collections, archives, and information management
+subdomains:
+  - cataloging
+  - circulation
+  - collection_management
+  - archives
+  - reference_services
+
+entity_types:
+  - entity_type: library_item
+    description: Library item or material
+    aliases: [book, resource, material, holding]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [book, item, resource, material, holding, ISBN, call number]
+
+  - entity_type: patron
+    description: Library patron or user
+    aliases: [user, member, borrower, cardholder]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [patron, user, member, borrower, cardholder, library card]
+
+  - entity_type: circulation_transaction
+    description: Checkout or circulation transaction
+    aliases: [checkout, loan, borrowing, return]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [checkout, loan, borrowed, returned, due date, circulation]
+
+  - entity_type: collection
+    description: Library collection or section
+    aliases: [section, department, special collection]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [collection, section, department, special collection, archive]
+
+  - entity_type: catalog_record
+    description: Bibliographic catalog record
+    aliases: [record, bibliographic record, metadata record]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [catalog record, bibliographic record, MARC record, metadata]
+
+  - entity_type: archive
+    description: Archival collection or materials
+    aliases: [archival collection, manuscript collection, special materials]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [archive, archival, manuscript, special materials, rare books]
+
+relationship_types:
+  - relationship_type: checked_out_by
+    description: Item checked out by patron
+    source_entity: library_item
+    target_entity: patron
+    sample_rules:
+      - type: keyword_match
+        keywords: [checked out by, borrowed by, on loan to]
+
+  - relationship_type: in_transaction
+    description: Item in circulation transaction
+    source_entity: library_item
+    target_entity: circulation_transaction
+    sample_rules:
+      - type: keyword_match
+        keywords: [checkout, loan, circulation, transaction]
+
+  - relationship_type: part_of_collection
+    description: Item part of collection
+    source_entity: library_item
+    target_entity: collection
+    sample_rules:
+      - type: keyword_match
+        keywords: [part of, in, belongs to, collection]
+
+  - relationship_type: cataloged_as
+    description: Item cataloged as record
+    source_entity: library_item
+    target_entity: catalog_record
+    sample_rules:
+      - type: keyword_match
+        keywords: [cataloged as, catalog record, bibliographic record]
+
+  - relationship_type: archived_in
+    description: Materials archived in archive
+    source_entity: library_item
+    target_entity: archive
+    sample_rules:
+      - type: keyword_match
+        keywords: [archived in, part of archive, in collection]

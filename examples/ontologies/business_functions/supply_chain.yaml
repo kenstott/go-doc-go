@@ -1,0 +1,123 @@
+domain: supply_chain
+description: Procurement, inventory management, warehousing, distribution, logistics, and supplier management
+subdomains:
+  - procurement
+  - inventory_management
+  - warehouse_management
+  - transportation
+  - supplier_management
+  - demand_planning
+
+entity_types:
+  - entity_type: supplier
+    description: Vendor or supplier organization
+    aliases: [vendor, supplier, provider]
+    element_types: [paragraph, heading, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [supplier, vendor, provider, manufacturer, distributor]
+
+  - entity_type: purchase_order
+    description: Purchase order or procurement request
+    aliases: [PO, procurement order, buy order]
+    element_types: [paragraph, heading, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [purchase order, PO, procurement, buy order, requisition]
+
+  - entity_type: inventory_item
+    description: Item in inventory or stock
+    aliases: [SKU, stock item, product, material]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [SKU, inventory item, stock, part number, material, component]
+
+  - entity_type: warehouse
+    description: Warehouse or storage facility
+    aliases: [distribution center, DC, storage facility, fulfillment center]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [warehouse, distribution center, DC, storage facility, fulfillment center]
+
+  - entity_type: shipment
+    description: Shipment or delivery
+    aliases: [delivery, transportation, freight]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [shipment, delivery, freight, transportation, cargo]
+
+  - entity_type: carrier
+    description: Transportation carrier or logistics provider
+    aliases: [shipper, logistics provider, freight forwarder]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [carrier, shipper, logistics provider, freight forwarder, courier]
+
+  - entity_type: demand_forecast
+    description: Demand forecast or planning projection
+    aliases: [demand plan, forecast, demand projection]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [demand forecast, demand plan, planning, projection, expected demand]
+
+relationship_types:
+  - relationship_type: supplied_by
+    description: Item supplied by supplier
+    source_entity: inventory_item
+    target_entity: supplier
+    sample_rules:
+      - type: keyword_match
+        keywords: [supplied by, from, vendor, sourced from]
+
+  - relationship_type: ordered_from
+    description: Purchase order placed with supplier
+    source_entity: purchase_order
+    target_entity: supplier
+    sample_rules:
+      - type: keyword_match
+        keywords: [ordered from, placed with, vendor]
+
+  - relationship_type: contains_item
+    description: Purchase order contains inventory item
+    source_entity: purchase_order
+    target_entity: inventory_item
+    sample_rules:
+      - type: keyword_match
+        keywords: [includes, contains, for, item]
+
+  - relationship_type: stored_in
+    description: Item stored in warehouse
+    source_entity: inventory_item
+    target_entity: warehouse
+    sample_rules:
+      - type: keyword_match
+        keywords: [stored in, located at, warehouse, facility]
+
+  - relationship_type: shipped_via
+    description: Shipment transported by carrier
+    source_entity: shipment
+    target_entity: carrier
+    sample_rules:
+      - type: keyword_match
+        keywords: [shipped via, carrier, transported by, using]
+
+  - relationship_type: fulfills_order
+    description: Shipment fulfills purchase order
+    source_entity: shipment
+    target_entity: purchase_order
+    sample_rules:
+      - type: keyword_match
+        keywords: [fulfills, delivers, for order, PO]
+
+  - relationship_type: based_on_forecast
+    description: Order based on demand forecast
+    source_entity: purchase_order
+    target_entity: demand_forecast
+    sample_rules:
+      - type: keyword_match
+        keywords: [based on, forecast, projected demand, planning]

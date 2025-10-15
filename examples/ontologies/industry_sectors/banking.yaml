@@ -1,0 +1,107 @@
+domain: banking
+description: Banking operations including investment banking, retail banking, commercial banking, wealth management, and brokerage services
+subdomains:
+  - investment_banking
+  - retail_banking
+  - commercial_banking
+  - wealth_management
+  - brokerage
+  - treasury
+
+entity_types:
+  - entity_type: account
+    description: Banking account
+    aliases: [bank account, customer account, deposit account]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [account, checking, savings, deposit, account number]
+
+  - entity_type: transaction
+    description: Financial transaction
+    aliases: [payment, transfer, withdrawal, deposit]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [transaction, payment, transfer, withdrawal, deposit, debit, credit]
+
+  - entity_type: loan
+    description: Loan or credit facility
+    aliases: [credit, lending, financing, mortgage]
+    element_types: [paragraph, heading, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [loan, credit, mortgage, financing, lending, line of credit]
+
+  - entity_type: investment_product
+    description: Investment or brokerage product
+    aliases: [security, investment, financial product]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [stock, bond, mutual fund, ETF, security, investment, portfolio]
+
+  - entity_type: branch
+    description: Bank branch or location
+    aliases: [location, office, branch office]
+    element_types: [paragraph, list_item]
+    sample_rules:
+      - type: keyword_match
+        keywords: [branch, location, office, ATM, banking center]
+
+  - entity_type: interest_rate
+    description: Interest rate or APR
+    aliases: [APR, rate, yield]
+    element_types: [paragraph, list_item, table_row]
+    sample_rules:
+      - type: keyword_match
+        keywords: [interest rate, APR, rate, yield, basis points, percentage]
+
+relationship_types:
+  - relationship_type: holds_account
+    description: Customer holds account
+    source_entity: customer
+    target_entity: account
+    sample_rules:
+      - type: keyword_match
+        keywords: [holds, owns, account holder, customer]
+
+  - relationship_type: made_transaction
+    description: Account made transaction
+    source_entity: account
+    target_entity: transaction
+    sample_rules:
+      - type: keyword_match
+        keywords: [transaction, payment, transfer, from account]
+
+  - relationship_type: has_loan
+    description: Customer has loan
+    source_entity: customer
+    target_entity: loan
+    sample_rules:
+      - type: keyword_match
+        keywords: [loan, borrower, credit, financing]
+
+  - relationship_type: invests_in
+    description: Customer invests in product
+    source_entity: customer
+    target_entity: investment_product
+    sample_rules:
+      - type: keyword_match
+        keywords: [invests, holds, owns, portfolio]
+
+  - relationship_type: located_at_branch
+    description: Account serviced at branch
+    source_entity: account
+    target_entity: branch
+    sample_rules:
+      - type: keyword_match
+        keywords: [branch, location, serviced at, opened at]
+
+  - relationship_type: earns_rate
+    description: Account earns interest rate
+    source_entity: account
+    target_entity: interest_rate
+    sample_rules:
+      - type: keyword_match
+        keywords: [earns, interest rate, APR, yield]

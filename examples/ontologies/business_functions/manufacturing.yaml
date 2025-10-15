@@ -1,0 +1,414 @@
+domain: manufacturing
+description: Manufacturing specifications, production reports, quality control documents, supply chain documentation, and industrial processes
+subdomains:
+    - production
+    - quality_control
+    - supply_chain
+    - inventory_management
+    - maintenance
+terms:
+    - name: production
+      synonyms:
+        - manufacturing
+        - fabrication
+        - assembly
+        - output
+      description: Process of manufacturing goods
+    - name: quality control
+      synonyms:
+        - QC
+        - quality assurance
+        - QA
+        - inspection
+      description: Process ensuring product quality standards
+    - name: yield
+      synonyms:
+        - output
+        - production rate
+        - throughput
+      description: Amount of product produced
+    - name: defect
+      synonyms:
+        - flaw
+        - nonconformance
+        - rejection
+        - fault
+      description: Product quality issue or flaw
+    - name: tolerance
+      synonyms:
+        - specification limit
+        - acceptable range
+        - variance
+      description: Acceptable variation from specification
+    - name: batch
+      synonyms:
+        - lot
+        - run
+        - production run
+      description: Group of products manufactured together
+    - name: lead time
+      synonyms:
+        - production time
+        - cycle time
+        - turnaround time
+      description: Time from order to delivery
+    - name: SKU
+      synonyms:
+        - stock keeping unit
+        - product code
+        - item number
+      description: Stock keeping unit identifier
+    - name: BOM
+      synonyms:
+        - bill of materials
+        - parts list
+        - component list
+      description: List of materials required for production
+    - name: capacity
+      synonyms:
+        - production capacity
+        - throughput
+        - output capacity
+      description: Maximum production capability
+entity_types:
+    - entity_type: product
+      description: Manufactured product or item
+      aliases:
+        - item
+        - good
+        - finished goods
+        - SKU
+      element_types:
+        - paragraph
+        - heading
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - product
+            - item
+            - SKU
+            - part number
+        - type: regex_pattern
+          pattern: \b(?:SKU|Part|Item)\s*#?\s*[A-Z0-9\-]+
+    - entity_type: component
+      description: Component or part used in manufacturing
+      aliases:
+        - part
+        - material
+        - raw material
+        - subassembly
+      element_types:
+        - paragraph
+        - table_cell
+        - list_item
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - component
+            - part
+            - material
+            - subassembly
+    - entity_type: batch
+      description: Production batch or lot
+      aliases:
+        - lot
+        - production run
+        - batch number
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - batch
+            - lot
+            - lot number
+            - batch number
+        - type: regex_pattern
+          pattern: \b(?:Batch|Lot)\s*#?\s*[A-Z0-9\-]+
+    - entity_type: specification
+      description: Product specification or requirement
+      aliases:
+        - spec
+        - requirement
+        - standard
+        - tolerance
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - specification
+            - spec
+            - requirement
+            - tolerance
+    - entity_type: measurement
+      description: Quality measurement or metric
+      aliases:
+        - metric
+        - reading
+        - value
+        - parameter
+      element_types:
+        - table_cell
+        - paragraph
+      sample_rules:
+        - type: regex_pattern
+          pattern: \b\d+(?:\.\d+)?\s*(?:mm|cm|m|kg|g|lbs|inches|°C|°F)
+    - entity_type: defect_type
+      description: Type of defect or quality issue
+      aliases:
+        - nonconformance
+        - fault
+        - flaw
+        - rejection reason
+      element_types:
+        - paragraph
+        - list_item
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - defect
+            - scratch
+            - crack
+            - dent
+            - misalignment
+            - dimensional error
+            - surface defect
+    - entity_type: production_line
+      description: Manufacturing production line or facility
+      aliases:
+        - line
+        - facility
+        - plant
+        - assembly line
+      element_types:
+        - paragraph
+        - heading
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - production line
+            - assembly line
+            - line
+            - facility
+    - entity_type: machine
+      description: Manufacturing machine or equipment
+      aliases:
+        - equipment
+        - machinery
+        - tool
+        - apparatus
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - machine
+            - equipment
+            - CNC
+            - press
+            - lathe
+            - mill
+            - robot
+            - conveyor
+    - entity_type: process
+      description: Manufacturing process or operation
+      aliases:
+        - operation
+        - procedure
+        - step
+        - stage
+      element_types:
+        - paragraph
+        - heading
+        - list_item
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - process
+            - operation
+            - welding
+            - machining
+            - assembly
+            - coating
+            - inspection
+            - testing
+    - entity_type: supplier
+      description: Supplier or vendor
+      aliases:
+        - vendor
+        - provider
+        - manufacturer
+      element_types:
+        - paragraph
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - supplier
+            - vendor
+            - manufacturer
+            - provider
+    - entity_type: inventory_item
+      description: Inventory item or stock
+      aliases:
+        - stock
+        - inventory
+        - warehouse item
+      element_types:
+        - table_cell
+        - paragraph
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - inventory
+            - stock
+            - on hand
+            - warehouse
+    - entity_type: quality_standard
+      description: Quality standard or certification
+      aliases:
+        - standard
+        - certification
+        - ISO
+        - compliance
+      element_types:
+        - paragraph
+        - heading
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - ISO
+            - ANSI
+            - ASTM
+            - standard
+            - certification
+            - quality standard
+        - type: regex_pattern
+          pattern: \bISO\s+\d+
+    - entity_type: work_order
+      description: Work order or production order
+      aliases:
+        - production order
+        - job order
+        - order
+      element_types:
+        - paragraph
+        - heading
+        - table_cell
+      sample_rules:
+        - type: keyword_match
+          keywords:
+            - work order
+            - production order
+            - job order
+            - WO
+        - type: regex_pattern
+          pattern: \bWO\s*#?\s*[A-Z0-9\-]+
+common_entity_refs:
+    - person
+    - employee
+    - role
+    - date
+    - time
+    - duration
+    - address
+    - city
+    - region
+    - country
+    - email
+    - phone
+    - url
+    - percentage
+    - number
+    - dimension
+    - weight
+    - material
+    - color
+    - code
+relationships:
+    - name: product_made_from_component
+      source_type: product
+      target_type: component
+      relationship_type: part_of
+      description: Product made from component
+      sample_patterns:
+        - '{product} contains {component}'
+        - '{component} used in {product}'
+    - name: batch_produces_product
+      source_type: batch
+      target_type: product
+      relationship_type: related_to
+      description: Batch produces product
+      sample_patterns:
+        - '{batch} produced {product}'
+        - '{product} from {batch}'
+    - name: product_meets_specification
+      source_type: product
+      target_type: specification
+      relationship_type: related_to
+      description: Product meets specification
+      sample_patterns:
+        - '{product} meets {specification}'
+        - '{specification} for {product}'
+    - name: measurement_of_product
+      source_type: measurement
+      target_type: product
+      relationship_type: related_to
+      description: Measurement taken of product
+      sample_patterns:
+        - '{measurement} of {product}'
+        - '{product} measured at {measurement}'
+    - name: product_has_defect
+      source_type: product
+      target_type: defect_type
+      relationship_type: related_to
+      description: Product has defect
+      sample_patterns:
+        - '{product} has {defect}'
+        - '{defect} found in {product}'
+    - name: product_made_on_line
+      source_type: product
+      target_type: production_line
+      relationship_type: related_to
+      description: Product manufactured on production line
+      sample_patterns:
+        - '{product} manufactured on {line}'
+        - '{line} produces {product}'
+    - name: machine_performs_process
+      source_type: machine
+      target_type: process
+      relationship_type: related_to
+      description: Machine performs manufacturing process
+      sample_patterns:
+        - '{machine} performs {process}'
+        - '{process} using {machine}'
+    - name: supplier_provides_component
+      source_type: supplier
+      target_type: component
+      relationship_type: related_to
+      description: Supplier provides component
+      sample_patterns:
+        - '{supplier} supplies {component}'
+        - '{component} from {supplier}'
+    - name: product_conforms_to_standard
+      source_type: product
+      target_type: quality_standard
+      relationship_type: related_to
+      description: Product conforms to quality standard
+      sample_patterns:
+        - '{product} meets {standard}'
+        - '{standard} compliance for {product}'
+    - name: work_order_for_product
+      source_type: work_order
+      target_type: product
+      relationship_type: related_to
+      description: Work order for product
+      sample_patterns:
+        - '{work_order} for {product}'
+        - '{product} production order: {work_order}'
