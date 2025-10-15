@@ -1,15 +1,18 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
@@ -56,10 +59,11 @@ type Config struct {
 		} `toml:"cross_document_semantic"`
 	} `toml:"relationship_detection"`
 	Ontology struct {
-		Enabled                 bool   `toml:"enabled"`
-		SchemaPath              string `toml:"schema_path"`
-		QueueIdleTriggerMinutes int    `toml:"queue_idle_trigger_minutes"`
-		MinIntervalMinutes      int    `toml:"min_interval_minutes"`
+		Enabled                 bool    `toml:"enabled"`
+		SchemaPath              string  `toml:"schema_path"`
+		DiversityThreshold      float64 `toml:"diversity_threshold"`       // Cosine similarity threshold for diversity filtering (0.0-1.0)
+		QueueIdleTriggerMinutes int     `toml:"queue_idle_trigger_minutes"`
+		MinIntervalMinutes      int     `toml:"min_interval_minutes"`
 	} `toml:"ontology"`
 	Analytics struct {
 		Enabled bool                     `toml:"enabled"`
@@ -71,11 +75,14 @@ type Config struct {
 func main() {
 	// Command line flags
 	var (
-		configFile   = flag.String("config", "", "Path to configuration file")
-		workerID     = flag.String("worker-id", "", "Custom worker ID (auto-generated if not provided)")
-		maxDocuments = flag.Int("max-documents", 0, "Maximum number of documents to process (0 = unlimited)")
-		numWorkers   = flag.Int("workers", 0, "Number of concurrent goroutine workers (0 = use NUM_WORKERS env var, default: 1)")
-		numInstances = flag.Int("instances", 1, "Number of separate worker processes to spawn (default: 1, Python multiprocessing style)")
+		configFile        = flag.String("config", "", "Path to configuration file")
+		workerID          = flag.String("worker-id", "", "Custom worker ID (auto-generated if not provided)")
+		maxDocuments      = flag.Int("max-documents", 0, "Maximum number of documents to process (0 = unlimited)")
+		numWorkers        = flag.Int("workers", 0, "Number of concurrent goroutine workers (0 = use NUM_WORKERS env var, default: 1)")
+		numInstances      = flag.Int("instances", 1, "Number of separate worker processes to spawn (default: 1, Python multiprocessing style)")
+		shutdownWhenIdle  = flag.Bool("shutdown-when-idle", false, "Shutdown worker when idle (no work available)")
+		shutdownFile      = flag.String("shutdown-file", "", "Path to shutdown control file (worker exits when file exists)")
+		idleTimeout       = flag.Duration("idle-timeout", 0, "Shutdown after being idle for this duration (0 = disabled, e.g. 5m, 1h)")
 	)
 
 	flag.Parse()
@@ -203,6 +210,7 @@ func main() {
 		ontologyConfig = &worker.OntologyConfig{
 			Enabled:                 config.Ontology.Enabled,
 			SchemaPath:              config.Ontology.SchemaPath,
+			DiversityThreshold:      config.Ontology.DiversityThreshold,
 			QueueIdleTriggerMinutes: config.Ontology.QueueIdleTriggerMinutes,
 			MinIntervalMinutes:      config.Ontology.MinIntervalMinutes,
 		}
@@ -236,20 +244,106 @@ func main() {
 	}
 	defer w.Close()
 
+	// Setup shutdown mechanisms
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 1. Signal handling (SIGINT, SIGTERM)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		log.Printf("Received signal %v, initiating graceful shutdown...", sig)
+		cancel()
+	}()
+
+	// 2. Shutdown file monitoring
+	if *shutdownFile != "" {
+		log.Printf("Shutdown file monitoring enabled: %s", *shutdownFile)
+		go func() {
+			ticker := time.NewTicker(5 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if _, err := os.Stat(*shutdownFile); err == nil {
+						log.Printf("Shutdown file detected: %s - initiating shutdown...", *shutdownFile)
+						cancel()
+						return
+					}
+				}
+			}
+		}()
+	}
+
+	// 3. Idle timeout monitoring
+	if *idleTimeout > 0 {
+		log.Printf("Idle timeout enabled: %v", *idleTimeout)
+		go func() {
+			timer := time.NewTimer(*idleTimeout)
+			defer timer.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-timer.C:
+					log.Printf("Idle timeout reached (%v) - initiating shutdown...", *idleTimeout)
+					cancel()
+					return
+				}
+			}
+		}()
+	}
+
 	// Run worker
 	log.Printf("========================================")
 	log.Printf("STARTING WORKER: %s", *workerID)
 	log.Printf("  Max documents: %d", *maxDocuments)
 	log.Printf("  Goroutine workers: %d", *numWorkers)
+	if *shutdownWhenIdle {
+		log.Printf("  Shutdown when idle: enabled")
+	}
+	if *shutdownFile != "" {
+		log.Printf("  Shutdown file: %s", *shutdownFile)
+	}
+	if *idleTimeout > 0 {
+		log.Printf("  Idle timeout: %v", *idleTimeout)
+	}
 	log.Printf("========================================")
 
-	if err := w.Run(); err != nil {
-		log.Fatalf("Worker failed: %v", err)
-	}
+	// Run worker with context (worker will need to be updated to accept context)
+	// For now, we'll run it in a goroutine and wait for completion or cancellation
+	done := make(chan error, 1)
+	go func() {
+		done <- w.Run()
+	}()
 
-	log.Println("========================================")
-	log.Println("WORKER COMPLETED SUCCESSFULLY")
-	log.Println("========================================")
+	select {
+	case err := <-done:
+		if err != nil {
+			log.Fatalf("Worker failed: %v", err)
+		}
+		log.Println("========================================")
+		log.Println("WORKER COMPLETED SUCCESSFULLY")
+		log.Println("========================================")
+	case <-ctx.Done():
+		log.Println("========================================")
+		log.Println("SHUTDOWN INITIATED - Waiting for graceful cleanup...")
+		log.Println("========================================")
+		// Give worker time to finish current task
+		select {
+		case err := <-done:
+			if err != nil {
+				log.Printf("Worker exited with error: %v", err)
+			} else {
+				log.Println("Worker stopped gracefully")
+			}
+		case <-time.After(30 * time.Second):
+			log.Println("Timeout waiting for worker shutdown - forcing exit")
+		}
+	}
 }
 
 // spawnInstances spawns multiple child worker processes (Python multiprocessing style)
