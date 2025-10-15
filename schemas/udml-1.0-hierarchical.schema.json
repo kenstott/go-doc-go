@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/udml-1.0-hierarchical.schema.json",
-  "title": "UDML Hierarchical Document Schema",
-  "description": "Universal Document Model Language (UDML) v1.0 JSON Schema for hierarchical/nested document format",
+  "title": "UDML Hierarchical Format Schema (UDML-H)",
+  "description": "Universal Document Model Language (UDML) v1.0 - Hierarchical/Nested Format. Nested structure with children arrays optimized for JSONPath queries, ontology extraction, and tree visualization. Also known as UDML-H (Hierarchical).",
   "type": "object",
   "required": ["doc_id", "elements"],
   "properties": {
@@ -65,7 +65,7 @@
             "table_header",
             "table_header_row",
             "table_header_cell",
-            "table_row",
+            "table_row",curious
             "table_cell",
             "code_block",
             "image",

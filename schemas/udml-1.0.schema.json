@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/udml-1.0.schema.json",
-  "title": "UDML Document Schema",
-  "description": "Universal Document Model Language (UDML) v1.0 JSON Schema for document validation",
+  "title": "UDML Persistence Format Schema (UDML-S)",
+  "description": "Universal Document Model Language (UDML) v1.0 - Persistence/Storage Format. Flat array structure optimized for databases, Parquet files, and SQL queries. Also known as UDML-S (Storage).",
   "type": "object",
   "required": ["document_id", "metadata", "elements"],
   "properties": {

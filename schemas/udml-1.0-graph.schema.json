@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/udml-1.0-graph.schema.json",
-  "title": "UDML Graph Document Schema (UDML-G)",
-  "description": "Universal Document Model Language (UDML) v1.0 JSON Schema for graph/RDF export format",
+  "title": "UDML Graph Format Schema (UDML-G)",
+  "description": "Universal Document Model Language (UDML) v1.0 - Graph/Property Graph Format. Nodes and edges structure optimized for graph databases (Neo4j, ArangoDB), RDF/OWL exports, and network analysis. Also known as UDML-G (Graph).",
   "type": "object",
   "required": ["document_id", "metadata", "nodes", "edges"],
   "properties": {
