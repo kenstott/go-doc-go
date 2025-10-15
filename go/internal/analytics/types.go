@@ -144,5 +144,8 @@ type Storage interface {
 	AppendOntologyMentions(mentions []OntologyMention) error
 	QueryOntologyEntities(filters map[string]interface{}) ([]OntologyEntity, error)
 
+	// Content resolution for samplers/query engines
+	GetContentResolver() interface{}
+
 	Close() error
 }

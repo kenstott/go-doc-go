@@ -20,6 +20,8 @@ import (
 	"github.com/apache/arrow/go/v18/parquet"
 	"github.com/apache/arrow/go/v18/parquet/compress"
 	"github.com/apache/arrow/go/v18/parquet/pqarrow"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml"
 	_ "github.com/marcboeker/go-duckdb"
 )
@@ -28,11 +30,12 @@ import (
 // Partition scheme: element_type=X/version=Y/date=Z/source=W/
 // This enables query engines to skip irrelevant partitions for 60-1000x faster queries
 type HiveParquetStorage struct {
-	basePath       string
-	version        string // UDML schema version (e.g., "v2.0.0")
-	schemaRegistry *udml.SchemaRegistry
-	mu             sync.Mutex
-	allocator      memory.Allocator
+	basePath        string
+	version         string // UDML schema version (e.g., "v2.0.0")
+	schemaRegistry  *udml.SchemaRegistry
+	contentResolver resolver.ContentResolver
+	mu              sync.Mutex
+	allocator       memory.Allocator
 }
 
 // NewHiveParquetStorage creates a new Hive-partitioned Parquet storage backend
@@ -54,19 +57,34 @@ func NewHiveParquetStorage(config map[string]interface{}) (*HiveParquetStorage, 
 		return nil, fmt.Errorf("failed to create base path: %w", err)
 	}
 
+	// Create parsers for content resolution
+	htmlParser := parser.NewHTMLParser()
+	xmlParser := parser.NewXMLParser()
+	jsonParser := parser.NewJSONParser()
+
+	// Create ContentResolver with HTML/XML/JSON parsers
+	parserResolvers := map[string]resolver.ParserResolver{
+		"html": htmlParser,
+		"xml":  xmlParser,
+		"json": jsonParser,
+	}
+	contentResolver := resolver.NewContentResolver(parserResolvers)
+
 	log.Printf("========================================")
 	log.Printf("ANALYTICS: Initialized Hive-partitioned Parquet storage")
 	log.Printf("  Path: %s", basePath)
 	log.Printf("  Version: %s", version)
 	log.Printf("  Partitioning: element_type -> version -> date -> source")
 	log.Printf("  Schema: UDML Phase 1 (20 fields with 6 promoted query-optimized fields)")
+	log.Printf("  Content Resolver: HTML/XML/JSON parsers configured")
 	log.Printf("========================================")
 
 	return &HiveParquetStorage{
-		basePath:       basePath,
-		version:        version,
-		schemaRegistry: udml.NewSchemaRegistry(),
-		allocator:      memory.NewGoAllocator(),
+		basePath:        basePath,
+		version:         version,
+		schemaRegistry:  udml.NewSchemaRegistry(),
+		contentResolver: contentResolver,
+		allocator:       memory.NewGoAllocator(),
 	}, nil
 }
 
@@ -508,6 +526,12 @@ func (s *HiveParquetStorage) QueryOntologyEntities(filters map[string]interface{
 
 	log.Printf("ANALYTICS: Queried %d ontology entities from Hive-partitioned Parquet", len(entities))
 	return entities, nil
+}
+
+// GetContentResolver returns the content resolver for this storage backend
+// This allows samplers and query engines to resolve element content from content_location pointers
+func (s *HiveParquetStorage) GetContentResolver() interface{} {
+	return s.contentResolver
 }
 
 // Close closes the storage (no-op for Parquet)

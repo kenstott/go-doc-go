@@ -584,6 +584,11 @@ func (s *Neo4jStorage) Close() error {
 	return s.driver.Close(s.ctx)
 }
 
+// GetContentResolver returns nil for Neo4jStorage (content resolution not supported)
+func (s *Neo4jStorage) GetContentResolver() interface{} {
+	return nil // Neo4jStorage does not support content resolution
+}
+
 // GetRunStats returns statistics for the export run
 func (s *Neo4jStorage) GetRunStats() (map[string]interface{}, error) {
 	session := s.driver.NewSession(s.ctx, neo4j.SessionConfig{DatabaseName: s.database})
