@@ -438,6 +438,8 @@ for _, element := range hierarchicalDoc.Elements {
 
 All three formats represent the same logical document structure but optimize for different access patterns and use cases.
 
+**📖 See [JSON Schema Validation Guide](UDML_SCHEMAS.md)** for complete validation documentation, usage examples in Python/Node.js/Go, IDE integration, and CI/CD setup.
+
 ---
 
 ## Document Structure

@@ -15,7 +15,89 @@ This walkthrough demonstrates:
 
 **Time Required**: 15-20 minutes
 **Difficulty**: Beginner
-**Prerequisites**: Go 1.24+, DuckDB (optional), Neo4j (optional for graph visualization)
+
+---
+
+## Prerequisites
+
+Before starting this demo, ensure you have the following installed:
+
+### Required
+- **Go 1.24+** - [Download from golang.org](https://golang.org/dl/)
+- **Python 3.8+** - [Download from python.org](https://www.python.org/downloads/)
+
+### Optional (for querying and visualization)
+- **DuckDB** - For querying Parquet output: [Install DuckDB](https://duckdb.org/docs/installation/)
+- **Neo4j** - For graph visualization: [Neo4j Desktop](https://neo4j.com/download/) or Docker
+- **Docker** - If using Neo4j via Docker: [Install Docker](https://docs.docker.com/get-docker/)
+
+### Setup Steps
+
+#### 1. Verify Go Installation
+
+```bash
+go version
+# Should output: go version go1.24.x ...
+```
+
+If not installed, download and install Go 1.24+ from [golang.org](https://golang.org/dl/).
+
+#### 2. Setup Python Virtual Environment
+
+```bash
+# Navigate to project root
+cd /Users/kennethstott/PycharmProjects/doculyzer-go-conversion
+
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+# On macOS/Linux:
+source venv/bin/activate
+
+# On Windows:
+# venv\Scripts\activate
+```
+
+#### 3. Install Python Dependencies
+
+```bash
+# With virtual environment activated
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+This installs the required packages for ONNX model downloading and processing:
+- `optimum[onnxruntime]` - For ONNX model export
+- `transformers` - For sentence transformer models
+- `torch` - PyTorch backend
+- Other dependencies as specified in requirements.txt
+
+#### 4. Verify Installation
+
+```bash
+# Check Python packages
+pip list | grep -E "optimum|transformers|onnx"
+
+# Should show:
+# optimum              x.x.x
+# transformers         x.x.x
+# onnxruntime          x.x.x
+```
+
+#### 5. Install DuckDB (Optional)
+
+If you want to query Parquet files:
+
+```bash
+# macOS
+brew install duckdb
+
+# Or download from: https://duckdb.org/docs/installation/
+
+# Verify
+duckdb --version
+```
 
 ---
 
@@ -58,10 +140,9 @@ cd ..
 
 This step downloads the ONNX model required for semantic relationship detection and contextual embeddings.
 
-```bash
-# Install Python dependencies (if not already installed)
-pip install -r requirements.txt
+**Note**: Ensure your Python virtual environment is activated and dependencies are installed (see Prerequisites section above).
 
+```bash
 # Export model to ONNX format
 python3 << 'EOF'
 from optimum.onnxruntime import ORTModelForFeatureExtraction

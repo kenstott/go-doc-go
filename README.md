@@ -208,6 +208,7 @@ Go-Doc-Go is built on three core pillars:
 
 - **[Quick Start Guide](docs/QUICK_START.md)** - Get started in 5 minutes
 - **[UDML Specification](docs/UDML_SPECIFICATION.md)** - Complete UDML spec
+- **[JSON Schema Validation](docs/UDML_SCHEMAS.md)** - Validate UDML documents with JSON Schema
 - **[Configuration Reference](go/README.md)** - All configuration options
 - **[Installation Guide](docs/installation.md)** - Detailed installation
 - **[Ontology System](docs/ontology.md)** - Knowledge graph extraction
