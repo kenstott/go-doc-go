@@ -213,13 +213,14 @@ func (jc *SQLiteJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, e
 	}
 
 	// Find and claim next document
-	// Use RANDOM() to reduce contention between concurrent workers
-	// Each worker gets a different random document, preventing thundering herd
+	// Use hash-based pseudo-random ordering for diversity
+	// Much faster than RANDOM() and gives representative corpus sampling
+	// Hash of doc_id provides consistent pseudo-randomness across all workers
 	query := `
 		SELECT doc_id, source, metadata, retry_count, created_at
 		FROM document_queue
 		WHERE status = 'pending' AND retry_count < ?
-		ORDER BY RANDOM()
+		ORDER BY (substr(doc_id, 1, 16) % 10000)
 		LIMIT 1
 	`
 
@@ -327,6 +328,17 @@ func (jc *SQLiteJobControl) UpdateWorkerHeartbeat(workerID string) error {
 		UPDATE workers SET last_heartbeat = CURRENT_TIMESTAMP
 		WHERE worker_id = ?
 	`, workerID)
+	return err
+}
+
+// UpdateDocumentClaimHeartbeat updates the document's claimed_at timestamp to prevent claim timeout
+// This is called periodically during document processing to keep the claim alive
+func (jc *SQLiteJobControl) UpdateDocumentClaimHeartbeat(docID, workerID string) error {
+	_, err := jc.db.Exec(`
+		UPDATE document_queue
+		SET claimed_at = CURRENT_TIMESTAMP
+		WHERE doc_id = ? AND claimed_by = ? AND status = 'processing'
+	`, docID, workerID)
 	return err
 }
 
