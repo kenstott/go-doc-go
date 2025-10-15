@@ -301,6 +301,16 @@ func (jc *PostgreSQLJobControl) UpdateWorkerHeartbeat(workerID string) error {
 	return err
 }
 
+// UpdateDocumentClaimHeartbeat updates the claimed_at timestamp for a document
+func (jc *PostgreSQLJobControl) UpdateDocumentClaimHeartbeat(docID, workerID string) error {
+	_, err := jc.db.Exec(`
+		UPDATE document_queue
+		SET claimed_at = CURRENT_TIMESTAMP
+		WHERE doc_id = $1 AND claimed_by = $2 AND status = 'processing'
+	`, docID, workerID)
+	return err
+}
+
 // GetActiveWorkers returns list of active workers
 func (jc *PostgreSQLJobControl) GetActiveWorkers() ([]*WorkerInfo, error) {
 	timeout := time.Now().Add(-time.Duration(jc.heartbeatInterval*3) * time.Second)

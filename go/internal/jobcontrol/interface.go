@@ -9,6 +9,7 @@ type JobControl interface {
 	ClaimNextDocument(workerID string) (*DocumentInfo, error)
 	CompleteDocument(docID, workerID string, success bool, errorMsg string) error
 	IsDocumentQueued(docID string) (bool, error)
+	UpdateDocumentClaimHeartbeat(docID, workerID string) error
 
 	// Worker Management
 	RegisterWorker(workerID string, info map[string]interface{}) error
