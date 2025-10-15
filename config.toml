@@ -17,7 +17,12 @@ name = "wikipedia"
 type = "web"
 base_url = "https://en.wikipedia.org"
 url_list = [
-    "https://en.wikipedia.org/wiki/Document_management_system"
+    "https://en.wikipedia.org/wiki/Banking",
+    "https://en.wikipedia.org/wiki/Insurance",
+    "https://en.wikipedia.org/wiki/Medicine",
+    "https://en.wikipedia.org/wiki/Cardiology",
+    "https://en.wikipedia.org/wiki/Surgery",
+    "https://en.wikipedia.org/wiki/Neurology"
 ]
 include_patterns = [
     "^https://en.wikipedia.org/wiki/"
@@ -35,7 +40,7 @@ refresh_interval = 604800  # 7 days in seconds
 User-Agent = "Go-Doc-Go/1.0 (educational project; ken@kenstott.com)"
 
 # Example Confluence source (commented out)
-# [[content_sources]]
+# [[content_sources]]run againain
 # name = "Company Confluence"
 # type = "confluence"
 # base_url = "https://your-instance.atlassian.net"
@@ -91,6 +96,7 @@ min_interval_minutes = 1  # 1 minute minimum interval for testing
 [ontology]
 enabled = true
 schema_path = "./schemas"  # Directory containing ontology schema YAML/JSON files
+diversity_threshold = 0.0001  # Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse). Default: 0.0001
 queue_idle_trigger_minutes = 0  # Run after queue idle (0 = 30 seconds via code)
 
 # Processing configuration
@@ -113,7 +119,6 @@ enabled = true
 [[analytics.outputs]]
 type = "parquet"
 path = "./analytics-output"
-partitioning = ["date", "source"]
 
 [logging]
 level = "INFO"
