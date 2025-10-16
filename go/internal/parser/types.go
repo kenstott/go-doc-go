@@ -42,6 +42,13 @@ type Element struct {
 	TemporalType  *string `json:"temporal_type,omitempty" parquet:"temporal_type"`   // date/datetime/year/etc (~5-10% populated)
 	TagName       *string `json:"tag_name,omitempty" parquet:"tag_name"`             // HTML/XML tag identifier (~25% populated)
 
+	// UDML Phase 2: Code-Specific Promoted Fields (for source code parsing)
+	FunctionName  *string `json:"function_name,omitempty" parquet:"function_name"`   // Function/method name (~10% populated in code files)
+	ClassName     *string `json:"class_name,omitempty" parquet:"class_name"`         // Class/struct/interface name (~5% populated)
+	Namespace     *string `json:"namespace,omitempty" parquet:"namespace"`           // Package/module path (~15% populated)
+	LineNumber    *int    `json:"line_number,omitempty" parquet:"line_number"`       // Source line number (~40% populated in code)
+	Signature     *string `json:"signature,omitempty" parquet:"signature"`           // Function signature or type definition (~10% populated)
+
 	// JSON overflow (format-specific, rarely queried attributes)
 	ContentLocation map[string]interface{} `json:"content_location,omitempty" parquet:"content_location"`
 	Metadata        map[string]interface{} `json:"metadata,omitempty" parquet:"metadata"`
