@@ -14,8 +14,16 @@ Go-Doc-Go now supports parsing source code files with the **Universal Code Model
 - Integration tests passing
 - Ready for use
 
+✅ **Phase 2 Complete**: Python Parser
+- Python language parser implemented using `tree-sitter`
+- Full support for classes, methods, functions, decorators
+- Entity reference extraction (imports, function calls, type usage)
+- Decorator support (@property, @staticmethod, @classmethod)
+- Integration tests passing
+- Ready for use
+
 ✅ **Entity References Supported**:
-- Package imports (`dependency_kind: "import"`)
+- Package imports (`dependency_kind: "import"` or `"from_import"`)
 - Function/method calls (`dependency_kind: "function_call"`)
 - Type usage in parameters, returns, and fields (`dependency_kind: "type_usage"`)
 
@@ -264,8 +272,8 @@ Metadata: map[string]interface{}{
 | Language | Status | Parser | Element Types |
 |----------|--------|--------|---------------|
 | **Go** | ✅ Complete | `go/ast` | functions, methods, structs, interfaces, imports, fields, constants, vars, doc comments |
-| **Python** | 🔄 Planned | Tree-sitter | functions, classes, decorators, docstrings, imports |
-| **Java** | 🔄 Planned | JavaParser | classes, methods, annotations, Javadoc |
+| **Python** | ✅ Complete | `tree-sitter` | functions, methods, classes, decorators, docstrings, imports, type hints, properties |
+| **Java** | 🔄 Planned | Tree-sitter | classes, methods, annotations, Javadoc |
 | **JavaScript/TypeScript** | 🔄 Planned | Tree-sitter | functions, classes, JSDoc, imports |
 | **C/C++** | 🔄 Planned | Tree-sitter | functions, classes, structs, macros |
 
@@ -295,17 +303,48 @@ for _, elem := range result.Elements {
 }
 ```
 
-### 2. Register with Parser Registry
+### 2. Parse Python Code
+
+```go
+import "github.com/kennethstott/doculyzer-go-conversion/internal/parser"
+
+// Create parser
+pyParser := parser.NewPythonCodeParser()
+
+// Parse file
+result, err := pyParser.Parse(context.Background(), parser.ParseRequest{
+    ID:      "my-python-file",
+    Content: "/path/to/file.py",
+    Config:  parser.DefaultParserConfig(),
+})
+
+// Access elements
+for _, elem := range result.Elements {
+    if elem.ElementType == "code_function" {
+        fmt.Printf("Found function: %s at line %d\n",
+            *elem.FunctionName, *elem.LineNumber)
+
+        // Check for decorators
+        if decorators, ok := elem.Metadata["decorators"].([]string); ok {
+            fmt.Printf("  Decorators: %v\n", decorators)
+        }
+    }
+}
+```
+
+### 3. Register with Parser Registry
 
 ```go
 registry := parser.NewParserRegistry()
 registry.Register(parser.NewGoCodeParser())
+registry.Register(parser.NewPythonCodeParser())
 
 // Auto-detect parser by file extension
-parser, _ := registry.GetParserForFile("main.go")
+goParser, _ := registry.GetParserForFile("main.go")
+pyParser, _ := registry.GetParserForFile("app.py")
 ```
 
-### 3. Query with SQL
+### 4. Query with SQL
 
 ```sql
 -- Find all exported functions
@@ -320,7 +359,7 @@ WHERE element_type = 'code_function'
 ORDER BY namespace, function_name;
 ```
 
-### 4. Build Knowledge Graphs
+### 5. Build Knowledge Graphs
 
 ```cypher
 // Create relationships between code and docs
@@ -400,23 +439,31 @@ The universal code elements are integrated into the existing taxonomy:
 
 ## Testing
 
-Run the Go parser tests:
+Run the code parser tests:
 
 ```bash
 cd go
+
+# Test Go parser
 go test ./internal/parser -run TestGoCodeParser -v
+
+# Test Python parser
+go test ./internal/parser -run TestPythonCodeParser -v
+
+# Test all code parsers
+go test ./internal/parser -run "Test(Go|Python)CodeParser" -v
 ```
 
 Example output:
 ```
 === RUN   TestGoCodeParser_BasicParsing
 --- PASS: TestGoCodeParser_BasicParsing (0.01s)
-=== RUN   TestGoCodeParser_PromotedFields
---- PASS: TestGoCodeParser_PromotedFields (0.00s)
-=== RUN   TestGoCodeParser_ElementHierarchy
---- PASS: TestGoCodeParser_ElementHierarchy (0.00s)
-=== RUN   TestGoCodeParser_InterfaceRegistration
---- PASS: TestGoCodeParser_InterfaceRegistration (0.00s)
+=== RUN   TestGoCodeParser_EntityReferences
+--- PASS: TestGoCodeParser_EntityReferences (0.00s)
+=== RUN   TestPythonCodeParser_BasicParsing
+--- PASS: TestPythonCodeParser_BasicParsing (0.00s)
+=== RUN   TestPythonCodeParser_ClassMethods
+--- PASS: TestPythonCodeParser_ClassMethods (0.02s)
 PASS
 ```
 
@@ -447,10 +494,11 @@ PASS
 
 ## Next Steps
 
-1. **Add more languages**: Python, Java, JavaScript/TypeScript
+1. **Add more languages**: Java, JavaScript/TypeScript, C/C++
 2. **Create code ontologies**: Security patterns, architectural patterns, anti-patterns
 3. **Build analysis tools**: Policy checkers, requirement tracers, doc validators
 4. **Integrate with CI/CD**: Automated checks on every commit
+5. **Enhanced type resolution**: Track type definitions across modules for better dependency graphs
 
 ## Related Documentation
 
