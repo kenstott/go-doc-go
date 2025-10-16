@@ -184,17 +184,23 @@ func (ib *InterviewBuilderV2) phaseDomainSelection(ctx context.Context) error {
 
 	sampleTexts := ib.builder.prepareSampleTexts(ib.samples.Samples, 20)
 
-	prompt := fmt.Sprintf(`Analyze these document samples and identify ALL domains present.
+	prompt := fmt.Sprintf(`Analyze these document samples and identify the TOP 3 MOST PROMINENT domains.
+
+Focus on:
+- Domains with the highest concentration of content
+- Primary business/operational domains (not meta/infrastructure domains)
+- Domains that represent the core subject matter
 
 Sample texts:
 %s
 
-For each domain you detect:
+For each of the top 3 domains you detect:
 1. Name the domain
-2. Explain WHY (cite specific evidence from samples)
-3. Rate confidence (0.0-1.0)
+2. Explain WHY with specific evidence (cite sample numbers)
+3. Rate confidence (0.0-1.0) based on evidence strength
 4. Suggest owner (team/department)
 5. List key concepts
+6. Estimate content coverage (what %% of corpus is this domain)
 
 Ask 2-3 clarifying questions to better understand the corpus and use case.
 
@@ -206,14 +212,17 @@ Return JSON:
       "reasoning": "I see revenue, EBITDA, profit margins in samples 2, 5, 7",
       "confidence": 0.95,
       "suggested_owner": "CFO Office",
-      "key_concepts": ["revenue", "profit", "EBITDA"]
+      "key_concepts": ["revenue", "profit", "EBITDA"],
+      "estimated_coverage": 0.45
     }
   ],
   "clarifying_questions": [
     "What is the primary purpose of these documents?",
     "Who are the main consumers of this data?"
   ]
-}`, sampleTexts)
+}
+
+IMPORTANT: Return ONLY the top 3 most prominent domains, ordered by estimated coverage (highest first).`, sampleTexts)
 
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:    2000,
@@ -229,11 +238,12 @@ Return JSON:
 	// Parse response
 	var result struct {
 		DetectedDomains []struct {
-			Name            string   `json:"name"`
-			Reasoning       string   `json:"reasoning"`
-			Confidence      float64  `json:"confidence"`
-			SuggestedOwner  string   `json:"suggested_owner"`
-			KeyConcepts     []string `json:"key_concepts"`
+			Name              string   `json:"name"`
+			Reasoning         string   `json:"reasoning"`
+			Confidence        float64  `json:"confidence"`
+			SuggestedOwner    string   `json:"suggested_owner"`
+			KeyConcepts       []string `json:"key_concepts"`
+			EstimatedCoverage float64  `json:"estimated_coverage"`
 		} `json:"detected_domains"`
 		ClarifyingQuestions []string `json:"clarifying_questions"`
 	}
@@ -243,13 +253,13 @@ Return JSON:
 	}
 
 	// Show LLM's analysis
-	fmt.Println("🤖 LLM Analysis:")
+	fmt.Println("🤖 LLM Analysis - Top 3 Domains:")
 	fmt.Println(strings.Repeat("-", 80))
-	for _, domain := range result.DetectedDomains {
-		fmt.Printf("\n  Domain: %s (confidence: %.2f)\n", domain.Name, domain.Confidence)
-		fmt.Printf("  Reasoning: %s\n", domain.Reasoning)
-		fmt.Printf("  Suggested Owner: %s\n", domain.SuggestedOwner)
-		fmt.Printf("  Key Concepts: %v\n", domain.KeyConcepts)
+	for i, domain := range result.DetectedDomains {
+		fmt.Printf("\n  %d. %s (confidence: %.2f, coverage: %.0f%%)\n", i+1, domain.Name, domain.Confidence, domain.EstimatedCoverage*100)
+		fmt.Printf("     Reasoning: %s\n", domain.Reasoning)
+		fmt.Printf("     Suggested Owner: %s\n", domain.SuggestedOwner)
+		fmt.Printf("     Key Concepts: %v\n", domain.KeyConcepts)
 	}
 	fmt.Println()
 
@@ -794,15 +804,17 @@ Return the COMPLETE updated schema as JSON.`, string(changesJSON), string(schema
 // Helper functions
 
 func formatDetectedDomainsV2(domains []struct {
-	Name            string   `json:"name"`
-	Reasoning       string   `json:"reasoning"`
-	Confidence      float64  `json:"confidence"`
-	SuggestedOwner  string   `json:"suggested_owner"`
-	KeyConcepts     []string `json:"key_concepts"`
+	Name              string   `json:"name"`
+	Reasoning         string   `json:"reasoning"`
+	Confidence        float64  `json:"confidence"`
+	SuggestedOwner    string   `json:"suggested_owner"`
+	KeyConcepts       []string `json:"key_concepts"`
+	EstimatedCoverage float64  `json:"estimated_coverage"`
 }) string {
 	var result []string
 	for _, d := range domains {
-		result = append(result, fmt.Sprintf("- %s (%.2f): %s | Owner: %s", d.Name, d.Confidence, d.Reasoning, d.SuggestedOwner))
+		result = append(result, fmt.Sprintf("- %s (confidence: %.2f, coverage: %.0f%%): %s | Owner: %s",
+			d.Name, d.Confidence, d.EstimatedCoverage*100, d.Reasoning, d.SuggestedOwner))
 	}
 	return strings.Join(result, "\n")
 }
