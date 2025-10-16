@@ -212,18 +212,12 @@ func (jc *SQLiteJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, e
 		return nil, fmt.Errorf("failed to cleanup stale claims: %w", err)
 	}
 
-	// Find and claim next document
-	// Use hash-based pseudo-random ordering for diversity
-	// Much faster than RANDOM() and gives representative corpus sampling
-	// Hash the unique part of the URL (skip protocol/domain) for diversity
-	// For URLs like https://en.wikipedia.org/wiki/Medicine, hash starting at char 30
+	// Find and claim next document using random sampling for diversity
 	query := `
 		SELECT doc_id, source, metadata, retry_count, created_at
 		FROM document_queue
 		WHERE status = 'pending' AND retry_count < ?
-		ORDER BY (
-			(unicode(substr(doc_id, 30, 1)) * 256 + unicode(substr(doc_id, 31, 1))) % 10000
-		)
+		ORDER BY RANDOM()
 		LIMIT 1
 	`
 
