@@ -215,12 +215,15 @@ func (jc *SQLiteJobControl) ClaimNextDocument(workerID string) (*DocumentInfo, e
 	// Find and claim next document
 	// Use hash-based pseudo-random ordering for diversity
 	// Much faster than RANDOM() and gives representative corpus sampling
-	// Hash of doc_id provides consistent pseudo-randomness across all workers
+	// Hash the unique part of the URL (skip protocol/domain) for diversity
+	// For URLs like https://en.wikipedia.org/wiki/Medicine, hash starting at char 30
 	query := `
 		SELECT doc_id, source, metadata, retry_count, created_at
 		FROM document_queue
 		WHERE status = 'pending' AND retry_count < ?
-		ORDER BY (substr(doc_id, 1, 16) % 10000)
+		ORDER BY (
+			(unicode(substr(doc_id, 30, 1)) * 256 + unicode(substr(doc_id, 31, 1))) % 10000
+		)
 		LIMIT 1
 	`
 
