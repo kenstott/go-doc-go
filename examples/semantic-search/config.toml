@@ -1,0 +1,60 @@
+# Semantic Search Configuration
+# Enables vector embeddings for similarity-based search
+
+# Job control
+[processing.job_control]
+backend = "postgres"  # pgvector requires PostgreSQL
+path = "postgres://postgres:password@localhost:5432/godocgo"
+
+# Content source
+[[content_sources]]
+name = "documents"
+type = "file"
+base_path = "./docs"
+file_pattern = "**/*.{pdf,docx,xlsx,pptx,json,csv,html,md,txt}"
+recursive = true
+
+# Analytics output
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./output/analytics.parquet"
+
+# Embedding configuration
+[embedding]
+enabled = true
+provider = "onnx"
+model_path = "./models/all-MiniLM-L6-v2"
+
+# Contextual embeddings (GraphRAG-lite)
+# Includes surrounding text for better semantic understanding
+contextual = true
+predecessor_count = 2    # Include 2 previous elements
+successor_count = 2      # Include 2 following elements
+context_separator = " [SEP] "
+
+# Performance settings
+batch_size = 32          # Process 32 elements at once
+max_sequence_length = 512 # Truncate long text
+num_threads = 4          # ONNX threads
+
+# Quality settings
+normalize_embeddings = true
+pooling_strategy = "mean"  # Options: mean, cls, max
+
+# PostgreSQL storage with pgvector
+[embedding.storage]
+backend = "postgres"
+table_name = "embeddings"
+create_indexes = true    # Auto-create vector indexes
+
+# Alternative: Parquet storage (if not using PostgreSQL)
+# [embedding.storage]
+# backend = "parquet"
+# path = "./output/analytics.parquet/embeddings"
+
+# Worker configuration
+[workers]
+workers = 4  # Parallel embedding generation

@@ -1,0 +1,312 @@
+name: Documentation Validation
+
+on:
+  push:
+    branches: [ main, develop, feature/** ]
+    paths:
+      - '**.md'
+      - 'docs/**'
+      - 'scripts/validate_toml.sh'
+      - 'scripts/test_examples.sh'
+      - 'scripts/check_terminology.sh'
+      - '.github/workflows/docs-validation.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**.md'
+      - 'docs/**'
+
+jobs:
+  validate-toml:
+    name: Validate TOML Examples
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install TOML validator
+        run: |
+          pip install tomli
+
+      - name: Validate TOML blocks in documentation
+        run: |
+          bash scripts/validate_toml.sh
+
+  test-examples:
+    name: Test Configuration Examples
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Build worker binary
+        run: |
+          cd go
+          go build -o ../bin/goworker ./cmd/worker
+
+      - name: Test configuration examples
+        run: |
+          bash scripts/test_examples.sh
+
+  check-terminology:
+    name: Check Terminology Consistency
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check terminology
+        run: |
+          bash scripts/check_terminology.sh
+
+  check-broken-links:
+    name: Check for Broken Links
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install markdown-link-check
+        run: |
+          npm install -g markdown-link-check
+
+      - name: Check links in documentation
+        run: |
+          # Find all markdown files
+          find . -name "*.md" \
+            ! -path "*/node_modules/*" \
+            ! -path "*/.git/*" \
+            -exec markdown-link-check --quiet --config .github/markdown-link-check-config.json {} \;
+
+  spell-check:
+    name: Spell Check Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install aspell
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y aspell aspell-en
+
+      - name: Spell check markdown files
+        run: |
+          # Create custom dictionary for technical terms
+          cat > .aspell.en.pws <<'EOF'
+          personal_ws-1.1 en 200
+          TOML
+          PostgreSQL
+          SQLite
+          Neo4j
+          Elasticsearch
+          MongoDB
+          DuckDB
+          Parquet
+          MinIO
+          SharePoint
+          Kubernetes
+          goroutine
+          goroutines
+          goworker
+          UDML
+          GraphRAG
+          pgvector
+          FastEmbed
+          HuggingFace
+          ONNX
+          embeddings
+          CLI
+          API
+          REST
+          GraphQL
+          JSON
+          YAML
+          CSV
+          HTML
+          Markdown
+          PDF
+          DOCX
+          XLSX
+          PPTX
+          OAuth
+          timestamp
+          timestamps
+          metadata
+          workflow
+          workflows
+          namespace
+          namespaces
+          timestamp
+          config
+          configs
+          backend
+          backends
+          plugin
+          plugins
+          ontology
+          ontologies
+          README
+          Dockerfile
+          EOF
+
+          # Check all markdown files
+          EXIT_CODE=0
+          for file in $(find . -name "*.md" ! -path "*/node_modules/*" ! -path "*/.git/*"); do
+            # Extract text content (remove code blocks and URLs)
+            ERRORS=$(cat "$file" | \
+              sed '/```/,/```/d' | \
+              sed 's/http[s]\?:\/\/[^ ]*//g' | \
+              sed 's/`[^`]*`//g' | \
+              aspell list --mode=markdown --personal=.aspell.en.pws)
+
+            if [ -n "$ERRORS" ]; then
+              echo "Spelling errors in $file:"
+              echo "$ERRORS" | sort -u | sed 's/^/  - /'
+              EXIT_CODE=1
+            fi
+          done
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo ""
+            echo "⚠️  Spelling errors found. Add technical terms to .aspell.en.pws in CI config."
+          fi
+
+          exit $EXIT_CODE
+
+  validate-heading-hierarchy:
+    name: Validate Heading Hierarchy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check heading hierarchy
+        run: |
+          # Check that each markdown file has only one H1
+          EXIT_CODE=0
+          for file in $(find . -name "*.md" ! -path "*/node_modules/*" ! -path "*/.git/*"); do
+            H1_COUNT=$(grep -c "^# " "$file" || true)
+
+            if [ "$H1_COUNT" -gt 1 ]; then
+              echo "❌ $file has $H1_COUNT H1 headings (should have exactly 1)"
+              EXIT_CODE=1
+            elif [ "$H1_COUNT" -eq 0 ]; then
+              echo "⚠️  $file has no H1 heading"
+            fi
+          done
+
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo ""
+            echo "Fix heading hierarchy issues before merging."
+            echo "Run: bash scripts/fix_heading_hierarchy.sh"
+          fi
+
+          exit $EXIT_CODE
+
+  validate-code-blocks:
+    name: Validate Code Block Tags
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check code block language tags
+        run: |
+          # Check for code blocks without language tags
+          UNTAGGED_BLOCKS=0
+
+          for file in $(find . -name "*.md" ! -path "*/node_modules/*" ! -path "*/.git/*"); do
+            # Count untagged code blocks (``` without language identifier)
+            COUNT=$(grep -c "^[\`][\`][\`]$" "$file" || true)
+
+            if [ "$COUNT" -gt 0 ]; then
+              echo "⚠️  $file has $COUNT untagged code blocks"
+              UNTAGGED_BLOCKS=$((UNTAGGED_BLOCKS + COUNT))
+            fi
+          done
+
+          if [ $UNTAGGED_BLOCKS -gt 0 ]; then
+            echo ""
+            echo "Found $UNTAGGED_BLOCKS untagged code blocks across documentation."
+            echo "Add language tags for better syntax highlighting."
+            echo "Run: bash scripts/add_code_block_tags.sh"
+            echo ""
+            echo "This is a warning only - not blocking CI."
+          fi
+
+          # Don't fail CI for this (warning only)
+          exit 0
+
+  summary:
+    name: Validation Summary
+    runs-on: ubuntu-latest
+    needs: [validate-toml, test-examples, check-terminology, check-broken-links, validate-heading-hierarchy]
+    if: always()
+
+    steps:
+      - name: Check validation results
+        run: |
+          echo "=== Documentation Validation Summary ==="
+          echo ""
+
+          if [ "${{ needs.validate-toml.result }}" == "success" ]; then
+            echo "✅ TOML validation: PASSED"
+          else
+            echo "❌ TOML validation: FAILED"
+          fi
+
+          if [ "${{ needs.test-examples.result }}" == "success" ]; then
+            echo "✅ Example tests: PASSED"
+          else
+            echo "❌ Example tests: FAILED"
+          fi
+
+          if [ "${{ needs.check-terminology.result }}" == "success" ]; then
+            echo "✅ Terminology check: PASSED"
+          else
+            echo "❌ Terminology check: FAILED"
+          fi
+
+          if [ "${{ needs.check-broken-links.result }}" == "success" ]; then
+            echo "✅ Link check: PASSED"
+          else
+            echo "❌ Link check: FAILED"
+          fi
+
+          if [ "${{ needs.validate-heading-hierarchy.result }}" == "success" ]; then
+            echo "✅ Heading hierarchy: PASSED"
+          else
+            echo "❌ Heading hierarchy: FAILED"
+          fi
+
+          # Check if any validation failed
+          if [ "${{ needs.validate-toml.result }}" != "success" ] || \
+             [ "${{ needs.test-examples.result }}" != "success" ] || \
+             [ "${{ needs.check-terminology.result }}" != "success" ] || \
+             [ "${{ needs.check-broken-links.result }}" != "success" ] || \
+             [ "${{ needs.validate-heading-hierarchy.result }}" != "success" ]; then
+            echo ""
+            echo "❌ Some validations failed. Please fix before merging."
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All validations passed!"

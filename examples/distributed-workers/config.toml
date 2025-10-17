@@ -1,0 +1,60 @@
+# Distributed Workers Configuration
+# Multiple workers coordinate via PostgreSQL
+
+# PostgreSQL job control for distributed coordination
+[processing.job_control]
+backend = "postgres"
+path = "postgres://postgres:password@localhost:5432/godocgo"
+
+# Connection pooling for multiple workers
+[processing.job_control.connection_pool]
+max_connections = 20
+min_connections = 5
+max_idle_time = 300
+
+# Document claiming configuration
+[processing.job_control.claiming]
+claim_timeout = 300      # 5 minutes per document
+heartbeat_interval = 30  # Send heartbeat every 30 seconds
+batch_size = 10          # Claim 10 documents at once
+
+# Shared storage - S3/MinIO (all workers can access)
+[[content_sources]]
+name = "shared_documents"
+type = "s3"
+bucket = "documents"
+prefix = "uploads/"
+endpoint = "http://localhost:9000"  # MinIO endpoint (or AWS S3)
+access_key = "minioadmin"
+secret_key = "minioadmin"
+region = "us-east-1"
+
+# Alternative: Local filesystem (if workers share NFS/EFS mount)
+# [[content_sources]]
+# name = "shared_filesystem"
+# type = "file"
+# base_path = "/mnt/shared/documents"  # Shared mount point
+# file_pattern = "**/*.{pdf,docx,xlsx}"
+
+# Analytics output - Parquet format
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./output/analytics.parquet"
+# For production, use shared storage:
+# path = "s3://analytics-bucket/output"
+
+# Embedding (optional, adds semantic search)
+[embedding]
+enabled = false
+# Enable later by copying config from ../semantic-search/
+
+# Worker configuration
+[workers]
+# Set worker_id via CLI or environment variable:
+# --worker-id server-01
+# or export WORKER_ID=server-01
+heartbeat_interval = 30
+max_retries = 3
