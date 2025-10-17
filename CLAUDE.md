@@ -1,7 +1,7 @@
-1# Go-Doc-Go Project Guidelines
+1# Aperio Project Guidelines
 
 ## Project Overview
-Go-Doc-Go is a comprehensive document parsing and analysis system designed to extract structured information from various document formats (PDF, DOCX, XLSX, JSON, CSV, HTML, Markdown, etc.) and store it in a queryable format with relationship tracking.
+Aperio is a grounded reasoning platform designed to extract structured information from various document formats (PDF, DOCX, XLSX, JSON, CSV, HTML, Markdown, etc.) and store it in a queryable format with relationship tracking.
 
 ## Python Best Practices
 

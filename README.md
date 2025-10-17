@@ -1,11 +1,11 @@
-# Go-Doc-Go: Universal Document Knowledge Engine
+# Aperio: Grounded Reasoning Platform
 
 **Version 1.0** - Transform any document into intelligent, searchable knowledge graphs at massive scale.
 
 ## What Makes It Unique
 
-### 🌐 Universal Document Graph Model
-Converts **any document** (PDFs, Word docs, Excel sheets, JSON, HTML, Markdown) into a standardized graph of elements with relationships. Your heterogeneous data becomes a unified, queryable structure.
+### 🌐 Universal Document Model
+Converts **any document** (PDFs, Word docs, Excel sheets, JSON, HTML, Markdown, Java, JavaScript, TypeScript, Python, PHP, Ruby, C/C++, and more) into a standardized graph of elements with relationships. Your heterogeneous data becomes a unified, queryable structure.
 
 ### 🚀 Massive Scale Data Ingestion
 **Horizontally scalable pipeline** built for enterprise workloads:
@@ -28,9 +28,9 @@ Apply **business rules** to automatically extract domain entities and relationsh
 - Discover relationships across documents automatically
 - Build true knowledge graphs from your document corpus
 
-### 🎯 GraphRAG-lite Embeddings
+### 🎯 Graphlet Embeddings
 Smart **contextual embeddings** that use document structure to improve semantic search:
-- Elements know about their neighbors, parents, and children through "graph-lets"
+- Elements know about their neighbors, parents, and children through graphlets
 - Vector search considers document hierarchy and context
 - Better results than flat text embeddings
 - Built on ONNX Runtime for maximum performance
@@ -48,7 +48,7 @@ Any Data Source → Universal Graph → Knowledge Graph → Analytics
 
 ## The Universal Document Model (UDML)
 
-Go-Doc-Go implements **Universal Document Markup Language (UDML)** - a standardized framework that destructures **any document format** into a consistent 5-category taxonomy with standard relationship types.
+Aperio implements **Universal Document Markup Language (UDML)** - a standardized framework that destructures **any document format** into a consistent 5-category taxonomy with standard relationship types.
 
 ### The Five Element Categories
 
@@ -62,20 +62,48 @@ Every element in every document—regardless of source format—is classified in
 | **Component** | Leaf elements within structures | `table_cell`, `list_item`, `shape` | Granular data access, cell-level queries |
 | **Metadata** | Supplementary information | `comment`, `footnote`, `slide_notes`, `chart` | Context, provenance, annotations |
 
-### Standard Relationships
+### Hierarchical Structure with `parent_id`
 
-Documents are connected through universal relationship types:
+UDML creates a **hierarchical document model** using the `parent_id` field:
 
-1. **contains** - Hierarchical parent-child relationships
-2. **references** - Cross-references and citations
-3. **next** / **previous** - Sequential ordering
-4. **links_to** - Hyperlinks and external references
+- **Structural hierarchy**: Captured via `parent_id` field (not relationships array)
+- **Sequential ordering**: Document sequence via `position` field
+- **Spatial addressing**: Table cells via `row_index` and `column_index` fields
 
-This consistent model creates a **unified knowledge backbone** for:
-- 📊 **Cross-format analytics** - Query slides, sheets, and pages identically
-- 🤖 **AI model training** - Single vocabulary across all document types
-- 🔍 **Universal search** - Find content regardless of original format
-- 📈 **Knowledge graphs** - Seamless relationship discovery across sources
+**The `relationships` array is reserved for explicit semantic links**, such as:
+- Cross-references between elements
+- Ontology-extracted relationships (is_a, part_of, related_to, mentions, etc.)
+- Domain-specific connections discovered through analysis
+
+This design enables:
+- 📊 **Fast structural navigation** - Use `parent_id` and `position` fields directly
+- 🤖 **Semantic overlay** - Relationships array for meaning, not structure
+- 🔍 **Efficient queries** - Structure in promoted fields, semantics in relationships
+- 📈 **Grounded reasoning** - Document hierarchy anchors all semantic connections
+
+### Universal Code Markup Language (UCML)
+
+UCML is a specialized subset of UDML designed for source code parsing and analysis. It extends the five-category taxonomy to handle code-specific structures:
+
+**Code-Specific Element Types:**
+- **Container**: `file`, `module`, `namespace`, `package`
+- **Content**: `comment`, `docstring`, `string_literal`
+- **Structure**: `class`, `interface`, `function`, `method`, `code_block`
+- **Component**: `parameter`, `variable`, `import_statement`, `expression`
+- **Metadata**: `annotation`, `decorator`, `pragma`, `type_hint`
+
+**Code-Specific Relationships:**
+- **calls** - Function/method invocations
+- **imports** - Module/package dependencies
+- **inherits** - Class inheritance relationships
+- **implements** - Interface implementation
+- **references** - Variable/function references
+
+UCML enables:
+- 🔍 **Cross-language code analysis** - Query Java, Python, TypeScript with identical patterns
+- 📊 **Dependency mapping** - Automatic call graphs and import analysis
+- 🧠 **Code reasoning** - Semantic understanding of code structure and relationships
+- 🔄 **Refactoring support** - Impact analysis across codebases
 
 ---
 
@@ -174,7 +202,7 @@ The worker will automatically export to Neo4j when the queue is idle.
 
 ## Core Capabilities
 
-- **📄 Universal Parsing**: PDF, DOCX, PPTX, XLSX, HTML, Markdown, JSON, CSV, XML, Parquet, plain text
+- **📄 Universal Parsing**: PDF, DOCX, PPTX, XLSX, HTML, Markdown, JSON, CSV, XML, Parquet, plain text, and code files (Java, JavaScript, TypeScript, Python, PHP, Ruby, C/C++, Go, Rust, etc.)
 - **🔌 Flexible Sources**: Files, S3/MinIO, Web/HTTP (databases coming soon)
 - **🏗️ Scalable Architecture**: Distributed processing, horizontal scaling, work queue coordination
 - **📊 Analytics Storage**: Parquet (columnar), Neo4j (graph), SQLite (development)
@@ -184,7 +212,7 @@ The worker will automatically export to Neo4j when the queue is idle.
 
 ## Architecture
 
-Go-Doc-Go is built on three core pillars:
+Aperio is built on three core pillars:
 
 ### 1. **Massive Input** - Ingest from anywhere
 - File systems (local, network, cloud)
