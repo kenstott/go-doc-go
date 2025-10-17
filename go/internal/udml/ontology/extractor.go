@@ -4,34 +4,50 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
+// ContentResolver defines the interface for resolving content from content_location
+type ContentResolver interface {
+	ResolveContent(contentLocation map[string]interface{}, text bool) (string, error)
+}
+
 // RuleBasedExtractor applies ontology schema rules to extract entities and relationships
 type RuleBasedExtractor struct {
-	schema   *OntologySchema
-	idCounter uint64
+	schema          *OntologySchema
+	contentResolver ContentResolver
+	idCounter       uint64
+	// Performance optimization caches
+	contentCache map[string]string      // Cache resolved content by element_id
+	jsonDocCache map[string]interface{} // Cache reconstructed JSON documents by doc_id
+	cacheMu      sync.RWMutex           // Mutex for thread-safe cache access
 }
 
 // Element represents a minimal UDML element for extraction
 type Element struct {
-	ElementID      string                 `json:"element_id"`
-	ElementType    string                 `json:"element_type"`
-	Content        string                 `json:"content"`
-	ContentPreview string                 `json:"content_preview"`
-	ParentID       string                 `json:"parent_id"`
-	ElementOrder   float64                `json:"element_order"`
-	Metadata       map[string]interface{} `json:"metadata"`
+	ElementID       string                 `json:"element_id"`
+	ElementType     string                 `json:"element_type"`
+	Content         string                 `json:"content"`          // May be empty - use ContentLocation instead
+	ContentPreview  string                 `json:"content_preview"`
+	ContentLocation map[string]interface{} `json:"content_location"` // Pointer to actual content (HTML selector, etc.)
+	ParentID        string                 `json:"parent_id"`
+	ElementOrder    float64                `json:"element_order"`
+	Metadata        map[string]interface{} `json:"metadata"`
 }
 
-// NewRuleBasedExtractor creates a new rule-based extractor with the given schema
-func NewRuleBasedExtractor(schema *OntologySchema) *RuleBasedExtractor {
+// NewRuleBasedExtractor creates a new rule-based extractor with the given schema and content resolver
+func NewRuleBasedExtractor(schema *OntologySchema, contentResolver ContentResolver) *RuleBasedExtractor {
 	return &RuleBasedExtractor{
-		schema: schema,
+		schema:          schema,
+		contentResolver: contentResolver,
+		contentCache:    make(map[string]string),
+		jsonDocCache:    make(map[string]interface{}),
 	}
 }
 
@@ -89,29 +105,40 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 	var entities []Entity
 	entityMap := make(map[string]*Entity) // Deduplicate by name
 
+	log.Printf("DEBUG: Starting entity extraction with %d entity mappings", len(e.schema.ElementEntityMappings))
+
 	// Process each entity mapping in the schema
-	for _, mapping := range e.schema.ElementEntityMappings {
+	for i, mapping := range e.schema.ElementEntityMappings {
 		// Filter elements by type
 		relevantElements := e.filterElementsByType(elements, mapping.ElementTypes)
+		log.Printf("DEBUG: Mapping %d (%s) targeting %v: filtered %d/%d elements",
+			i, mapping.EntityType, mapping.ElementTypes, len(relevantElements), len(elements))
 
 		// Apply each extraction rule
-		for _, rule := range mapping.ExtractionRules {
+		for j, rule := range mapping.ExtractionRules {
+			log.Printf("DEBUG: Applying rule %d (type: %s) for entity %s", j, rule.Type, mapping.EntityType)
 			extractedEntities, err := e.applyExtractionRule(ctx, mapping, rule, relevantElements)
 			if err != nil {
 				return nil, fmt.Errorf("failed to apply rule for %s: %w", mapping.EntityType, err)
 			}
+			log.Printf("DEBUG: Rule %d extracted %d entities", j, len(extractedEntities))
 
-			// Deduplicate entities by name
+			// Deduplicate entities by name - keep highest confidence entity
 			for _, entity := range extractedEntities {
 				if existing, ok := entityMap[entity.Name]; ok {
-					// Update confidence if higher
+					// Replace with higher confidence entity
 					if entity.Confidence > existing.Confidence {
-						existing.Confidence = entity.Confidence
+						// Keep all mentions from both
+						entity.Mentions = append(entity.Mentions, existing.Mentions...)
+						entityCopy := entity
+						entityMap[entity.Name] = &entityCopy
+					} else {
+						// Keep existing, merge mentions
+						existing.Mentions = append(existing.Mentions, entity.Mentions...)
 					}
-					// Merge mentions
-					existing.Mentions = append(existing.Mentions, entity.Mentions...)
 				} else {
-					entityMap[entity.Name] = &entity
+					entityCopy := entity
+					entityMap[entity.Name] = &entityCopy
 				}
 			}
 		}
@@ -198,9 +225,15 @@ func (e *RuleBasedExtractor) extractFromRegex(mapping ElementEntityMapping, rule
 	}
 
 	for _, elem := range elements {
+		// Resolve content before applying regex
+		content := e.resolveContent(&elem)
+		if content == "" {
+			continue
+		}
+
 		// Find all matches in content
-		matches := re.FindAllStringIndex(elem.Content, -1)
-		matchStrings := re.FindAllString(elem.Content, -1)
+		matches := re.FindAllStringIndex(content, -1)
+		matchStrings := re.FindAllString(content, -1)
 
 		for i, match := range matches {
 			entityName := matchStrings[i]
@@ -240,6 +273,12 @@ func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, r
 	var entities []Entity
 
 	for _, elem := range elements {
+		// Resolve content before applying keywords
+		content := e.resolveContent(&elem)
+		if content == "" {
+			continue
+		}
+
 		for _, keyword := range rule.Keywords {
 			// Use regex with word boundaries for exact word matching
 			pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(keyword))
@@ -249,14 +288,14 @@ func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, r
 			}
 
 			// Find all matches
-			matches := re.FindAllStringIndex(elem.Content, -1)
+			matches := re.FindAllStringIndex(content, -1)
 			if len(matches) == 0 {
 				continue
 			}
 
 			// Extract the actual text for first match only (preserving case)
 			match := matches[0]
-			actualText := elem.Content[match[0]:match[1]]
+			actualText := content[match[0]:match[1]]
 
 			entity := Entity{
 				ID:         e.generateID("ent"),
@@ -297,8 +336,14 @@ func (e *RuleBasedExtractor) extractFromSimilarity(mapping ElementEntityMapping,
 	}
 
 	for _, elem := range elements {
+		// Resolve content before applying similarity
+		content := e.resolveContent(&elem)
+		if content == "" {
+			continue
+		}
+
 		// Calculate similarity between element content and reference text
-		similarity := e.calculateTextSimilarity(elem.Content, rule.ReferenceText)
+		similarity := e.calculateTextSimilarity(content, rule.ReferenceText)
 
 		// Check if similarity meets threshold
 		if similarity >= rule.SimilarityThreshold {
@@ -320,9 +365,9 @@ func (e *RuleBasedExtractor) extractFromSimilarity(mapping ElementEntityMapping,
 				Mentions: []Mention{
 					{
 						ElementID: elem.ElementID,
-						Text:      elem.Content,
+						Text:      content,
 						StartPos:  0,
-						EndPos:    len(elem.Content),
+						EndPos:    len(content),
 					},
 				},
 				CreatedAt: time.Now(),
@@ -345,10 +390,17 @@ func (e *RuleBasedExtractor) extractFromJSONPath(mapping ElementEntityMapping, r
 	}
 
 	for _, elem := range elements {
-		// Try to parse element content as JSON
+		// Resolve content and try to parse as JSON
+		content := e.resolveContent(&elem)
+
 		var jsonData interface{}
-		if err := json.Unmarshal([]byte(elem.Content), &jsonData); err != nil {
-			// If content is not JSON, try metadata
+		if content != "" {
+			if err := json.Unmarshal([]byte(content), &jsonData); err != nil {
+				// If content is not JSON, try metadata
+				jsonData = elem.Metadata
+			}
+		} else {
+			// No content, try metadata
 			jsonData = elem.Metadata
 		}
 
@@ -456,6 +508,63 @@ func (e *RuleBasedExtractor) applyRelationshipRule(rule EntityRelationshipRule, 
 }
 
 // Helper functions
+
+// resolveContent resolves element content from content_location or returns existing content
+func (e *RuleBasedExtractor) resolveContent(elem *Element) string {
+	// If content is already populated, use it
+	if elem.Content != "" {
+		return elem.Content
+	}
+
+	// Check element-level cache first (thread-safe read)
+	e.cacheMu.RLock()
+	if cached, ok := e.contentCache[elem.ElementID]; ok {
+		e.cacheMu.RUnlock()
+		return cached
+	}
+	e.cacheMu.RUnlock()
+
+	// If no content_location, cache empty result and return
+	if elem.ContentLocation == nil || len(elem.ContentLocation) == 0 {
+		log.Printf("DEBUG: Element %s has no content_location", elem.ElementID)
+		e.cacheMu.Lock()
+		e.contentCache[elem.ElementID] = ""
+		e.cacheMu.Unlock()
+		return ""
+	}
+
+	// If no content resolver configured, cache empty result and return
+	if e.contentResolver == nil {
+		log.Printf("WARNING: No content resolver configured for element %s, cannot resolve content", elem.ElementID)
+		e.cacheMu.Lock()
+		e.contentCache[elem.ElementID] = ""
+		e.cacheMu.Unlock()
+		return ""
+	}
+
+	// Resolve content from content_location (ContentResolver has its own cache internally)
+	log.Printf("DEBUG: Resolving content for element %s from content_location: %v", elem.ElementID, elem.ContentLocation)
+	content, err := e.contentResolver.ResolveContent(elem.ContentLocation, true)
+	if err != nil {
+		log.Printf("WARNING: Failed to resolve content for element %s: %v", elem.ElementID, err)
+		e.cacheMu.Lock()
+		e.contentCache[elem.ElementID] = ""
+		e.cacheMu.Unlock()
+		return ""
+	}
+
+	// Cache the resolved content (thread-safe write)
+	e.cacheMu.Lock()
+	e.contentCache[elem.ElementID] = content
+	e.cacheMu.Unlock()
+
+	previewLen := 50
+	if len(content) < previewLen {
+		previewLen = len(content)
+	}
+	log.Printf("DEBUG: Resolved content for element %s (length: %d): %s", elem.ElementID, len(content), content[:previewLen])
+	return content
+}
 
 func (e *RuleBasedExtractor) filterElementsByType(elements []Element, elementTypes []string) []Element {
 	if len(elementTypes) == 0 {
