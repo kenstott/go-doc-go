@@ -885,3 +885,9 @@ func (s *ParquetStorage) QueryOntologyEntities(filters map[string]interface{}) (
 	log.Printf("WARNING: Ontology entity queries not yet supported in ParquetStorage (use HiveParquetStorage)")
 	return nil, nil
 }
+
+// QueryOntologyRelationships is not yet implemented for ParquetStorage
+func (s *ParquetStorage) QueryOntologyRelationships(filters map[string]interface{}) ([]OntologyRelationship, error) {
+	log.Printf("WARNING: Ontology relationship queries not yet supported in ParquetStorage (use HiveParquetStorage)")
+	return nil, nil
+}

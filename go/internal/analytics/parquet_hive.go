@@ -145,13 +145,11 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 	}
 	defer db.Close()
 
-	// Build query - select all element fields
+	// Build query - select only core fields (no promoted fields - they were never implemented in writer)
 	query := fmt.Sprintf(`SELECT
 		element_id, doc_id, source_name, element_type, element_category,
 		content, content_preview, content_hash, parent_id,
-		element_order, document_position,
-		page_number, section_level, row_index, column_index, temporal_type, tag_name,
-		content_location, metadata, temporal_metadata
+		element_order, document_position, content_location, metadata
 		FROM '%s/elements/**/*.parquet'`, s.basePath)
 
 	// Build WHERE clauses from filters
@@ -180,28 +178,22 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 	}
 	defer rows.Close()
 
-	// Parse results
+	// Parse results (only 13 core fields - promoted fields not in actual Parquet files)
 	var elements []Element
 	for rows.Next() {
 		var elem Element
+		var content sql.NullString
+		var contentPreview sql.NullString
 		var metadataJSON sql.NullString
 		var contentLocationJSON sql.NullString
-		var temporalMetadataJSON sql.NullString
-		var pageNumber sql.NullInt64
-		var sectionLevel sql.NullInt64
-		var rowIndex sql.NullInt64
-		var columnIndex sql.NullInt64
-		var temporalType sql.NullString
-		var tagName sql.NullString
 		var contentHash sql.NullString
 		var parentID sql.NullString
 
 		err := rows.Scan(
 			&elem.ElementID, &elem.DocID, &elem.SourceName, &elem.ElementType, &elem.ElementCategory,
-			&elem.Content, &elem.ContentPreview, &contentHash, &parentID,
+			&content, &contentPreview, &contentHash, &parentID,
 			&elem.ElementOrder, &elem.DocumentPosition,
-			&pageNumber, &sectionLevel, &rowIndex, &columnIndex, &temporalType, &tagName,
-			&contentLocationJSON, &metadataJSON, &temporalMetadataJSON,
+			&contentLocationJSON, &metadataJSON,
 		)
 		if err != nil {
 			log.Printf("Failed to scan element row: %v", err)
@@ -209,35 +201,17 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 		}
 
 		// Parse nullable string fields
+		if content.Valid {
+			elem.Content = content.String
+		}
+		if contentPreview.Valid {
+			elem.ContentPreview = contentPreview.String
+		}
 		if contentHash.Valid {
 			elem.ContentHash = contentHash.String
 		}
 		if parentID.Valid {
 			elem.ParentID = parentID.String
-		}
-
-		// Parse nullable integer fields
-		if pageNumber.Valid {
-			val := int(pageNumber.Int64)
-			elem.PageNumber = &val
-		}
-		if sectionLevel.Valid {
-			val := int(sectionLevel.Int64)
-			elem.SectionLevel = &val
-		}
-		if rowIndex.Valid {
-			val := int(rowIndex.Int64)
-			elem.RowIndex = &val
-		}
-		if columnIndex.Valid {
-			val := int(columnIndex.Int64)
-			elem.ColumnIndex = &val
-		}
-		if temporalType.Valid {
-			elem.TemporalType = &temporalType.String
-		}
-		if tagName.Valid {
-			elem.TagName = &tagName.String
 		}
 
 		// Parse JSON fields
@@ -251,11 +225,6 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 				log.Printf("Failed to unmarshal content_location for element %s: %v", elem.ElementID, err)
 			}
 		}
-		if temporalMetadataJSON.Valid && temporalMetadataJSON.String != "" {
-			if err := json.Unmarshal([]byte(temporalMetadataJSON.String), &elem.TemporalMetadata); err != nil {
-				log.Printf("Failed to unmarshal temporal_metadata for element %s: %v", elem.ElementID, err)
-			}
-		}
 
 		elements = append(elements, elem)
 	}
@@ -266,6 +235,43 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 
 	log.Printf("ANALYTICS: Queried %d elements from Hive-partitioned Parquet", len(elements))
 	return elements, nil
+}
+
+// GetDistinctElementTypes queries distinct element types from Parquet files
+// This is used by the ontology builder to discover actual element types in the corpus
+func (s *HiveParquetStorage) GetDistinctElementTypes() ([]string, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Query distinct element types
+	query := fmt.Sprintf("SELECT DISTINCT element_type FROM '%s/elements/**/*.parquet' ORDER BY element_type", s.basePath)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query distinct element types: %w", err)
+	}
+	defer rows.Close()
+
+	// Collect element types
+	var elementTypes []string
+	for rows.Next() {
+		var elementType string
+		if err := rows.Scan(&elementType); err != nil {
+			log.Printf("Failed to scan element type row: %v", err)
+			continue
+		}
+		elementTypes = append(elementTypes, elementType)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating element type rows: %w", err)
+	}
+
+	return elementTypes, nil
 }
 
 // AppendRelationships writes relationships to Parquet files
@@ -480,6 +486,13 @@ func (s *HiveParquetStorage) QueryOntologyEntities(filters map[string]interface{
 		whereClauses = append(whereClauses, fmt.Sprintf("entity_type = '%s'", entityType))
 	}
 
+	// Support nested attribute filtering (e.g., attributes.run_id)
+	// DuckDB supports JSON path queries on JSON strings
+	if runID, ok := filters["attributes.run_id"].(string); ok && runID != "" {
+		// Use DuckDB's JSON string extraction: json_extract_string(attributes, '$.run_id')
+		whereClauses = append(whereClauses, fmt.Sprintf("json_extract_string(attributes, '$.run_id') = '%s'", runID))
+	}
+
 	if len(whereClauses) > 0 {
 		query += " WHERE " + strings.Join(whereClauses, " AND ")
 	}
@@ -526,6 +539,95 @@ func (s *HiveParquetStorage) QueryOntologyEntities(filters map[string]interface{
 
 	log.Printf("ANALYTICS: Queried %d ontology entities from Hive-partitioned Parquet", len(entities))
 	return entities, nil
+}
+
+// QueryOntologyRelationships queries ontology relationships from Hive-partitioned Parquet files
+func (s *HiveParquetStorage) QueryOntologyRelationships(filters map[string]interface{}) ([]OntologyRelationship, error) {
+	// Open DuckDB connection (in-memory)
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Build query based on filters
+	query := fmt.Sprintf("SELECT relationship_id, doc_id, source_name, source_entity_id, target_entity_id, relationship_type, domain, confidence, evidence, attributes, element_id, extracted_at FROM '%s/ontology_relationships/**/*.parquet'",
+		s.basePath)
+
+	var whereClauses []string
+	if source, ok := filters["source_name"].(string); ok && source != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("source_name = '%s'", source))
+	}
+	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
+	}
+	if domain, ok := filters["domain"].(string); ok && domain != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("domain = '%s'", domain))
+	}
+	if relType, ok := filters["relationship_type"].(string); ok && relType != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("relationship_type = '%s'", relType))
+	}
+
+	// Support nested attribute filtering (e.g., attributes.run_id)
+	// DuckDB supports JSON path queries on JSON strings
+	if runID, ok := filters["attributes.run_id"].(string); ok && runID != "" {
+		// Use DuckDB's JSON string extraction: json_extract_string(attributes, '$.run_id')
+		whereClauses = append(whereClauses, fmt.Sprintf("json_extract_string(attributes, '$.run_id') = '%s'", runID))
+	}
+
+	if len(whereClauses) > 0 {
+		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query ontology relationships: %w", err)
+	}
+	defer rows.Close()
+
+	// Parse results
+	var relationships []OntologyRelationship
+	for rows.Next() {
+		var rel OntologyRelationship
+		var attributesJSON string
+		var evidenceStr sql.NullString
+		var extractedAtStr string
+
+		err := rows.Scan(&rel.RelationshipID, &rel.DocID, &rel.SourceName, &rel.SourceEntityID,
+			&rel.TargetEntityID, &rel.RelationshipType, &rel.Domain, &rel.Confidence,
+			&evidenceStr, &attributesJSON, &rel.ElementID, &extractedAtStr)
+		if err != nil {
+			log.Printf("Failed to scan ontology relationship row: %v", err)
+			continue
+		}
+
+		// Parse evidence (nullable)
+		if evidenceStr.Valid {
+			rel.Evidence = evidenceStr.String
+		}
+
+		// Parse attributes from JSON
+		if attributesJSON != "" {
+			if err := json.Unmarshal([]byte(attributesJSON), &rel.Attributes); err != nil {
+				log.Printf("Failed to unmarshal attributes for relationship %s: %v", rel.RelationshipID, err)
+			}
+		}
+
+		// Parse timestamp
+		if rel.ExtractedAt, err = time.Parse(time.RFC3339, extractedAtStr); err != nil {
+			rel.ExtractedAt = time.Now()
+		}
+
+		relationships = append(relationships, rel)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	log.Printf("ANALYTICS: Queried %d ontology relationships from Hive-partitioned Parquet", len(relationships))
+	return relationships, nil
 }
 
 // GetContentResolver returns the content resolver for this storage backend
