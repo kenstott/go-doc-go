@@ -176,15 +176,61 @@ func (ib *InterviewBuilderV2) sampleCorpus(ctx context.Context) error {
 	return nil
 }
 
-// phaseDomainSelection - LLM suggests domains, user confirms
+// phaseDomainSelection - Hybrid approach: LLM selects from catalog OR proposes new domains if needed
 func (ib *InterviewBuilderV2) phaseDomainSelection(ctx context.Context) error {
 	fmt.Println("\n" + strings.Repeat("-", 80))
-	fmt.Println("  PHASE 1: DOMAIN SELECTION")
+	fmt.Println("  PHASE 1: DOMAIN SELECTION (HYBRID MODE)")
 	fmt.Println(strings.Repeat("-", 80) + "\n")
+	fmt.Println("This phase tries to match corpus to predefined domains.")
+	fmt.Println("If catalog coverage is insufficient, LLM may propose new domains.\n")
+	fmt.Printf("DEBUG: nonInteractive flag = %v\n\n", ib.nonInteractive)
 
 	sampleTexts := ib.builder.prepareSampleTexts(ib.samples.Samples, 20)
 
-	prompt := fmt.Sprintf(`Analyze these document samples and identify the TOP 3 MOST PROMINENT domains.
+	// Load predefined domains from catalog
+	predefinedDomains, err := loadPredefinedDomains()
+	if err != nil {
+		return fmt.Errorf("failed to load domain catalog: %w", err)
+	}
+
+	// Format predefined domains for LLM
+	var domainListFormatted strings.Builder
+	for name, desc := range predefinedDomains {
+		domainListFormatted.WriteString(fmt.Sprintf("  • **%s**: %s\n", name, desc))
+	}
+
+	prompt := fmt.Sprintf(`You MUST select domains from this CLOSED LIST ONLY. You are PROHIBITED from creating new domain names.
+
+## MANDATORY DOMAIN SELECTION - CLOSED LIST
+
+**YOUR ONLY ALLOWED CHOICES:**
+
+%s
+
+## STRICT REQUIREMENTS - NO EXCEPTIONS
+
+**YOU MUST:**
+- ✓ Choose ONLY from the exact domain names listed above
+- ✓ Use the EXACT spelling shown (e.g., "medical" NOT "medical_healthcare")
+- ✓ Copy the domain name EXACTLY as written - no modifications
+- ✓ Select 1-5 domains that best match the corpus content
+
+**YOU ARE PROHIBITED FROM:**
+- ✗ Creating ANY new domain names not in the list above
+- ✗ Modifying domain names (no "medical_practice", "healthcare_delivery", etc.)
+- ✗ Combining domains into compound names (no "medical_and_healthcare")
+- ✗ Using variations, synonyms, or paraphrases of listed domains
+- ✗ Adding prefixes, suffixes, or underscores to listed domains
+
+**EXAMPLES OF PROHIBITED BEHAVIOR:**
+- ✗ "medical_healthcare" → WRONG - Use "medical" OR "healthcare"
+- ✗ "cognitive_psychology" → WRONG - Use "education" or omit if no match
+- ✗ "life_sciences_biology" → WRONG - Use "technical" or omit if no match
+- ✗ "financial_services" → WRONG - Use "financial" EXACTLY
+
+## YOUR TASK
+
+Analyze these document samples and identify the TOP 3 MOST PROMINENT domains from the CLOSED LIST above.
 
 Focus on:
 - Domains with the highest concentration of content
@@ -222,7 +268,10 @@ Return JSON:
   ]
 }
 
-IMPORTANT: Return ONLY the top 3 most prominent domains, ordered by estimated coverage (highest first).`, sampleTexts)
+IMPORTANT: Return ONLY the top 3 most prominent domains, ordered by estimated coverage (highest first).
+
+**CRITICAL VALIDATION BEFORE RESPONDING:**
+Before returning your response, verify EVERY domain name appears EXACTLY in the closed list above. If a domain name is NOT in the list, you MUST remove it from your response.`, domainListFormatted.String(), sampleTexts)
 
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:    2000,
@@ -265,6 +314,9 @@ IMPORTANT: Return ONLY the top 3 most prominent domains, ordered by estimated co
 
 	// Ask clarifying questions
 	userAnswers := []string{}
+	if ib.nonInteractive {
+		fmt.Println("DEBUG: Non-interactive mode enabled - auto-skipping clarifying questions")
+	}
 	for _, question := range result.ClarifyingQuestions {
 		fmt.Printf("🤖 LLM: %s\n", question)
 		var answer string
@@ -316,6 +368,163 @@ Return final domains as JSON array:
 	var domains []Domain
 	if err := ib.builder.extractJSON(finalResponse, &domains); err != nil {
 		return err
+	}
+
+	// HYBRID MODE: Check coverage and allow LLM to propose new domains if needed
+	totalCoverage := 0.0
+	for _, detected := range result.DetectedDomains {
+		totalCoverage += detected.EstimatedCoverage
+	}
+
+	const coverageThreshold = 0.5
+	if totalCoverage < coverageThreshold {
+		fmt.Printf("\n⚠️  Catalog coverage only %.0f%% - insufficient (threshold: %.0f%%)\n", totalCoverage*100, coverageThreshold*100)
+		fmt.Println("🤖 LLM will now propose NEW domains to fill gaps...\n")
+
+		// Secondary prompt: Allow LLM to propose new domains with validation rules
+		proposalPrompt := fmt.Sprintf(`The predefined domain catalog does not adequately cover this corpus (only %.0f%% coverage).
+You may now propose NEW domain names to fill the gaps.
+
+## VALIDATION RULES FOR NEW DOMAINS
+
+**REQUIRED FORMAT:**
+- Single word, lowercase (e.g., "genomics", "aviation")
+- OR snake_case for multi-word concepts (e.g., "climate_science", "quantum_computing")
+
+**PROHIBITED:**
+- ✗ Compound names combining existing domains (e.g., "medical_healthcare")
+- ✗ Generic/vague names (e.g., "business", "general", "other")
+- ✗ Variations of existing catalog domains (check list below)
+
+**EXISTING CATALOG DOMAINS (DO NOT DUPLICATE):**
+%s
+
+## CORPUS ANALYSIS
+
+Current catalog-based domains (%.0f%% coverage):
+%s
+
+Sample texts showing gaps:
+%s
+
+## YOUR TASK
+
+Propose 1-3 NEW domain names that:
+1. Cover content NOT addressed by existing catalog domains
+2. Follow naming rules above
+3. Are specific and well-defined
+4. Do NOT duplicate or restate existing domains
+
+For each proposed domain:
+- Justify why catalog is inadequate
+- Cite specific samples showing the gap
+- Estimate coverage of new domain
+
+Return JSON:
+{
+  "proposed_domains": [
+    {
+      "name": "genomics",
+      "reasoning": "Samples 4, 8, 12 contain DNA sequencing, gene editing, CRISPR content not covered by existing 'medical' or 'science_research' domains",
+      "estimated_coverage": 0.25,
+      "suggested_owner": "Genomics Research Team",
+      "key_concepts": ["DNA sequencing", "gene editing", "CRISPR"]
+    }
+  ],
+  "validation_notes": "Verified 'genomics' not in catalog. Single-word, specific, covers unique content."
+}`, totalCoverage*100, formatPredefinedDomainsForValidation(predefinedDomains), totalCoverage*100, formatDetectedDomainsV2(result.DetectedDomains), sampleTexts)
+
+		proposalResponse, err := ib.builder.llmClient.Complete(ctx, proposalPrompt, LLMOptions{
+			MaxTokens:    2000,
+			Temperature:  0.3,
+			SystemPrompt: "You are an expert at domain modeling. Propose new domain names only when truly necessary, following strict validation rules.",
+		})
+		if err != nil {
+			return err
+		}
+		ib.llmCalls++
+		ib.tokens += len(proposalResponse)
+
+		var proposalResult struct {
+			ProposedDomains []struct {
+				Name              string   `json:"name"`
+				Reasoning         string   `json:"reasoning"`
+				EstimatedCoverage float64  `json:"estimated_coverage"`
+				SuggestedOwner    string   `json:"suggested_owner"`
+				KeyConcepts       []string `json:"key_concepts"`
+			} `json:"proposed_domains"`
+			ValidationNotes string `json:"validation_notes"`
+		}
+
+		if err := ib.builder.extractJSON(proposalResponse, &proposalResult); err != nil {
+			return fmt.Errorf("failed to parse proposed domains: %w", err)
+		}
+
+		// Validate proposed domains
+		validProposals := []struct {
+			Name              string   `json:"name"`
+			Reasoning         string   `json:"reasoning"`
+			EstimatedCoverage float64  `json:"estimated_coverage"`
+			SuggestedOwner    string   `json:"suggested_owner"`
+			KeyConcepts       []string `json:"key_concepts"`
+		}{}
+
+		for _, prop := range proposalResult.ProposedDomains {
+			if err := validateProposedDomainName(prop.Name, predefinedDomains); err != nil {
+				fmt.Printf("⚠️  Rejected proposed domain '%s': %v\n", prop.Name, err)
+				continue
+			}
+			validProposals = append(validProposals, prop)
+		}
+
+		if len(validProposals) == 0 {
+			fmt.Println("⚠️  No valid domain proposals. Proceeding with catalog domains only.\n")
+		} else {
+			// Show proposed domains
+			fmt.Println("🤖 LLM Proposed New Domains:")
+			fmt.Println(strings.Repeat("-", 80))
+			for i, prop := range validProposals {
+				fmt.Printf("\n  %d. %s (coverage: %.0f%%)\n", i+1, prop.Name, prop.EstimatedCoverage*100)
+				fmt.Printf("     Reasoning: %s\n", prop.Reasoning)
+				fmt.Printf("     Suggested Owner: %s\n", prop.SuggestedOwner)
+				fmt.Printf("     Key Concepts: %v\n", prop.KeyConcepts)
+			}
+			fmt.Println()
+
+			// Ask for user approval
+			var proposalApproval string
+			if ib.nonInteractive {
+				proposalApproval = "yes"
+				fmt.Print("❓ Approve these NEW domain proposals? (yes/no): yes [auto-approved]\n\n")
+			} else {
+				fmt.Print("❓ Approve these NEW domain proposals? (yes/no): ")
+				var err error
+				proposalApproval, err = ib.reader.ReadString('\n')
+				if err != nil {
+					return err
+				}
+			}
+
+			if strings.ToLower(strings.TrimSpace(proposalApproval)) == "yes" {
+				// Convert proposals to Domain objects and append
+				for _, prop := range validProposals {
+					// Generate description from reasoning
+					description := fmt.Sprintf("%s (NEW - not in catalog)", prop.Reasoning)
+					if len(description) > 200 {
+						description = description[:197] + "..."
+					}
+
+					domains = append(domains, Domain{
+						Name:        prop.Name,
+						Description: description,
+						Owner:       prop.SuggestedOwner,
+					})
+				}
+				fmt.Printf("  ✅ Added %d new domains\n\n", len(validProposals))
+			} else {
+				fmt.Println("  ❌ New domain proposals rejected. Using catalog domains only.\n")
+			}
+		}
 	}
 
 	// Show final domains and ask for confirmation
@@ -840,4 +1049,58 @@ func formatDomainNames(domains []Domain) []string {
 		names[i] = d.Name
 	}
 	return names
+}
+
+func formatPredefinedDomainsForValidation(predefinedDomains map[string]string) string {
+	var result []string
+	for name := range predefinedDomains {
+		result = append(result, name)
+	}
+	return strings.Join(result, ", ")
+}
+
+func validateProposedDomainName(name string, predefinedDomains map[string]string) error {
+	// Check if already in catalog
+	if _, exists := predefinedDomains[name]; exists {
+		return fmt.Errorf("domain '%s' already exists in catalog", name)
+	}
+
+	// Check format: lowercase letters, numbers, and underscores only
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("domain name cannot be empty")
+	}
+
+	// Must be lowercase alphanumeric with optional underscores
+	validFormat := true
+	for _, char := range name {
+		if !((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9') || char == '_') {
+			validFormat = false
+			break
+		}
+	}
+	if !validFormat {
+		return fmt.Errorf("invalid format - must be lowercase alphanumeric with optional underscores (e.g., 'genomics' or 'climate_science')")
+	}
+
+	// Check for prohibited generic names
+	genericNames := []string{"business", "general", "other", "misc", "miscellaneous", "data", "information"}
+	for _, generic := range genericNames {
+		if name == generic {
+			return fmt.Errorf("generic name '%s' not allowed - be more specific", name)
+		}
+	}
+
+	// Check for compound names combining existing catalog domains
+	parts := strings.Split(name, "_")
+	if len(parts) > 1 {
+		// Check if parts match catalog domains
+		for _, part := range parts {
+			if _, exists := predefinedDomains[part]; exists {
+				return fmt.Errorf("compound name '%s' combines existing catalog domain '%s' - choose a single specific domain instead", name, part)
+			}
+		}
+	}
+
+	return nil
 }

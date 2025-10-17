@@ -22,7 +22,7 @@ func main() {
 	mode := ontology.ModeNewOntology
 	existingSchemaPath := ""
 	nonInteractive := false
-	diversityThreshold := 0.0 // 0.0 means use default (0.0001)
+	diversityThreshold := 0.0 // 0.0 means use default (0.85)
 	argsOffset := 1
 
 	// Parse flags
@@ -84,7 +84,7 @@ func main() {
 	config := ontology.BuilderConfig{
 		ParquetPath:        parquetPath,
 		SampleSize:         1000,
-		DiversityThreshold: diversityThreshold, // 0.0 uses default of 0.0001
+		DiversityThreshold: diversityThreshold, // 0.0 uses default of 0.85 (filters out >85% similar samples)
 		LLMProvider:        "anthropic",
 		LLMModel:           "claude-sonnet-4-5-20250929",
 		LLMAPIKey:          apiKey,
@@ -162,7 +162,7 @@ MODES:
 
    Options:
      --diversity-threshold <value>  Cosine similarity threshold for diversity filtering (0.0-1.0)
-                                    Lower values = more diverse samples. Default: 0.0001
+                                    Lower values = more diverse samples. Default: 0.85
      --non-interactive              Auto-approve all suggestions (for testing)
 
    Process (3 phases):
