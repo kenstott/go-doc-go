@@ -42,7 +42,7 @@ entity_types:
       - type: keyword_match
         keywords: [AML, KYC, GDPR, HIPAA, SOX, Dodd-Frank, Basel III, MiFID, FDA, OSHA, EPA, SEC, FINRA]
       - type: regex_pattern
-        pattern: \b(?:Regulation|Rule|Directive|Act)\s+[A-Z0-9-]+\b
+        pattern: '\b(?:Regulation|Rule|Directive|Act)\s+[A-Z0-9-]+\b'
       - type: text_similarity
         reference_text: "compliance with Regulation XYZ requires implementation of controls"
         similarity_threshold: 0.7
@@ -66,7 +66,7 @@ entity_types:
       - type: keyword_match
         keywords: [SEC, FDA, EPA, OSHA, FTC, DOJ, FINRA, OCC, Federal Reserve, HHS, CMS]
       - type: regex_pattern
-        pattern: \b(?:Securities and Exchange Commission|Food and Drug Administration|Environmental Protection Agency|Occupational Safety and Health Administration)\b
+        pattern: '\b(?:Securities and Exchange Commission|Food and Drug Administration|Environmental Protection Agency|Occupational Safety and Health Administration)\b'
 
   - entity_type: compliance_officer
     description: Person responsible for compliance oversight
@@ -76,7 +76,7 @@ entity_types:
       - type: keyword_match
         keywords: [compliance officer, CCO, chief compliance officer, compliance manager, regulatory affairs]
       - type: regex_pattern
-        pattern: \b(?:Chief Compliance Officer|CCO|Compliance Manager|Director of Compliance)\b
+        pattern: '\b(?:Chief Compliance Officer|CCO|Compliance Manager|Director of Compliance)\b'
 
   - entity_type: audit_finding
     description: Issue or deficiency identified during audit
@@ -106,7 +106,7 @@ entity_types:
     element_types: [heading, paragraph]
     sample_rules:
       - type: regex_pattern
-        pattern: \b(?:Policy|Procedure|Manual|SOP|Guideline)\s+[A-Z0-9-]+\b
+        pattern: '\b(?:Policy|Procedure|Manual|SOP|Guideline)\s+[A-Z0-9-]+\b'
       - type: keyword_match
         keywords: [policy document, procedure manual, compliance policy, SOP, operating procedure]
 

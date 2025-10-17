@@ -37,32 +37,32 @@ Before starting this demo, ensure you have the following installed:
 
 ```bash
 go version
-# Should output: go version go1.24.x ...
-```
+## Should output: go version go1.24.x ...
+```bash
 
 If not installed, download and install Go 1.24+ from [golang.org](https://golang.org/dl/).
 
 #### 2. Setup Python Virtual Environment
 
 ```bash
-# Navigate to project root
+## Navigate to project root
 cd /Users/kennethstott/PycharmProjects/doculyzer-go-conversion
 
-# Create virtual environment
+## Create virtual environment
 python3 -m venv venv
 
-# Activate virtual environment
-# On macOS/Linux:
+## Activate virtual environment
+## On macOS/Linux:
 source venv/bin/activate
 
-# On Windows:
-# venv\Scripts\activate
-```
+## On Windows:
+## venv\Scripts\activate
+```bash
 
 #### 3. Install Python Dependencies
 
 ```bash
-# With virtual environment activated
+## With virtual environment activated
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -76,13 +76,13 @@ This installs the required packages for ONNX model downloading and processing:
 #### 4. Verify Installation
 
 ```bash
-# Check Python packages
+## Check Python packages
 pip list | grep -E "optimum|transformers|onnx"
 
-# Should show:
-# optimum              x.x.x
-# transformers         x.x.x
-# onnxruntime          x.x.x
+## Should show:
+## optimum              x.x.x
+## transformers         x.x.x
+## onnxruntime          x.x.x
 ```
 
 #### 5. Install DuckDB (Optional)
@@ -90,12 +90,12 @@ pip list | grep -E "optimum|transformers|onnx"
 If you want to query Parquet files:
 
 ```bash
-# macOS
+## macOS
 brew install duckdb
 
-# Or download from: https://duckdb.org/docs/installation/
+## Or download from: https://duckdb.org/docs/installation/
 
-# Verify
+## Verify
 duckdb --version
 ```
 
@@ -129,12 +129,12 @@ cd /Users/kennethstott/PycharmProjects/doculyzer-go-conversion
 cd go
 go build -o ../bin/goworker ./cmd/worker
 cd ..
-```
+```go
 
 **Expected output:**
-```
-# No message, but you will see a new binary created at bin/goworker
-```
+```go
+## No message, but you will see a new binary created at bin/goworker
+```go
 
 ### 1.2: Download ONNX Model (Required for semantic relationships)
 
@@ -143,7 +143,7 @@ This step downloads the ONNX model required for semantic relationship detection 
 **Note**: Ensure your Python virtual environment is activated and dependencies are installed (see Prerequisites section above).
 
 ```bash
-# Export model to ONNX format
+## Export model to ONNX format
 python3 << 'EOF'
 from optimum.onnxruntime import ORTModelForFeatureExtraction
 from transformers import AutoTokenizer
@@ -154,14 +154,14 @@ output_dir = './models/all-MiniLM-L6-v2'
 
 print(f"Downloading and converting {model_id} to ONNX format...")
 
-# Create output directory
+## Create output directory
 os.makedirs(output_dir, exist_ok=True)
 
-# Export model
+## Export model
 ort_model = ORTModelForFeatureExtraction.from_pretrained(model_id, export=True)
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 
-# Save
+## Save
 ort_model.save_pretrained(output_dir)
 tokenizer.save_pretrained(output_dir)
 
@@ -187,7 +187,7 @@ Let's first process the documents without ontology extraction to create the base
 
 ```bash
 cat > demo/config_initial.toml << 'EOF'
-# Initial ingestion configuration (no ontology extraction)
+## Initial ingestion configuration (no ontology extraction)
 
 [processing.job_control]
 backend = "sqlite"
@@ -196,7 +196,7 @@ claim_timeout = 60
 heartbeat_interval = 10
 max_retries = 1
 
-# Local files from test assets
+## Local files from test assets
 [[content_sources]]
 name = "test-docs"
 type = "file"
@@ -204,7 +204,7 @@ base_path = "./tests/assets"
 file_pattern = "*.{md,docx,pdf}"
 watch_for_changes = false
 
-# Wikipedia page via web crawler
+## Wikipedia page via web crawler
 [[content_sources]]
 name = "wikipedia"
 type = "web"
@@ -236,16 +236,16 @@ partitioning = ["date", "source"]
 [logging]
 level = "INFO"
 EOF
-```
+```bash
 
 ### 2.2: Run Initial Ingestion
 
 ```bash
 ./bin/goworker --config demo/config_initial.toml --max-documents 10 --workers 1
-```
+```bash
 
 **Expected output:**
-```
+```toml
 2025/10/13 22:30:00 Loading configuration from: demo/config_initial.toml
 2025/10/13 22:30:00 Creating job control with backend: sqlite
 2025/10/13 22:30:00 ANALYTICS: Initialized Hive-partitioned Parquet storage
@@ -257,15 +257,15 @@ EOF
 2025/10/13 22:30:03 Successfully processed document ./tests/assets/technical-details.md
 2025/10/13 22:30:05 Successfully processed document https://en.wikipedia.org/wiki/GraphQL
 2025/10/13 22:30:05 Worker completed. Processed 3 documents
-```
+```bash
 
 ### 2.3: Verify UDML Output
 
 ```bash
-# Check that Parquet files were created
+## Check that Parquet files were created
 ls -lh demo/output/analytics/
 
-# Query elements with DuckDB
+## Query elements with DuckDB
 duckdb :memory: "SELECT element_type, COUNT(*) as count
 FROM read_parquet('./demo/output/analytics/elements/**/*.parquet')
 GROUP BY element_type
@@ -419,7 +419,7 @@ Now let's configure the worker to extract entities using our ontology schema.
 
 ```bash
 cat > demo/config_ontology.toml << 'EOF'
-# Configuration with ontology extraction enabled
+## Configuration with ontology extraction enabled
 
 [processing.job_control]
 backend = "sqlite"
@@ -428,7 +428,7 @@ claim_timeout = 60
 heartbeat_interval = 10
 max_retries = 1
 
-# Local files from test assets
+## Local files from test assets
 [[content_sources]]
 name = "test-docs"
 type = "file"
@@ -437,7 +437,7 @@ file_pattern = "*.{md,docx,pdf}"
 watch_for_changes = false
 refresh_interval = 5  # Check every 5 seconds for fast demo
 
-# Wikipedia page via web crawler
+## Wikipedia page via web crawler
 [[content_sources]]
 name = "wikipedia"
 type = "web"
@@ -450,7 +450,7 @@ enabled = true
 structural = true
 semantic = true
 
-# UDML-O: Ontology extraction configuration
+## UDML-O: Ontology extraction configuration
 [ontology]
 enabled = true
 schema_path = "./demo/ontologies"  # Directory containing YAML schemas
@@ -475,20 +475,20 @@ partitioning = ["date", "source"]
 [logging]
 level = "INFO"
 EOF
-```
+```bash
 
 ### 5.2: Run Worker with Ontology Extraction
 
 ```bash
-# Clean the queue to re-process documents
+## Clean the queue to re-process documents
 rm -f demo/output/jobs.db
 
-# Run worker (it will process docs and extract entities after 30 seconds idle)
+## Run worker (it will process docs and extract entities after 30 seconds idle)
 timeout 60 ./bin/goworker --config demo/config_ontology.toml --max-documents 0 --workers 1
-```
+```toml
 
 **Expected output:**
-```
+```toml
 2025/10/13 22:35:00 Loading configuration from: demo/config_ontology.toml
 2025/10/13 22:35:00 ONTOLOGY: Loaded 1 ontology schemas from ./demo/ontologies
 2025/10/13 22:35:00   - Domain: business (3 entity mappings, 3 relationship rules)
@@ -570,7 +570,7 @@ LIMIT 20
 │ Uber Technologies Inc │ organization │        0.9 │ business │
 │ Wells Fargo Bank      │ organization │        0.9 │ business │
 └───────────────────────┴──────────────┴────────────┴──────────┘
-```
+```bash
 
 ### 6.2: Query People
 
@@ -605,7 +605,7 @@ LIMIT 15
 │ Satya Nadella    │       0.85 │
 │ Tim Cook         │       0.85 │
 └──────────────────┴────────────┘
-```
+```bash
 
 ### 6.3: Query Relationships
 
@@ -646,7 +646,7 @@ LIMIT 20
 │ DataFlow Systems Corp │ partners_with    │ Google LLC          │       0.80 │
 │ Global Innovations Ltd│ partners_with    │ IBM Corp            │       0.80 │
 └───────────────────────┴──────────────────┴─────────────────────┴────────────┘
-```
+```go
 
 **✅ Checkpoint**: Discovered 30+ organizations, 25+ people, 15+ locations, and 40+ relationships!
 
@@ -659,28 +659,28 @@ Visualize the knowledge graph in Neo4j.
 ### 7.1: Start Neo4j
 
 ```bash
-# Using Docker
+## Using Docker
 docker run -d \
     --name neo4j-demo \
     -p 7474:7474 -p 7687:7687 \
     -e NEO4J_AUTH=neo4j/demo_password \
     neo4j:latest
 
-# Wait for Neo4j to start
+## Wait for Neo4j to start
 sleep 15
-```
+```bash
 
 ### 7.2: Configure Neo4j Export
 
 ```bash
 cat > demo/config_with_neo4j.toml << 'EOF'
-# Configuration with Neo4j export enabled
+## Configuration with Neo4j export enabled
 
 [processing.job_control]
 backend = "sqlite"
 path = "./demo/output/jobs.db"
 
-# Local files from test assets
+## Local files from test assets
 [[content_sources]]
 name = "test-docs"
 type = "file"
@@ -689,7 +689,7 @@ file_pattern = "*.{md,docx,pdf}"
 watch_for_changes = false
 refresh_interval = 5
 
-# Wikipedia page via web crawler
+## Wikipedia page via web crawler
 [[content_sources]]
 name = "wikipedia"
 type = "web"
@@ -728,16 +728,16 @@ path = "./demo/output/analytics"
 [logging]
 level = "INFO"
 EOF
-```
+```bash
 
 ### 7.3: Run Worker with Neo4j Export
 
 ```bash
-# Clean and re-run to export to Neo4j
+## Clean and re-run to export to Neo4j
 rm -f demo/output/jobs.db
 
 timeout 90 ./bin/goworker --config demo/config_with_neo4j.toml --max-documents 0 --workers 1
-```
+```toml
 
 **Expected output:**
 ```
@@ -792,19 +792,19 @@ Based on the results, let's improve the extraction rules.
 ### 8.1: Identify Gaps
 
 ```bash
-# Find entities with low confidence
+## Find entities with low confidence
 duckdb :memory: "
 SELECT entity_type, AVG(confidence) as avg_confidence, COUNT(*) as count
 FROM read_parquet('./demo/output/analytics/ontology_entities/**/*.parquet')
 GROUP BY entity_type
 ORDER BY avg_confidence
 "
-```
+```bash
 
 ### 8.2: Update Ontology Schema
 
 ```bash
-# Add more sophisticated patterns
+## Add more sophisticated patterns
 cat >> demo/ontologies/business_demo.yaml << 'EOF'
 
   # Universities and research institutions
@@ -827,20 +827,20 @@ cat >> demo/ontologies/business_demo.yaml << 'EOF'
         pattern: '\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Capital|Ventures|Partners|Bank|Securities|Investments))\b'
         description: "Match financial institutions"
 EOF
-```
+```bash
 
 ### 8.3: Re-run Extraction with Updated Schema
 
 ```bash
-# Clean queue and re-extract
+## Clean queue and re-extract
 rm -f demo/output/jobs.db
 timeout 60 ./bin/goworker --config demo/config_ontology.toml --max-documents 0 --workers 1
-```
+```bash
 
 ### 8.4: Compare Results
 
 ```bash
-# Check new entity types
+## Check new entity types
 duckdb :memory: "
 SELECT entity_type, COUNT(DISTINCT entity_name) as unique_entities
 FROM read_parquet('./demo/output/analytics/ontology_entities/**/*.parquet')
@@ -927,11 +927,11 @@ For real-world use:
 ## Demo Cleanup
 
 ```bash
-# Stop Neo4j
+## Stop Neo4j
 docker stop neo4j-demo
 docker rm neo4j-demo
 
-# Optional: Remove demo output
+## Optional: Remove demo output
 rm -rf demo/output
 ```
 
@@ -939,8 +939,8 @@ rm -rf demo/output
 
 ## Additional Resources
 
-- **[Ontology Documentation](docs/ontology.md)** - Complete ontology system guide
-- **[UDML Specification](docs/UDML_SPECIFICATION.md)** - Universal Document Markup Language
+- **[Ontology Documentation](docs/features/ontology/README.md)** - Complete ontology system guide
+- **[UDML Specification](docs/features/udml/specification.md)** - Universal Document Markup Language
 - **[Configuration Reference](go/README.md#configuration-reference)** - All config options
 - **[Go Implementation Guide](go/README.md)** - Detailed Go worker documentation
 

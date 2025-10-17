@@ -1,0 +1,55 @@
+# Neo4j Knowledge Graph Export Configuration
+# Exports UDML elements and relationships to Neo4j
+
+# Job control
+[processing.job_control]
+backend = "sqlite"
+path = "./output/jobs.db"
+
+# Content source
+[[content_sources]]
+name = "documents"
+type = "file"
+base_path = "./docs"
+file_pattern = "**/*.{pdf,docx,xlsx,pptx,json,csv,html,md}"
+recursive = true
+
+# Analytics output (Parquet)
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./output/analytics.parquet"
+
+# Neo4j export configuration
+[processing.neo4j_export]
+enabled = true
+export_on_idle = true        # Export when queue is empty
+empty_queue_wait_time = 60   # Wait 60 seconds before exporting
+
+# Neo4j connection
+[processing.neo4j_export.connection]
+uri = "bolt://localhost:7687"
+username = "neo4j"
+password = "password"
+database = "neo4j"
+
+# Export settings
+[processing.neo4j_export.settings]
+batch_size = 1000            # Export 1000 nodes at a time
+parallel_workers = 4         # Use 4 goroutines
+max_retries = 3              # Retry failed exports
+create_indexes = true        # Auto-create indexes
+clear_before_export = false  # Set to true to clear existing data
+
+# What to export
+[processing.neo4j_export.include]
+documents = true
+elements = true
+relationships = true
+entities = false  # Enable if using ontology extraction
+
+# Embedding disabled for now
+[embedding]
+enabled = false

@@ -1,0 +1,86 @@
+# Test Configuration: Wikipedia Medical and Mining Pages
+# Purpose: Test document parsing with 2 Wikipedia pages at crawl depth 1
+
+[embedding]
+enabled = true
+provider = "onnx"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+dimensions = 384
+chunk_size = 512
+overlap = 128
+contextual = true
+predecessor_count = 1
+successor_count = 1
+
+# Content Sources Configuration
+[[content_sources]]
+name = "wikipedia_test"
+type = "web"
+base_url = "https://en.wikipedia.org"
+url_list = [
+    "https://en.wikipedia.org/wiki/Medicine",
+    "https://en.wikipedia.org/wiki/Mining"
+]
+include_patterns = [
+    "^https://en.wikipedia.org/wiki/"
+]
+exclude_patterns = [
+    "/Special:",
+    "/Talk:",
+    "/Category:",
+    "/File:",
+    "/Wikipedia:",
+    "/Help:",
+    "/Portal:",
+    "/Template:"
+]
+max_link_depth = 1  # Crawl depth of 1
+refresh_interval = 604800  # 7 days in seconds
+
+[content_sources.headers]
+User-Agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+[relationship_detection]
+enabled = true
+structural = true
+semantic = true
+
+[relationship_detection.cross_document_semantic]
+enabled = false  # Disabled for simple test
+similarity_threshold = 0.70
+queue_idle_trigger_minutes = 0
+rate_limit_batch_size = 1000
+rate_limit_sleep_ms = 100
+min_interval_minutes = 1
+
+# UDML-O: Ontology extraction disabled for this test
+[ontology]
+enabled = false
+schema_path = "./schemas"
+diversity_threshold = 0.0001
+queue_idle_trigger_minutes = 0
+
+# Processing configuration
+[processing]
+batch_size = 10
+max_workers = 2
+timeout_seconds = 300
+
+[processing.job_control]
+backend = "sqlite"
+path = "./tests/test_output/wikipedia_medical_mining_test.db"
+claim_timeout = 300
+heartbeat_interval = 30
+max_retries = 3
+
+# Analytics outputs configuration
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./tests/test_output/wikipedia_medical_mining_analytics"
+
+[logging]
+level = "DEBUG"
+file = "./tests/test_output/wikipedia_medical_mining_test.log"

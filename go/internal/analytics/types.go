@@ -143,6 +143,7 @@ type Storage interface {
 	AppendOntologyRelationships(relationships []OntologyRelationship) error
 	AppendOntologyMentions(mentions []OntologyMention) error
 	QueryOntologyEntities(filters map[string]interface{}) ([]OntologyEntity, error)
+	QueryOntologyRelationships(filters map[string]interface{}) ([]OntologyRelationship, error)
 
 	// Content resolution for samplers/query engines
 	GetContentResolver() interface{}

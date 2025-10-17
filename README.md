@@ -1,137 +1,24 @@
-# Aperio: Grounded Reasoning Platform
+wa w# Go-Doc-Go: Universal Document Knowledge Engine
 
 **Version 1.0** - Transform any document into intelligent, searchable knowledge graphs at massive scale.
 
-## What Makes It Unique
+Go-Doc-Go implements **Universal Document Markup Language (UDML)** - a standardized framework that converts any document format (PDFs, Word, Excel, JSON, HTML, Markdown, etc.) into a consistent graph of elements with typed relationships. Your heterogeneous document corpus becomes a unified, queryable knowledge base.
 
-### 🌐 Universal Document Model
-Converts **any document** (PDFs, Word docs, Excel sheets, JSON, HTML, Markdown, Java, JavaScript, TypeScript, Python, PHP, Ruby, C/C++, and more) into a standardized graph of elements with relationships. Your heterogeneous data becomes a unified, queryable structure.
+## Quick Start (60 seconds)
 
-### 🚀 Massive Scale Data Ingestion
-**Horizontally scalable pipeline** built for enterprise workloads:
-- Process thousands of documents concurrently
-- Distributed work queues with PostgreSQL coordination
-- Single binary deployment - no runtime dependencies
-- Handle everything from single files to enterprise data lakes
-
-### 🔧 Universal Storage Flexibility
-Works with **multiple storage backends** - you choose what fits your needs:
-- **Development**: Parquet files, SQLite
-- **Production**: PostgreSQL job control, Parquet analytics
-- **Graph Analytics**: Neo4j export
-- **Vector Search**: ONNX Runtime embeddings with contextual awareness
-
-### 🧠 Ontology-Driven Knowledge Graphs
-Apply **business rules** to automatically extract domain entities and relationships:
-- Define what matters in your domain (customers, products, regulations, components)
-- Extract entities using semantic similarity, patterns, or keywords
-- Discover relationships across documents automatically
-- Build true knowledge graphs from your document corpus
-
-### 🎯 Graphlet Embeddings
-Smart **contextual embeddings** that use document structure to improve semantic search:
-- Elements know about their neighbors, parents, and children through graphlets
-- Vector search considers document hierarchy and context
-- Better results than flat text embeddings
-- Built on ONNX Runtime for maximum performance
-
-## Mental Model
-
-```
-Any Data Source → Universal Graph → Knowledge Graph → Analytics
-     │                    │               │              │
- Documents            Elements &        Domain       Parquet/Neo4j
-   Files             Relationships     Entities       Embeddings
-  Database
-    API
-```
-
-## The Universal Document Model (UDML)
-
-Aperio implements **Universal Document Markup Language (UDML)** - a standardized framework that destructures **any document format** into a consistent 5-category taxonomy with standard relationship types.
-
-### The Five Element Categories
-
-Every element in every document—regardless of source format—is classified into exactly one of five categories:
-
-| Category | Description | Examples | Use Case |
-|----------|-------------|----------|----------|
-| **Container** | Top-level organizational units that group content | `page`, `slide`, `sheet`, `section`, `article` | Document structure, navigation, chunking |
-| **Content** | Primary textual information blocks | `paragraph`, `header`, `text_box`, `blockquote` | Reading, search, embedding generation |
-| **Structure** | Organizational scaffolding | `table`, `list`, `table_row` | Layout understanding, data extraction |
-| **Component** | Leaf elements within structures | `table_cell`, `list_item`, `shape` | Granular data access, cell-level queries |
-| **Metadata** | Supplementary information | `comment`, `footnote`, `slide_notes`, `chart` | Context, provenance, annotations |
-
-### Hierarchical Structure with `parent_id`
-
-UDML creates a **hierarchical document model** using the `parent_id` field:
-
-- **Structural hierarchy**: Captured via `parent_id` field (not relationships array)
-- **Sequential ordering**: Document sequence via `position` field
-- **Spatial addressing**: Table cells via `row_index` and `column_index` fields
-
-**The `relationships` array is reserved for explicit semantic links**, such as:
-- Cross-references between elements
-- Ontology-extracted relationships (is_a, part_of, related_to, mentions, etc.)
-- Domain-specific connections discovered through analysis
-
-This design enables:
-- 📊 **Fast structural navigation** - Use `parent_id` and `position` fields directly
-- 🤖 **Semantic overlay** - Relationships array for meaning, not structure
-- 🔍 **Efficient queries** - Structure in promoted fields, semantics in relationships
-- 📈 **Grounded reasoning** - Document hierarchy anchors all semantic connections
-
-### Universal Code Markup Language (UCML)
-
-UCML is a specialized subset of UDML designed for source code parsing and analysis. It extends the five-category taxonomy to handle code-specific structures:
-
-**Code-Specific Element Types:**
-- **Container**: `file`, `module`, `namespace`, `package`
-- **Content**: `comment`, `docstring`, `string_literal`
-- **Structure**: `class`, `interface`, `function`, `method`, `code_block`
-- **Component**: `parameter`, `variable`, `import_statement`, `expression`
-- **Metadata**: `annotation`, `decorator`, `pragma`, `type_hint`
-
-**Code-Specific Relationships:**
-- **calls** - Function/method invocations
-- **imports** - Module/package dependencies
-- **inherits** - Class inheritance relationships
-- **implements** - Interface implementation
-- **references** - Variable/function references
-
-UCML enables:
-- 🔍 **Cross-language code analysis** - Query Java, Python, TypeScript with identical patterns
-- 📊 **Dependency mapping** - Automatic call graphs and import analysis
-- 🧠 **Code reasoning** - Semantic understanding of code structure and relationships
-- 🔄 **Refactoring support** - Impact analysis across codebases
-
----
-
-## Real-World Impact
-
-**Financial Services**: "We process 10,000+ earnings transcripts to automatically extract company-executive-metric relationships, turning months of analyst work into automated knowledge graphs."
-
-**Manufacturing**: "Our safety compliance docs become queryable knowledge - instantly find which components must comply with which standards across 50,000+ technical documents."
-
-**Legal**: "Contract analysis at scale - extract parties, obligations, and terms from thousands of agreements, then discover patterns and risks automatically."
-
-## Quick Start
-
-### Installation
+### 1. Build the Worker
 
 ```bash
-# Clone the repository
+## Clone and build
 git clone https://github.com/kenstott/go-doc-go.git
 cd go-doc-go/go
-
-# Build the worker binary
 go build -o ../bin/goworker ./cmd/worker
-```
+```toml
 
-### Basic Configuration
+### 2. Create Configuration
 
 ```toml
-# config.toml
+## config.toml
 [processing.job_control]
 backend = "sqlite"
 path = "./data/jobs.db"
@@ -148,126 +35,132 @@ enabled = true
 [[analytics.outputs]]
 type = "parquet"
 path = "./data/analytics.parquet"
+```bash
 
-[embedding]
-enabled = false  # Start without embeddings
-```
-
-### Process Documents
+### 3. Process Documents
 
 ```bash
-# Run the worker
+## Add your documents
+mkdir -p docs
+## Copy PDFs, DOCX, XLSX, etc. to docs/
+
+## Run worker
 ../bin/goworker --config config.toml --workers 4
-```
+```bash
 
-**That's it!** The worker will:
-1. Discover documents from `./docs`
-2. Parse them into UDML elements and relationships
-3. Store results in Parquet format
-4. Exit when queue is empty
-
-### Query Your Data
+### 4. Query Results
 
 ```bash
-# Using DuckDB to query Parquet output
+## Query with DuckDB
 duckdb
-D SELECT element_type, COUNT(*) as count
-  FROM read_parquet('./data/analytics.parquet/elements/*.parquet')
-  GROUP BY element_type
-  ORDER BY count DESC;
+D SELECT element_type, COUNT(*) FROM read_parquet('./data/analytics.parquet/elements/*.parquet') GROUP BY element_type;
+```bash
 
-# View documents
-D SELECT doc_id, source_name, metadata
-  FROM read_parquet('./data/analytics.parquet/documents/*.parquet')
-  LIMIT 10;
-```
-
-### Export to Neo4j
-
-```toml
-# Add Neo4j export to config.toml
-[processing.neo4j_export]
-enabled = true
-empty_queue_wait_time = 60
-
-[processing.neo4j_export.connection]
-uri = "bolt://localhost:7687"
-username = "neo4j"
-password = "password"
-```
-
-The worker will automatically export to Neo4j when the queue is idle.
+**Done!** See [Quick Reference](QUICK_REFERENCE.md) for common commands and troubleshooting.
 
 ---
 
-## Core Capabilities
+## What Makes It Unique
 
-- **📄 Universal Parsing**: PDF, DOCX, PPTX, XLSX, HTML, Markdown, JSON, CSV, XML, Parquet, plain text, and code files (Java, JavaScript, TypeScript, Python, PHP, Ruby, C/C++, Go, Rust, etc.)
-- **🔌 Flexible Sources**: Files, S3/MinIO, Web/HTTP (databases coming soon)
-- **🏗️ Scalable Architecture**: Distributed processing, horizontal scaling, work queue coordination
-- **📊 Analytics Storage**: Parquet (columnar), Neo4j (graph), SQLite (development)
-- **🧠 Knowledge Extraction**: Ontology-based entity extraction and relationship discovery
-- **⚡ Performance**: ONNX Runtime embeddings, concurrent processing, optimized for large datasets
-- **🔧 Single Binary**: No runtime dependencies, statically compiled Go
+### 🌐 Universal Document Model (UDML)
 
-## Architecture
+Converts **any document format** into a standardized 5-category taxonomy:
 
-Aperio is built on three core pillars:
+- **Container** - Pages, slides, sheets, sections (top-level structure)
+- **Content** - Paragraphs, headers, text blocks (primary information)
+- **Structure** - Tables, lists (organizational scaffolding)
+- **Component** - Table cells, list items (leaf elements)
+- **Metadata** - Comments, footnotes, chart data (supplementary info)
 
-### 1. **Massive Input** - Ingest from anywhere
-- File systems (local, network, cloud)
-- S3 and S3-compatible storage (MinIO, DigitalOcean Spaces)
-- Web/HTTP with link following
-- Coming soon: Databases, SharePoint, Confluence, Google Drive
+**Four standard relationship types** connect elements:
+- `contains` - Hierarchical parent-child
+- `references` - Cross-references and citations
+- `next`/`previous` - Sequential ordering
+- `links_to` - Hyperlinks
 
-### 2. **Flexible Storage** - Store however works best
-- **Parquet** - Columnar format for analytics (recommended)
-- **Neo4j** - Graph database for relationship queries
-- **SQLite** - Development and testing
-- **PostgreSQL** - Job control and coordination
+**Result**: Query PDFs, Word docs, and Excel sheets identically. Build cross-format analytics. Train AI models on unified vocabulary.
 
-### 3. **Smart Output** - Knowledge, not just data
-- Contextual vector embeddings using document structure
-- Automated ontology-based entity extraction
-- Full document reconstruction and format conversion
-- Cross-format analytics and queries
+### 🚀 Massive Scale Architecture
+
+**Horizontally scalable** distributed processing:
+- Coordinate 10-50+ workers via PostgreSQL job control
+- Process thousands of documents concurrently
+- Single binary deployment (no runtime dependencies)
+- Handle enterprise data lakes with millions of documents
+
+### 🧠 Ontology-Driven Knowledge Graphs
+
+Apply **business rules** to extract domain entities automatically:
+- Define domain vocabulary (customers, products, regulations)
+- Extract entities using semantic similarity, patterns, or keywords
+- Discover relationships across documents
+- Export to Neo4j for graph analytics
+
+### 🎯 GraphRAG-lite Embeddings
+
+**Contextual embeddings** using document structure:
+- Elements embedded with awareness of neighbors, parents, children
+- Vector search considers document hierarchy
+- Better results than flat text embeddings
+- Built on ONNX Runtime for performance
+
+### 🔧 Storage Flexibility
+
+Works with **multiple backends**:
+- **Development**: Parquet files + SQLite
+- **Production**: PostgreSQL + Parquet analytics
+- **Graph Analytics**: Neo4j export
+- **Vector Search**: ONNX embeddings
+
+---
 
 ## Documentation
 
-- **[Quick Start Guide](docs/QUICK_START.md)** - Get started in 5 minutes
-- **[UDML Specification](docs/UDML_SPECIFICATION.md)** - Complete UDML spec
-- **[JSON Schema Validation](docs/UDML_SCHEMAS.md)** - Validate UDML documents with JSON Schema
-- **[Configuration Reference](go/README.md)** - All configuration options
-- **[Installation Guide](docs/installation.md)** - Detailed installation
-- **[Ontology System](docs/ontology.md)** - Knowledge graph extraction
-- **[Embeddings Guide](docs/embeddings.md)** - Contextual embeddings setup
-- **[Scaling Guide](docs/scaling.md)** - Horizontal scaling patterns
+### Getting Started
+- **[Quick Reference](QUICK_REFERENCE.md)** - Common commands, flags, troubleshooting (start here!)
+- **[Getting Started Guide](docs/getting-started/README.md)** - Complete setup walkthrough
+
+### Configuration
+- **[Configuration Overview](docs/configuration/README.md)** - All configuration options
+- **[Content Sources](docs/configuration/sources.md)** - Files, S3, web scraping
+- **[Storage Backends](docs/configuration/storage.md)** - SQLite, PostgreSQL, Neo4j
+
+### Features
+- **[UDML Specification](docs/features/udml/specification.md)** - Complete UDML spec
+- **[Ontology System](docs/features/ontology/README.md)** - Knowledge extraction
+- **[Embeddings Guide](docs/features/embeddings/README.md)** - Contextual embeddings
+
+### Operations
+- **[Scaling Guide](docs/operations/scaling.md)** - Distributed workers, performance tuning
+- **[Troubleshooting](docs/operations/troubleshooting.md)** - Common issues and solutions
+- **[Monitoring](docs/operations/monitoring.md)** - Health checks and metrics
+
+### Reference
+- **[CLI Reference](docs/reference/cli.md)** - All command-line flags and options
+- **[Architecture](docs/architecture/worker-design.md)** - System design and internals
+
+---
 
 ## Performance
 
-### Document Processing (without embeddings)
+### Single Worker Throughput
 
-| Document Type | Size   | Processing Time | Throughput      |
+| Document Type | Size   | Processing Time | Docs/Second     |
 |---------------|--------|-----------------|-----------------|
-| PDF (text)    | 1MB    | 50-100ms        | 10-20 docs/sec  |
-| DOCX          | 500KB  | 30-80ms         | 12-33 docs/sec  |
-| XLSX          | 2MB    | 100-200ms       | 5-10 docs/sec   |
-| JSON          | 100KB  | 5-10ms          | 100-200 docs/sec|
-| HTML          | 50KB   | 3-8ms           | 125-333 docs/sec|
-| Markdown      | 10KB   | 1-3ms           | 333-1000 docs/sec|
+| PDF (text)    | 1MB    | 50-100ms        | 10-20           |
+| DOCX          | 500KB  | 30-80ms         | 12-33           |
+| XLSX          | 2MB    | 100-200ms       | 5-10            |
+| JSON          | 100KB  | 5-10ms          | 100-200         |
+| HTML          | 50KB   | 3-8ms           | 125-333         |
 
-### With ONNX Embeddings
+### Distributed (10 Workers)
 
-| Batch Size | Time per Batch | Max Throughput  |
-|------------|----------------|-----------------|
-| 32         | 100-200ms      | 160-320 docs/sec|
+| Configuration            | Total Throughput | Docs/Hour   |
+|--------------------------|------------------|-------------|
+| Without embeddings       | 300+ docs/sec    | 1,080,000   |
+| With ONNX embeddings     | 150 docs/sec     | 540,000     |
 
-### Distributed Processing (10 Workers)
-
-| Setup                    | Total Throughput | Documents/Hour |
-|--------------------------|------------------|----------------|
-| 10 workers, no embeddings| 300+ docs/sec    | 1,080,000      |
-| 10 workers, with embeddings | 150 docs/sec  | 540,000        |
+**Horizontal Scaling**: Add more workers to linearly increase throughput.
 
 ---
 
@@ -285,12 +178,23 @@ FROM ubuntu:22.04
 COPY --from=builder /build/worker /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/worker"]
 CMD ["--config", "/etc/godocgo/config.toml"]
-```
+```toml
+
+### Distributed Workers (PostgreSQL Coordination)
+
+```toml
+## config.toml - shared by all workers
+[processing.job_control]
+backend = "postgres"
+path = "postgres://user:pass@db-server:5432/godocgo"
+```bash
 
 ```bash
-docker build -t godocgo/worker:latest .
-docker run -v $(pwd)/config.toml:/etc/godocgo/config.toml godocgo/worker:latest
-```
+## Run on multiple servers
+./bin/goworker --config config.toml --worker-id "worker-01" --workers 8  # Server 1
+./bin/goworker --config config.toml --worker-id "worker-02" --workers 8  # Server 2
+## Workers coordinate automatically via PostgreSQL
+```toml
 
 ### Kubernetes
 
@@ -307,95 +211,15 @@ spec:
       - name: worker
         image: godocgo/worker:latest
         env:
-        - name: GO_DOC_GO_CONFIG_PATH
-          value: /config/config.toml
         - name: NUM_WORKERS
           value: "4"
-```
-
-### Distributed Workers
-
-```toml
-# config.toml - shared by all workers
-[processing.job_control]
-backend = "postgres"
-path = "postgres://user:pass@db-server:5432/godocgo"
-```
-
-```bash
-# Worker 1 (server-01)
-./bin/goworker --config config.toml --worker-id "worker-01" --workers 4
-
-# Worker 2 (server-02)
-./bin/goworker --config config.toml --worker-id "worker-02" --workers 4
-
-# All workers coordinate via PostgreSQL automatically
-```
-
----
-
-## Examples
-
-### Processing Local Documents
-
-```toml
-[[content_sources]]
-name = "local_documents"
-type = "file"
-base_path = "/data/documents"
-file_pattern = "**/*.{pdf,docx,xlsx,pptx,html,md,txt,json,csv,xml}"
-```
-
-### Processing from S3
-
-```toml
-[[content_sources]]
-name = "s3_documents"
-type = "s3"
-bucket = "my-documents"
-prefix = "uploads/"
-region = "us-east-1"
-```
-
-### Web Scraping
-
-```toml
-[[content_sources]]
-name = "documentation"
-type = "web"
-base_url = "https://docs.example.com"
-follow_links = true
-max_link_depth = 3
-```
-
-### Ontology Extraction
-
-```yaml
-# ontologies/companies.yaml
-name: companies
-domain: business
-version: "1.0"
-
-element_entity_mappings:
-  - domain: "business"
-    entity_type: "Organization"
-    element_types: ["paragraph"]
-    extraction_rules:
-      - type: "regex_pattern"
-        pattern: '\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Inc|LLC|Corp))\b'
-```
-
-```toml
-[ontology]
-enabled = true
-schema_path = "./ontologies/companies.yaml"
 ```
 
 ---
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and guidelines.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup.
 
 ## License
 
@@ -405,10 +229,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 **Ready to process millions of documents?** 🚀
 
-Build the worker and start parsing:
-
 ```bash
-cd go
-go build -o ../bin/goworker ./cmd/worker
-../bin/goworker --config ../config.toml --workers 4
-```
+cd go && go build -o ../bin/goworker ./cmd/worker
+../bin/goworker --config config.toml --workers 8
+```bash

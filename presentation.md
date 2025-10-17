@@ -2,7 +2,7 @@
 
 ---
 
-# ACT 1: THE DISCIPLINE AND THE PROBLEM
+## ACT 1: THE DISCIPLINE AND THE PROBLEM
 
 ## Slide 1A: For IT/Knowledge Management - "Your GenAI Is Missing 80% of Your Knowledge"
 
@@ -1651,7 +1651,7 @@ Both use LLM reasoning. The difference is whether relationships are implicit (di
 
 ---
 
-# ACT 2: THE THREE CORE INNOVATIONS
+## ACT 2: THE THREE CORE INNOVATIONS
 
 ## INNOVATION 1: UNIVERSAL DOCUMENT MODEL
 
@@ -1735,7 +1735,7 @@ Example: A compliance policy
 * Write knowledge extraction rules once, apply across all document types
 * Discover patterns across heterogeneous document collections
 * Build unified knowledge graphs spanning your entire enterprise
-* **Guarantee grounded reasoning across all document sources**
+* **Guarantee grounded reasoning across all content sources**
 
 **Without universal model:**
 
@@ -2377,7 +2377,7 @@ System: "Processing complete:
 
 ---
 
-# ACT 3: PRODUCTION INFRASTRUCTURE
+## ACT 3: PRODUCTION INFRASTRUCTURE
 
 ### Slide 28: Differentiators Need Infrastructure
 
@@ -2485,7 +2485,7 @@ Query, Analyze, Visualize
 
 ---
 
-# CONCLUSION
+## CONCLUSION
 
 ### Slide 33: The Aperio Advantage
 
@@ -2822,7 +2822,7 @@ Each system enriches the others through the shared knowledge graph
 **Budget**: $850K enterprise deployment
 
 **Month 1: Enterprise-wide deployment across 6+ domains**
-* Deployed across all divisions, all document sources
+* Deployed across all divisions, all content sources
 * 500K+ documents ingested, normalized through UDM
 * LLM-assisted knowledge extraction rules created with domain experts from each of 6 domains:
   - **Strategy domain**: Corporate strategies, division strategies, market positioning
@@ -2982,7 +2982,7 @@ Each system enriches the others through the shared knowledge graph
 
 **Enterprise-wide organizational coherence:**
 
-* All divisions, all document sources
+* All divisions, all content sources
 * UP/ACROSS/DOWN visibility for CEO
 * Prevent typical \$30-200M+ in fragmentation waste
 * ONE knowledge graph powers ALL automation

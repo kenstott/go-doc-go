@@ -18,7 +18,7 @@ Implemented proper hierarchical parent-child relationships:
 - Matches Python's section tracking behavior
 
 **Example hierarchy:**
-```
+```python
 root
 ├── headers (container)
 ├── footers (container)
@@ -112,7 +112,7 @@ All link enqueueing now uses the job control interface pattern:
 To test DOCX parsing with nested headers:
 ```bash
 go run ./cmd/test_docx /path/to/document.docx
-```
+```bash
 
 To test link extraction:
 - Add hyperlinks to a DOCX document

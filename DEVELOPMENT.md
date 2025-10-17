@@ -15,27 +15,27 @@
 ### Local Development Environment
 
 ```bash
-# 1. Clone the repository
+## 1. Clone the repository
 git clone https://github.com/kenstott/go-doc-go.git
 cd go-doc-go
 
-# 2. Build the worker
+## 2. Build the worker
 cd go
 go build -o ../bin/goworker ./cmd/worker
 
-# 3. Run tests
+## 3. Run tests
 go test ./...
 
-# 4. Build all parsers (for testing individual parsers)
+## 4. Build all parsers (for testing individual parsers)
 cd cmd
 for dir in */; do
     go build -o ../../bin/$(basename $dir) ./$dir
 done
-```
+```go
 
 ## Project Structure
 
-```
+```bash
 go-doc-go/
 ├── go/                          # Go implementation
 │   ├── cmd/                     # Command-line binaries
@@ -72,97 +72,97 @@ go-doc-go/
 ├── schemas/                     # UDML JSON schemas
 ├── tests/                       # Test fixtures and assets
 └── config.toml                  # Example configuration
-```
+```toml
 
 ## Development Workflow
 
 ### 1. Making Changes
 
 ```bash
-# Create a feature branch
+## Create a feature branch
 git checkout -b feature/your-feature-name
 
-# Make your changes in go/internal/ or go/cmd/
+## Make your changes in go/internal/ or go/cmd/
 
-# Test your changes
+## Test your changes
 cd go
 go test ./internal/parser  # Test specific package
 go test ./...              # Test all packages
 
-# Build and test the worker
+## Build and test the worker
 go build -o ../bin/goworker ./cmd/worker
 ../bin/goworker --config ../config.toml --max-documents 5
-```
+```bash
 
 ### 2. Running Tests
 
 ```bash
 cd go
 
-# Run all tests
+## Run all tests
 go test ./...
 
-# Run specific package tests
+## Run specific package tests
 go test ./internal/parser
 go test ./internal/worker
 go test ./internal/analytics
 
-# Run with coverage
+## Run with coverage
 go test -cover ./...
 
-# Generate coverage report
+## Generate coverage report
 go test -coverprofile=coverage.out ./...
 go tool cover -html=coverage.out -o coverage.html
 
-# Run with race detector
+## Run with race detector
 go test -race ./...
 
-# Run specific test
+## Run specific test
 go test -run TestPDFParser ./internal/parser
 
-# Verbose output
+## Verbose output
 go test -v ./internal/parser
-```
+```bash
 
 ### 3. Code Quality Checks
 
 ```bash
-# Format code
+## Format code
 go fmt ./...
 
-# Vet code
+## Vet code
 go vet ./...
 
-# Run linter (install golangci-lint first)
+## Run linter (install golangci-lint first)
 golangci-lint run
 
-# Check for common issues
+## Check for common issues
 go vet ./...
 
-# Static analysis
+## Static analysis
 staticcheck ./...
-```
+```bash
 
 ### 4. Testing Worker Locally
 
 ```bash
-# Build worker
+## Build worker
 cd go
 go build -o ../bin/goworker ./cmd/worker
 
-# Test with minimal config
+## Test with minimal config
 ../bin/goworker --config ../config.toml --max-documents 1
 
-# Test with debug output
+## Test with debug output
 ../bin/goworker --config ../config.toml --max-documents 5 --workers 1
 
-# Test distributed workers (requires PostgreSQL)
-# Terminal 1
+## Test distributed workers (requires PostgreSQL)
+## Terminal 1
 ../bin/goworker --config ../config_postgres.toml --worker-id worker-01 --workers 2
 
-# Terminal 2
+## Terminal 2
 ../bin/goworker --config ../config_postgres.toml --worker-id worker-02 --workers 2
-```
+```toml
 
 ## Adding New Features
 
@@ -205,7 +205,7 @@ func (p *MyFormatParser) Name() string {
 func (p *MyFormatParser) SupportedTypes() []string {
     return []string{".myformat", "application/x-myformat"}
 }
-```
+```go
 
 2. **Register parser in factory**:
 
@@ -220,7 +220,7 @@ func NewParser(docType string, config ParserConfig) (Parser, error) {
         return nil, fmt.Errorf("unknown document type: %s", docType)
     }
 }
-```
+```go
 
 3. **Add tests**:
 
@@ -243,7 +243,7 @@ func TestMyFormatParser(t *testing.T) {
     assert.NotNil(t, result)
     assert.Greater(t, len(result.Elements), 0)
 }
-```
+```go
 
 4. **Create standalone CLI (optional)**:
 
@@ -268,7 +268,7 @@ func main() {
 
     // Parser implementation
 }
-```
+```go
 
 ### Adding a New Content Source
 
@@ -305,7 +305,7 @@ func (s *MySource) Fetch(ctx context.Context, doc Document) ([]byte, error) {
 
     return nil, nil
 }
-```
+```go
 
 2. **Register in factory**:
 
@@ -318,7 +318,7 @@ func NewContentSource(sourceType string, config map[string]interface{}) (Content
     // ... existing sources ...
     }
 }
-```
+```go
 
 ### Adding a New Analytics Output
 
@@ -432,36 +432,36 @@ import "log"
 
 log.Printf("Processing document: %s", docID)
 log.Printf("Found %d elements", len(elements))
-```
+```bash
 
 ### Use Delve Debugger
 
 ```bash
-# Install delve
+## Install delve
 go install github.com/go-delve/delve/cmd/dlv@latest
 
-# Debug worker
+## Debug worker
 dlv debug ./cmd/worker -- --config ../config.toml
 
-# Set breakpoint
+## Set breakpoint
 (dlv) break parser.Parse
 (dlv) continue
 (dlv) print element
-```
+```bash
 
 ### Profile Performance
 
 ```bash
-# CPU profiling
+## CPU profiling
 go test -cpuprofile=cpu.prof -bench=. ./internal/parser
 go tool pprof cpu.prof
 
-# Memory profiling
+## Memory profiling
 go test -memprofile=mem.prof -bench=. ./internal/parser
 go tool pprof mem.prof
 
-# Profile running worker
-# Add to worker code:
+## Profile running worker
+## Add to worker code:
 import "runtime/pprof"
 
 f, _ := os.Create("cpu.prof")
@@ -474,7 +474,7 @@ defer pprof.StopCPUProfile()
 ### Test Configuration
 
 ```toml
-# config_dev.toml
+## config_dev.toml
 [processing.job_control]
 backend = "sqlite"
 path = "./test_data/jobs.db"
@@ -494,64 +494,64 @@ path = "./test_data/analytics.parquet"
 
 [embedding]
 enabled = false  # Disable for faster testing
-```
+```bash
 
 ### Environment Variables
 
 ```bash
-# .env
+## .env
 GO_DOC_GO_CONFIG_PATH=./config_dev.toml
 ONNXRUNTIME_SHARED_LIBRARY_PATH=/path/to/libonnxruntime.so
-```
+```toml
 
 ## Common Development Tasks
 
 ### Update Dependencies
 
 ```bash
-# Update all dependencies
+## Update all dependencies
 go get -u ./...
 
-# Update specific dependency
+## Update specific dependency
 go get -u github.com/xuri/excelize/v2
 
-# Tidy dependencies
+## Tidy dependencies
 go mod tidy
 
-# Verify dependencies
+## Verify dependencies
 go mod verify
-```
+```bash
 
 ### Build All Binaries
 
 ```bash
-# Build script
+## Build script
 #!/bin/bash
 cd go/cmd
 for dir in */; do
     echo "Building $(basename $dir)..."
     go build -o ../../bin/$(basename $dir) ./$dir
 done
-```
+```bash
 
 ### Cross-Compile for Different Platforms
 
 ```bash
-# Linux AMD64
+## Linux AMD64
 GOOS=linux GOARCH=amd64 go build -o bin/worker-linux-amd64 ./cmd/worker
 
-# Linux ARM64 (Raspberry Pi, AWS Graviton)
+## Linux ARM64 (Raspberry Pi, AWS Graviton)
 GOOS=linux GOARCH=arm64 go build -o bin/worker-linux-arm64 ./cmd/worker
 
-# macOS Intel
+## macOS Intel
 GOOS=darwin GOARCH=amd64 go build -o bin/worker-darwin-amd64 ./cmd/worker
 
-# macOS Apple Silicon
+## macOS Apple Silicon
 GOOS=darwin GOARCH=arm64 go build -o bin/worker-darwin-arm64 ./cmd/worker
 
-# Windows
+## Windows
 GOOS=windows GOARCH=amd64 go build -o bin/worker-windows-amd64.exe ./cmd/worker
-```
+```go
 
 ## Git Workflow
 
@@ -584,38 +584,38 @@ perf(embeddings): optimize batch processing
 ### Import Errors
 
 ```bash
-# Verify Go module path
+## Verify Go module path
 go mod edit -module=github.com/kennethstott/doculyzer-go-conversion
 
-# Update imports
+## Update imports
 goimports -w .
-```
+```bash
 
 ### Build Errors
 
 ```bash
-# Clean build cache
+## Clean build cache
 go clean -cache
 
-# Rebuild with verbose output
+## Rebuild with verbose output
 go build -v ./cmd/worker
 
-# Check for missing dependencies
+## Check for missing dependencies
 go mod tidy
-```
+```bash
 
 ### Test Failures
 
 ```bash
-# Run tests with verbose output
+## Run tests with verbose output
 go test -v ./internal/parser
 
-# Run single test
+## Run single test
 go test -run TestSpecificTest ./internal/parser
 
-# Skip cache
+## Skip cache
 go test -count=1 ./...
-```
+```go
 
 ## Performance Optimization
 
@@ -632,34 +632,34 @@ func BenchmarkPDFParser(b *testing.B) {
         parser.Parse(content, "test-id")
     }
 }
-```
+```bash
 
 Run benchmarks:
 
 ```bash
-# Run all benchmarks
+## Run all benchmarks
 go test -bench=. ./...
 
-# Run specific benchmark
+## Run specific benchmark
 go test -bench=BenchmarkPDFParser ./internal/parser
 
-# With memory stats
+## With memory stats
 go test -bench=. -benchmem ./internal/parser
 
-# Save results for comparison
+## Save results for comparison
 go test -bench=. ./... > bench_old.txt
-# Make changes
+## Make changes
 go test -bench=. ./... > bench_new.txt
 benchcmp bench_old.txt bench_new.txt
-```
+```bash
 
 ### Memory Profiling
 
 ```bash
-# Profile memory usage
+## Profile memory usage
 go test -memprofile=mem.prof -bench=. ./internal/parser
 go tool pprof -http=:8080 mem.prof
-```
+```go
 
 ## Release Process
 

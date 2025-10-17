@@ -1,0 +1,27 @@
+# Simple PDF Processing Configuration
+# Minimal setup for processing PDFs with SQLite and Parquet output
+
+# Job control - tracks which documents have been processed
+[processing.job_control]
+backend = "sqlite"
+path = "./output/jobs.db"
+
+# Content source - where to find documents
+[[content_sources]]
+name = "local_pdfs"
+type = "file"
+base_path = "./docs"
+file_pattern = "**/*.pdf"
+recursive = true
+
+# Analytics output - store results in Parquet format
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./output/analytics.parquet"
+
+# Embedding disabled for simplicity (can enable later)
+[embedding]
+enabled = false

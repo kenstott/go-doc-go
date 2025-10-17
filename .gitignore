@@ -141,6 +141,7 @@ go/assets/
 go/models/
 go/tests/assets/
 tests/test_output/
+tests/test_assets/
 tests/test_output_go/
 tests/test_output_python/
 tests/test_output_native_go/

@@ -112,7 +112,7 @@ entity_types:
         - list_item
       sample_rules:
         - type: regex_pattern
-          pattern: \b(?:GET|POST|PUT|DELETE|PATCH)\s+/[a-zA-Z0-9/_\-{}]+
+          pattern: '\b(?:GET|POST|PUT|DELETE|PATCH)\s+/[a-zA-Z0-9/_\-{}]+'
         - type: regex_pattern
           pattern: /api/v\d+/[a-zA-Z0-9/_\-]+
     - entity_type: http_method
@@ -189,7 +189,7 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b(?:200|201|204|400|401|403|404|500|502|503)\b
+          pattern: '\b(?:200|201|204|400|401|403|404|500|502|503)\b'
         - type: keyword_match
           keywords:
             - 200 OK
@@ -331,7 +331,7 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b[A-Z][A-Z0-9_]+\b
+          pattern: '\b[A-Z][A-Z0-9_]+\b'
         - type: keyword_match
           keywords:
             - config
@@ -349,7 +349,7 @@ entity_types:
         - code
       sample_rules:
         - type: regex_pattern
-          pattern: \b[A-Z][a-zA-Z]*(?:Error|Exception)\b
+          pattern: '\b[A-Z][a-zA-Z]*(?:Error|Exception)\b'
         - type: keyword_match
           keywords:
             - error

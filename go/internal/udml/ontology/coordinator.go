@@ -1,0 +1,677 @@
+package ontology
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
+)
+
+// ExtractionCoordinator orchestrates distributed ontology extraction across multiple workers
+// Results are written directly to Storage as append operations - no in-memory merging needed
+type ExtractionCoordinator struct {
+	schema          *OntologySchema
+	elements        []Element
+	jobControl      ExtractionJobControl
+	storage         analytics.Storage
+	contentResolver ContentResolver
+	runID           string
+	docID           string
+	sourceName      string
+}
+
+// NewExtractionCoordinator creates a new coordinator for distributed extraction
+func NewExtractionCoordinator(
+	schema *OntologySchema,
+	elements []Element,
+	docID string,
+	sourceName string,
+	jobControl ExtractionJobControl,
+	storage analytics.Storage,
+	contentResolver ContentResolver,
+) *ExtractionCoordinator {
+	runID := fmt.Sprintf("run_%d", time.Now().UnixNano())
+
+	return &ExtractionCoordinator{
+		schema:          schema,
+		elements:        elements,
+		jobControl:      jobControl,
+		storage:         storage,
+		contentResolver: contentResolver,
+		runID:           runID,
+		docID:           docID,
+		sourceName:      sourceName,
+	}
+}
+
+// RunDistributedExtraction executes the full extraction with multiple workers
+func (c *ExtractionCoordinator) RunDistributedExtraction(ctx context.Context, numWorkers int) (*Ontology, error) {
+	startTime := time.Now()
+
+	log.Printf("========================================")
+	log.Printf("DISTRIBUTED ONTOLOGY EXTRACTION")
+	log.Printf("========================================")
+	log.Printf("  Run ID: %s", c.runID)
+	log.Printf("  Workers: %d", numWorkers)
+	log.Printf("  Elements: %d", len(c.elements))
+	log.Printf("  Entity Mappings: %d", len(c.schema.ElementEntityMappings))
+	log.Printf("  Relationship Rules: %d", len(c.schema.EntityRelationshipRules))
+	log.Printf("========================================\n")
+
+	// Phase 1: Entity Extraction (parallel)
+	log.Println("📊 Phase 1: Entity Extraction (parallel)")
+	entityTasks, err := c.createEntityTasks()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create entity tasks: %w", err)
+	}
+
+	if err := c.jobControl.CreateTasks(c.runID, entityTasks); err != nil {
+		return nil, fmt.Errorf("failed to create entity tasks: %w", err)
+	}
+
+	log.Printf("  Created %d entity extraction tasks", len(entityTasks))
+
+	// Start workers for entity extraction
+	if err := c.runWorkerPool(ctx, numWorkers, TaskTypeEntityMapping); err != nil {
+		return nil, fmt.Errorf("entity extraction failed: %w", err)
+	}
+
+	// Wait for Phase 1 completion
+	if err := c.waitForPhaseCompletion(ctx, TaskTypeEntityMapping); err != nil {
+		return nil, fmt.Errorf("entity extraction phase failed: %w", err)
+	}
+
+	log.Println("  ✓ Entity extraction complete\n")
+
+	// Phase 2: Relationship Extraction (parallel, after entities)
+	log.Println("📊 Phase 2: Relationship Extraction (parallel)")
+	if len(c.schema.EntityRelationshipRules) > 0 {
+		relationshipTasks, err := c.createRelationshipTasks()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create relationship tasks: %w", err)
+		}
+
+		if err := c.jobControl.CreateTasks(c.runID, relationshipTasks); err != nil {
+			return nil, fmt.Errorf("failed to create relationship tasks: %w", err)
+		}
+
+		log.Printf("  Created %d relationship extraction tasks", len(relationshipTasks))
+
+		// Start workers for relationship extraction
+		if err := c.runWorkerPool(ctx, numWorkers, TaskTypeRelationshipRule); err != nil {
+			return nil, fmt.Errorf("relationship extraction failed: %w", err)
+		}
+
+		// Wait for Phase 2 completion
+		if err := c.waitForPhaseCompletion(ctx, TaskTypeRelationshipRule); err != nil {
+			return nil, fmt.Errorf("relationship extraction phase failed: %w", err)
+		}
+
+		log.Println("  ✓ Relationship extraction complete\n")
+	} else {
+		log.Println("  (No relationship rules defined)\n")
+	}
+
+	// Assemble results from Storage (no merging needed!)
+	log.Println("📦 Assembling results from Storage...")
+	ontology, err := c.assembleResultsFromStorage()
+	if err != nil {
+		return nil, fmt.Errorf("failed to assemble results: %w", err)
+	}
+
+	// Set metadata
+	ontology.Metadata = OntologyMeta{
+		ExtractorType:    "rule_based_distributed",
+		ExtractorVersion: "1.0.0",
+		ExtractionTime:   time.Since(startTime),
+		ElementCount:     len(c.elements),
+		Confidence:       c.calculateOverallConfidence(ontology),
+		CustomFields: map[string]interface{}{
+			"num_workers":     numWorkers,
+			"run_id":          c.runID,
+			"extraction_mode": "distributed",
+		},
+	}
+
+	// Validate ontology
+	if err := ontology.Validate(); err != nil {
+		return nil, fmt.Errorf("ontology validation failed: %w", err)
+	}
+
+	// Cleanup job control data
+	if err := c.jobControl.CleanupRun(c.runID); err != nil {
+		log.Printf("Warning: failed to cleanup run %s: %v", c.runID, err)
+	}
+
+	log.Printf("✓ Extraction complete in %v", time.Since(startTime))
+	log.Printf("  - Entities: %d", len(ontology.Entities))
+	log.Printf("  - Relationships: %d\n", len(ontology.Relationships))
+
+	return ontology, nil
+}
+
+// createEntityTasks creates extraction tasks grouped by entity type
+// Each task processes ALL mappings for one entity type to enable deduplication
+func (c *ExtractionCoordinator) createEntityTasks() ([]ExtractionTask, error) {
+	// Group mappings by entity type
+	entityTypeGroups := make(map[string][]int) // entity_type -> []mapping_indices
+	for i, mapping := range c.schema.ElementEntityMappings {
+		entityTypeGroups[mapping.EntityType] = append(entityTypeGroups[mapping.EntityType], i)
+	}
+
+	// Create one task per entity type
+	var tasks []ExtractionTask
+	taskIndex := 0
+	for entityType, mappingIndices := range entityTypeGroups {
+		taskID := fmt.Sprintf("%s_entity_%d", c.runID, taskIndex)
+
+		// Store mapping indices in MappingID as comma-separated list
+		mappingID := fmt.Sprintf("entity_type_%s_mappings", entityType)
+		for _, idx := range mappingIndices {
+			mappingID += fmt.Sprintf("_%d", idx)
+		}
+
+		task := ExtractionTask{
+			TaskID:    taskID,
+			RunID:     c.runID,
+			Type:      TaskTypeEntityMapping,
+			MappingID: mappingID,
+			Status:    TaskStatusPending,
+			CreatedAt: time.Now(),
+		}
+
+		tasks = append(tasks, task)
+		taskIndex++
+	}
+
+	return tasks, nil
+}
+
+// createRelationshipTasks creates extraction tasks grouped by relationship type
+// Each task processes ALL rules for one relationship type to enable deduplication
+func (c *ExtractionCoordinator) createRelationshipTasks() ([]ExtractionTask, error) {
+	// Group rules by relationship type
+	relTypeGroups := make(map[string][]int) // relationship_type -> []rule_indices
+	for i, rule := range c.schema.EntityRelationshipRules {
+		relTypeKey := fmt.Sprintf("%s_%s_%s", rule.RelationshipType, rule.SourceEntityType, rule.TargetEntityType)
+		relTypeGroups[relTypeKey] = append(relTypeGroups[relTypeKey], i)
+	}
+
+	// Create one task per relationship type combination
+	var tasks []ExtractionTask
+	taskIndex := 0
+	for relTypeKey, ruleIndices := range relTypeGroups {
+		taskID := fmt.Sprintf("%s_relationship_%d", c.runID, taskIndex)
+
+		// Store rule indices in RuleID as comma-separated list
+		ruleID := fmt.Sprintf("rel_type_%s_rules", relTypeKey)
+		for _, idx := range ruleIndices {
+			ruleID += fmt.Sprintf("_%d", idx)
+		}
+
+		task := ExtractionTask{
+			TaskID:    taskID,
+			RunID:     c.runID,
+			Type:      TaskTypeRelationshipRule,
+			RuleID:    ruleID,
+			Status:    TaskStatusPending,
+			CreatedAt: time.Now(),
+		}
+
+		tasks = append(tasks, task)
+		taskIndex++
+	}
+
+	return tasks, nil
+}
+
+// runWorkerPool starts a pool of workers to process tasks of a specific type
+func (c *ExtractionCoordinator) runWorkerPool(ctx context.Context, numWorkers int, taskType ExtractionTaskType) error {
+	var wg sync.WaitGroup
+	errChan := make(chan error, numWorkers)
+	var workerErrors atomic.Uint32
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		workerID := fmt.Sprintf("worker_%d", i)
+
+		go func(workerID string) {
+			defer wg.Done()
+
+			if err := c.runWorker(ctx, workerID, taskType); err != nil {
+				workerErrors.Add(1)
+				select {
+				case errChan <- err:
+				default:
+					// Error channel full, just log
+					log.Printf("Worker %s error (channel full): %v", workerID, err)
+				}
+			}
+		}(workerID)
+	}
+
+	// Wait for all workers to complete
+	wg.Wait()
+	close(errChan)
+
+	// Check for errors
+	if workerErrors.Load() > 0 {
+		return fmt.Errorf("%d workers encountered errors", workerErrors.Load())
+	}
+
+	return nil
+}
+
+// runWorker is the main worker loop - claims and processes tasks until none remain
+func (c *ExtractionCoordinator) runWorker(ctx context.Context, workerID string, taskType ExtractionTaskType) error {
+	extractor := NewRuleBasedExtractor(c.schema, c.contentResolver)
+
+	for {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		// Try to claim a task
+		task, err := c.jobControl.ClaimTask(c.runID, taskType, workerID)
+		if err != nil {
+			// No more tasks available - worker is done
+			return nil
+		}
+
+		log.Printf("[%s] Processing task %s (type: %s)", workerID, task.TaskID, task.Type)
+
+		// Process the task (writes directly to Storage)
+		result, err := c.processTask(ctx, task, extractor)
+		if err != nil {
+			// Mark task as failed
+			if failErr := c.jobControl.FailTask(task.TaskID, err.Error()); failErr != nil {
+				log.Printf("[%s] Failed to mark task as failed: %v", workerID, failErr)
+			}
+			log.Printf("[%s] Task %s failed: %v", workerID, task.TaskID, err)
+			continue
+		}
+
+		// Mark task as completed
+		if err := c.jobControl.CompleteTask(task.TaskID, *result); err != nil {
+			log.Printf("[%s] Failed to complete task %s: %v", workerID, task.TaskID, err)
+			return err
+		}
+
+		log.Printf("[%s] Completed task %s (%d entities, %d relationships)",
+			workerID, task.TaskID, result.EntityCount, result.RelationshipCount)
+	}
+}
+
+// processTask executes a single extraction task and writes results directly to Storage
+func (c *ExtractionCoordinator) processTask(ctx context.Context, task *ExtractionTask, extractor *RuleBasedExtractor) (*ExtractionTaskResult, error) {
+	result := &ExtractionTaskResult{
+		TaskID:    task.TaskID,
+		RunID:     task.RunID,
+		Type:      task.Type,
+		CreatedAt: time.Now(),
+	}
+
+	switch task.Type {
+	case TaskTypeEntityMapping:
+		// Parse mapping indices from task.MappingID
+		mappingIndices, err := c.parseMappingIndices(task.MappingID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract entities from ALL mappings for this entity type
+		entityMap := make(map[string]*Entity) // Deduplicate by name
+		var entityType string
+
+		for _, mappingIndex := range mappingIndices {
+			mapping := c.schema.ElementEntityMappings[mappingIndex]
+			entityType = mapping.EntityType
+
+			// Filter elements by type for this mapping
+			relevantElements := extractor.filterElementsByType(c.elements, mapping.ElementTypes)
+
+			// Extract entities for each rule in this mapping
+			for _, rule := range mapping.ExtractionRules {
+				entities, err := extractor.applyExtractionRule(ctx, mapping, rule, relevantElements)
+				if err != nil {
+					return nil, fmt.Errorf("failed to apply extraction rule: %w", err)
+				}
+
+				// Deduplicate by name - keep highest confidence entity
+				for _, entity := range entities {
+					if existing, ok := entityMap[entity.Name]; ok {
+						// Replace with higher confidence entity
+						if entity.Confidence > existing.Confidence {
+							// Keep all mentions from both
+							entity.Mentions = append(entity.Mentions, existing.Mentions...)
+							entityCopy := entity
+							entityMap[entity.Name] = &entityCopy
+						} else {
+							// Keep existing, merge mentions
+							existing.Mentions = append(existing.Mentions, entity.Mentions...)
+						}
+					} else {
+						entityCopy := entity
+						entityMap[entity.Name] = &entityCopy
+					}
+				}
+			}
+		}
+
+		// Convert map to slice
+		var allEntities []Entity
+		for _, entity := range entityMap {
+			allEntities = append(allEntities, *entity)
+		}
+
+		// Convert to analytics format and write to Storage
+		analyticsEntities := ConvertEntitiesToAnalytics(allEntities, c.docID, c.sourceName, c.runID)
+		if err := c.storage.AppendOntologyEntities(analyticsEntities); err != nil {
+			return nil, fmt.Errorf("failed to write entities to storage: %w", err)
+		}
+
+		result.MappingID = task.MappingID
+		result.EntityCount = len(allEntities)
+
+		log.Printf("DEBUG: Task %s extracted %d entities for entity_type %s (from %d mappings) and wrote to Storage",
+			task.TaskID, len(allEntities), entityType, len(mappingIndices))
+
+	case TaskTypeRelationshipRule:
+		// Get all entities from Phase 1 by querying Storage
+		analyticsEntities, err := c.storage.QueryOntologyEntities(map[string]interface{}{
+			"attributes.run_id": c.runID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to query entities from storage: %w", err)
+		}
+
+		// Convert to ontology format
+		allEntities := ConvertEntitiesFromAnalytics(analyticsEntities)
+		entityIndex := buildEntityIndex(allEntities)
+
+		// Parse rule indices from task.RuleID
+		ruleIndices, err := c.parseRuleIndices(task.RuleID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Extract relationships from ALL rules for this relationship type
+		relMap := make(map[string]*Relationship) // Deduplicate by source_id + target_id + type
+		var relType string
+
+		for _, ruleIndex := range ruleIndices {
+			rule := c.schema.EntityRelationshipRules[ruleIndex]
+			relType = string(rule.RelationshipType)
+
+			// Extract relationships for this rule
+			relationships := extractor.applyRelationshipRule(rule, entityIndex, c.elements)
+
+			// Deduplicate by source+target+type - keep highest confidence relationship
+			for _, rel := range relationships {
+				// Create unique key from source, target, and type
+				relKey := fmt.Sprintf("%s_%s_%s", rel.SourceID, rel.TargetID, rel.Type)
+
+				if existing, ok := relMap[relKey]; ok {
+					// Replace with higher confidence relationship
+					if rel.Confidence > existing.Confidence {
+						relMap[relKey] = &rel
+					}
+					// Otherwise keep existing (higher confidence)
+				} else {
+					relCopy := rel
+					relMap[relKey] = &relCopy
+				}
+			}
+		}
+
+		// Convert map to slice
+		var allRelationships []Relationship
+		for _, rel := range relMap {
+			allRelationships = append(allRelationships, *rel)
+		}
+
+		// Convert to analytics format and write to Storage
+		analyticsRelationships := ConvertRelationshipsToAnalytics(allRelationships, c.docID, c.sourceName, c.runID)
+		if err := c.storage.AppendOntologyRelationships(analyticsRelationships); err != nil {
+			return nil, fmt.Errorf("failed to write relationships to storage: %w", err)
+		}
+
+		result.RuleID = task.RuleID
+		result.RelationshipCount = len(allRelationships)
+
+		log.Printf("DEBUG: Task %s extracted %d relationships for rel_type %s (from %d rules) and wrote to Storage",
+			task.TaskID, len(allRelationships), relType, len(ruleIndices))
+	}
+
+	return result, nil
+}
+
+// waitForPhaseCompletion polls until all tasks of a type are complete
+func (c *ExtractionCoordinator) waitForPhaseCompletion(ctx context.Context, taskType ExtractionTaskType) error {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			complete, err := c.jobControl.IsPhaseComplete(c.runID, taskType)
+			if err != nil {
+				return err
+			}
+
+			if complete {
+				// Check for failures
+				status, err := c.jobControl.GetTaskStatus(c.runID)
+				if err != nil {
+					return err
+				}
+
+				if status[TaskStatusFailed] > 0 {
+					return fmt.Errorf("%d tasks failed", status[TaskStatusFailed])
+				}
+
+				return nil
+			}
+
+			// Log progress
+			pending, _ := c.jobControl.GetPendingTaskCount(c.runID, taskType)
+			status, _ := c.jobControl.GetTaskStatus(c.runID)
+			log.Printf("  Phase progress: %d pending, %d processing, %d completed, %d failed",
+				pending, status[TaskStatusProcessing], status[TaskStatusCompleted], status[TaskStatusFailed])
+		}
+	}
+}
+
+// assembleResultsFromStorage queries Storage for all results and builds the final Ontology
+// No merging needed - Storage is the source of truth!
+func (c *ExtractionCoordinator) assembleResultsFromStorage() (*Ontology, error) {
+	ontology := &Ontology{
+		ID:            fmt.Sprintf("ont_%d", time.Now().UnixNano()),
+		DocID:         c.docID,
+		Name:          c.schema.Name,
+		Description:   fmt.Sprintf("Extracted from %s using %s schema (distributed)", c.docID, c.schema.Name),
+		Version:       c.schema.Version,
+		Entities:      []Entity{},
+		Relationships: []Relationship{},
+		Classes:       []Class{},
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+	}
+
+	// Query all entities for this run from Storage
+	analyticsEntities, err := c.storage.QueryOntologyEntities(map[string]interface{}{
+		"attributes.run_id": c.runID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query entities from storage: %w", err)
+	}
+
+	// Convert to ontology format - no deduplication needed!
+	// Tasks are grouped by entity_type, so each entity is only written once
+	ontology.Entities = ConvertEntitiesFromAnalytics(analyticsEntities)
+
+	log.Printf("  Assembled %d entities from Storage", len(ontology.Entities))
+
+	// Query all relationships for this run from Storage
+	if len(c.schema.EntityRelationshipRules) > 0 {
+		analyticsRelationships, err := c.storage.QueryOntologyRelationships(map[string]interface{}{
+			"attributes.run_id": c.runID,
+		})
+		if err != nil {
+			// If no relationships were extracted, the table might not exist - this is OK
+			log.Printf("  Note: No relationships table found (likely no relationships extracted)")
+			ontology.Relationships = []Relationship{}
+		} else {
+			// Convert to ontology format
+			ontology.Relationships = ConvertRelationshipsFromAnalytics(analyticsRelationships)
+			log.Printf("  Assembled %d relationships from Storage", len(ontology.Relationships))
+		}
+	}
+
+	return ontology, nil
+}
+
+// parseMappingIndices extracts mapping indices from task MappingID
+func (c *ExtractionCoordinator) parseMappingIndices(mappingID string) ([]int, error) {
+	// mappingID format: "entity_type_<type>_mappings_<idx1>_<idx2>_..."
+	// Example: "entity_type_person_mappings_0_1_2"
+
+	var indices []int
+	parts := []rune(mappingID)
+
+	// Find all numbers after "mappings_"
+	inNumber := false
+	currentNum := ""
+
+	for i, char := range parts {
+		if char >= '0' && char <= '9' {
+			if !inNumber && i > 0 && parts[i-1] == '_' {
+				inNumber = true
+			}
+			if inNumber {
+				currentNum += string(char)
+			}
+		} else if inNumber {
+			// End of number
+			var idx int
+			if _, err := fmt.Sscanf(currentNum, "%d", &idx); err == nil {
+				if idx >= 0 && idx < len(c.schema.ElementEntityMappings) {
+					indices = append(indices, idx)
+				}
+			}
+			currentNum = ""
+			inNumber = false
+		}
+	}
+
+	// Handle last number
+	if inNumber && currentNum != "" {
+		var idx int
+		if _, err := fmt.Sscanf(currentNum, "%d", &idx); err == nil {
+			if idx >= 0 && idx < len(c.schema.ElementEntityMappings) {
+				indices = append(indices, idx)
+			}
+		}
+	}
+
+	if len(indices) == 0 {
+		return nil, fmt.Errorf("no valid mapping indices found in: %s", mappingID)
+	}
+
+	return indices, nil
+}
+
+// parseRuleIndices extracts rule indices from task RuleID
+func (c *ExtractionCoordinator) parseRuleIndices(ruleID string) ([]int, error) {
+	// ruleID format: "rel_type_<type>_rules_<idx1>_<idx2>_..."
+	// Example: "rel_type_mentions_person_location_rules_0_1"
+
+	var indices []int
+	parts := []rune(ruleID)
+
+	// Find all numbers after "rules_"
+	inNumber := false
+	currentNum := ""
+
+	for i, char := range parts {
+		if char >= '0' && char <= '9' {
+			if !inNumber && i > 0 && parts[i-1] == '_' {
+				inNumber = true
+			}
+			if inNumber {
+				currentNum += string(char)
+			}
+		} else if inNumber {
+			// End of number
+			var idx int
+			if _, err := fmt.Sscanf(currentNum, "%d", &idx); err == nil {
+				if idx >= 0 && idx < len(c.schema.EntityRelationshipRules) {
+					indices = append(indices, idx)
+				}
+			}
+			currentNum = ""
+			inNumber = false
+		}
+	}
+
+	// Handle last number
+	if inNumber && currentNum != "" {
+		var idx int
+		if _, err := fmt.Sscanf(currentNum, "%d", &idx); err == nil {
+			if idx >= 0 && idx < len(c.schema.EntityRelationshipRules) {
+				indices = append(indices, idx)
+			}
+		}
+	}
+
+	if len(indices) == 0 {
+		return nil, fmt.Errorf("no valid rule indices found in: %s", ruleID)
+	}
+
+	return indices, nil
+}
+
+// calculateOverallConfidence calculates average confidence across entities and relationships
+func (c *ExtractionCoordinator) calculateOverallConfidence(ontology *Ontology) float64 {
+	if len(ontology.Entities) == 0 {
+		return 0.0
+	}
+
+	total := 0.0
+	count := 0
+
+	for _, entity := range ontology.Entities {
+		total += entity.Confidence
+		count++
+	}
+
+	for _, rel := range ontology.Relationships {
+		total += rel.Confidence
+		count++
+	}
+
+	if count == 0 {
+		return 0.0
+	}
+
+	return total / float64(count)
+}
+
+// buildEntityIndex creates an index of entities by type
+func buildEntityIndex(entities []Entity) map[string][]Entity {
+	index := make(map[string][]Entity)
+	for _, entity := range entities {
+		typeStr := string(entity.Type)
+		index[typeStr] = append(index[typeStr], entity)
+	}
+	return index
+}

@@ -684,3 +684,9 @@ func (s *Neo4jStorage) QueryOntologyEntities(filters map[string]interface{}) ([]
 	log.Printf("WARNING: Ontology entity queries not yet supported in Neo4jStorage")
 	return nil, nil
 }
+
+// QueryOntologyRelationships is not yet implemented for Neo4jStorage
+func (s *Neo4jStorage) QueryOntologyRelationships(filters map[string]interface{}) ([]OntologyRelationship, error) {
+	log.Printf("WARNING: Ontology relationship queries not yet supported in Neo4jStorage")
+	return nil, nil
+}

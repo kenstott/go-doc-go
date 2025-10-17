@@ -17,9 +17,10 @@ import (
 
 // OntologyBuilder orchestrates the automatic ontology schema creation process
 type OntologyBuilder struct {
-	sampler   *sampler.Sampler
-	llmClient LLMClient
-	config    BuilderConfig
+	sampler          *sampler.Sampler
+	llmClient        LLMClient
+	config           BuilderConfig
+	substantiveTypes []string // Element types discovered from corpus
 }
 
 // BuilderConfig configures the ontology building process
@@ -80,14 +81,16 @@ type BuildResult struct {
 
 // NewOntologyBuilder creates a new ontology builder
 func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
-	// Create sampler
-	// For ontology building, focus on substantive element types with rich content
-	substantiveTypes := []string{"paragraph", "header", "list_item", "table_cell", "caption"}
+	// Load authoritative UDML element types from taxonomy
+	substantiveTypes, err := loadUDMLElementTypes()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load UDML element taxonomy: %w", err)
+	}
 
 	// Determine diversity threshold - use config value or default
 	diversityThreshold := config.DiversityThreshold
 	if diversityThreshold == 0.0 {
-		diversityThreshold = 0.0001 // Very low threshold to effectively disable diversity filtering
+		diversityThreshold = 0.85 // Default: filter out samples with >85% similarity (keep diverse samples)
 	}
 	fmt.Printf("DEBUG: BuilderConfig.DiversityThreshold = %.6f, using = %.6f\n", config.DiversityThreshold, diversityThreshold)
 
@@ -144,9 +147,10 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 	}
 
 	return &OntologyBuilder{
-		sampler:   samp,
-		llmClient: llmClient,
-		config:    config,
+		sampler:          samp,
+		llmClient:        llmClient,
+		config:           config,
+		substantiveTypes: substantiveTypes,
 	}, nil
 }
 
@@ -249,166 +253,167 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 	return schema, llmCalls, totalTokens, nil
 }
 
-// loadPredefinedDomains loads domain names from catalog YAML files
-func loadPredefinedDomains() []string {
+// loadPredefinedDomains loads domain names and descriptions from catalog YAML files
+// Returns error if catalog not found - no fallbacks
+func loadPredefinedDomains() (map[string]string, error) {
+	fmt.Println("DEBUG: loadPredefinedDomains() called")
 	catalogPaths := []string{}
 
 	// Check environment variable first - allows user to specify catalog location
 	if envPath := os.Getenv("ONTOLOGY_CATALOG_PATH"); envPath != "" {
 		catalogPaths = append(catalogPaths, envPath)
+		fmt.Printf("DEBUG: Found ONTOLOGY_CATALOG_PATH env var: %s\n", envPath)
 	}
 
-	// Fallback to relative paths for local development
+	// Try relative paths for local development
 	catalogPaths = append(catalogPaths,
 		"./examples/ontologies",
 		"../examples/ontologies",
 		"../../examples/ontologies",
 	)
+	fmt.Printf("DEBUG: Catalog paths to check: %v\n", catalogPaths)
 
 	var catalogPath string
 	for _, path := range catalogPaths {
+		fmt.Printf("DEBUG: Checking path: %s\n", path)
 		if _, err := os.Stat(path); err == nil {
 			catalogPath = path
+			fmt.Printf("DEBUG: Found catalog at: %s\n", path)
 			break
+		} else {
+			fmt.Printf("DEBUG: Path not found (err: %v)\n", err)
 		}
 	}
 
 	if catalogPath == "" {
-		// Fallback to hardcoded list if catalog not found
-		fmt.Println("⚠️  Domain catalogs not found - using fallback list")
-		fmt.Println("   Set ONTOLOGY_CATALOG_PATH environment variable to use rich domain catalogs")
-		return []string{
-			"compliance", "financial", "human_resources", "legal", "logistics", "manufacturing",
-			"marketing", "retail", "sales", "supply_chain", "banking", "entertainment_media",
-			"healthcare", "insurance", "leisure", "education", "medical", "technical",
-			"nonprofit", "religion",
-		}
+		// No fallback - error out loudly
+		fmt.Println("DEBUG: No catalog path found - returning error")
+		return nil, fmt.Errorf("domain catalog not found - checked paths: %v\nSet ONTOLOGY_CATALOG_PATH environment variable or run from project root", catalogPaths)
 	}
 
 	fmt.Printf("✓ Loading domain catalogs from: %s\n", catalogPath)
-	domains := make([]string, 0, 20)
+	domains := make(map[string]string) // map[domain_name]description
 
 	// Walk through all subdirectories and find YAML files
-	filepath.Walk(catalogPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".yaml") {
+	err := filepath.Walk(catalogPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".yaml") {
 			return nil
 		}
 
-		// Read YAML file to extract domain name
+		// Read YAML file to extract domain name and description
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil
+			return fmt.Errorf("failed to read domain catalog %s: %w", path, err)
 		}
 
 		var catalog struct {
-			Domain string `yaml:"domain"`
+			Domain      string `yaml:"domain"`
+			Description string `yaml:"description"`
 		}
 
 		if err := yaml.Unmarshal(data, &catalog); err != nil {
-			return nil
+			return fmt.Errorf("failed to parse domain catalog %s: %w", path, err)
 		}
 
 		if catalog.Domain != "" {
-			domains = append(domains, catalog.Domain)
+			domains[catalog.Domain] = catalog.Description
 		}
 
 		return nil
 	})
 
-	return domains
+	if err != nil {
+		return nil, err
+	}
+
+	if len(domains) == 0 {
+		return nil, fmt.Errorf("no domain catalogs found in %s", catalogPath)
+	}
+
+	fmt.Printf("✓ Loaded %d predefined domains from catalog\n", len(domains))
+	return domains, nil
 }
 
 // identifyDomains asks LLM to identify domains and key concepts
 func (b *OntologyBuilder) identifyDomains(ctx context.Context, samples *sampler.SamplingResult) ([]Domain, []string, int, int, error) {
+	fmt.Println("DEBUG: identifyDomains() called - starting domain identification")
+
 	// Prepare sample text
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 20)
 
-	// Load predefined domains from catalog
-	predefinedDomains := loadPredefinedDomains()
-	domainListFormatted := strings.Join(predefinedDomains, ", ")
+	// Load predefined domains from catalog (fail loudly if not found)
+	fmt.Println("DEBUG: About to call loadPredefinedDomains()")
+	predefinedDomains, err := loadPredefinedDomains()
+	if err != nil {
+		return nil, nil, 0, 0, fmt.Errorf("failed to load domain catalog: %w", err)
+	}
 
-	prompt := fmt.Sprintf(`Analyze the following document samples and identify ALL distinct domains present in the corpus.
+	// Format predefined domains with descriptions for LLM
+	var domainListFormatted strings.Builder
+	for name, desc := range predefinedDomains {
+		domainListFormatted.WriteString(fmt.Sprintf("  • **%s**: %s\n", name, desc))
+	}
 
-## DOMAIN IDENTIFICATION PRINCIPLES
+	// DEBUG: Log the domain list being sent to LLM
+	fmt.Printf("DEBUG: Domain list for LLM (%d domains):\n%s\n", len(predefinedDomains), domainListFormatted.String())
 
-A **domain** represents a SUBJECT AREA or ORGANIZATIONAL FUNCTION with:
-- **Clear ownership boundary** (which team/department/discipline owns this?)
-- **Distinct vocabulary** (specialized terminology)
-- **Logical cohesion** (concepts naturally group together)
+	prompt := fmt.Sprintf(`You MUST select domains from this CLOSED LIST ONLY. You are PROHIBITED from creating new domain names.
 
-## PREDEFINED DOMAINS
+## MANDATORY DOMAIN SELECTION - CLOSED LIST
 
-**IMPORTANT**: Try to use these PRE-DEFINED domains first: **%s**
+**YOUR ONLY ALLOWED CHOICES:**
 
-Only create new domains if the corpus content clearly doesn't fit any predefined domain.
+%s
 
-**Domain categories include**:
-- **Business Functions**: compliance, financial, human_resources, legal, logistics, manufacturing, marketing, retail, sales, supply_chain
-- **Industry Sectors**: banking, entertainment_media, healthcare, insurance, leisure
-- **Academic Disciplines**: education, medical, technical
-- **Organizational Types**: nonprofit, religion
+## STRICT REQUIREMENTS - NO EXCEPTIONS
 
-## INVALID "DOMAINS" (DO NOT use these)
+**YOU MUST:**
+- ✓ Choose ONLY from the exact domain names listed above
+- ✓ Use the EXACT spelling shown (e.g., "medical" NOT "medical_healthcare")
+- ✓ Copy the domain name EXACTLY as written - no modifications
+- ✓ Select 1-5 domains that best match the corpus content
 
-**DO NOT** classify these as domains:
-- ❌ Data types (temporal data, spatial data, binary data)
-- ❌ Technical concerns (authentication, logging, caching)
-- ❌ Document formats (JSON, XML, CSV, markdown)
-- ❌ Infrastructure (storage, networking, compute)
-- ❌ Generic attributes (dates, timestamps, IDs, names)
+**YOU ARE PROHIBITED FROM:**
+- ✗ Creating ANY new domain names not in the list above
+- ✗ Modifying domain names (no "medical_practice", "healthcare_delivery", etc.)
+- ✗ Combining domains into compound names (no "medical_and_healthcare")
+- ✗ Using variations, synonyms, or paraphrases of listed domains
+- ✗ Adding prefixes, suffixes, or underscores to listed domains
 
-**Examples of WRONG domains**:
-- ❌ "temporal_event_tracking" → This is a data type, not a domain
-- ❌ "document_metadata" → This is technical metadata, not a subject area
-- ❌ "authentication_system" → This is infrastructure, not a domain
+**EXAMPLES OF PROHIBITED BEHAVIOR:**
+- ✗ "medical_healthcare" → WRONG - Use "medical" OR "healthcare"
+- ✗ "cognitive_psychology" → WRONG - Use "education" or create nothing
+- ✗ "life_sciences_biology" → WRONG - Use "technical" or create nothing
+- ✗ "financial_services" → WRONG - Use "financial" EXACTLY
 
-## MULTI-DOMAIN DETECTION
+## YOUR TASK
 
-Look for MULTIPLE domains. Common patterns:
-- **financial** + **legal** in annual reports
-- **medical** + **insurance** in healthcare records
-- **retail** + **logistics** in e-commerce
-- **manufacturing** + **logistics** in supply chain
-
-For each domain, identify:
-1. **Name**: Use predefined domain name when applicable (e.g., "financial", "legal", "medical")
-2. **Description**: What this domain covers (1-2 sentences)
-3. **Owner**: Team/department/discipline owner
-4. **Key Concepts**: 3-5 domain-specific concepts
+Analyze these document samples and select which domains from the CLOSED LIST above are present:
 
 Sample texts:
 %s
 
-Return JSON format:
+## REQUIRED OUTPUT FORMAT
+
+Return ONLY domains from the closed list above:
+
 {
   "domains": [
     {
-      "name": "financial",
-      "description": "Financial performance, metrics, and reporting data",
-      "owner": "CFO Office",
-      "key_concepts": ["revenue", "profit", "EBITDA", "cash flow"]
-    },
-    {
-      "name": "legal",
-      "description": "Legal entities, compliance, and regulatory information",
-      "owner": "Legal Department",
-      "key_concepts": ["entity", "jurisdiction", "compliance", "regulation"]
+      "name": "medical",
+      "description": "Medical content including clinical practice, medical history, and healthcare",
+      "owner": "Medical Affairs Department",
+      "key_concepts": ["surgery", "blood transfusion", "anatomy", "pharmacology"]
     }
   ],
   "overall_key_concepts": ["concept1", "concept2", ...]
 }
 
-**SELECTION PROCESS**:
-1. **First**, review the PRE-DEFINED domains above
-2. **Match** corpus content to existing domains where possible
-3. **Only create new domains** if content truly doesn't fit any pre-defined domain
-4. Use consistent naming from the pre-defined list (e.g., "financial" not "finance", "legal" not "legal_affairs")
-
-**IMPORTANT**:
-- Identify ALL distinct domains (typically 1-5 domains per corpus)
-- If truly single-domain, return ONE domain
-- Multi-domain is common for enterprise documents (reports, filings, documentation)
-- ALWAYS prefer pre-defined domains over creating new ones`, domainListFormatted, sampleTexts)
+**CRITICAL VALIDATION:**
+Before returning your response, verify EVERY domain name appears EXACTLY in the closed list above. If a domain name is NOT in the list, you MUST remove it from your response.`, domainListFormatted.String(), sampleTexts)
 
 	response, err := b.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:   2000,
@@ -451,7 +456,48 @@ func (b *OntologyBuilder) defineEntityTypes(ctx context.Context, samples *sample
 		domainList[i] = fmt.Sprintf("- **%s**: %s (Owner: %s)", d.Name, d.Description, d.Owner)
 	}
 
-	prompt := fmt.Sprintf(`Analyze these document samples and define entity types to extract. For each entity type, discover multiple extraction patterns AND assign to the appropriate domain.
+	// Format element types CLOSED LIST
+	elementTypeList := make([]string, len(b.substantiveTypes))
+	for i, et := range b.substantiveTypes {
+		elementTypeList[i] = fmt.Sprintf("  • **%s**", et)
+	}
+
+	// DEBUG: Log the element type list being sent to LLM
+	fmt.Printf("DEBUG: Element type CLOSED LIST for LLM (%d types):\n%s\n", len(b.substantiveTypes), strings.Join(elementTypeList, "\n"))
+
+	prompt := fmt.Sprintf(`You MUST use element types from this CLOSED LIST ONLY. You are PROHIBITED from creating new element type names.
+
+## MANDATORY ELEMENT TYPE SELECTION - CLOSED LIST
+
+**YOUR ONLY ALLOWED ELEMENT TYPES:**
+
+%s
+
+## STRICT REQUIREMENTS - NO EXCEPTIONS
+
+**YOU MUST:**
+- ✓ Choose ONLY from the exact element type names listed above
+- ✓ Use the EXACT spelling shown (e.g., "header" NOT "heading")
+- ✓ Copy the element type name EXACTLY as written - no modifications
+- ✓ Only use element types that exist in the actual corpus
+
+**YOU ARE PROHIBITED FROM:**
+- ✗ Creating ANY new element type names not in the list above
+- ✗ Modifying element type names (no "heading", "table_cell", etc.)
+- ✗ Using synonyms or variations (e.g., "heading" instead of "header")
+- ✗ Using "metadata" as an element type (it doesn't exist in this corpus)
+
+**EXAMPLES OF PROHIBITED BEHAVIOR:**
+- ✗ "heading" → WRONG - Use "header" EXACTLY
+- ✗ "table_cell" → WRONG - This element type does NOT exist in corpus
+- ✗ "metadata" → WRONG - This element type does NOT exist in corpus
+
+**CRITICAL VALIDATION:**
+Before returning your response, verify EVERY element_types array contains ONLY element types from the closed list above. If an element type is NOT in the list, you MUST remove it from your response.
+
+================================================================================
+
+Analyze these document samples and define entity types to extract. For each entity type, discover multiple extraction patterns AND assign to the appropriate domain.
 
 ## DISCOVERED DOMAINS
 
@@ -600,10 +646,10 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
       }
     ]
   }
-]`, strings.Join(domainList, "\n"), strings.Join(entityList, "\n"), sampleTexts)
+]`, strings.Join(elementTypeList, "\n"), strings.Join(domainList, "\n"), strings.Join(entityList, "\n"), sampleTexts)
 
 	response, err := b.llmClient.Complete(ctx, prompt, LLMOptions{
-		MaxTokens:   3000,
+		MaxTokens:   8000,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at entity extraction and ontology design.",
 	})
@@ -763,7 +809,7 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
 ]`, strings.Join(entityTypes, ", "), sampleTexts)
 
 	response, err := b.llmClient.Complete(ctx, prompt, LLMOptions{
-		MaxTokens:   4000,
+		MaxTokens:   8000,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at relationship extraction and pattern discovery. Analyze text samples to find patterns that signal relationships between entities.",
 	})
@@ -795,15 +841,30 @@ func (b *OntologyBuilder) prepareSampleTexts(samples []sampler.Sample, maxSample
 func (b *OntologyBuilder) extractJSON(response string, target interface{}) error {
 	// Find JSON in response (handle markdown code blocks and preamble text)
 	jsonStr := response
+	fmt.Printf("DEBUG extractJSON: Input response length: %d, starts with: %q\n", len(response), response[:min(50, len(response))])
 
 	// Try to extract from ```json code block
 	if start := strings.Index(response, "```json"); start != -1 {
-		start += 7
+		fmt.Printf("DEBUG: Found ```json at position %d\n", start)
+		start += 7 // Skip past "```json"
+		fmt.Printf("DEBUG: After skipping ```json, position=%d, char=%q\n", start, string(response[start]))
+		// Skip any whitespace/newlines after the opening fence
+		for start < len(response) && (response[start] == '\n' || response[start] == '\r' || response[start] == ' ' || response[start] == '\t') {
+			start++
+		}
+		fmt.Printf("DEBUG: After skipping whitespace, position=%d, char=%q\n", start, string(response[start]))
 		if end := strings.Index(response[start:], "```"); end != -1 {
 			jsonStr = response[start : start+end]
+			fmt.Printf("DEBUG: Extracted JSON from code block, length=%d\n", len(jsonStr))
+		} else {
+			fmt.Printf("DEBUG: Could not find closing ``` fence\n")
 		}
 	} else if start := strings.Index(response, "```"); start != -1 {
-		start += 3
+		start += 3 // Skip past "```"
+		// Skip any whitespace/newlines after the opening fence
+		for start < len(response) && (response[start] == '\n' || response[start] == '\r' || response[start] == ' ' || response[start] == '\t') {
+			start++
+		}
 		if end := strings.Index(response[start:], "```"); end != -1 {
 			jsonStr = response[start : start+end]
 		}
@@ -882,11 +943,25 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 
 	jsonStr = strings.TrimSpace(jsonStr)
 
+	// Debug: show first 200 chars of extracted JSON
+	preview := jsonStr
+	if len(preview) > 200 {
+		preview = preview[:200] + "..."
+	}
+	fmt.Printf("DEBUG extractJSON: extracted %d chars, first 200:\n%s\n", len(jsonStr), preview)
+
 	if err := json.Unmarshal([]byte(jsonStr), target); err != nil {
-		return fmt.Errorf("failed to parse LLM response as JSON: %w\nResponse: %s", err, response)
+		return fmt.Errorf("failed to parse LLM response as JSON: %w\nExtracted JSON (first 500 chars): %s", err, jsonStr[:min(500, len(jsonStr))])
 	}
 
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (b *OntologyBuilder) log(result *BuildResult, message string) {
@@ -930,4 +1005,127 @@ func configureResolverFromStorage(samp *sampler.Sampler, parquetPath string) err
 	samp.SetResolver(contentResolver)
 
 	return nil
+}
+
+// loadUDMLElementTypes loads the authoritative UDML element types from element_taxonomy.json
+func loadUDMLElementTypes() ([]string, error) {
+	// ElementTaxonomy represents the structure of element_taxonomy.json
+	type ElementTaxonomy struct {
+		Version     string `json:"version"`
+		Description string `json:"description"`
+		Categories  map[string]struct {
+			Description  string   `json:"description"`
+			ElementTypes []string `json:"element_types"`
+		} `json:"categories"`
+		DefaultCategory string `json:"default_category"`
+		CodeElements    struct {
+			Description string `json:"description"`
+			Types       map[string]struct {
+				Category string `json:"category"`
+			} `json:"types"`
+		} `json:"code_elements"`
+	}
+
+	// Try multiple paths to find element_taxonomy.json
+	possiblePaths := []string{
+		"element_taxonomy.json",
+		"../element_taxonomy.json",
+		"../../element_taxonomy.json",
+		"../../../element_taxonomy.json",
+	}
+
+	var taxonomyData []byte
+	var err error
+	var foundPath string
+
+	for _, path := range possiblePaths {
+		taxonomyData, err = os.ReadFile(path)
+		if err == nil {
+			foundPath = path
+			break
+		}
+	}
+
+	if foundPath == "" {
+		return nil, fmt.Errorf("element_taxonomy.json not found - checked paths: %v", possiblePaths)
+	}
+
+	var taxonomy ElementTaxonomy
+	if err := json.Unmarshal(taxonomyData, &taxonomy); err != nil {
+		return nil, fmt.Errorf("failed to parse element_taxonomy.json: %w", err)
+	}
+
+	// Extract all element types from all categories
+	var allTypes []string
+	for _, category := range taxonomy.Categories {
+		allTypes = append(allTypes, category.ElementTypes...)
+	}
+
+	// Add code element types
+	for typeName := range taxonomy.CodeElements.Types {
+		allTypes = append(allTypes, typeName)
+	}
+
+	// Filter out non-substantive types that shouldn't be used for entity extraction
+	// These are container/metadata types that don't carry extractable entities
+	excluded := map[string]bool{
+		"image":      true, // Media - not text content
+		"link":       true, // Navigation - not entity content
+		"meta":       true, // Metadata - not content
+		"property":   true, // Metadata field
+		"attribute":  true, // Metadata field
+	}
+
+	var substantive []string
+	for _, et := range allTypes {
+		if !excluded[et] {
+			substantive = append(substantive, et)
+		}
+	}
+
+	fmt.Printf("✓ Loaded %d UDML element types from %s (%d total, %d substantive)\n",
+		len(substantive), foundPath, len(allTypes), len(substantive))
+
+	return substantive, nil
+}
+
+// queryElementTypesFromParquet queries the actual element types from Parquet storage
+// DEPRECATED: Use loadUDMLElementTypes() instead to get authoritative UDML taxonomy
+func queryElementTypesFromParquet(parquetPath string) ([]string, error) {
+	// Create analytics storage
+	storageConfig := map[string]interface{}{
+		"path": parquetPath,
+	}
+
+	storage, err := analytics.NewHiveParquetStorage(storageConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create analytics storage: %w", err)
+	}
+	defer storage.Close()
+
+	// Query distinct element types
+	elementTypes, err := storage.GetDistinctElementTypes()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query element types: %w", err)
+	}
+
+	// Filter out container types and keep only substantive content types
+	// Exclude: link, image, nav, script, style, meta
+	excluded := map[string]bool{
+		"link":   true,
+		"image":  true,
+		"nav":    true,
+		"script": true,
+		"style":  true,
+		"meta":   true,
+	}
+
+	var substantive []string
+	for _, et := range elementTypes {
+		if !excluded[et] {
+			substantive = append(substantive, et)
+		}
+	}
+
+	return substantive, nil
 }

@@ -133,7 +133,7 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b[A-Z][a-z]+(?:in|ol|azole|mycin|cillin|oxacin)\b
+          pattern: '\b[A-Z][a-z]+(?:in|ol|azole|mycin|cillin|oxacin)\b'
         - type: keyword_match
           keywords:
             - mg
@@ -152,7 +152,7 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|units)
+          pattern: '\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|units)'
         - type: keyword_match
           keywords:
             - daily
@@ -219,7 +219,7 @@ entity_types:
         - paragraph
       sample_rules:
         - type: regex_pattern
-          pattern: \b\d+(?:\.\d+)?\s*(?:mg/dL|mmol/L|%|units/L|mEq/L)
+          pattern: '\b\d+(?:\.\d+)?\s*(?:mg/dL|mmol/L|%|units/L|mEq/L)'
     - entity_type: symptom
       description: Clinical symptom or sign
       aliases:

@@ -111,7 +111,7 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b[A-Z][A-Za-z\s]+(?:Inc|Corp|LLC|Ltd|LP|LLP|Company)\b
+          pattern: '\b[A-Z][A-Za-z\s]+(?:Inc|Corp|LLC|Ltd|LP|LLP|Company)\b'
     - entity_type: statute_reference
       description: Reference to law, statute, or regulation
       aliases:
@@ -124,9 +124,9 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b\d+\s+U\.?S\.?C\.?\s+§\s*\d+
+          pattern: '\b\d+\s+U\.?S\.?C\.?\s+§\s*\d+'
         - type: regex_pattern
-          pattern: \bSection\s+\d+(?:\.\d+)*\b
+          pattern: '\bSection\s+\d+(?:\.\d+)*\b'
         - type: keyword_match
           keywords:
             - USC
@@ -144,7 +144,7 @@ entity_types:
         - paragraph
       sample_rules:
         - type: regex_pattern
-          pattern: \b[A-Z][a-z]+\s+v\.\s+[A-Z][a-z]+(?:,\s*\d+\s+[A-Z][a-z\.]+\s+\d+)?
+          pattern: '\b[A-Z][a-z]+\s+v\.\s+[A-Z][a-z]+(?:,\s*\d+\s+[A-Z][a-z\.]+\s+\d+)?'
     - entity_type: contract_term
       description: Duration or term of contract
       aliases:
@@ -157,7 +157,7 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b(?:term|duration|period)\s+of\s+\d+\s+(?:years?|months?|days?)
+          pattern: '\b(?:term|duration|period)\s+of\s+\d+\s+(?:years?|months?|days?)'
         - type: keyword_match
           keywords:
             - effective date
