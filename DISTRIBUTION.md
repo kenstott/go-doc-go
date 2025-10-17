@@ -9,7 +9,7 @@ Build the worker binary for your platform:
 ```bash
 cd go
 go build -o ../bin/goworker ./cmd/worker
-```
+```bash
 
 **That's it!** You now have a standalone binary that can be deployed to any machine running the same OS/architecture.
 
@@ -29,30 +29,30 @@ Build for different platforms from a single development machine:
 ### Linux (Production)
 
 ```bash
-# Linux AMD64 (Ubuntu, RHEL, Amazon Linux)
+## Linux AMD64 (Ubuntu, RHEL, Amazon Linux)
 cd go
 GOOS=linux GOARCH=amd64 go build -o ../bin/goworker-linux-amd64 ./cmd/worker
 
-# Linux ARM64 (AWS Graviton, Raspberry Pi)
+## Linux ARM64 (AWS Graviton, Raspberry Pi)
 GOOS=linux GOARCH=arm64 go build -o ../bin/goworker-linux-arm64 ./cmd/worker
-```
+```bash
 
 ### macOS
 
 ```bash
-# macOS Intel
+## macOS Intel
 GOOS=darwin GOARCH=amd64 go build -o ../bin/goworker-darwin-amd64 ./cmd/worker
 
-# macOS Apple Silicon
+## macOS Apple Silicon
 GOOS=darwin GOARCH=arm64 go build -o ../bin/goworker-darwin-arm64 ./cmd/worker
-```
+```bash
 
 ### Windows
 
 ```bash
-# Windows
+## Windows
 GOOS=windows GOARCH=amd64 go build -o ../bin/goworker-windows-amd64.exe ./cmd/worker
-```
+```bash
 
 ## Deployment
 
@@ -61,18 +61,18 @@ GOOS=windows GOARCH=amd64 go build -o ../bin/goworker-windows-amd64.exe ./cmd/wo
 The easiest deployment requires just 2 files:
 
 ```bash
-# 1. Copy binary to target server
+## 1. Copy binary to target server
 scp bin/goworker-linux-amd64 user@server:/opt/godocgo/goworker
 
-# 2. Copy configuration
+## 2. Copy configuration
 scp config.toml user@server:/opt/godocgo/config.toml
 
-# 3. Run on target server
+## 3. Run on target server
 ssh user@server
 cd /opt/godocgo
 chmod +x goworker
 ./goworker --config config.toml --workers 4
-```
+```toml
 
 ### With Embeddings (ONNX Runtime Required)
 
@@ -82,44 +82,44 @@ If you want vector embeddings, you'll need the ONNX Runtime library:
 
 **Linux (Ubuntu/Debian)**:
 ```bash
-# Install from package manager (if available)
+## Install from package manager (if available)
 apt-get install libonnxruntime
 
-# Or download from GitHub releases
+## Or download from GitHub releases
 wget https://github.com/microsoft/onnxruntime/releases/download/v1.23.0/onnxruntime-linux-x64-1.23.0.tgz
 tar -xzf onnxruntime-linux-x64-1.23.0.tgz
 sudo cp onnxruntime-linux-x64-1.23.0/lib/libonnxruntime.so* /usr/local/lib/
 sudo ldconfig
-```
+```bash
 
 **macOS (Homebrew)**:
 ```bash
 brew install onnxruntime
-```
+```bash
 
 #### Option 2: Bundle ONNX Runtime with Binary
 
 ```bash
-# On target server, place library next to binary
+## On target server, place library next to binary
 /opt/godocgo/
 ├── goworker
 ├── libonnxruntime.so  # or .dylib on macOS
 └── config.toml
 
-# Set library path when running
+## Set library path when running
 export LD_LIBRARY_PATH=/opt/godocgo:$LD_LIBRARY_PATH
 ./goworker --config config.toml
-```
+```toml
 
 #### Export ONNX Model
 
 To use embeddings, export a model to ONNX format (one-time setup):
 
 ```bash
-# On development machine with Python
+## On development machine with Python
 pip install onnx sentence-transformers torch
 
-# Export model
+## Export model
 python -c "
 from sentence_transformers import SentenceTransformer
 import torch
@@ -127,7 +127,7 @@ import torch
 model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
 model.save('models/all-MiniLM-L6-v2')
 
-# Convert to ONNX
+## Convert to ONNX
 import onnx
 from optimum.onnxruntime import ORTModelForFeatureExtraction
 ort_model = ORTModelForFeatureExtraction.from_pretrained(
@@ -137,9 +137,9 @@ ort_model = ORTModelForFeatureExtraction.from_pretrained(
 ort_model.save_pretrained('models/all-MiniLM-L6-v2-onnx')
 "
 
-# Copy model directory to target server
+## Copy model directory to target server
 scp -r models/all-MiniLM-L6-v2-onnx user@server:/opt/godocgo/models/
-```
+```toml
 
 Configure in `config.toml`:
 ```toml
@@ -147,7 +147,7 @@ Configure in `config.toml`:
 enabled = true
 provider = "onnx"
 model_path = "/opt/godocgo/models/all-MiniLM-L6-v2-onnx"
-```
+```go
 
 ---
 
@@ -156,15 +156,15 @@ model_path = "/opt/godocgo/models/all-MiniLM-L6-v2-onnx"
 ### Pattern 1: Single Server (Simple)
 
 ```bash
-# Copy binary and config
+## Copy binary and config
 scp bin/goworker-linux-amd64 server:/opt/godocgo/goworker
 scp config.toml server:/opt/godocgo/
 
-# Run worker
+## Run worker
 ssh server
 cd /opt/godocgo
 ./goworker --config config.toml --workers 8
-```
+```toml
 
 **Use when**:
 - <10,000 documents
@@ -191,19 +191,19 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-```
+```bash
 
 ```bash
-# Enable and start
+## Enable and start
 sudo systemctl enable godocgo
 sudo systemctl start godocgo
 
-# Check status
+## Check status
 sudo systemctl status godocgo
 
-# View logs
+## View logs
 sudo journalctl -u godocgo -f
-```
+```toml
 
 ### Pattern 3: Distributed Workers (Multi-Server)
 
@@ -212,21 +212,21 @@ sudo journalctl -u godocgo -f
 [processing.job_control]
 backend = "postgres"
 path = "postgres://user:pass@db.example.com:5432/godocgo"
-```
+```bash
 
 Deploy to multiple servers:
 ```bash
-# Deploy binary and config to all servers
+## Deploy binary and config to all servers
 for server in server1 server2 server3; do
     scp bin/goworker-linux-amd64 $server:/opt/godocgo/goworker
     scp config.toml $server:/opt/godocgo/
 done
 
-# Start workers on each server
+## Start workers on each server
 for server in server1 server2 server3; do
     ssh $server "cd /opt/godocgo && ./goworker --config config.toml --worker-id $server --workers 8 &"
 done
-```
+```toml
 
 **Automatic coordination** via PostgreSQL - no conflicts!
 
@@ -244,13 +244,13 @@ RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/
 COPY --from=builder /build/worker /usr/local/bin/goworker
 ENTRYPOINT ["/usr/local/bin/goworker"]
 CMD ["--config", "/config/config.toml"]
-```
+```bash
 
 Build and run:
 ```bash
 docker build -t godocgo/worker:1.0 .
 docker run -v $(pwd)/config.toml:/config/config.toml godocgo/worker:1.0
-```
+```bash
 
 ### Pattern 5: Kubernetes
 
@@ -283,19 +283,19 @@ spec:
       - name: config
         configMap:
           name: godocgo-config
-```
+```bash
 
 Deploy:
 ```bash
-# Create config
+## Create config
 kubectl create configmap godocgo-config --from-file=config.toml
 
-# Deploy workers
+## Deploy workers
 kubectl apply -f deployment.yaml
 
-# Scale up
+## Scale up
 kubectl scale deployment godocgo-worker --replicas=50
-```
+```go
 
 ---
 
@@ -304,7 +304,7 @@ kubectl scale deployment godocgo-worker --replicas=50
 ### Minimal Production Config (No Embeddings)
 
 ```toml
-# config.toml
+## config.toml
 [processing.job_control]
 backend = "postgres"
 path = "postgres://user:pass@db.prod.example.com:5432/godocgo"
@@ -324,7 +324,7 @@ path = "/data/analytics.parquet"
 
 [embedding]
 enabled = false
-```
+```toml
 
 ### Full Production Config (With Embeddings)
 
@@ -360,7 +360,7 @@ successor_count = 2
 [ontology]
 enabled = true
 schema_path = "/opt/godocgo/ontologies/financial.yaml"
-```
+```yaml
 
 ---
 
@@ -386,17 +386,17 @@ schema_path = "/opt/godocgo/ontologies/financial.yaml"
 ### Binary Won't Run
 
 ```bash
-# Check if binary is executable
+## Check if binary is executable
 chmod +x goworker
 
-# Check architecture matches
+## Check architecture matches
 file goworker
-# Should show correct arch (x86-64, aarch64, etc.)
+## Should show correct arch (x86-64, aarch64, etc.)
 
-# Check for missing libraries (if using ONNX)
+## Check for missing libraries (if using ONNX)
 ldd goworker  # Linux
 otool -L goworker  # macOS
-```
+```toml
 
 ### "ONNX Runtime library not found"
 
@@ -404,31 +404,31 @@ otool -L goworker  # macOS
 ```toml
 [embedding]
 enabled = false
-```
+```bash
 
 **Solution 2**: Set library path
 ```bash
-# Linux
+## Linux
 export LD_LIBRARY_PATH=/path/to/lib:$LD_LIBRARY_PATH
 
-# macOS
+## macOS
 export DYLD_LIBRARY_PATH=/path/to/lib:$DYLD_LIBRARY_PATH
 
-# Or set in systemd service (see Pattern 2 above)
-```
+## Or set in systemd service (see Pattern 2 above)
+```bash
 
 ### Worker Exits Immediately
 
 ```bash
-# Check configuration
+## Check configuration
 ./goworker --config config.toml --max-documents 1
 
-# Verify data directories exist
+## Verify data directories exist
 mkdir -p /data
 
-# Check database connectivity (if using PostgreSQL)
+## Check database connectivity (if using PostgreSQL)
 psql "postgres://user:pass@db:5432/godocgo" -c "SELECT 1"
-```
+```go
 
 ---
 
@@ -479,7 +479,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: bin/goworker-${{ matrix.goos }}-${{ matrix.goarch }}*
-```
+```yaml
 
 ### GitLab CI
 
@@ -506,13 +506,13 @@ build:
 Default binary size is ~25-30MB. To reduce:
 
 ```bash
-# Strip debug symbols
+## Strip debug symbols
 go build -ldflags="-s -w" -o bin/goworker ./cmd/worker
 
-# With UPX compression (requires upx tool)
+## With UPX compression (requires upx tool)
 upx --best --lzma bin/goworker
-# Reduces to ~8-10MB
-```
+## Reduces to ~8-10MB
+```go
 
 ---
 
@@ -523,17 +523,17 @@ upx --best --lzma bin/goworker
 **macOS**:
 ```bash
 codesign --sign "Developer ID" bin/goworker-darwin-amd64
-```
+```bash
 
 **Windows**:
 ```bash
 signtool sign /f certificate.pfx /p password /tr http://timestamp.digicert.com bin/goworker-windows-amd64.exe
-```
+```bash
 
 ### Container Security
 
 ```dockerfile
-# Use distroless for minimal attack surface
+## Use distroless for minimal attack surface
 FROM gcr.io/distroless/static:nonroot
 COPY --from=builder /build/worker /worker
 USER nonroot:nonroot

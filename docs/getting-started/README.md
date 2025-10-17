@@ -7,20 +7,20 @@
 ### 1. Prerequisites
 
 ```bash
-# Go 1.24 or later
+## Go 1.24 or later
 go version
 
-# Clone the repository
+## Clone the repository
 git clone https://github.com/kenstott/go-doc-go.git
 cd go-doc-go
-```
+```bash
 
 ### 2. Build the Worker
 
 ```bash
 cd go
 go build -o ../bin/goworker ./cmd/worker
-```
+```bash
 
 ### 3. Create Configuration
 
@@ -47,20 +47,20 @@ path = "./data/analytics.parquet"
 [embedding]
 enabled = false
 EOF
-```
+```bash
 
 ### 4. Add Your Documents
 
 ```bash
 mkdir -p docs
-# Copy your PDF, DOCX, XLSX, or other documents to ./docs/
-```
+## Copy your PDF, DOCX, XLSX, or other documents to ./docs/
+```bash
 
 ### 5. Run the Worker
 
 ```bash
 ./bin/goworker --config config.toml --workers 4
-```
+```bash
 
 **That's it!** The worker will:
 - Discover documents from `./docs`
@@ -75,11 +75,11 @@ mkdir -p docs
 ### Using DuckDB
 
 ```bash
-# Install DuckDB
+## Install DuckDB
 brew install duckdb  # macOS
-# or download from https://duckdb.org
+## or download from https://duckdb.org
 
-# Query your documents
+## Query your documents
 duckdb
 
 D SELECT element_type, COUNT(*) as count
@@ -87,41 +87,61 @@ D SELECT element_type, COUNT(*) as count
   GROUP BY element_type
   ORDER BY count DESC;
 
-# View document list
+## View document list
 D SELECT doc_id, source_name, metadata
   FROM read_parquet('./data/analytics.parquet/documents/*.parquet')
   LIMIT 10;
 
-# Search content
+## Search content
 D SELECT element_id, element_type, content_preview
   FROM read_parquet('./data/analytics.parquet/elements/*.parquet')
   WHERE content_preview LIKE '%search term%'
   LIMIT 20;
-```
+```python
 
 ### Using Python/Pandas
 
 ```python
 import pandas as pd
 
-# Load elements
+## Load elements
 elements = pd.read_parquet('./data/analytics.parquet/elements')
 
-# View element types
+## View element types
 print(elements.groupby('element_type').size())
 
-# Filter by type
+## Filter by type
 paragraphs = elements[elements['element_type'] == 'paragraph']
 print(paragraphs[['element_id', 'content_preview']].head())
 
-# Load relationships
+## Load relationships
 relationships = pd.read_parquet('./data/analytics.parquet/relationships')
 print(relationships.head())
-```
+```go
 
 ---
 
 ## What You Just Got
+
+### Document Processing Workflow
+
+```mermaid
+graph LR
+    A[Documents] -->|Discover| B[Job Control<br/>SQLite/PostgreSQL]
+    B -->|Claim| C[Worker<br/>Process]
+    C -->|Parse| D[UDML Elements<br/>+ Relationships]
+    D -->|Store| E[Analytics Output<br/>Parquet]
+    D -->|Optional| F[Neo4j Graph]
+    D -->|Optional| G[Embeddings<br/>Vector Search]
+
+    style A fill:#ffd,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#bfb,stroke:#333,stroke-width:2px
+    style D fill:#fbb,stroke:#333,stroke-width:2px
+    style E fill:#ddf,stroke:#333,stroke-width:2px
+    style F fill:#dfd,stroke:#333,stroke-width:2px
+    style G fill:#fdd,stroke:#333,stroke-width:2px
+```
 
 ### ✅ Document Processing Pipeline
 - **Parse any document format** - PDF, DOCX, XLSX, PPTX, JSON, CSV, HTML, Markdown, XML
@@ -141,9 +161,9 @@ print(relationships.head())
 ### 1. Process from Multiple Sources
 
 ```toml
-# Add to config.toml
+## Add to config.toml
 
-# S3/MinIO
+## S3/MinIO
 [[content_sources]]
 name = "s3_docs"
 type = "s3"
@@ -151,14 +171,14 @@ bucket = "my-documents"
 prefix = "uploads/"
 region = "us-east-1"
 
-# Web scraping
+## Web scraping
 [[content_sources]]
 name = "documentation"
 type = "web"
 base_url = "https://docs.example.com"
 follow_links = true
 max_link_depth = 2
-```
+```toml
 
 ### 2. Enable Embeddings for Semantic Search
 
@@ -168,18 +188,18 @@ enabled = true
 provider = "onnx"
 model_path = "./models/all-MiniLM-L6-v2"
 
-# Contextual embeddings
+## Contextual embeddings
 contextual = true
 predecessor_count = 2
 successor_count = 2
-```
+```bash
 
 **Setup**:
 ```bash
-# Export model to ONNX format (one-time setup)
+## Export model to ONNX format (one-time setup)
 pip install onnx sentence-transformers torch optimum[onnxruntime]
 
-# Export using Python
+## Export using Python
 python -c "
 from optimum.onnxruntime import ORTModelForFeatureExtraction
 from transformers import AutoTokenizer
@@ -192,12 +212,12 @@ ort_model.save_pretrained('./models/all-MiniLM-L6-v2')
 tokenizer.save_pretrained('./models/all-MiniLM-L6-v2')
 "
 
-# Install ONNX Runtime library
+## Install ONNX Runtime library
 pip install onnxruntime  # or onnxruntime-coreml for macOS
 
-# Set library path (if not using system-wide install)
+## Set library path (if not using system-wide install)
 export ONNXRUNTIME_SHARED_LIBRARY_PATH=".venv/lib/python3.12/site-packages/onnxruntime/capi/libonnxruntime.1.23.0.dylib"
-```
+```toml
 
 ### 3. Export to Neo4j Graph Database
 
@@ -217,7 +237,7 @@ The worker will automatically export to Neo4j when the queue is empty.
 ### 4. Extract Domain Entities with Ontologies
 
 ```yaml
-# ontologies/financial.yaml
+## ontologies/financial.yaml
 name: financial
 domain: business
 version: "1.0"
@@ -229,34 +249,34 @@ element_entity_mappings:
     extraction_rules:
       - type: "regex_pattern"
         pattern: '\b([A-Z][a-z]+\s+(?:Inc|LLC|Corp|Corporation))\b'
-```
+```toml
 
 ```toml
-# config.toml
+## config.toml
 [ontology]
 enabled = true
 schema_path = "./ontologies/financial.yaml"
-```
+```toml
 
 ### 5. Scale to Distributed Processing
 
 ```toml
-# config.toml - use PostgreSQL for job coordination
+## config.toml - use PostgreSQL for job coordination
 [processing.job_control]
 backend = "postgres"
 path = "postgres://user:pass@db-server:5432/godocgo"
-```
+```bash
 
 ```bash
-# Run multiple workers on different servers
-# Server 1
+## Run multiple workers on different servers
+## Server 1
 ./bin/goworker --config config.toml --worker-id "worker-01" --workers 8
 
-# Server 2
+## Server 2
 ./bin/goworker --config config.toml --worker-id "worker-02" --workers 8
 
-# They coordinate automatically via PostgreSQL!
-```
+## They coordinate automatically via PostgreSQL!
+```toml
 
 ---
 
@@ -265,31 +285,31 @@ path = "postgres://user:pass@db-server:5432/godocgo"
 ### Development: Process a few test documents
 
 ```bash
-# Process just 10 documents to test configuration
+## Process just 10 documents to test configuration
 ./bin/goworker --config config.toml --max-documents 10
-```
+```bash
 
 ### Production: Continuous processing
 
 ```bash
-# Run worker continuously, processing new documents as they appear
+## Run worker continuously, processing new documents as they appear
 ./bin/goworker --config config.toml --workers 8
 
-# Or with Docker
+## Or with Docker
 docker run -v $(pwd)/config.toml:/etc/config.toml \
            -v $(pwd)/docs:/docs \
            -v $(pwd)/data:/data \
            godocgo/worker:latest --workers 8
-```
+```bash
 
 ### Analytics: Query processed data
 
 ```bash
-# DuckDB - Fast SQL queries
+## DuckDB - Fast SQL queries
 duckdb
 D FROM read_parquet('./data/analytics.parquet/elements/*.parquet') LIMIT 10;
 
-# Python - Data science workflows
+## Python - Data science workflows
 python
 >>> import pandas as pd
 >>> df = pd.read_parquet('./data/analytics.parquet/elements')
@@ -304,18 +324,18 @@ python
 Test with a few documents first to verify configuration:
 ```bash
 mkdir docs/test
-# Add 2-3 test documents
+## Add 2-3 test documents
 ./bin/goworker --config config.toml --max-documents 5
-```
+```bash
 
 ### Monitor Progress
 ```bash
-# Check log output for processing status
+## Check log output for processing status
 ./bin/goworker --config config.toml 2>&1 | tee worker.log
 
-# In another terminal, watch the analytics output
+## In another terminal, watch the analytics output
 watch -n 5 'ls -lh ./data/analytics.parquet/*/*.parquet'
-```
+```sql
 
 ### Choose Appropriate Storage
 - **Development**: SQLite job control + Parquet analytics (simple, no setup)
@@ -324,13 +344,13 @@ watch -n 5 'ls -lh ./data/analytics.parquet/*/*.parquet'
 
 ### Verify Output
 ```bash
-# Check that Parquet files were created
+## Check that Parquet files were created
 ls -la ./data/analytics.parquet/
 
-# Quick stats with DuckDB
+## Quick stats with DuckDB
 duckdb -c "SELECT COUNT(*) FROM read_parquet('./data/analytics.parquet/documents/*.parquet')"
 duckdb -c "SELECT COUNT(*) FROM read_parquet('./data/analytics.parquet/elements/*.parquet')"
-```
+```sql
 
 ---
 
@@ -339,35 +359,35 @@ duckdb -c "SELECT COUNT(*) FROM read_parquet('./data/analytics.parquet/elements/
 ### No documents found
 
 ```bash
-# Verify file pattern matches your documents
+## Verify file pattern matches your documents
 ls docs/**/*.pdf
 
-# Check configuration
+## Check configuration
 cat config.toml | grep -A 5 content_sources
 
-# Run with debug logging
+## Run with debug logging
 ./bin/goworker --config config.toml --max-documents 1
-```
+```bash
 
 ### Worker exits immediately
 
 ```bash
-# Check if SQLite job control database exists
+## Check if SQLite job control database exists
 ls -la ./data/jobs.db
 
-# Create data directory if needed
+## Create data directory if needed
 mkdir -p ./data
-```
+```bash
 
 ### Out of memory
 
 ```bash
-# Reduce concurrent workers
+## Reduce concurrent workers
 ./bin/goworker --config config.toml --workers 2
 
-# Process in smaller batches
+## Process in smaller batches
 ./bin/goworker --config config.toml --max-documents 100
-```
+```toml
 
 ---
 
@@ -375,10 +395,10 @@ mkdir -p ./data
 
 - **[README](README.md)** - Project overview and features
 - **[Go Implementation Guide](go/README.md)** - Detailed Go worker documentation
-- **[UDML Specification](docs/UDML_SPECIFICATION.md)** - Complete UDML spec
+- **[UDML Specification](docs/features/udml/specification.md)** - Complete UDML spec
 - **[Configuration Reference](go/README.md#configuration-reference)** - All config options
-- **[Ontology System](docs/ontology.md)** - Knowledge graph extraction
-- **[Embeddings Guide](docs/embeddings.md)** - Semantic search setup
+- **[Ontology System](docs/features/ontology/README.md)** - Knowledge graph extraction
+- **[Embeddings Guide](docs/features/embeddings/README.md)** - Semantic search setup
 
 ---
 
@@ -391,3 +411,17 @@ mkdir -p ./data
 5. **Deploy at scale** - Use PostgreSQL and distribute across multiple workers
 
 **Happy document processing! 🎉**
+
+---
+
+## Related Documentation
+
+- **Up**: [Documentation Home](../README.md)
+- **Next**: [Configuration Overview](../configuration/README.md)
+
+### Quick Links
+
+- [Documentation Home](../README.md)
+- [Quick Reference](../../QUICK_REFERENCE.md)
+- [CLI Reference](../reference/cli.md)
+- [Troubleshooting](../operations/troubleshooting.md)

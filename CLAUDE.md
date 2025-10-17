@@ -1,103 +1,48 @@
-1# Go-Doc-Go Project Guidelines
+# Go-Doc-Go Project Guidelines
 
 ## Project Overview
-Go-Doc-Go is a comprehensive document parsing and analysis system designed to extract structured information from various document formats (PDF, DOCX, XLSX, JSON, CSV, HTML, Markdown, etc.) and store it in a queryable format with relationship tracking.
+Go-Doc-Go is a comprehensive document parsing and analysis system written in **Go** that extracts structured information from various document formats (PDF, DOCX, XLSX, JSON, CSV, HTML, Markdown, etc.) and stores it in a queryable format with relationship tracking.
 
-## Python Best Practices
-
-### Code Organization
-1. **Single Responsibility Principle**: Each class/function should have one clear purpose
-2. **DRY (Don't Repeat Yourself)**: Extract common functionality into reusable functions
-3. **Explicit is better than implicit**: Use clear, descriptive names
-4. **Composition over inheritance**: Prefer composition and mixins over deep inheritance hierarchies
-5. **Default values**: You are prohibited from providing default values under most circumstances, use required values and error out if not received.
-6. **Fallback code paths**: Your prohibited from creating fallbacks with human consent, particularly as a method to support legacy.
-7. **Legacy**: There is no such concept as legacy. DO NOT use the word legacy. DO NOT introduce legacy code.
-
-### Naming Conventions
-- **Classes**: PascalCase (e.g., `DocumentParser`, `PdfParser`)
-- **Functions/Methods**: snake_case (e.g., `parse_document`, `extract_text`)
-- **Constants**: UPPER_SNAKE_CASE (e.g., `MAX_FILE_SIZE`, `DEFAULT_TIMEOUT`)
-- **Private methods**: Leading underscore (e.g., `_internal_method`)
-
-### Type Hints
-Always use type hints for better code documentation and IDE support:
-```python
-from typing import Dict, List, Optional, Tuple, Any
-
-def parse_document(content: Dict[str, Any], config: Optional[Dict] = None) -> Tuple[List[Dict], List[Dict]]:
-    """Parse document and return elements and relationships."""
-    pass
-```
-
-### Error Handling
-- Use specific exceptions rather than catching broad `Exception`
-- Create custom exceptions for domain-specific errors
-- Always log errors with appropriate context
-```python
-class ParserError(Exception):
-    """Base exception for parser errors."""
-    pass
-
-class InvalidDocumentError(ParserError):
-    """Raised when document format is invalid."""
-    pass
-```
-
-### DRY Principles Implementation
-
-#### Common Base Classes
-```python
-# Base parser with common functionality
-class DocumentParser(ABC):
-    def __init__(self, config: Optional[Dict] = None):
-        self.config = config or {}
-        self.max_content_preview = self.config.get("max_content_preview", 100)
-    
-    def _generate_id(self, prefix: str) -> str:
-        """Generate unique ID - common for all parsers."""
-        return f"{prefix}{uuid.uuid4().hex[:8]}"
-    
-    @abstractmethod
-    def parse(self, content: Dict[str, Any]) -> Dict[str, Any]:
-        """Each parser implements specific parsing logic."""
-        pass
-```
-
-#### Helper Functions
-Extract repeated logic into helper functions:
-```python
-# utils.py
-def truncate_content(text: str, max_length: int = 100) -> str:
-    """Truncate content for preview - used across all parsers."""
-    if len(text) <= max_length:
-        return text
-    return text[:max_length - 3] + "..."
-
-def validate_element_type(element_type: str) -> bool:
-    """Validate element type against ElementType enum."""
-    return element_type in [e.value for e in ElementType]
-```
-
-#### Configuration Management
-```python
-class ParserConfig:
-    """Centralized configuration management."""
-    
-    DEFAULTS = {
-        "max_content_preview": 100,
-        "extract_metadata": True,
-        "extract_relationships": True,
-        "max_depth": 10
-    }
-    
-    @classmethod
-    def merge_with_defaults(cls, config: Optional[Dict] = None) -> Dict:
-        """Merge user config with defaults."""
-        return {**cls.DEFAULTS, **(config or {})}
-```
+**Language:** Go
 
 ## Go Development Standards
+
+### Code Organization
+1. **Single Responsibility Principle**: Each package/function should have one clear purpose
+2. **DRY (Don't Repeat Yourself)**: Extract common functionality into reusable packages
+3. **Explicit is better than implicit**: Use clear, descriptive names
+4. **Composition over inheritance**: Prefer interfaces and composition over embedding
+5. **No default values without explicit design**: Required configuration must be explicit and fail fast if missing
+6. **No fallback code paths without explicit approval**: Avoid silent fallbacks that hide errors
+7. **Clean design over backward compatibility**: No technical debt accumulation (see Design Integrity Principle)
+
+### Naming Conventions
+- **Packages**: lowercase, single word (e.g., `parser`, `config`, `storage`)
+- **Types/Structs**: PascalCase (e.g., `DocumentParser`, `PdfParser`)
+- **Functions/Methods**: PascalCase for exported, camelCase for unexported (e.g., `ParseDocument`, `extractText`)
+- **Constants**: PascalCase for exported, camelCase for unexported (e.g., `MaxFileSize`, `defaultTimeout`)
+- **Interfaces**: PascalCase, often ending in -er (e.g., `Parser`, `Reader`, `Handler`)
+
+### Project Structure
+```bash
+go-doc-go/
+├── cmd/                    # Command-line applications
+│   ├── worker/            # Document processing worker
+│   └── ontology/          # Ontology extraction CLI
+├── go/                    # Go source code root
+│   ├── internal/          # Private application code
+│   │   ├── parser/       # Document parsers
+│   │   ├── storage/      # Database/storage layer
+│   │   ├── config/       # Configuration management
+│   │   ├── jobcontrol/   # Work queue system
+│   │   └── udml/         # UDML and ontology extraction
+│   └── pkg/              # Public libraries (if any)
+├── bin/                   # Compiled binaries (gitignored)
+├── tests/                 # Test files and fixtures
+├── assets/                # Static assets (models, etc.)
+├── examples/              # Example configurations and ontologies
+└── docs/                  # Documentation
+```go
 
 ### Binary Output Location
 All compiled Go binaries MUST be output to `<project-dir>/bin/` directory.
@@ -109,15 +54,15 @@ All compiled Go binaries MUST be output to `<project-dir>/bin/` directory.
 
 **Examples:**
 ```bash
-# Building the worker binary
+## Building the worker binary
 go build -o bin/goworker ./cmd/worker
 
-# Building the ontology CLI
-go build -o bin/ontology ./cmd/ontology
+## Building the ontology CLI
+go build -o bin/ontology_interview ./cmd/ontology
 
-# Building any command
+## Building any command
 go build -o bin/<binary-name> ./cmd/<command>/
-```
+```bash
 
 **Benefits:**
 - Centralized location for all binaries (easier to find and manage)
@@ -126,120 +71,266 @@ go build -o bin/<binary-name> ./cmd/<command>/
 - Prevents binaries from being scattered across cmd/ directories
 - Simplifies cleanup (rm -rf bin/)
 
+### Error Handling
+- Return errors explicitly; use Go's idiomatic error handling
+- Create custom error types for domain-specific errors
+- Wrap errors with context using `fmt.Errorf` with `%w`
+- Log errors with appropriate context using structured logging
+
+```go
+package parser
+
+import (
+    "fmt"
+    "errors"
+)
+
+var (
+    ErrInvalidDocument = errors.New("invalid document format")
+    ErrParserNotFound  = errors.New("parser not found for document type")
+)
+
+type ParseError struct {
+    DocID string
+    Err   error
+}
+
+func (e *ParseError) Error() string {
+    return fmt.Sprintf("failed to parse document %s: %v", e.DocID, e.Err)
+}
+
+func (e *ParseError) Unwrap() error {
+    return e.Err
+}
+
+func ParseDocument(docID string, content []byte) error {
+    if len(content) == 0 {
+        return &ParseError{
+            DocID: docID,
+            Err:   ErrInvalidDocument,
+        }
+    }
+    // Parse logic...
+    return nil
+}
+```
+
+### Interface Design
+- Keep interfaces small and focused (often 1-3 methods)
+- Define interfaces at the point of use, not implementation
+- Use standard library interfaces where possible (io.Reader, io.Writer, etc.)
+
+```go
+// Good: Small, focused interface
+type Parser interface {
+    Parse(content []byte) (*ParseResult, error)
+}
+
+// Good: Using standard library interfaces
+type DocumentReader interface {
+    io.Reader
+    io.Closer
+}
+```toml
+
+### Configuration Management
+- Use struct tags for configuration parsing (YAML, TOML, JSON)
+- Validate configuration at startup, fail fast
+- No silent defaults - require explicit configuration
+
+```go
+type Config struct {
+    Database DatabaseConfig `yaml:"database" toml:"database"`
+    Parser   ParserConfig   `yaml:"parser" toml:"parser"`
+}
+
+type ParserConfig struct {
+    MaxContentPreview int  `yaml:"max_content_preview" toml:"max_content_preview"`
+    ExtractMetadata   bool `yaml:"extract_metadata" toml:"extract_metadata"`
+    MaxDepth          int  `yaml:"max_depth" toml:"max_depth"`
+}
+
+func (c *Config) Validate() error {
+    if c.Parser.MaxDepth == 0 {
+        return fmt.Errorf("parser.max_depth is required")
+    }
+    // More validation...
+    return nil
+}
+```
+
 ## Testing Guidelines
 
 ### Test Organization
-```
+```go
 tests/
-├── unit/           # Unit tests - isolated component tests
-├── integration/    # Integration tests - component interactions  
-├── fixtures/       # Test data and fixtures
-└── conftest.py     # Pytest configuration
+├── unit/              # Unit tests - isolated component tests (Go)
+├── integration/       # Integration tests - component interactions
+├── fixtures/          # Static test data (version controlled)
+├── test_configs/      # Test configuration files (version controlled)
+├── test_assets/       # Generated test assets (gitignored, disposable)
+└── test_output/       # Test results and output (gitignored, disposable)
 ```
 
-### Basic Test Structure
-```python
-import pytest
+### Test File Location - CRITICAL
+**NEVER create test files in `/tmp` or `/private/tmp`** - these directories are cleared on system restart.
 
-class TestDocumentParser:
-    def test_parse_returns_valid_elements(self):
-        """Test that parser returns valid element types."""
-        parser = DocumentParser()
-        result = parser.parse(sample_content)
-        
-        for element in result["elements"]:
-            element_type = element["element_type"] 
-            assert element_type in [e.value for e in ElementType]
+**Requirements:**
+- All test files MUST be stored within `./tests/` directory structure
+- Test files in the project directory survive restarts
+- Organize by purpose to enable selective cleanup by humans
+
+**Directory Purposes:**
+
+1. **`./tests/test_configs/`** (Version Controlled)
+   - Test configuration files (YAML, TOML, JSON)
+   - These define test scenarios and parameters
+   - Should be committed to version control
+   - Example: `wikipedia_medical_mining.yaml`, `ontology_extraction_test.toml`
+
+2. **`./tests/fixtures/`** (Version Controlled)
+   - Static, curated test data used by tests
+   - Small sample documents for consistent test behavior
+   - Expected output files for validation
+   - Should be committed to version control
+   - Example: `sample.pdf`, `expected_parsed_output.json`
+
+3. **`./tests/test_assets/`** (Gitignored, Disposable)
+   - Large files downloaded/generated during testing
+   - Wikipedia pages, external documents, generated PDFs
+   - Should be in `.gitignore` - NOT version controlled
+   - Can be safely deleted by humans to reclaim disk space
+   - Tests should regenerate these as needed
+   - Example: `wikipedia_medicine_downloaded.html`, `generated_large_document.pdf`
+
+4. **`./tests/test_output/`** (Gitignored, Disposable)
+   - Test execution results and artifacts
+   - Parsed output, analysis results, logs
+   - Should be in `.gitignore` - NOT version controlled
+   - Can be safely deleted by humans to reclaim disk space
+   - Tests regenerate on each run
+   - Example: `parsed_results.json`, `test_run_2024_01_15.log`
+
+**Example Structure:**
+```toml
+tests/
+├── test_configs/                    # VERSION CONTROLLED
+│   ├── wikipedia_medical_mining.yaml
+│   ├── pdf_parsing_test.toml
+│   └── ontology_extraction_test.yaml
+├── fixtures/                        # VERSION CONTROLLED
+│   ├── sample_documents/
+│   │   ├── tiny_sample.pdf         # Small files only
+│   │   └── minimal_test.docx       # < 100KB each
+│   └── expected_outputs/
+│       └── expected_parse.json
+├── test_assets/                     # GITIGNORED - Safe to delete
+│   ├── wikipedia/
+│   │   ├── Medicine_page.html      # Downloaded content
+│   │   └── Mining_page.html
+│   ├── generated/
+│   │   └── large_test_doc.pdf      # Generated during tests
+│   └── downloads/
+│       └── external_samples/       # Downloaded test files
+└── test_output/                     # GITIGNORED - Safe to delete
+    ├── parsed_results/
+    │   ├── test_run_001.json
+    │   └── test_run_002.json
+    ├── logs/
+    │   └── test_execution.log
+    └── duckdb/
+        └── test_database.db        # Test database files
 ```
 
-### Test Validation Helpers
-```python
-def assert_valid_parse_result(result: Dict[str, Any]):
-    """Validate parser output structure."""
-    assert "document" in result
-    assert "elements" in result
-    assert "relationships" in result
-    
-    for element in result["elements"]:
-        assert "element_id" in element
-        assert "element_type" in element
-        assert "content_preview" in element
+**Gitignore Configuration:**
+```gitignore
+## Disposable test files - safe to delete
+tests/test_assets/
+tests/test_output/
+
+## Keep the directories themselves but ignore contents
+!tests/test_assets/.gitkeep
+!tests/test_output/.gitkeep
 ```
 
-## Common Patterns and Solutions
+**Benefits:**
+- Test files persist across system restarts
+- Version control tracks only essential test files
+- Clear separation of disposable vs. permanent test data
+- Humans can easily identify and delete large/temporary files
+- Reproducible test environments
+- Disk space management without breaking tests
 
-### Factory Pattern for Parser Creation
-```python
-def create_parser(doc_type: str, config: Optional[Dict] = None) -> DocumentParser:
-    """Factory function to create appropriate parser."""
-    parsers = {
-        "pdf": PdfParser,
-        "docx": DocxParser,
-        "xlsx": XlsxParser,
-        "csv": CsvParser,
-        "json": JSONParser,
-        "xml": XmlParser,
-        "html": HtmlParser,
-        "markdown": MarkdownParser,
-        "text": TextParser
+### Go Testing Best Practices
+
+**Test File Structure:**
+```go
+package parser_test
+
+import (
+    "testing"
+    "github.com/yourusername/go-doc-go/go/internal/parser"
+)
+
+func TestPdfParser_Parse(t *testing.T) {
+    tests := []struct {
+        name    string
+        input   []byte
+        want    *parser.ParseResult
+        wantErr bool
+    }{
+        {
+            name:    "valid PDF",
+            input:   loadFixture(t, "tests/fixtures/sample.pdf"),
+            want:    &parser.ParseResult{/* ... */},
+            wantErr: false,
+        },
+        {
+            name:    "empty content",
+            input:   []byte{},
+            want:    nil,
+            wantErr: true,
+        },
     }
-    
-    parser_class = parsers.get(doc_type)
-    if not parser_class:
-        raise ValueError(f"Unknown document type: {doc_type}")
-    
-    return parser_class(config)
-```
 
-### Context Managers for Resource Handling
-```python
-class TempFileHandler:
-    """Context manager for temporary file handling."""
-    
-    def __init__(self, content: bytes, suffix: str = ""):
-        self.content = content
-        self.suffix = suffix
-        self.temp_file = None
-    
-    def __enter__(self) -> str:
-        self.temp_file = tempfile.NamedTemporaryFile(
-            suffix=self.suffix, 
-            delete=False
-        )
-        self.temp_file.write(self.content)
-        self.temp_file.close()
-        return self.temp_file.name
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.temp_file and os.path.exists(self.temp_file.name):
-            os.unlink(self.temp_file.name)
-```
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            p := parser.NewPdfParser()
+            got, err := p.Parse(tt.input)
 
-### Validation Decorators
-```python
-def validate_input(schema: Dict[str, type]):
-    """Decorator to validate input parameters."""
-    def decorator(func):
-        @functools.wraps(func)
-        def wrapper(self, content: Dict[str, Any], *args, **kwargs):
-            # Validate required fields
-            for field, expected_type in schema.items():
-                if field not in content:
-                    raise ValueError(f"Missing required field: {field}")
-                if not isinstance(content[field], expected_type):
-                    raise TypeError(
-                        f"Field {field} must be {expected_type.__name__}, "
-                        f"got {type(content[field]).__name__}"
-                    )
-            return func(self, content, *args, **kwargs)
-        return wrapper
-    return decorator
+            if (err != nil) != tt.wantErr {
+                t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
+                return
+            }
 
-class SomeParser(DocumentParser):
-    @validate_input({"id": str, "content": (str, bytes), "metadata": dict})
-    def parse(self, content: Dict[str, Any]) -> Dict[str, Any]:
-        # Input is validated before parsing
-        pass
+            if !reflect.DeepEqual(got, tt.want) {
+                t.Errorf("Parse() = %v, want %v", got, tt.want)
+            }
+        })
+    }
+}
+```go
+
+**Test Helpers:**
+```go
+func loadFixture(t *testing.T, path string) []byte {
+    t.Helper()
+    data, err := os.ReadFile(path)
+    if err != nil {
+        t.Fatalf("failed to load fixture %s: %v", path, err)
+    }
+    return data
+}
+
+func assertParseResult(t *testing.T, got *parser.ParseResult) {
+    t.Helper()
+    if got == nil {
+        t.Fatal("expected non-nil ParseResult")
+    }
+    if len(got.Elements) == 0 {
+        t.Error("expected non-empty Elements")
+    }
+}
 ```
 
 ## Development Workflow
@@ -249,67 +340,81 @@ Before any git commit, ALL of the following MUST pass:
 
 ```bash
 #!/bin/bash
-# pre-commit-checklist.sh - run before any git commit
+## pre-commit-checklist.sh - run before any git commit
 
 echo "Pre-Commit Checklist - MANDATORY"
 echo "=================================="
 
-# 1. All modified code builds without errors
-python -m py_compile src/go_doc_go/**/*.py || { echo "✗ Compilation errors found"; exit 1; }
-echo "✓ Code compiles without errors"
+## 1. All Go code builds without errors
+go build ./... || { echo "✗ Build errors found"; exit 1; }
+echo "✓ Code builds without errors"
 
-# 2. All related tests pass (provide command + output)
-pytest -v || { echo "✗ Tests failed"; exit 1; }
+## 2. All tests pass
+go test ./... || { echo "✗ Tests failed"; exit 1; }
 echo "✓ All tests pass"
 
-# 3. No debugging artifacts left in code
-if grep -r "print(" src/go_doc_go/ --include="*.py" | grep -v "__main__"; then
+## 3. No debugging artifacts left in code
+if git diff --cached --name-only | grep '\.go$' | xargs grep -n "fmt.Println\|log.Println" | grep -v "// OK:"; then
     echo "✗ Debug print statements found - remove before commit"
     exit 1
 fi
 echo "✓ No debugging artifacts"
 
-# 4. Code quality checks
-flake8 src/ tests/ || { echo "✗ Linting errors found"; exit 1; }
-echo "✓ Linting passed"
-
-mypy src/ || { echo "✗ Type checking errors found"; exit 1; }
-echo "✓ Type checking passed"
-
-black --check src/ tests/ || { echo "✗ Code formatting required"; exit 1; }
+## 4. Code formatting
+if [ -n "$(gofmt -l .)" ]; then
+    echo "✗ Code needs formatting. Run: gofmt -w ."
+    exit 1
+fi
 echo "✓ Code formatting verified"
 
-# 5. Coverage requirements met
-pytest --cov=src/go_doc_go --cov-report=term --cov-fail-under=70 || { echo "✗ Coverage below 70%"; exit 1; }
-echo "✓ Coverage requirements met"
-
-# 6. Performance benchmarks (if performance-critical code changed)
-if git diff --name-only HEAD^ | grep -E "(queue|parser)" > /dev/null; then
-    pytest -m performance || { echo "✗ Performance tests failed"; exit 1; }
-    echo "✓ Performance benchmarks met"
+## 5. Lint checks
+if command -v golangci-lint &> /dev/null; then
+    golangci-lint run ./... || { echo "✗ Linting errors found"; exit 1; }
+    echo "✓ Linting passed"
+else
+    echo "⚠ golangci-lint not installed - skipping lint checks"
 fi
 
-echo "All checks passed - ready to commit"
-```
+## 6. Go vet
+go vet ./... || { echo "✗ Go vet found issues"; exit 1; }
+echo "✓ Go vet passed"
 
-### Before Committing (Legacy)
-1. Run unit tests: `pytest -m unit`
-2. Check coverage: `pytest --cov=src/go_doc_go --cov-report=term-missing`
-3. Run linter: `flake8 src/ tests/`
-4. Run type checker: `mypy src/`
-5. Format code: `black src/ tests/`
+echo "All checks passed - ready to commit"
+```bash
+
+### Running Tests
+```bash
+## Run all tests
+go test ./...
+
+## Run tests with coverage
+go test -cover ./...
+
+## Run tests with verbose output
+go test -v ./...
+
+## Run specific test
+go test -run TestPdfParser_Parse ./go/internal/parser
+
+## Run tests with race detection
+go test -race ./...
+
+## Generate coverage report
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```go
 
 ### Coverage Goals
 - **Overall**: Minimum 70% coverage
 - **Critical parsers** (PDF, DOCX, XLSX): Minimum 80% coverage
-- **Utility modules**: Minimum 90% coverage
+- **Core packages**: Minimum 80% coverage
 - **New code**: Must include tests before merging
 
 ### Performance Benchmarks and SLAs
 
 #### Document Processing SLAs
 - Standard document (< 10MB): Parse in < 1 second
-- Large document (< 100MB): Parse in < 10 seconds  
+- Large document (< 100MB): Parse in < 10 seconds
 - Memory usage: < 5x document size
 - Concurrent parsing: Support 10 simultaneous parsers
 
@@ -324,49 +429,68 @@ echo "All checks passed - ready to commit"
 ## Debugging and Troubleshooting
 
 ### Logging Best Practices
-```python
-import logging
+Use structured logging with appropriate log levels:
 
-logger = logging.getLogger(__name__)
+```go
+package main
 
-class DocumentParser:
-    def parse(self, content: Dict[str, Any]) -> Dict[str, Any]:
-        logger.debug(f"Starting parse for document: {content.get('id')}")
-        
-        try:
-            # Parsing logic
-            result = self._do_parse(content)
-            logger.info(f"Successfully parsed {len(result['elements'])} elements")
-            return result
-            
-        except Exception as e:
-            logger.error(
-                f"Failed to parse document {content.get('id')}: {str(e)}", 
-                exc_info=True
-            )
-            raise
-```
+import (
+    "log/slog"
+    "os"
+)
+
+func main() {
+    logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+        Level: slog.LevelDebug,
+    }))
+
+    logger.Debug("Starting parse",
+        "doc_id", docID,
+        "doc_type", docType,
+    )
+
+    if err := parseDocument(docID); err != nil {
+        logger.Error("Failed to parse document",
+            "doc_id", docID,
+            "error", err,
+        )
+        return
+    }
+
+    logger.Info("Successfully parsed document",
+        "doc_id", docID,
+        "element_count", elementCount,
+    )
+}
+```go
 
 ### Debug Helpers
-```python
-def debug_element_structure(elements: List[Dict], max_depth: int = 3):
-    """Print element hierarchy for debugging."""
-    def print_element(elem, depth=0):
-        if depth > max_depth:
-            return
-        indent = "  " * depth
-        print(f"{indent}{elem['element_type']}: {elem['element_id'][:8]}... "
-              f"[{elem['content_preview'][:30]}...]")
-        
-        # Print children
-        children = [e for e in elements if e.get('parent_id') == elem['element_id']]
-        for child in children:
-            print_element(child, depth + 1)
-    
-    # Start with root elements
-    roots = [e for e in elements if not e.get('parent_id')]
-    for root in roots:
-        print_element(root)
+```go
+// DumpElementHierarchy prints the element tree for debugging
+func DumpElementHierarchy(elements []Element, maxDepth int) {
+    roots := findRootElements(elements)
+    for _, root := range roots {
+        dumpElement(elements, root, 0, maxDepth)
+    }
+}
+
+func dumpElement(allElements []Element, elem Element, depth, maxDepth int) {
+    if depth > maxDepth {
+        return
+    }
+    indent := strings.Repeat("  ", depth)
+    fmt.Printf("%s%s: %s [%s...]\n",
+        indent,
+        elem.Type,
+        elem.ID[:8],
+        elem.ContentPreview[:30],
+    )
+
+    children := findChildElements(allElements, elem.ID)
+    for _, child := range children {
+        dumpElement(allElements, child, depth+1, maxDepth)
+    }
+}
 ```
 
 ## Key Design Decisions
@@ -376,12 +500,12 @@ def debug_element_structure(elements: List[Dict], max_depth: int = 3):
 3. **Content Previews**: Limited to 100 characters by default for performance
 4. **ID Generation**: UUIDs with meaningful prefixes for debugging
 5. **Error Handling**: Fail fast with clear error messages, log all errors
-6. **Memory Management**: Stream large files, use generators where possible
-7. **Extensibility**: New parsers extend `DocumentParser` base class
+6. **Memory Management**: Stream large files, use io.Reader/io.Writer interfaces
+7. **Extensibility**: New parsers implement the `Parser` interface
 8. **Work Queue Coordination**: Use config hash as run_id for automatic worker coordination
 9. **Atomic Operations**: Use PostgreSQL row-level locking for atomic document claiming
-10. **Distributed Processing**: Pull-based work queue pattern with identical workers
-11. **Design Integrity Over Backward Compatibility**: Prefer breaking changes to maintain clean design and correct implementation rather than accumulating technical debt through backward compatibility hacks. When the correct design requires breaking changes, make them cleanly and document migration paths.
+10. **Distributed Processing**: Pull-based job control pattern with identical workers
+11. **Design Integrity Over Backward Compatibility**: Prefer breaking changes to maintain clean design
 
 ## Design Integrity Principle
 
@@ -397,21 +521,27 @@ def debug_element_structure(elements: List[Dict], max_depth: int = 3):
 - The correct fix is simpler than the compatibility layer
 
 **Examples of Good Breaking Changes**:
-```python
-# BAD: Maintaining compatibility with poor design
-def _validate_queries(self):
-    # Supporting both old and new field names
-    if "id_columns" not in query and "doc_id_columns" not in query:
-        raise ValueError("Missing id_columns or doc_id_columns")
-    # Normalize internally (adds complexity)
-    if "doc_id_columns" in query and "id_columns" not in query:
-        query["id_columns"] = query["doc_id_columns"]
+```go
+// BAD: Maintaining compatibility with poor design
+func (c *Config) GetIDColumns() []string {
+    // Supporting both old and new field names
+    if len(c.IDColumns) > 0 {
+        return c.IDColumns
+    }
+    if len(c.DocIDColumns) > 0 {
+        return c.DocIDColumns // deprecated
+    }
+    return nil
+}
 
-# GOOD: Fix the design properly
-def _validate_queries(self):
-    # Breaking change but cleaner
-    if "id_columns" not in query:
-        raise ValueError("Missing required 'id_columns' field")
+// GOOD: Fix the design properly
+func (c *Config) Validate() error {
+    // Breaking change but cleaner
+    if len(c.IDColumns) == 0 {
+        return fmt.Errorf("id_columns is required")
+    }
+    return nil
+}
 ```
 
 **Migration Strategy**:
@@ -422,13 +552,16 @@ def _validate_queries(self):
 5. Bump version number appropriately (major version for breaking changes)
 
 **Anti-Pattern to Avoid**:
-```python
-# DON'T DO THIS: Accumulating compatibility cruft
-field = config.get("new_name", config.get("old_name", config.get("legacy_name", config.get("ancient_name"))))
+```go
+// DON'T DO THIS: Accumulating compatibility cruft
+field := config.NewName
+if field == "" {
+    field = config.OldName
+}
+if field == "" {
+    field = config.LegacyName
+}
+if field == "" {
+    field = config.AncientName
+}
 ```
-
-
-
-
-
-

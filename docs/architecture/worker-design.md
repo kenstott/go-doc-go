@@ -1,22 +1,51 @@
 # Goroutine-Based Worker Design
 
 ## Current Architecture
-```
-Worker Process (single-threaded loop)
-  ↓
-  Claim Document → Process → Store → Repeat
+
+```mermaid
+graph TD
+    A[Worker Process] -->|Single-threaded loop| B[Claim Document]
+    B --> C[Process Document]
+    C --> D[Store Results]
+    D --> B
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#bfb,stroke:#333,stroke-width:2px
+    style D fill:#fbb,stroke:#333,stroke-width:2px
 ```
 
 ## Proposed Goroutine Architecture
-```
-Worker Process
-  ├─ Leader Goroutine (discovery)
-  ├─ Document Claimer Goroutine (claims in batches)
-  └─ Worker Pool (10-100 goroutines)
-       ├─ Worker 1 ← claim from channel
-       ├─ Worker 2 ← claim from channel
-       ├─ Worker 3 ← claim from channel
-       └─ ...
+
+```mermaid
+graph TD
+    A[Worker Process] --> B[Leader Goroutine<br/>Discovery]
+    A --> C[Document Claimer<br/>Batch Claims]
+    A --> D[Worker Pool<br/>10-100 goroutines]
+
+    C -->|claim channel| D
+
+    D --> E[Worker 1]
+    D --> F[Worker 2]
+    D --> G[Worker 3]
+    D --> H[Worker N...]
+
+    E --> I[Process]
+    F --> I
+    G --> I
+    H --> I
+
+    I --> J[Results]
+
+    style A fill:#f9f,stroke:#333,stroke-width:4px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#bbf,stroke:#333,stroke-width:2px
+    style D fill:#bfb,stroke:#333,stroke-width:2px
+    style E fill:#ffd,stroke:#333,stroke-width:1px
+    style F fill:#ffd,stroke:#333,stroke-width:1px
+    style G fill:#ffd,stroke:#333,stroke-width:1px
+    style H fill:#ffd,stroke:#333,stroke-width:1px
+    style I fill:#bfb,stroke:#333,stroke-width:2px
+    style J fill:#fbb,stroke:#333,stroke-width:2px
 ```
 
 ## Key Changes
@@ -33,7 +62,7 @@ type Config struct {
     AnalyticsConfigs  []map[string]interface{}
     MaxDocuments      int
 }
-```
+```go
 
 ### 2. Worker Pool Implementation
 ```go
@@ -67,7 +96,7 @@ func (w *Worker) RunWithPool() error {
     w.wg.Wait()
     return nil
 }
-```
+```go
 
 ### 3. Individual Worker Goroutine
 ```go
@@ -97,7 +126,7 @@ func (w *Worker) workerGoroutine(id int, workChan <-chan *jobcontrol.DocumentInf
         }
     }
 }
-```
+```go
 
 ### 4. Batch Document Claimer
 ```go
@@ -139,26 +168,26 @@ Throughput: ~10-50 docs/sec per process
 Bottleneck: Document claiming + processing in sequence
 Memory: 40MB per process
 Scale: Add more processes
-```
+```python
 
 ### Goroutine Pool (Proposed)
-```
+```python
 Throughput: ~100-500 docs/sec per process (with 10 workers)
 Bottleneck: I/O (Python shims, Parquet writes)
 Memory: 40MB + ~10MB for goroutine workers
 Scale: Add more goroutines OR more processes
-```
+```bash
 
 ## Migration Path
 
 ### Phase 1: Add --workers flag (backward compatible)
 ```bash
-# Default: 1 worker (current behavior)
-./goworker --config config.yaml
+## Default: 1 worker (current behavior)
+./goworker --config config.toml
 
-# New: 10 concurrent workers
-./goworker --config config.yaml --workers 10
-```
+## New: 10 concurrent workers
+./goworker --config config.toml --workers 10
+```toml
 
 ### Phase 2: Optimize batch claiming
 - Claim 10-50 documents at once
@@ -171,12 +200,12 @@ Scale: Add more goroutines OR more processes
 ## Recommended Configuration
 
 ```yaml
-# For single machine:
+## For single machine:
 workers: 10-20        # Number of goroutine workers
 batch_claim_size: 10  # Claim N docs at once
 
-# For distributed (multiple machines):
-# Run 2-3 processes per machine, each with 5-10 workers
+## For distributed (multiple machines):
+## Run 2-3 processes per machine, each with 5-10 workers
 ```
 
 ## When to Use What

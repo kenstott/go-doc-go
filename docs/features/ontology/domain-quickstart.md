@@ -4,7 +4,7 @@
 
 ### Step 1: Enable Knowledge Graph Construction
 
-The Go-Doc-Go Knowledge Engine uses declarative configuration to define your data pipeline. Edit `config.yaml`:
+The Go-Doc-Go Knowledge Engine uses declarative configuration to define your data pipeline. Edit `config.toml`:
 
 ```yaml
 relationship_detection:
@@ -70,7 +70,7 @@ relationship_rules:
 
 ```bash
 # Process unstructured data through the knowledge extraction pipeline
-python -m go_doc_go.main ingest --config config.yaml
+python -m go_doc_go.main ingest --config config.toml
 ```
 
 ### Step 4: Query Your Knowledge Graph
@@ -222,7 +222,7 @@ for term, info in stats.items():
 ## Troubleshooting Checklist
 
 ✅ **Knowledge extraction not working?**
-- Check `enabled: true` in config.yaml
+- Check `enabled: true` in config.toml
 - Verify ontology file path is correct
 - Check ontology YAML syntax is valid
 

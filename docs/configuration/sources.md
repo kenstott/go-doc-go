@@ -47,7 +47,7 @@ content_sources:
         author: "author"
         category: "category"
         created: "created_at"
-```
+```yaml
 
 ### DuckDB Parquet Datasets (Hive-Partitioned)
 
@@ -104,7 +104,7 @@ content_sources:
         content_column: "paragraph_text"
         metadata_columns: ["speaker_role", "call_date", "company_name"]
         doc_type: "earnings_transcript"
-```
+```yaml
 
 ### Complex Database Queries
 
@@ -138,7 +138,7 @@ content_sources:
         assignee: "assigned_to"
         tags: "tags"
         created: "created_at"
-```
+```yaml
 
 ### JSON Document Mode
 
@@ -161,7 +161,7 @@ content_sources:
     metadata_columns: ["category", "brand", "created_at"]
     timestamp_column: "updated_at"
     batch_size: 500
-```
+```yaml
 
 ### Binary Content Handling
 
@@ -209,7 +209,7 @@ content_sources:
       department: "/{department}/**"
       project: "/{department}/{project}/**"
       version: "**/v{version}/*"
-```
+```yaml
 
 ### Advanced File Configuration
 
@@ -265,7 +265,7 @@ content_sources:
     # Parallel processing
     max_workers: 10
     batch_size: 100
-```
+```yaml
 
 ### SharePoint
 
@@ -315,7 +315,7 @@ content_sources:
     
     # Include page hierarchy
     include_page_tree: true
-```
+```yaml
 
 ### JIRA
 
@@ -344,7 +344,7 @@ content_sources:
     # Include comments as separate documents
     include_comments: true
     max_results: 10000
-```
+```yaml
 
 ### Google Drive
 
@@ -370,7 +370,7 @@ content_sources:
       "application/vnd.google-apps.presentation": "pptx"
     
     max_files: 5000
-```
+```go
 
 ## API and Web Sources
 
@@ -407,7 +407,7 @@ content_sources:
       limit_param: "limit"
       offset_param: "offset"
       page_size: 100
-```
+```yaml
 
 ### JSON:API Standard Support
 
@@ -444,7 +444,7 @@ content_sources:
     
     max_pages: 100
     delay: 0.5
-```
+```yaml
 
 ### GraphQL API Support
 
@@ -484,7 +484,7 @@ content_sources:
       id: "data.articles.nodes[*].id"
       author: "data.articles.nodes[*].author.name"
       created: "data.articles.nodes[*].createdAt"
-```
+```yaml
 
 ### Web Scraping
 
@@ -513,7 +513,7 @@ content_sources:
     # Rate limiting
     delay: 1.0  # seconds between requests
     max_pages: 1000
-```
+```go
 
 ## NoSQL and Specialized Sources
 
@@ -544,7 +544,7 @@ content_sources:
         created: "published_date"
         
     batch_size: 500
-```
+```yaml
 
 ### ServiceNow
 
@@ -567,7 +567,7 @@ content_sources:
         filter: "state=6^opened_at>=javascript:gs.daysAgo(90)"
     
     max_records: 10000
-```
+```yaml
 
 ### Microsoft Exchange
 
@@ -606,7 +606,7 @@ content_sources:
     # Rate limiting
     max_emails_per_folder: 1000
     delay_between_requests: 0.1
-```
+```yaml
 
 ### Microsoft Graph API (Exchange Online)
 
@@ -650,12 +650,12 @@ content_sources:
 Use environment variables for sensitive information:
 
 ```yaml
-# .env file
+## .env file
 DB_CONNECTION=postgresql://user:password@localhost/db
 API_TOKEN=your-secret-token
 AWS_ACCESS_KEY=your-access-key
 
-# config.yaml
+## config.toml
 content_sources:
   - name: "database"
     type: "database" 
@@ -663,7 +663,7 @@ content_sources:
   - name: "api"
     type: "http"
     auth_token: "${API_TOKEN}"
-```
+```yaml
 
 ### Performance Optimization
 
@@ -691,7 +691,7 @@ content_sources:
         author.name: "author_name"              # Nested metadata paths
         author.email: "author_email"
         department.name: "dept_name"
-```
+```yaml
 
 ### DuckDB Connection Testing
 
@@ -712,7 +712,7 @@ content_sources:
         sql: "SELECT * FROM read_parquet('cik=*/filing_type=10K/*/mda.parquet', hive_partitioning=true)"
         id_columns: ["cik", "filing_type", "year"]
         content_column: "paragraph_text"
-```
+```python
 
 **Testing DuckDB Connection:**
 
@@ -735,7 +735,7 @@ if source.test_connection():
         print(f"Query '{query['name']}': {len(query['id_columns'])} ID columns")
 else:
     print("❌ DuckDB connection failed")
-```
+```yaml
 
 ### Content Filtering
 
@@ -784,16 +784,16 @@ content_sources:
     log_queries: true
     log_results_sample: 5  # Log first 5 results
     validate_content: true  # Validate before processing
-```
+```python
 
 ### Health Checks
 
 ```python
 from go_doc_go import Config
 
-config = Config("config.yaml") 
+config = Config("config.toml") 
 
-# Test all content sources
+## Test all content sources
 for source_config in config.content_sources:
     try:
         source = config.create_content_source(source_config)
@@ -809,14 +809,14 @@ for source_config in config.content_sources:
 
 **Issue: "SQLAlchemy is required but not available"**
 ```bash
-# Install SQLAlchemy
+## Install SQLAlchemy
 pip install sqlalchemy
 
-# For specific database drivers:
+## For specific database drivers:
 pip install psycopg2-binary  # PostgreSQL
 pip install mysql-connector-python  # MySQL
 pip install pymysql  # MySQL alternative
-```
+```python
 
 **Issue: "MySQL connector not available, trying PyMySQL driver"**
 - This is normal fallback behavior
@@ -829,7 +829,7 @@ content_sources:
     connection_string: "postgresql://user:pass@host/db?connect_timeout=30"
     connection_pool_size: 5  # Reduce pool size
     stream_results: true     # Enable streaming for large results
-```
+```sql
 
 **Issue: Binary content not displaying properly**
 - Binary data is automatically detected and handled
@@ -841,29 +841,29 @@ content_sources:
 **Issue: "DuckDB is required but not available"**
 ```bash
 pip install duckdb
-```
+```bash
 
 **Issue: Thread configuration warnings**
 ```yaml
-# Explicitly configure threads to avoid warnings
+## Explicitly configure threads to avoid warnings
 content_sources:
   - name: "duckdb_optimized"
     type: "duckdb"
     connection_config:
       threads: 4  # Match your CPU cores
       memory_limit: "2GB"
-```
+```yaml
 
 **Issue: Parquet file not found errors**
 ```yaml
-# Ensure hive partitioning is enabled for partitioned datasets
+## Ensure hive partitioning is enabled for partitioned datasets
 content_sources:
   - name: "hive_parquet"
     type: "duckdb"
     enable_hive_partitioning: true
     queries:
       - sql: "SELECT * FROM read_parquet('data/*/*/*.parquet', hive_partitioning=true)"
-```
+```yaml
 
 ### Performance Issues
 
@@ -875,7 +875,7 @@ content_sources:
     batch_size: 100          # Reduce batch size
     stream_results: true     # Enable streaming
     max_content_length: 10000  # Limit content size
-```
+```yaml
 
 **Issue: Slow database queries**
 ```yaml
@@ -892,13 +892,13 @@ content_sources:
     
     # Use indexes on filtered columns
     # CREATE INDEX idx_articles_created_status ON articles(created_at, status);
-```
+```yaml
 
 ### Authentication Issues
 
 **Issue: SharePoint/Graph API authentication failures**
 ```yaml
-# Ensure proper Azure app registration permissions
+## Ensure proper Azure app registration permissions
 content_sources:
   - name: "sharepoint_auth"
     type: "sharepoint"
@@ -910,7 +910,7 @@ content_sources:
     # Required permissions in Azure:
     # - Sites.Read.All
     # - Files.Read.All
-```
+```yaml
 
 **Issue: API rate limiting**
 ```yaml
@@ -923,7 +923,7 @@ content_sources:
     # Use authentication to get higher rate limits
     headers:
       Authorization: "Bearer ${API_TOKEN}"
-```
+```python
 
 ### Content Source Discovery
 
@@ -950,7 +950,7 @@ def test_content_sources(configs):
                 
         except Exception as e:
             print(f"❌ {config['name']}: Error - {str(e)}")
-```
+```python
 
 ### Debugging Tips
 
@@ -958,12 +958,12 @@ def test_content_sources(configs):
 ```python
 import logging
 
-# Enable debug logging for content sources
+## Enable debug logging for content sources
 logging.getLogger('go_doc_go.content_source').setLevel(logging.DEBUG)
 
-# Enable SQL query logging
+## Enable SQL query logging
 logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
-```
+```python
 
 **Check configuration validity:**
 ```python
@@ -991,6 +991,6 @@ def validate_config(config):
 
 ## Next Steps
 
-- [Storage Backends](storage.md) - Choose where to store your processed data
-- [Configuration Guide](configuration.md) - Advanced configuration options
-- [Scaling Guide](scaling.md) - Handle large-scale data ingestion
+- [Storage Backends](configuration/storage.md) - Choose where to store your processed data
+- [Configuration Guide](configuration/README.md) - Advanced configuration options
+- [Scaling Guide](operations/scaling.md) - Handle large-scale data ingestion

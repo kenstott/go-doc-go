@@ -26,7 +26,7 @@ The UDML Ontology System has been successfully refactored to address critical UX
 ### 2. Two Distinct Workflows ✅
 
 #### Workflow 1: Create New Ontology
-```
+```sql
 Phase 1: Domain Selection (with user confirmation)
 ├─ LLM analyzes corpus samples
 ├─ Suggests domains with reasoning
@@ -42,12 +42,12 @@ Phase 3: Review & Confirmation (MANDATORY)
 ├─ Display complete schema
 ├─ User decides: approve / refine / reject
 └─ ✅ No schema saved without approval
-```
+```bash
 
 **Command**:
 ```bash
 ontology_interview ./corpus.parquet ./my-ontology.json
-```
+```bash
 
 #### Workflow 2: Refine Existing Ontology
 ```
@@ -65,12 +65,12 @@ Phase 3: Review & Confirmation (MANDATORY)
 ├─ Review refined schema
 ├─ User decides: approve / refine / reject
 └─ ✅ No changes saved without approval
-```
+```bash
 
 **Command**:
 ```bash
 ontology_interview --refine ./existing.json ./corpus.parquet ./improved.json
-```
+```bash
 
 ### 3. Implementation Details ✅
 
@@ -92,7 +92,7 @@ ontology_interview --refine ./existing.json ./corpus.parquet ./improved.json
 - `go/internal/udml/ontology/interview_old.go` (old 4-phase implementation)
 
 **Documentation Created**:
-- `docs/ONTOLOGY_WORKFLOWS.md` (540 lines)
+- `docs/features/ontology/workflows.md` (540 lines)
   - Complete guide to both workflows
   - When to use each workflow
   - Step-by-step examples with interactions
@@ -184,7 +184,7 @@ func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx) (bool, error) {
 ```bash
 export ANTHROPIC_API_KEY=your_key_here
 ontology_interview ./financial_corpus.parquet ./financial-ontology.json
-```
+```bash
 
 **Interactive Flow**:
 ```
@@ -315,13 +315,13 @@ RELATIONSHIPS (12):
 • Tokens used: 8234
 
 ✓ Ontology schema saved to: financial-ontology.json
-```
+```bash
 
 ### Example 2: Refine Existing Ontology
 
 ```bash
 ontology_interview --refine ./current-ontology.json ./corpus.parquet ./improved-ontology.json
-```
+```bash
 
 **Interactive Flow**:
 ```
@@ -397,7 +397,7 @@ ontology_interview --refine ./current-ontology.json ./corpus.parquet ./improved-
   ✅ Schema APPROVED
 
 ✓ Ontology schema saved to: improved-ontology.json
-```
+```json
 
 ---
 
@@ -426,49 +426,49 @@ ontology_interview --refine ./current-ontology.json ./corpus.parquet ./improved-
 ### Test 1: New Ontology Creation
 
 ```bash
-# Prerequisites
+## Prerequisites
 export ANTHROPIC_API_KEY=your_key
 
-# Test with sample corpus
+## Test with sample corpus
 ontology_interview ./test-corpus.parquet ./test-ontology.json
 
-# Verify:
-# - Domain suggestions are reasonable
-# - Entity types match corpus content
-# - Relationships make sense
-# - Approval gate works correctly
-# - Output JSON is valid
-```
+## Verify:
+## - Domain suggestions are reasonable
+## - Entity types match corpus content
+## - Relationships make sense
+## - Approval gate works correctly
+## - Output JSON is valid
+```bash
 
 ### Test 2: Ontology Refinement
 
 ```bash
-# Use output from Test 1
+## Use output from Test 1
 ontology_interview --refine ./test-ontology.json ./test-corpus.parquet ./refined-ontology.json
 
-# Verify:
-# - Analysis identifies real gaps
-# - Suggested changes are actionable
-# - Individual approval works
-# - Final schema improves on original
-```
+## Verify:
+## - Analysis identifies real gaps
+## - Suggested changes are actionable
+## - Individual approval works
+## - Final schema improves on original
+```bash
 
 ### Test 3: Edge Cases
 
 ```bash
-# Test rejection
-# - Run interview, select 'reject' at approval
-# - Verify no schema file created
+## Test rejection
+## - Run interview, select 'reject' at approval
+## - Verify no schema file created
 
-# Test iterative refinement
-# - Run interview, select 'refine' at approval
-# - Make changes, approve
-# - Verify changes applied
+## Test iterative refinement
+## - Run interview, select 'refine' at approval
+## - Make changes, approve
+## - Verify changes applied
 
-# Test refinement with no changes
-# - Run --refine mode
-# - Reject all suggested changes
-# - Verify original schema preserved
+## Test refinement with no changes
+## - Run --refine mode
+## - Reject all suggested changes
+## - Verify original schema preserved
 ```
 
 ---
@@ -520,9 +520,9 @@ ontology_interview --refine ./test-ontology.json ./test-corpus.parquet ./refined
 - `go/cmd/ontology_interview/main.go` (185 lines)
 
 ### Documentation
-- `docs/ONTOLOGY_WORKFLOWS.md` (540 lines) - Complete workflow guide
-- `docs/UDML_ONTOLOGY_SYSTEM.md` (existing) - System architecture
-- `docs/ONTOLOGY_QUICK_START.md` (existing) - Quick start guide
+- `docs/features/ontology/workflows.md` (540 lines) - Complete workflow guide
+- `docs/features/udml/ontology-system.md` (existing) - System architecture
+- `docs/features/ontology/quick-start.md` (existing) - Quick start guide
 
 ### Archived
 - `go/internal/udml/ontology/interview_old.go` - Old implementation (can be deleted)

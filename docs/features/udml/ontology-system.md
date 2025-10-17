@@ -700,7 +700,7 @@ You: Yes, we need to track corporate hierarchy
 
 ## References
 
-- **UDML Specification**: `docs/UDML_SPECIFICATION.md`
+- **UDML Specification**: `docs/features/udml/specification.md`
 - **Catalog Examples**: `examples/ontologies/*.yaml`
 - **Catalog README**: `examples/ontologies/README.md`
 - **Migration Plan**: `UDML_MIGRATION_PLAN.md`

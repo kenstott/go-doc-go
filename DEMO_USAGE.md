@@ -7,18 +7,18 @@ The demo provides a live, automated walkthrough of the Go-Doc-Go ontology discov
 ### Quick Start
 
 ```bash
-# Run financial domain demo (default)
+## Run financial domain demo (default)
 PYTHONPATH=src python -m go_doc_go demo-discovery
 
-# Run healthcare domain demo
+## Run healthcare domain demo
 PYTHONPATH=src python -m go_doc_go demo-discovery --domain healthcare
 
-# Fast mode (shorter delays)
+## Fast mode (shorter delays)
 PYTHONPATH=src python -m go_doc_go demo-discovery --fast
 
-# Specify analytics path for display
+## Specify analytics path for display
 PYTHONPATH=src python -m go_doc_go demo-discovery --analytics /Volumes/T9/sec_analytics
-```
+```python
 
 ### Demo Flow
 
@@ -71,9 +71,9 @@ The demo generates a real ontology file:
 These files can be used for actual entity extraction:
 
 ```bash
-# Use demo-generated ontology for real extraction
+## Use demo-generated ontology for real extraction
 python extract_semantic_entities.py --ontology demo_ontology_financial.yaml --analytics /Volumes/T9/sec_analytics
-```
+```bash
 
 ### Demo Features
 

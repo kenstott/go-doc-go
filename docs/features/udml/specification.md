@@ -438,7 +438,7 @@ for _, element := range hierarchicalDoc.Elements {
 
 All three formats represent the same logical document structure but optimize for different access patterns and use cases.
 
-**📖 See [JSON Schema Validation Guide](UDML_SCHEMAS.md)** for complete validation documentation, usage examples in Python/Node.js/Go, IDE integration, and CI/CD setup.
+**📖 See [JSON Schema Validation Guide](features/udml/schemas.md)** for complete validation documentation, usage examples in Python/Node.js/Go, IDE integration, and CI/CD setup.
 
 ---
 
@@ -1356,3 +1356,17 @@ UDML Specification is released under CC BY 4.0.
 - **Specification Version**: 1.0.0
 - **Last Updated**: 2024-10-13
 - **Status**: Stable
+
+---
+
+## Related Documentation
+
+- **Next**: [UDML Schemas](schemas.md)
+- **Up**: [Documentation Home](../../README.md)
+
+### Quick Links
+
+- [Documentation Home](../../README.md)
+- [Quick Reference](../../../QUICK_REFERENCE.md)
+- [Configuration Overview](../../configuration/README.md)
+- [Troubleshooting](../../operations/troubleshooting.md)

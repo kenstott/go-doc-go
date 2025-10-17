@@ -8,6 +8,26 @@ The ontology system operates in two phases:
 1. **Entity Extraction** - Identify domain-specific concepts in documents
 2. **Relationship Discovery** - Find connections between entities using business rules
 
+### Ontology Extraction Workflow
+
+```mermaid
+graph LR
+    A[Documents] --> B[Parse to UDML]
+    B --> C[Define Ontology<br/>YAML Schema]
+    C --> D[Entity Extraction<br/>Semantic/Pattern/Keyword]
+    D --> E[Entities<br/>with Confidence]
+    E --> F[Relationship Discovery<br/>Proximity/Pattern/Semantic]
+    F --> G[Knowledge Graph<br/>Neo4j/PostgreSQL]
+
+    style A fill:#ffd,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#fbb,stroke:#333,stroke-width:2px
+    style D fill:#bfb,stroke:#333,stroke-width:2px
+    style E fill:#ddf,stroke:#333,stroke-width:2px
+    style F fill:#bfb,stroke:#333,stroke-width:2px
+    style G fill:#fdd,stroke:#333,stroke-width:2px
+```
+
 ## Quick Start
 
 ### 1. Define Your Domain
@@ -77,33 +97,33 @@ relationships:
 
 ### 2. Configure Processing
 
-```yaml
-# config.yaml
-storage:
-  backend: "postgresql"
-  
-relationship_detection:
-  domain:
-    enabled: true
-    ontologies:
-      - path: "./ontologies/automotive.yaml"
-        active: true
-    
-    # Extraction settings
-    entity_extraction:
-      min_confidence: 0.6
-      max_entities_per_element: 10
-      batch_size: 100
-      
-    relationship_detection:
-      min_confidence: 0.7
-      max_relationships_per_entity: 20
-      cross_document: true  # Find relationships across documents
-      
-embedding:
-  enabled: true  # Required for semantic matching
-  provider: "fastembed"
-  model: "BAAI/bge-small-en-v1.5"
+```toml
+# config.toml
+[storage]
+backend = "postgresql"
+
+[relationship_detection.domain]
+enabled = true
+
+[[relationship_detection.domain.ontologies]]
+path = "./ontologies/automotive.yaml"
+active = true
+
+# Extraction settings
+[relationship_detection.domain.entity_extraction]
+min_confidence = 0.6
+max_entities_per_element = 10
+batch_size = 100
+
+[relationship_detection.domain.relationship_detection]
+min_confidence = 0.7
+max_relationships_per_entity = 20
+cross_document = true  # Find relationships across documents
+
+[embedding]
+enabled = true  # Required for semantic matching
+provider = "fastembed"
+model = "BAAI/bge-small-en-v1.5"
 ```
 
 ### 3. Process Documents
@@ -111,7 +131,7 @@ embedding:
 ```python
 from go_doc_go import Config, ingest_documents
 
-config = Config("config.yaml")
+config = Config("config.toml")
 result = ingest_documents(config)
 
 print(f"Extracted {result['entities']} entities")
@@ -123,7 +143,7 @@ print(f"Found {result['entity_relationships']} relationships")
 ```python
 from go_doc_go import Config
 
-config = Config("config.yaml")
+config = Config("config.toml")
 db = config.get_storage_backend()
 
 # Find brake systems
@@ -353,26 +373,25 @@ entities:
 
 Optimize precision vs. recall:
 
-```yaml
-relationship_detection:
-  domain:
-    # High precision (fewer false positives)
-    entity_extraction:
-      min_confidence: 0.8
-      max_entities_per_element: 5
-      
-    relationship_detection:
-      min_confidence: 0.85
-      max_relationships_per_entity: 10
-      
-    # High recall (catch more relationships)  
-    # entity_extraction:
-    #   min_confidence: 0.5
-    #   max_entities_per_element: 20
-    #
-    # relationship_detection:
-    #   min_confidence: 0.6
-    #   max_relationships_per_entity: 50
+```toml
+[relationship_detection.domain]
+# High precision (fewer false positives)
+[relationship_detection.domain.entity_extraction]
+min_confidence = 0.8
+max_entities_per_element = 5
+
+[relationship_detection.domain.relationship_detection]
+min_confidence = 0.85
+max_relationships_per_entity = 10
+
+# High recall (catch more relationships)
+# [relationship_detection.domain.entity_extraction]
+# min_confidence = 0.5
+# max_entities_per_element = 20
+#
+# [relationship_detection.domain.relationship_detection]
+# min_confidence = 0.6
+# max_relationships_per_entity = 50
 ```
 
 ## Real-World Examples
@@ -641,5 +660,19 @@ relationship_detection:
 ## Next Steps
 
 - [Examples Repository](../examples/ontologies/) - Pre-built ontologies for common domains
-- [Configuration Reference](configuration.md) - Complete configuration options
-- [Embeddings Guide](embeddings.md) - Optimize semantic matching performance
+- [Configuration Reference](configuration/README.md) - Complete configuration options
+- [Embeddings Guide](features/embeddings/README.md) - Optimize semantic matching performance
+
+---
+
+## Related Documentation
+
+- **Next**: [Ontology Quick Start](quick-start.md)
+- **Up**: [Documentation Home](../../README.md)
+
+### Quick Links
+
+- [Documentation Home](../../README.md)
+- [Quick Reference](../../../QUICK_REFERENCE.md)
+- [Configuration Overview](../../configuration/README.md)
+- [Troubleshooting](../../operations/troubleshooting.md)

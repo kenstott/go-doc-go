@@ -21,13 +21,13 @@ Go-Doc-Go supports multiple storage backends, each optimized for different use c
 **Why it's special**: Unlike other backends that are mutually exclusive, Neo4j can be added to ANY primary storage configuration to provide native graph capabilities:
 
 ```yaml
-# Primary storage: reliable document and element storage
+## Primary storage: reliable document and element storage
 storage:
   backend: "postgresql"  # or sqlite, elasticsearch, mongodb
   host: "postgres-server"
   database: "go_doc_go_primary"
 
-# Graph adjunct: specialized relationship analysis  
+## Graph adjunct: specialized relationship analysis  
 neo4j:
   enabled: true
   uri: "bolt://neo4j-server:7687"
@@ -107,7 +107,7 @@ storage:
   # Performance tuning
   statement_timeout: 300000  # 5 minutes
   batch_size: 1000
-```
+```yaml
 
 **With Vector Search (pgvector):**
 
@@ -174,7 +174,7 @@ storage:
   store_full_text: true
   index_full_text: true
   analyzer: "standard"
-```
+```yaml
 
 **Advanced Search Configuration:**
 
@@ -244,7 +244,7 @@ storage:
   # Indexing
   create_indexes: true
   text_index_language: "english"
-```
+```yaml
 
 **With Vector Search (MongoDB Atlas):**
 
@@ -258,7 +258,7 @@ storage:
   vector_dimension: 384
   vector_index_name: "vector_index"
   similarity_metric: "cosine"
-```
+```go
 
 **Pros:**
 - Schema flexibility
@@ -309,12 +309,12 @@ storage:
 The **game-changer**: Add powerful graph capabilities to ANY existing storage backend without migration:
 
 ```yaml
-# Your existing reliable primary storage (unchanged)
+## Your existing reliable primary storage (unchanged)
 storage:
   backend: "postgresql"  # or sqlite, mongodb, elasticsearch
   # ... your existing configuration ...
 
-# Add Neo4j graph capabilities (new addition)
+## Add Neo4j graph capabilities (new addition)
 neo4j:
   enabled: true
   uri: "bolt://neo4j-cluster:7687" 
@@ -337,7 +337,7 @@ neo4j:
   merge_duplicate_entities: true        # Deduplicate entities across docs
   create_document_clusters: true        # Group related documents
   compute_centrality_metrics: true      # Graph analytics
-```
+```sql
 
 **Why this is revolutionary**:
 - **Zero migration risk** - Your primary storage remains unchanged
@@ -379,15 +379,15 @@ RETURN communityId, collect(d.title) as related_docs
 **The Key Differentiator**: Go-Doc-Go starts with a **structured document graph** as the foundation for knowledge extraction, not raw text blobs. This makes knowledge graph construction **1000x more effective**.
 
 **Traditional Approach (Text Blobs)**:
-```
+```go
 PDF → Extract text → Split into chunks → Try to find relationships in flat text
-```
+```go
 Result: **Lost context, unclear relationships, poor entity extraction**
 
 **Go-Doc-Go Approach (Structured Foundation)**:
-```
+```go
 PDF → Parse into structured elements → Preserve hierarchy → Extract entities with context → Build knowledge graph
-```
+```go
 Result: **Rich context, clear relationships, precise entity extraction**
 
 **Example: Why Structure Matters**
@@ -449,32 +449,32 @@ Document: "Vehicle Safety Manual v2.1"
 The ultimate combination: PostgreSQL's reliability + Neo4j's graph power.
 
 ```yaml
-# Primary storage
+## Primary storage
 storage:
   backend: "postgresql"
   host: "postgres-server"
   database: "go_doc_go_primary"
   
-# Search index
+## Search index
 elasticsearch:
   enabled: true
   hosts: ["http://elasticsearch-cluster:9200"]
   sync_on_write: true
   index_prefix: "search-"
-```
+```sql
 
 ### PostgreSQL + Neo4j
 
 Reliable storage with graph analysis capabilities.
 
 ```yaml
-# Primary storage  
+## Primary storage  
 storage:
   backend: "postgresql"
   host: "postgres-server"
   database: "go_doc_go_primary"
   
-# Graph export
+## Graph export
 neo4j:
   enabled: true
   uri: "bolt://neo4j-server:7687"
@@ -499,7 +499,7 @@ storage:
   pool_size: 20
   max_connections: 100
   connection_timeout: 30
-```
+```yaml
 
 ### Backend-Specific Tuning
 
@@ -518,7 +518,7 @@ storage:
   # Bulk loading optimization
   maintenance_work_mem: "1GB"
   checkpoint_completion_target: 0.9
-```
+```yaml
 
 **Elasticsearch:**
 ```yaml
@@ -542,7 +542,7 @@ storage:
 ### Development Pattern
 
 ```yaml
-# Simple, fast setup
+## Simple, fast setup
 storage:
   backend: "sqlite"
   path: "./dev_data.db"
@@ -551,12 +551,12 @@ storage:
 embedding:
   provider: "fastembed"  # Fast local embeddings
   model: "BAAI/bge-small-en-v1.5"
-```
+```yaml
 
 ### Production Pattern
 
 ```yaml
-# Scalable, reliable
+## Scalable, reliable
 storage:
   backend: "postgresql"
   host: "${DB_HOST}"
@@ -567,45 +567,45 @@ embedding:
   provider: "fastembed"
   model: "BAAI/bge-base-en-v1.5"  # Better quality
   
-# Optional: Search optimization
+## Optional: Search optimization
 elasticsearch:
   enabled: true
   hosts: ["${SEARCH_CLUSTER}"]
   sync_on_write: false  # Async for performance
   sync_schedule: "*/5 * * * *"  # Every 5 minutes
-```
+```yaml
 
 ### Analytics Pattern
 
 ```yaml
-# Optimized for analysis and reporting
+## Optimized for analysis and reporting
 storage:
   backend: "postgresql"  # Primary storage
   # ... connection details ...
 
-# Search and analytics
+## Search and analytics
 elasticsearch:
   enabled: true
   # ... ES configuration ...
   
-# Graph analysis
+## Graph analysis
 neo4j:
   enabled: true
   export_schedule: "daily"
   include_entity_relationships: true
-```
+```go
 
 ## Migration Between Backends
 
 Go-Doc-Go supports migrating data between storage backends:
 
 ```bash
-# Export from current backend
-go-doc-go export --config current_config.yaml --output backup.jsonl
+## Export from current backend
+go-doc-go export --config current_config.toml --output backup.jsonl
 
-# Import to new backend  
-go-doc-go import --config new_config.yaml --input backup.jsonl
-```
+## Import to new backend  
+go-doc-go import --config new_config.toml --input backup.jsonl
+```toml
 
 Or programmatically:
 
@@ -613,9 +613,9 @@ Or programmatically:
 from go_doc_go import Config
 from go_doc_go.storage import migrate_storage
 
-# Migrate from SQLite to PostgreSQL
-source_config = Config("sqlite_config.yaml")
-target_config = Config("postgres_config.yaml")
+## Migrate from SQLite to PostgreSQL
+source_config = Config("sqlite_config.toml")
+target_config = Config("postgres_config.toml")
 
 migrate_storage(
     source_config=source_config,
@@ -632,21 +632,21 @@ migrate_storage(
 ```python
 from go_doc_go import Config
 
-config = Config("config.yaml")
+config = Config("config.toml")
 db = config.get_storage_backend()
 
-# Check backend health
+## Check backend health
 health = db.health_check()
 print(f"Status: {health['status']}")
 print(f"Documents: {health['document_count']}")
 print(f"Elements: {health['element_count']}")
 print(f"Storage size: {health['storage_size']}")
-```
+```yaml
 
 ### Performance Monitoring
 
 ```yaml
-# Enable metrics collection
+## Enable metrics collection
 monitoring:
   enabled: true
   metrics_backend: "prometheus"  # or "statsd"
@@ -659,25 +659,25 @@ storage:
   log_slow_queries: true
   slow_query_threshold: 1000  # milliseconds
   track_query_stats: true
-```
+```bash
 
 ### Backup and Recovery
 
 **PostgreSQL:**
 ```bash
-# Backup
+## Backup
 pg_dump go_doc_go > backup.sql
 
-# Restore
+## Restore
 psql go_doc_go < backup.sql
-```
+```bash
 
 **Elasticsearch:**
 ```bash
-# Backup
+## Backup
 curl -X PUT "localhost:9200/_snapshot/backup/snapshot_1?wait_for_completion=true"
 
-# Restore  
+## Restore  
 curl -X POST "localhost:9200/_snapshot/backup/snapshot_1/_restore"
 ```
 
@@ -692,7 +692,7 @@ storage:
   pool_timeout: 30
   retry_attempts: 3
   retry_delay: 5
-```
+```yaml
 
 **Memory issues:**
 ```yaml  
@@ -700,7 +700,7 @@ storage:
   batch_size: 500        # Reduce batch size
   max_workers: 4         # Reduce parallelism
   stream_results: true   # Don't load all into memory
-```
+```yaml
 
 **Slow queries:**
 ```yaml
@@ -715,10 +715,10 @@ storage:
   # For PostgreSQL
   enable_jit: false  # Disable for small queries
   work_mem: "256MB"  # More memory for sorting
-```
+```sql
 
 ## Next Steps
 
-- [Scaling Guide](scaling.md) - Horizontal scaling and performance optimization
-- [Configuration Reference](configuration.md) - Detailed configuration options
-- [Embeddings Guide](embeddings.md) - Vector search configuration
+- [Scaling Guide](operations/scaling.md) - Horizontal scaling and performance optimization
+- [Configuration Reference](configuration/README.md) - Detailed configuration options
+- [Embeddings Guide](features/embeddings/README.md) - Vector search configuration

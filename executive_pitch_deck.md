@@ -3,7 +3,7 @@
 
 ---
 
-# Slide 1: The Problem - Your GenAI Is Missing 80% of Your Knowledge
+## Slide 1: The Problem - Your GenAI Is Missing 80% of Your Knowledge
 
 ## Why Your AI Investments Are Underwhelming
 
@@ -32,7 +32,7 @@
 
 ---
 
-# Slide 2: The Solution - Aperio Captures the Missing 80%
+## Slide 2: The Solution - Aperio Captures the Missing 80%
 
 ## Structure-Aware AI That Makes Knowledge Relationships Explicit
 
@@ -72,7 +72,7 @@
 
 ---
 
-# Slide 3: The Discovery - From Better AI to Domain Coherence
+## Slide 3: The Discovery - From Better AI to Domain Coherence
 
 ## What Customers Discover After Deployment
 
@@ -117,7 +117,7 @@
 
 ---
 
-# Slide 4: Business Value & ROI
+## Slide 4: Business Value & ROI
 
 ## Quantified Returns at Each Stage
 
@@ -176,7 +176,7 @@
 
 ---
 
-# Slide 5: Implementation & Getting Started
+## Slide 5: Implementation & Getting Started
 
 ## Three Entry Paths - Choose Your Starting Point
 

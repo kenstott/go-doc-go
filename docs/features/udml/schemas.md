@@ -353,7 +353,7 @@ jobs:
 
 ### Pre-commit Hook
 
-Add to `.pre-commit-config.yaml`:
+Add to `.pre-commit-config.toml`:
 ```yaml
 repos:
   - repo: https://github.com/python-jsonschema/check-jsonschema
@@ -377,11 +377,11 @@ repos:
 - **Major versions** (1.x → 2.0): May break compatibility (use migration tools)
 
 ### Migration
-See `docs/UDML_SPECIFICATION.md` for migration guides between versions.
+See `docs/features/udml/specification.md` for migration guides between versions.
 
 ## Resources
 
-- **UDML Specification**: `docs/UDML_SPECIFICATION.md`
+- **UDML Specification**: `docs/features/udml/specification.md`
 - **Quick Start Guide**: `docs/QUICK_START.md`
 - **Example Ontologies**: `examples/ontologies/`
 - **Integration Tests**: `go/internal/udml/integration_test.go`

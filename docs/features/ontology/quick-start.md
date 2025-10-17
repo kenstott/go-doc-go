@@ -176,6 +176,6 @@ go run ./cmd/test_catalog_load
 
 ## Resources
 
-- **Full Documentation**: `docs/UDML_ONTOLOGY_SYSTEM.md`
+- **Full Documentation**: `docs/features/udml/ontology-system.md`
 - **Catalog Examples**: `examples/ontologies/*.yaml`
 - **Catalog Guide**: `examples/ontologies/README.md`
