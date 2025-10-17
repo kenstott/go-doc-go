@@ -104,7 +104,7 @@ entity_types:
             - policy number
             - contract
         - type: regex_pattern
-          pattern: \bpolicy\s+(?:number|#)?\s*[A-Z0-9\-]+
+          pattern: '\bpolicy\s+(?:number|#)?\s*[A-Z0-9\-]+'
     - entity_type: policyholder
       description: Person or entity holding insurance policy
       aliases:
@@ -204,7 +204,7 @@ entity_types:
             - claim number
             - loss claim
         - type: regex_pattern
-          pattern: \bclaim\s+(?:number|#)?\s*[A-Z0-9\-]+
+          pattern: '\bclaim\s+(?:number|#)?\s*[A-Z0-9\-]+'
     - entity_type: loss_event
       description: Event causing insurance loss
       aliases:
@@ -348,7 +348,7 @@ entity_types:
             - automobile
             - VIN
         - type: regex_pattern
-          pattern: \bVIN:\s*[A-Z0-9]{17}\b
+          pattern: '\bVIN:\s*[A-Z0-9]{17}\b'
     - entity_type: property
       description: Insured property (property insurance)
       aliases:

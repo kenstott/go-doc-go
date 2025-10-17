@@ -89,7 +89,7 @@ entity_types:
     element_types: [paragraph, heading]
     sample_rules:
       - type: regex_pattern
-        pattern: \b[A-Z][a-z]+(?: [A-Z][a-z]+)* Foundation\b
+        pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Foundation\b'
 
   - entity_type: nonprofit_organization
     description: Tax-exempt charitable organization

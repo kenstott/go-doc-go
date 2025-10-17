@@ -90,7 +90,7 @@ entity_types:
             - SKU
             - part number
         - type: regex_pattern
-          pattern: \b(?:SKU|Part|Item)\s*#?\s*[A-Z0-9\-]+
+          pattern: '\b(?:SKU|Part|Item)\s*#?\s*[A-Z0-9\-]+'
     - entity_type: component
       description: Component or part used in manufacturing
       aliases:
@@ -126,7 +126,7 @@ entity_types:
             - lot number
             - batch number
         - type: regex_pattern
-          pattern: \b(?:Batch|Lot)\s*#?\s*[A-Z0-9\-]+
+          pattern: '\b(?:Batch|Lot)\s*#?\s*[A-Z0-9\-]+'
     - entity_type: specification
       description: Product specification or requirement
       aliases:
@@ -156,7 +156,7 @@ entity_types:
         - paragraph
       sample_rules:
         - type: regex_pattern
-          pattern: \b\d+(?:\.\d+)?\s*(?:mm|cm|m|kg|g|lbs|inches|°C|°F)
+          pattern: '\b\d+(?:\.\d+)?\s*(?:mm|cm|m|kg|g|lbs|inches|°C|°F)'
     - entity_type: defect_type
       description: Type of defect or quality issue
       aliases:
@@ -290,7 +290,7 @@ entity_types:
             - certification
             - quality standard
         - type: regex_pattern
-          pattern: \bISO\s+\d+
+          pattern: '\bISO\s+\d+'
     - entity_type: work_order
       description: Work order or production order
       aliases:
@@ -309,7 +309,7 @@ entity_types:
             - job order
             - WO
         - type: regex_pattern
-          pattern: \bWO\s*#?\s*[A-Z0-9\-]+
+          pattern: '\bWO\s*#?\s*[A-Z0-9\-]+'
 common_entity_refs:
     - person
     - employee

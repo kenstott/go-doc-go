@@ -93,7 +93,7 @@ entity_types:
             - SKU
             - merchandise
         - type: regex_pattern
-          pattern: \bSKU\s*#?\s*[A-Z0-9\-]+
+          pattern: '\bSKU\s*#?\s*[A-Z0-9\-]+'
     - entity_type: customer
       description: Retail customer or shopper
       aliases:
@@ -130,7 +130,7 @@ entity_types:
             - purchase
             - order
         - type: regex_pattern
-          pattern: \b(?:Order|Transaction|Receipt)\s*#?\s*[A-Z0-9\-]+
+          pattern: '\b(?:Order|Transaction|Receipt)\s*#?\s*[A-Z0-9\-]+'
     - entity_type: price
       description: Product price or cost
       aliases:
@@ -171,7 +171,7 @@ entity_types:
             - offer
             - coupon
         - type: regex_pattern
-          pattern: \b\d+%\s+off\b
+          pattern: '\b\d+%\s+off\b'
     - entity_type: store
       description: Retail store or location
       aliases:
@@ -191,7 +191,7 @@ entity_types:
             - outlet
             - branch
         - type: regex_pattern
-          pattern: \bStore\s*#?\s*\d+
+          pattern: '\bStore\s*#?\s*\d+'
     - entity_type: category
       description: Product category or department
       aliases:

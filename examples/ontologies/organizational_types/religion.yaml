@@ -40,7 +40,7 @@ entity_types:
     element_types: [paragraph, heading]
     sample_rules:
       - type: regex_pattern
-        pattern: \b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Church|Temple|Synagogue|Mosque|Cathedral|Chapel)\b
+        pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Church|Temple|Synagogue|Mosque|Cathedral|Chapel)\b'
       - type: keyword_match
         keywords: [church, temple, synagogue, mosque, parish, congregation]
 
@@ -52,7 +52,7 @@ entity_types:
       - type: keyword_match
         keywords: [reverend, pastor, priest, rabbi, imam, minister, deacon, bishop]
       - type: regex_pattern
-        pattern: \b(?:Rev\.|Reverend|Pastor|Fr\.|Father|Rabbi|Imam)\s+[A-Z][a-z]+(?: [A-Z][a-z]+)+\b
+        pattern: '\b(?:Rev\.|Reverend|Pastor|Fr\.|Father|Rabbi|Imam)\s+[A-Z][a-z]+(?: [A-Z][a-z]+)+\b'
 
   - entity_type: worship_service
     description: Religious service or ceremony

@@ -49,7 +49,7 @@ entity_types:
     element_types: [paragraph, heading]
     sample_rules:
       - type: regex_pattern
-        pattern: \b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Hotel|Resort|Inn|Lodge)\b
+        pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Hotel|Resort|Inn|Lodge)\b'
       - type: keyword_match
         keywords: [hotel, resort, inn, lodge, accommodation]
 
@@ -59,7 +59,7 @@ entity_types:
     element_types: [paragraph, heading]
     sample_rules:
       - type: regex_pattern
-        pattern: \b[A-Z][a-z]+(?: [A-Z][a-z]+)* Airlines?\b
+        pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Airlines?\b'
       - type: keyword_match
         keywords: [airline, airways, air]
 
@@ -69,7 +69,7 @@ entity_types:
     element_types: [paragraph, table_cell]
     sample_rules:
       - type: regex_pattern
-        pattern: \b[A-Z]{2}\d{1,4}\b
+        pattern: '\b[A-Z]{2}\d{1,4}\b'
       - type: keyword_match
         keywords: [flight, departure, arrival]
 

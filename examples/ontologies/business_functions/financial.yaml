@@ -70,7 +70,7 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\s+(?:Inc|Corp|LLC|Ltd|Company|Co)\b
+          pattern: '\b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\s+(?:Inc|Corp|LLC|Ltd|Company|Co)\b'
         - type: keyword_match
           keywords:
             - Inc
@@ -113,9 +113,9 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b(?:Q[1-4]|FY)?\s*\d{4}\b
+          pattern: '\b(?:Q[1-4]|FY)?\s*\d{4}\b'
         - type: regex_pattern
-          pattern: \b(?:first|second|third|fourth)\s+quarter\s+\d{4}\b
+          pattern: '\b(?:first|second|third|fourth)\s+quarter\s+\d{4}\b'
         - type: keyword_match
           keywords:
             - Q1
@@ -164,9 +164,9 @@ entity_types:
         - table_cell
       sample_rules:
         - type: regex_pattern
-          pattern: \b(?:NYSE|NASDAQ|LSE):\s*[A-Z]{1,5}\b
+          pattern: '\b(?:NYSE|NASDAQ|LSE):\s*[A-Z]{1,5}\b'
         - type: regex_pattern
-          pattern: \b[A-Z]{2,5}\b
+          pattern: '\b[A-Z]{2,5}\b'
 common_entity_refs:
     - person
     - executive
