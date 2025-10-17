@@ -5,6 +5,8 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,20 +78,54 @@ type HTMLParser struct {
 	MaxContentPreview int
 	ExtractDates      bool
 	EnableCaching     bool
-	StoreFullContent  bool           // If true, populate Content field with full (untruncated) text
-	documentCache     map[string]string // Cache of HTML content by source URL
+	StoreFullContent  bool              // If true, populate Content field with full (untruncated) text
+	Headers           map[string]string // HTTP headers to use when fetching URLs
+	documentCache     map[string]string // In-memory cache of HTML content by source URL
+	diskCache         *ContentCache     // Disk-based persistent cache
 	cacheMu           sync.RWMutex      // Mutex for thread-safe cache access
 }
 
 // NewHTMLParser creates a new HTML parser instance
 func NewHTMLParser() *HTMLParser {
+	// Initialize disk cache with default config
+	diskCache, err := NewContentCache(DefaultCacheConfig())
+	if err != nil {
+		// Log warning but continue - memory cache will still work
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize disk cache: %v\n", err)
+		diskCache = nil
+	}
+
 	return &HTMLParser{
 		MaxContentPreview: 100,
 		ExtractDates:      true,
 		StoreFullContent:  false, // Default: don't store full content
 		EnableCaching:     true,
-		documentCache:     make(map[string]string),
+		Headers: map[string]string{
+			"User-Agent": "Mozilla/5.0 (compatible; Go-Doc-Go/1.0; +https://github.com/go-doc-go)",
+		},
+		documentCache: make(map[string]string),
+		diskCache:     diskCache,
 	}
+}
+
+// NewHTMLParserWithCache creates a new HTML parser with custom cache config
+func NewHTMLParserWithCache(cacheConfig ContentCacheConfig) (*HTMLParser, error) {
+	diskCache, err := NewContentCache(cacheConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize disk cache: %w", err)
+	}
+
+	return &HTMLParser{
+		MaxContentPreview: 100,
+		ExtractDates:      true,
+		StoreFullContent:  false,
+		EnableCaching:     true,
+		Headers: map[string]string{
+			"User-Agent": "Mozilla/5.0 (compatible; Go-Doc-Go/1.0; +https://github.com/go-doc-go)",
+		},
+		documentCache: make(map[string]string),
+		diskCache:     diskCache,
+	}, nil
 }
 
 // Parser interface implementation
@@ -865,15 +901,72 @@ func (p *HTMLParser) resolveElementSelection(contentLocation map[string]interfac
 
 	// Check if source is a URL (web content)
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
-		// Try to get from cache
+		// Try memory cache first (fastest)
 		p.cacheMu.RLock()
 		cached, found := p.documentCache[source]
 		p.cacheMu.RUnlock()
 
-		if !found {
-			return nil, fmt.Errorf("HTML content not cached for URL: %s", source)
+		if found {
+			htmlContent = cached
+		} else {
+			// Try disk cache second (fast, persistent)
+			if p.diskCache != nil {
+				diskCached, diskFound := p.diskCache.Get(source)
+				if diskFound {
+					htmlContent = diskCached
+					// Populate memory cache for next time
+					p.cacheMu.Lock()
+					p.documentCache[source] = htmlContent
+					p.cacheMu.Unlock()
+					goto parseHTML
+				}
+			}
+
+			// Not in any cache - fetch from URL
+			req, err := http.NewRequest("GET", source, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create request for %s: %w", source, err)
+			}
+
+			// Add configured headers (including User-Agent)
+			for k, v := range p.Headers {
+				req.Header.Set(k, v)
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch HTML from URL %s: %w", source, err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return nil, fmt.Errorf("HTTP %d when fetching URL: %s", resp.StatusCode, source)
+			}
+
+			bodyBytes, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read response body from %s: %w", source, err)
+			}
+
+			htmlContent = string(bodyBytes)
+
+			// Cache in both memory and disk
+			p.cacheMu.Lock()
+			p.documentCache[source] = htmlContent
+			p.cacheMu.Unlock()
+
+			if p.diskCache != nil {
+				// Async disk write to avoid blocking
+				go func(url, content string) {
+					if err := p.diskCache.Put(url, content); err != nil {
+						// Log warning but don't fail the request
+						fmt.Fprintf(os.Stderr, "Warning: failed to write to disk cache: %v\n", err)
+					}
+				}(source, htmlContent)
+			}
 		}
-		htmlContent = cached
+	parseHTML:
 	} else {
 		// Local file - read from disk
 		fileContent, err := os.ReadFile(source)

@@ -16,8 +16,9 @@ type GoCodeParser struct {
 	MaxContentPreview int
 	ExtractComments   bool
 	ExtractImports    bool
-	fset              *token.FileSet // File set for position tracking
-	packageName       string         // Current package name
+	fset              *token.FileSet         // File set for position tracking
+	packageName       string                 // Current package name
+	fileComments      []*ast.CommentGroup    // All comments in the file
 }
 
 // NewGoCodeParser creates a new Go code parser with default settings
@@ -63,11 +64,12 @@ func (p *GoCodeParser) Parse(ctx context.Context, req ParseRequest) (*ParseResul
 		return nil, fmt.Errorf("failed to parse Go source: %w", err)
 	}
 
-	// Store fset and package name in parser for reference extraction
+	// Store fset, package name, and comments in parser for reference extraction
 	p.fset = fset
 	if file.Name != nil {
 		p.packageName = file.Name.Name
 	}
+	p.fileComments = file.Comments
 
 	// Create parse result
 	result := &ParseResult{
@@ -328,6 +330,12 @@ func (p *GoCodeParser) createFunctionElement(docID string, fn *ast.FuncDecl, fse
 	if fn.Body != nil {
 		callElems := p.parseFunctionCalls(fn.Body, funcElement.ElementID)
 		elements = append(elements, callElems...)
+
+		// Extract inline comments within function body
+		if p.ExtractComments {
+			commentElems := p.extractInlineComments(fn.Body, funcElement.ElementID, fset)
+			elements = append(elements, commentElems...)
+		}
 	}
 
 	return elements
@@ -1138,6 +1146,77 @@ func (p *GoCodeParser) createTypeUsageElement(
 
 			// Go-specific metadata
 			"type_expression":  content,
+		},
+	}
+}
+
+// extractInlineComments extracts inline comments from a function body
+func (p *GoCodeParser) extractInlineComments(body *ast.BlockStmt, parentFuncID string, fset *token.FileSet) []Element {
+	var elements []Element
+
+	// Get the position range of the function body
+	bodyStartPos := body.Pos()
+	bodyEndPos := body.End()
+
+	// Iterate through all file comments and find those within the function body
+	for _, commentGroup := range p.fileComments {
+		// Check if this comment group is within the function body
+		if commentGroup.Pos() >= bodyStartPos && commentGroup.End() <= bodyEndPos {
+			// Process each comment in the group
+			for _, comment := range commentGroup.List {
+				// Skip doc comments (those starting with //)
+				// Doc comments are already extracted separately
+				// We only want inline comments within the function body
+				elem := p.createInlineCommentElement(comment, parentFuncID, fset)
+				if elem != nil {
+					elements = append(elements, *elem)
+				}
+			}
+		}
+	}
+
+	return elements
+}
+
+// createInlineCommentElement creates a code_documentation element for an inline comment
+func (p *GoCodeParser) createInlineCommentElement(comment *ast.Comment, parentID string, fset *token.FileSet) *Element {
+	pos := fset.Position(comment.Pos())
+	lineNum := pos.Line
+	content := comment.Text
+
+	// Determine comment type (line comment // or block comment /* */)
+	commentType := "line_comment"
+	if strings.HasPrefix(content, "/*") {
+		commentType = "block_comment"
+	}
+
+	// Clean up comment markers
+	cleanContent := content
+	if commentType == "line_comment" {
+		cleanContent = strings.TrimPrefix(cleanContent, "//")
+	} else {
+		cleanContent = strings.TrimPrefix(cleanContent, "/*")
+		cleanContent = strings.TrimSuffix(cleanContent, "*/")
+	}
+	cleanContent = strings.TrimSpace(cleanContent)
+
+	// Detect markers (TODO, FIXME, HACK, XXX, NOTE, BUG, OPTIMIZE, TEMP)
+	markers := detectCommentMarkers(cleanContent)
+
+	return &Element{
+		ElementID:       generateID("go_inline_comment"),
+		ElementType:     "code_documentation",
+		ElementCategory: GetElementCategory("code_documentation"),
+		Content:         cleanContent,
+		ContentPreview:  p.truncateContent(cleanContent),
+		ParentID:        parentID,
+		LineNumber:      &lineNum,
+		Metadata: map[string]interface{}{
+			"doc_kind":      "inline_comment",
+			"comment_type":  commentType,
+			"language":      "go",
+			"line_number":   lineNum,
+			"markers":       markers,
 		},
 	}
 }

@@ -557,3 +557,100 @@ func TestPythonCodeParser_ClassMethods(t *testing.T) {
 	assert.True(t, foundStaticMethod, "Should find @staticmethod decorated method")
 	assert.True(t, foundClassMethod, "Should find @classmethod decorated method")
 }
+
+// TestPythonCodeParser_InlineComments validates extraction of inline comments within function bodies
+func TestPythonCodeParser_InlineComments(t *testing.T) {
+	ctx := context.Background()
+
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.py")
+
+	testCode := `def process_data():
+    """Process data with validation."""
+    # TODO: Add validation logic here
+    # Validate input parameters
+    x = 1
+
+    # FIXME: This is a temporary workaround
+    # Need to refactor this section
+    y = 2
+
+    # HACK: Quick fix for deadline
+    z = x + y
+
+    # NOTE: This calculation is simplified
+    return z
+`
+
+	err := os.WriteFile(testFile, []byte(testCode), 0644)
+	require.NoError(t, err)
+
+	pyParser := parser.NewPythonCodeParser()
+	req := parser.ParseRequest{
+		ID:      "test-inline-comments",
+		Content: testFile,
+		Config:  parser.DefaultParserConfig(),
+	}
+
+	result, err := pyParser.Parse(ctx, req)
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+
+	// Find the process_data function
+	var funcID string
+	for _, elem := range result.Elements {
+		if elem.ElementType == "code_function" && elem.FunctionName != nil && *elem.FunctionName == "process_data" {
+			funcID = elem.ElementID
+			break
+		}
+	}
+	require.NotEmpty(t, funcID, "Should find process_data function")
+
+	// Track inline comments
+	inlineComments := []parser.Element{}
+	foundTODO := false
+	foundFIXME := false
+	foundHACK := false
+	foundNOTE := false
+
+	for _, elem := range result.Elements {
+		if elem.ElementType == "code_documentation" &&
+			elem.ParentID == funcID &&
+			elem.Metadata["doc_kind"] == "inline_comment" {
+			inlineComments = append(inlineComments, elem)
+
+			t.Logf("Inline comment: %s (line %d)", elem.Content, *elem.LineNumber)
+
+			// Check for markers
+			if markers, ok := elem.Metadata["markers"].([]string); ok {
+				for _, marker := range markers {
+					switch marker {
+					case "TODO":
+						foundTODO = true
+					case "FIXME":
+						foundFIXME = true
+					case "HACK":
+						foundHACK = true
+					case "NOTE":
+						foundNOTE = true
+					}
+				}
+			}
+
+			// Verify metadata structure
+			assert.Equal(t, "inline_comment", elem.Metadata["doc_kind"])
+			assert.Equal(t, "python", elem.Metadata["language"])
+			assert.NotNil(t, elem.LineNumber)
+			assert.Equal(t, "line_comment", elem.Metadata["comment_type"])
+		}
+	}
+
+	// Verify we found inline comments
+	assert.Greater(t, len(inlineComments), 0, "Should find inline comments")
+	assert.True(t, foundTODO, "Should detect TODO marker")
+	assert.True(t, foundFIXME, "Should detect FIXME marker")
+	assert.True(t, foundHACK, "Should detect HACK marker")
+	assert.True(t, foundNOTE, "Should detect NOTE marker")
+
+	t.Logf("Found %d inline comments in process_data function", len(inlineComments))
+}

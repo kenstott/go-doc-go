@@ -391,6 +391,12 @@ func (p *PythonCodeParser) createFunctionElements(node *sitter.Node, parentID st
 	if bodyNode != nil {
 		callElements := p.extractFunctionCalls(bodyNode, funcElement.ElementID)
 		elements = append(elements, callElements...)
+
+		// Extract inline comments within function body
+		if p.ExtractComments {
+			inlineComments := p.extractInlineComments(bodyNode, funcElement.ElementID)
+			elements = append(elements, inlineComments...)
+		}
 	}
 
 	// Extract docstring
@@ -730,6 +736,51 @@ func (p *PythonCodeParser) extractFunctionCalls(bodyNode *sitter.Node, parentFun
 	})
 
 	return elements
+}
+
+func (p *PythonCodeParser) extractInlineComments(bodyNode *sitter.Node, parentFunctionID string) []Element {
+	var elements []Element
+
+	p.walkNode(bodyNode, func(node *sitter.Node) {
+		// Python only has line comments (# ...)
+		if node.Type() == "comment" {
+			elem := p.createInlineCommentElement(node, parentFunctionID)
+			if elem != nil {
+				elements = append(elements, *elem)
+			}
+		}
+	})
+
+	return elements
+}
+
+func (p *PythonCodeParser) createInlineCommentElement(node *sitter.Node, parentID string) *Element {
+	content := p.getNodeText(node)
+	lineNum := int(node.StartPoint().Row) + 1
+
+	// Clean up comment marker
+	cleanContent := strings.TrimPrefix(content, "#")
+	cleanContent = strings.TrimSpace(cleanContent)
+
+	// Detect markers (TODO, FIXME, HACK, XXX, NOTE, BUG, OPTIMIZE)
+	markers := detectCommentMarkers(cleanContent)
+
+	return &Element{
+		ElementID:       generateID("py_inline_comment"),
+		ElementType:     "code_documentation",
+		ElementCategory: GetElementCategory("code_documentation"),
+		Content:         cleanContent,
+		ContentPreview:  truncate(cleanContent, p.MaxContentPreview),
+		ParentID:        parentID,
+		LineNumber:      &lineNum,
+		Metadata: map[string]interface{}{
+			"doc_kind":      "inline_comment",
+			"comment_type":  "line_comment",
+			"language":      "python",
+			"line_number":   lineNum,
+			"markers":       markers,
+		},
+	}
 }
 
 func (p *PythonCodeParser) createFunctionCallElement(node *sitter.Node, parentID string) *Element {

@@ -469,9 +469,7 @@ func (s *Sampler) sampleFromStratum(ctx context.Context, stratumValue string, sa
 
 			// Extract embedding vector if requested
 			if s.config.IncludeEmbedding {
-				if embedding, ok := row["embedding"].([]float64); ok {
-					sample.Embedding = embedding
-				}
+				sample.Embedding = s.extractEmbedding(row["embedding"])
 			}
 		} else {
 			// Path 1: Use 3-part waterfall for content resolution
@@ -669,6 +667,39 @@ func isCapitalized(word string) bool {
 	}
 	first := rune(word[0])
 	return first >= 'A' && first <= 'Z'
+}
+
+func (s *Sampler) extractEmbedding(val interface{}) []float64 {
+	if val == nil {
+		return nil
+	}
+
+	// Try direct []float64 type assertion
+	if emb, ok := val.([]float64); ok {
+		return emb
+	}
+
+	// Try []interface{} (common from JSON/DuckDB)
+	if arr, ok := val.([]interface{}); ok {
+		result := make([]float64, len(arr))
+		for i, v := range arr {
+			switch num := v.(type) {
+			case float64:
+				result[i] = num
+			case float32:
+				result[i] = float64(num)
+			case int:
+				result[i] = float64(num)
+			case int64:
+				result[i] = float64(num)
+			default:
+				return nil // Unexpected type in array
+			}
+		}
+		return result
+	}
+
+	return nil
 }
 
 // applyCosineSimilarityDiversity filters samples to ensure diversity using cosine similarity
