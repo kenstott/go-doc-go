@@ -19,10 +19,11 @@ import (
 // HTMLElementType represents the type of an HTML element
 type HTMLElementType string
 
-// HTML element type constants
+// HTML element type constants - UDML canonical types from element_taxonomy.json
 const (
 	HTMLElementTypeRoot        HTMLElementType = "root"
 	HTMLElementTypeHeader      HTMLElementType = "header"
+	HTMLElementTypeHeading     HTMLElementType = "heading"
 	HTMLElementTypeParagraph   HTMLElementType = "paragraph"
 	HTMLElementTypeList        HTMLElementType = "list"
 	HTMLElementTypeListItem    HTMLElementType = "list_item"
@@ -39,8 +40,10 @@ const (
 	HTMLElementTypeSpan        HTMLElementType = "span"
 	HTMLElementTypeBody        HTMLElementType = "body"
 	HTMLElementTypeText        HTMLElementType = "text"
-	HTMLElementTypeLink        HTMLElementType = "link"
+	HTMLElementTypeHyperlink   HTMLElementType = "hyperlink" // UDML canonical: hyperlink (not "link")
 	HTMLElementTypeTemporal    HTMLElementType = "temporal"
+	HTMLElementTypeDiagram     HTMLElementType = "diagram"   // For figure, chart
+	HTMLElementTypeCaption     HTMLElementType = "caption"
 )
 
 // HTMLElement represents a parsed HTML element
@@ -357,11 +360,14 @@ func (p *HTMLParser) parseNode(node *html.Node, elements *[]HTMLElement,
 	return ""
 }
 
-// getElementType maps HTML tag names to element types
+// getElementType maps HTML tag names to UDML canonical element types
+// All mappings must use types defined in element_taxonomy.json
 func (p *HTMLParser) getElementType(tagName string) HTMLElementType {
 	switch strings.ToLower(tagName) {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
-		return HTMLElementTypeHeader
+		return HTMLElementTypeHeading // UDML: heading (not header)
+	case "header":
+		return HTMLElementTypeHeader // HTML5 header element
 	case "p":
 		return HTMLElementTypeParagraph
 	case "ul", "ol":
@@ -388,16 +394,25 @@ func (p *HTMLParser) getElementType(tagName string) HTMLElementType {
 		return HTMLElementTypeArticle
 	case "section":
 		return HTMLElementTypeSection
+	case "nav", "aside", "main":
+		return HTMLElementTypeSection // Map nav/aside/main to section
 	case "span":
 		return HTMLElementTypeSpan
 	case "body":
 		return HTMLElementTypeBody
+	case "a":
+		return HTMLElementTypeHyperlink // UDML: hyperlink (not link)
+	case "figure":
+		return HTMLElementTypeDiagram // Map figure to diagram
+	case "figcaption", "caption":
+		return HTMLElementTypeCaption
 	default:
 		// Handle namespace-prefixed elements (XBRL, iXBRL, etc.)
 		if strings.Contains(tagName, ":") {
 			return HTMLElementType(strings.ReplaceAll(tagName, ":", "_"))
 		}
-		return HTMLElementType(tagName)
+		// For unmapped tags, use div as fallback (generic container)
+		return HTMLElementTypeDiv
 	}
 }
 
@@ -425,8 +440,9 @@ func (p *HTMLParser) shouldCreateElement(tagName string) bool {
 	// Whitelist of semantic tags that should get dedicated elements
 	// Based on Python's whitelist in html.py:942-944 but ADDS 'li' (bug fix)
 	semanticTags := map[string]bool{
-		// Headers
+		// Headers and headings
 		"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
+		"header": true,
 		// Text content
 		"p": true,
 		// Lists - containers AND items
@@ -439,8 +455,9 @@ func (p *HTMLParser) shouldCreateElement(tagName string) bool {
 		"table": true,
 		// Media
 		"img": true,
+		"figure": true, "figcaption": true, "caption": true,
 		// Structural/container elements (important for hierarchy)
-		"body": true, "div": true, "article": true, "section": true, "nav": true, "aside": true, "figure": true,
+		"body": true, "div": true, "article": true, "section": true, "nav": true, "aside": true, "main": true,
 	}
 	return semanticTags[strings.ToLower(tagName)]
 }
@@ -533,8 +550,8 @@ func (p *HTMLParser) extractTextRecursive(node *html.Node, text *strings.Builder
 	}
 }
 
-// parseAnchorTag creates a link element for an HTML anchor tag
-// Link elements are containers that can have text/image children
+// parseAnchorTag creates a hyperlink element for an HTML anchor tag
+// Hyperlink elements are containers that can have text/image children
 func (p *HTMLParser) parseAnchorTag(node *html.Node, elements *[]HTMLElement,
 	parentID, sourceID string, counter *int) string {
 
@@ -550,13 +567,13 @@ func (p *HTMLParser) parseAnchorTag(node *html.Node, elements *[]HTMLElement,
 	// Extract text content for preview (truncated)
 	linkText := p.extractTextContent(node)
 
-	// Create link element
+	// Create hyperlink element (UDML canonical type)
 	linkElement := HTMLElement{
-		ElementID:       p.generateID("link_"),
-		ElementType:     HTMLElementTypeLink,
+		ElementID:       p.generateID("hyperlink_"),
+		ElementType:     HTMLElementTypeHyperlink,
 		ParentID:        parentID,
 		ContentPreview:  linkText,
-		ContentLocation: p.createContentLocationForNode(sourceID, HTMLElementTypeLink, node),
+		ContentLocation: p.createContentLocationForNode(sourceID, HTMLElementTypeHyperlink, node),
 		ContentHash:     p.generateHash(linkText),
 		ElementOrder:    *counter,
 		DocumentOrder:   *counter,
@@ -575,7 +592,7 @@ func (p *HTMLParser) parseAnchorTag(node *html.Node, elements *[]HTMLElement,
 	*elements = append(*elements, linkElement)
 	*counter++
 
-	// Recursively parse children (text, images, etc.) with link as parent
+	// Recursively parse children (text, images, etc.) with hyperlink as parent
 	for child := node.FirstChild; child != nil; child = child.NextSibling {
 		p.parseNode(child, elements, linkElement.ElementID, sourceID, counter)
 	}
@@ -777,8 +794,8 @@ func (p *HTMLParser) convertToParseResult(response *ParseResponse) *ParseResult 
 		tagName := string(htmlElem.ElementType)
 		element.TagName = &tagName
 
-		// SectionLevel - for header elements (h1-h6)
-		if htmlElem.ElementType == HTMLElementTypeHeader {
+		// SectionLevel - for heading elements (h1-h6)
+		if htmlElem.ElementType == HTMLElementTypeHeading {
 			// Extract level from element type or ID
 			level := extractHeaderLevel(htmlElem.ElementID, htmlElem.Metadata)
 			if level > 0 {
@@ -817,7 +834,7 @@ func calculateDepth(elementType HTMLElementType) int {
 		return 0
 	case HTMLElementTypeBody:
 		return 1
-	case HTMLElementTypeHeader, HTMLElementTypeParagraph, HTMLElementTypeList, HTMLElementTypeTable,
+	case HTMLElementTypeHeader, HTMLElementTypeHeading, HTMLElementTypeParagraph, HTMLElementTypeList, HTMLElementTypeTable,
 		 HTMLElementTypeDiv, HTMLElementTypeArticle, HTMLElementTypeSection:
 		return 2
 	case HTMLElementTypeListItem, HTMLElementTypeTableRow:
