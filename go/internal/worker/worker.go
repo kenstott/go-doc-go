@@ -906,6 +906,47 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		w.queueDiscoveredLinks(docInfo, parseResult, sourceConfig)
 	}
 
+	// Store document metadata for change tracking on future refreshes
+	// Extract last_modified timestamp from content metadata
+	var lastModified *time.Time
+	if lastModFloat, ok := docContent.Metadata["last_modified"].(float64); ok {
+		t := time.Unix(int64(lastModFloat), 0)
+		lastModified = &t
+	}
+
+	// Calculate file size
+	fileSize := int64(len(docContent.Content))
+	if docContent.BinaryPath != "" {
+		// For binary files, try to get actual file size from metadata
+		if size, ok := docContent.Metadata["file_size"].(int64); ok {
+			fileSize = size
+		} else if size, ok := docContent.Metadata["file_size"].(float64); ok {
+			fileSize = int64(size)
+		}
+	}
+
+	// Collect processing stats
+	stats := map[string]interface{}{
+		"element_count": len(parseResult.Elements),
+		"doc_type":      docContent.DocType,
+	}
+
+	// Store metadata for future change detection
+	if err := w.jobControl.StoreDocumentMetadata(
+		docInfo.DocID,
+		docInfo.Source,
+		lastModified,
+		docContent.ContentHash,
+		&fileSize,
+		stats,
+	); err != nil {
+		// Log error but don't fail the entire operation
+		log.Printf("WARNING: Failed to store document metadata for %s: %v", docInfo.DocID, err)
+	} else {
+		log.Printf("Stored metadata for document %s (hash: %s, size: %d bytes)",
+			docInfo.DocID, docContent.ContentHash[:8], fileSize)
+	}
+
 	log.Printf("Successfully processed document %s", docInfo.DocID)
 	return true
 }
