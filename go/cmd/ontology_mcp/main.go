@@ -5,9 +5,9 @@ import (
 	"log"
 	"os"
 
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology/mcp"
-	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 	"github.com/mark3labs/mcp-go/server"
 )
 
@@ -37,12 +37,17 @@ func main() {
 
 	parquetPath := os.Args[1]
 
-	// Initialize querier
-	querier, err := query.NewQuerier(parquetPath)
-	if err != nil {
-		log.Fatalf("Failed to create querier: %v", err)
+	// Initialize analytics storage (supports temporal filtering through filters parameter)
+	storageConfig := map[string]interface{}{
+		"path": parquetPath,
 	}
-	defer querier.Close()
+	storage, err := analytics.NewHiveParquetStorage(storageConfig)
+	if err != nil {
+		log.Fatalf("Failed to create storage: %v", err)
+	}
+	defer storage.Close()
+
+	log.Printf("✓ Storage backend initialized (supports temporal filtering via filters parameter)")
 
 	// Initialize embedding generator (optional)
 	var embGen embeddings.EmbeddingGenerator
@@ -50,9 +55,9 @@ func main() {
 		modelPath := os.Args[2]
 		log.Printf("Loading embedding model from: %s", modelPath)
 
-		embGen, err = embeddings.NewONNXEmbedding(modelPath, embeddings.ModelConfig{
-			ModelName: "all-MiniLM-L6-v2",
-		})
+		embGen, err = embeddings.NewOnnxEmbeddingGenerator(embeddings.Config{
+			Model: "all-MiniLM-L6-v2",
+		}, modelPath)
 		if err != nil {
 			log.Printf("Warning: Failed to load embedding model: %v", err)
 			log.Printf("Semantic search will not be available")
@@ -63,7 +68,10 @@ func main() {
 	}
 
 	// Create MCP corpus explorer
-	explorer := mcp.NewOntologyCorpusExplorer(querier, embGen)
+	explorer, err := mcp.NewOntologyCorpusExplorer(storage, embGen)
+	if err != nil {
+		log.Fatalf("Failed to create MCP explorer: %v", err)
+	}
 	mcpServer := explorer.CreateMCPServer()
 
 	// Start server on stdio

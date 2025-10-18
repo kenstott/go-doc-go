@@ -2,48 +2,36 @@ package mcp
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
-	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
 // OntologyCorpusExplorer provides MCP tools for exploring UDML corpus during ontology refinement
 //
-// IMPORTANT: This MCP server requires a backend that implements query.RawQueryBackend interface.
-// It uses database-specific SQL features (e.g., DuckDB's list_cosine_similarity, regexp_matches)
-// that are not fully abstracted by the query.Expression API.
-//
-// This is by design - the MCP server is a specialized interactive exploration tool for LLMs
-// during ontology refinement, not a general-purpose query interface. The Expression API is
-// designed for programmatic queries that need to be portable across backends.
+// IMPORTANT: All data access goes through the analytics.Storage interface.
+// This ensures temporal filtering, multi-backend support, and architectural consistency.
+// The Storage interface provides specialized corpus exploration methods that are optimized
+// for each backend (Parquet/DuckDB, Neo4j, PostgreSQL, etc.) while maintaining a consistent API.
 type OntologyCorpusExplorer struct {
-	backend      query.RawQueryBackend // Requires RawQueryBackend for specialized features
+	storage      analytics.Storage // All queries go through Storage interface
 	embGenerator embeddings.EmbeddingGenerator
 }
 
 // NewOntologyCorpusExplorer creates a new MCP server for corpus exploration
-// Returns an error if the backend does not implement query.RawQueryBackend
-func NewOntologyCorpusExplorer(backend query.QueryBackend, embGenerator embeddings.EmbeddingGenerator) (*OntologyCorpusExplorer, error) {
-	rawBackend, ok := backend.(query.RawQueryBackend)
-	if !ok {
-		return nil, fmt.Errorf("MCP server requires a backend that implements query.RawQueryBackend interface (got %T)", backend)
+func NewOntologyCorpusExplorer(storage analytics.Storage, embGenerator embeddings.EmbeddingGenerator) (*OntologyCorpusExplorer, error) {
+	if storage == nil {
+		return nil, fmt.Errorf("storage cannot be nil")
 	}
 
 	return &OntologyCorpusExplorer{
-		backend:      rawBackend,
+		storage:      storage,
 		embGenerator: embGenerator,
 	}, nil
-}
-
-// queryRaw is a helper that executes a raw query via the RawQueryBackend
-// Note: This calls QueryRaw which returns *sql.Rows directly, not ExecuteRaw which returns QueryResult
-func (e *OntologyCorpusExplorer) queryRaw(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
-	return e.backend.QueryRaw(ctx, query, args...)
 }
 
 // CreateMCPServer creates and configures the MCP server with all tools
