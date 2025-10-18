@@ -103,7 +103,7 @@ func (e *RuleBasedExtractor) ExtractFromElements(ctx context.Context, docID stri
 // extractEntities applies entity extraction rules to elements
 func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Element) ([]Entity, error) {
 	var entities []Entity
-	entityMap := make(map[string]*Entity) // Deduplicate by name
+	entityMap := make(map[string]*Entity) // Deduplicate by <type>.<name> (case-insensitive)
 
 	log.Printf("DEBUG: Starting entity extraction with %d entity mappings", len(e.schema.ElementEntityMappings))
 
@@ -123,22 +123,37 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 			}
 			log.Printf("DEBUG: Rule %d extracted %d entities", j, len(extractedEntities))
 
-			// Deduplicate entities by name - keep highest confidence entity
+			// Deduplicate entities by <type>.<name> (case-insensitive) - keep highest confidence entity
 			for _, entity := range extractedEntities {
-				if existing, ok := entityMap[entity.Name]; ok {
+				// Use <type>.<name> as deduplication key (case-insensitive)
+				// Convert entity.Type from EntityType enum to string for the key
+				typeStr := string(entity.Type)
+				dedupKey := strings.ToLower(typeStr + "." + entity.Name)
+
+				if existing, ok := entityMap[dedupKey]; ok {
 					// Replace with higher confidence entity
 					if entity.Confidence > existing.Confidence {
 						// Keep all mentions from both
 						entity.Mentions = append(entity.Mentions, existing.Mentions...)
 						entityCopy := entity
-						entityMap[entity.Name] = &entityCopy
+						entityMap[dedupKey] = &entityCopy
+					} else if entity.Confidence == existing.Confidence {
+						// Same confidence - prefer the canonical form (title case or most common)
+						if e.isMoreCanonical(entity.Name, existing.Name) {
+							entity.Mentions = append(entity.Mentions, existing.Mentions...)
+							entityCopy := entity
+							entityMap[dedupKey] = &entityCopy
+						} else {
+							// Keep existing, merge mentions
+							existing.Mentions = append(existing.Mentions, entity.Mentions...)
+						}
 					} else {
 						// Keep existing, merge mentions
 						existing.Mentions = append(existing.Mentions, entity.Mentions...)
 					}
 				} else {
 					entityCopy := entity
-					entityMap[entity.Name] = &entityCopy
+					entityMap[dedupKey] = &entityCopy
 				}
 			}
 		}
@@ -185,10 +200,13 @@ func (e *RuleBasedExtractor) extractFromMetadata(mapping ElementEntityMapping, r
 			continue
 		}
 
+		// Resolve content for instance_name extraction
+		content := e.resolveContent(&elem)
+
 		entity := Entity{
 			ID:         e.generateID("ent"),
-			Name:       value,
-			Type:       e.parseEntityType(mapping.EntityType),
+			Name:       e.extractInstanceName(content, rule, value),
+			Type:       EntityType(mapping.EntityType),
 			Domain:     mapping.Domain, // Domain ownership from mapping
 			Confidence: mapping.Confidence,
 			Attributes: map[string]interface{}{
@@ -225,6 +243,13 @@ func (e *RuleBasedExtractor) extractFromRegex(mapping ElementEntityMapping, rule
 	}
 
 	for _, elem := range elements {
+		// Apply semantic filter at element level (before pattern matching to save compute)
+		if rule.SemanticFilter != nil {
+			if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
+				continue // Element doesn't match semantic context
+			}
+		}
+
 		// Resolve content before applying regex
 		content := e.resolveContent(&elem)
 		if content == "" {
@@ -240,8 +265,8 @@ func (e *RuleBasedExtractor) extractFromRegex(mapping ElementEntityMapping, rule
 
 			entity := Entity{
 				ID:         e.generateID("ent"),
-				Name:       entityName,
-				Type:       e.parseEntityType(mapping.EntityType),
+				Name:       e.extractInstanceName(content, rule, entityName),
+				Type:       EntityType(mapping.EntityType),
 				Domain:     mapping.Domain, // Domain ownership from mapping
 				Confidence: mapping.Confidence,
 				Attributes: map[string]interface{}{
@@ -273,6 +298,13 @@ func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, r
 	var entities []Entity
 
 	for _, elem := range elements {
+		// Apply semantic filter at element level
+		if rule.SemanticFilter != nil {
+			if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
+				continue // Element doesn't match semantic context
+			}
+		}
+
 		// Resolve content before applying keywords
 		content := e.resolveContent(&elem)
 		if content == "" {
@@ -299,8 +331,8 @@ func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, r
 
 			entity := Entity{
 				ID:         e.generateID("ent"),
-				Name:       actualText,
-				Type:       e.parseEntityType(mapping.EntityType),
+				Name:       e.extractInstanceName(content, rule, actualText),
+				Type:       EntityType(mapping.EntityType),
 				Domain:     mapping.Domain, // Domain ownership from mapping
 				Confidence: mapping.Confidence,
 				Attributes: map[string]interface{}{
@@ -351,8 +383,8 @@ func (e *RuleBasedExtractor) extractFromSimilarity(mapping ElementEntityMapping,
 			// Text similarity is binary: if similarity >= threshold -> TRUE, use mapping confidence
 			entity := Entity{
 				ID:         e.generateID("ent"),
-				Name:       elem.ContentPreview,
-				Type:       e.parseEntityType(mapping.EntityType),
+				Name:       e.extractInstanceName(content, rule, elem.ContentPreview),
+				Type:       EntityType(mapping.EntityType),
 				Domain:     mapping.Domain, // Domain ownership from mapping
 				Confidence: mapping.Confidence, // Use mapping confidence (context quality)
 				Attributes: map[string]interface{}{
@@ -390,6 +422,13 @@ func (e *RuleBasedExtractor) extractFromJSONPath(mapping ElementEntityMapping, r
 	}
 
 	for _, elem := range elements {
+		// Apply semantic filter at element level
+		if rule.SemanticFilter != nil {
+			if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
+				continue // Element doesn't match semantic context
+			}
+		}
+
 		// Resolve content and try to parse as JSON
 		content := e.resolveContent(&elem)
 
@@ -423,8 +462,8 @@ func (e *RuleBasedExtractor) extractFromJSONPath(mapping ElementEntityMapping, r
 
 			entity := Entity{
 				ID:         e.generateID("ent"),
-				Name:       resultStr,
-				Type:       e.parseEntityType(mapping.EntityType),
+				Name:       e.extractInstanceName(content, rule, resultStr),
+				Type:       EntityType(mapping.EntityType),
 				Domain:     mapping.Domain, // Domain ownership from mapping
 				Confidence: mapping.Confidence,
 				Attributes: map[string]interface{}{
@@ -621,9 +660,12 @@ func (e *RuleBasedExtractor) getMetadataValue(metadata map[string]interface{}, p
 	return ""
 }
 
-func (e *RuleBasedExtractor) parseEntityType(typeStr string) EntityType {
-	typeStr = strings.ToLower(strings.TrimSpace(typeStr))
-	switch typeStr {
+// normalizeEntityType converts entity type to standard enum if recognized, otherwise uses custom type
+func (e *RuleBasedExtractor) normalizeEntityType(typeStr string) EntityType {
+	normalized := strings.ToLower(strings.TrimSpace(typeStr))
+
+	// Check if it's a standard/universal entity type
+	switch normalized {
 	case "person":
 		return EntityTypePerson
 	case "organization":
@@ -641,7 +683,9 @@ func (e *RuleBasedExtractor) parseEntityType(typeStr string) EntityType {
 	case "technology":
 		return EntityTypeTechnology
 	default:
-		return EntityTypeCustom
+		// Use the original string as-is for domain-specific types
+		// This preserves types like "medical procedure", "disease", "treatment"
+		return EntityType(typeStr)
 	}
 }
 
@@ -1079,4 +1123,191 @@ func (e *RuleBasedExtractor) cosineSimilarity(vec1, vec2 []float64) float64 {
 	}
 
 	return dotProduct / (math.Sqrt(norm1) * math.Sqrt(norm2))
+}
+
+// isMoreCanonical determines if name1 is more canonical than name2
+// Prefers title case, then capitalized words, then lowercase
+func (e *RuleBasedExtractor) isMoreCanonical(name1, name2 string) bool {
+	// If one is empty, the other is more canonical
+	if name1 == "" {
+		return false
+	}
+	if name2 == "" {
+		return true
+	}
+
+	// Count uppercase letters at the start of each word
+	words1 := strings.Fields(name1)
+	words2 := strings.Fields(name2)
+
+	// Count capitalized words (Title Case preference)
+	capitalized1 := 0
+	capitalized2 := 0
+	allUpper1 := 0
+	allUpper2 := 0
+	allLower1 := 0
+	allLower2 := 0
+
+	for _, word := range words1 {
+		if len(word) == 0 {
+			continue
+		}
+		if word == strings.ToUpper(word) && word != strings.ToLower(word) {
+			allUpper1++
+		} else if word[0] >= 'A' && word[0] <= 'Z' {
+			capitalized1++
+		} else {
+			allLower1++
+		}
+	}
+
+	for _, word := range words2 {
+		if len(word) == 0 {
+			continue
+		}
+		if word == strings.ToUpper(word) && word != strings.ToLower(word) {
+			allUpper2++
+		} else if word[0] >= 'A' && word[0] <= 'Z' {
+			capitalized2++
+		} else {
+			allLower2++
+		}
+	}
+
+	// Preference order:
+	// 1. Title Case (most words capitalized) over all lowercase
+	// 2. Fewer ALL CAPS words (ALL CAPS is less canonical)
+	// 3. More capitalized words over lowercase
+
+	// Avoid all caps (all caps is least canonical)
+	if allUpper1 < allUpper2 {
+		return true
+	}
+	if allUpper1 > allUpper2 {
+		return false
+	}
+
+	// Prefer more capitalized words (Title Case)
+	if capitalized1 > capitalized2 {
+		return true
+	}
+	if capitalized1 < capitalized2 {
+		return false
+	}
+
+	// All else equal, prefer the one that appears first alphabetically
+	// This provides deterministic behavior
+	return name1 < name2
+}
+
+// extractInstanceName extracts entity instance name using optional instance_name regex or default
+// If instance_name regex is specified and matches, uses the (?P<name>...) capture group
+// Otherwise falls back to the provided defaultName
+func (e *RuleBasedExtractor) extractInstanceName(content string, rule ExtractionRule, defaultName string) string {
+	// If instance_name regex not specified, use default
+	if rule.InstanceName == "" {
+		return defaultName
+	}
+
+	// Compile instance_name regex
+	re, err := regexp.Compile(rule.InstanceName)
+	if err != nil {
+		log.Printf("WARNING: Invalid instance_name regex '%s': %v - falling back to default", rule.InstanceName, err)
+		return defaultName
+	}
+
+	// Execute regex on content
+	match := re.FindStringSubmatch(content)
+	if match == nil {
+		log.Printf("DEBUG: instance_name regex did not match content - falling back to default")
+		return defaultName
+	}
+
+	// Look for named capture group "name"
+	for i, groupName := range re.SubexpNames() {
+		if groupName == "name" && i < len(match) {
+			extracted := strings.TrimSpace(match[i])
+			if extracted != "" {
+				return extracted
+			}
+			log.Printf("DEBUG: instance_name regex 'name' capture group is empty - falling back to default")
+			return defaultName
+		}
+	}
+
+	// No "name" capture group found
+	log.Printf("DEBUG: instance_name regex matched but no 'name' capture group found - falling back to default")
+	return defaultName
+}
+
+// Embedding cache for concept strings (global cache with mutex)
+var conceptEmbeddingCache = make(map[string][]float64)
+var conceptEmbeddingMutex sync.RWMutex
+
+// checkSemanticFilter validates element against semantic filter using element-level embeddings
+func (e *RuleBasedExtractor) checkSemanticFilter(elem *Element, filter *SemanticFilter) bool {
+	// Get element embedding
+	elementEmbedding := e.getElementEmbedding(elem)
+	if elementEmbedding == nil {
+		// Graceful degradation: no embeddings available, accept by default
+		log.Printf("DEBUG: No embedding for element %s, skipping semantic filter (accepting)", elem.ElementID)
+		return true
+	}
+
+	// Check similarity against each reference concept
+	for _, concept := range filter.ReferenceConcepts {
+		conceptEmbedding := e.getConceptEmbedding(concept)
+		if conceptEmbedding == nil {
+			continue
+		}
+
+		similarity := e.cosineSimilarity(elementEmbedding, conceptEmbedding)
+		log.Printf("DEBUG: Semantic similarity for '%s': %.3f (threshold: %.3f)",
+			concept, similarity, filter.SimilarityThreshold)
+
+		if similarity >= filter.SimilarityThreshold {
+			return true // Found matching semantic context
+		}
+	}
+
+	return false // No concept matched threshold
+}
+
+// getElementEmbedding retrieves embedding vector for an element
+func (e *RuleBasedExtractor) getElementEmbedding(elem *Element) []float64 {
+	// Try to get embedding from content resolver
+	if e.contentResolver == nil {
+		return nil
+	}
+
+	// Check if resolver supports embeddings (type assertion)
+	type EmbeddingResolver interface {
+		GetEmbedding(contentLocation map[string]interface{}) ([]float64, error)
+	}
+
+	if embResolver, ok := e.contentResolver.(EmbeddingResolver); ok {
+		embedding, err := embResolver.GetEmbedding(elem.ContentLocation)
+		if err == nil && len(embedding) > 0 {
+			return embedding
+		}
+	}
+
+	return nil
+}
+
+// getConceptEmbedding computes/retrieves cached embedding for a concept string
+func (e *RuleBasedExtractor) getConceptEmbedding(concept string) []float64 {
+	// Check cache first
+	conceptEmbeddingMutex.RLock()
+	if cached, ok := conceptEmbeddingCache[concept]; ok {
+		conceptEmbeddingMutex.RUnlock()
+		return cached
+	}
+	conceptEmbeddingMutex.RUnlock()
+
+	// Compute embedding for concept
+	// TODO: Integrate with LLM client for embedding generation
+	// For now, return nil (graceful degradation)
+	log.Printf("WARNING: Concept embedding not yet implemented for: %s", concept)
+	return nil
 }

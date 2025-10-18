@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 )
@@ -71,6 +72,8 @@ type Statistics struct {
 // Implementation functions
 
 func (e *OntologyCorpusExplorer) executeSemanticSearch(ctx context.Context, query string, elementTypes []string, limit int, threshold float64) ([]SearchResult, error) {
+	log.Printf("[MCP:search_corpus:semantic] query=%q, element_types=%v, limit=%d, threshold=%.2f", query, elementTypes, limit, threshold)
+
 	// Generate embedding for query
 	queryEmb, err := e.embGenerator.Generate(query)
 	if err != nil {
@@ -98,7 +101,7 @@ func (e *OntologyCorpusExplorer) executeSemanticSearch(ctx context.Context, quer
 		LIMIT $3
 	`, typeFilter)
 
-	rows, err := e.querier.RawQuery(duckdbQuery, queryEmb, threshold, limit)
+	rows, err := e.queryRaw(ctx, duckdbQuery, queryEmb, threshold, limit)
 	if err != nil {
 		return nil, fmt.Errorf("semantic search failed: %w", err)
 	}
@@ -117,6 +120,8 @@ func (e *OntologyCorpusExplorer) executeSemanticSearch(ctx context.Context, quer
 }
 
 func (e *OntologyCorpusExplorer) executeKeywordSearch(ctx context.Context, query string, elementTypes []string, limit int) ([]SearchResult, error) {
+	log.Printf("[MCP:search_corpus:keyword] query=%q, element_types=%v, limit=%d", query, elementTypes, limit)
+
 	var typeFilter string
 	if len(elementTypes) > 0 {
 		typeFilter = fmt.Sprintf("AND element_type IN (%s)", joinQuoted(elementTypes))
@@ -136,7 +141,7 @@ func (e *OntologyCorpusExplorer) executeKeywordSearch(ctx context.Context, query
 		LIMIT $2
 	`, typeFilter)
 
-	rows, err := e.querier.RawQuery(duckdbQuery, query, limit)
+	rows, err := e.queryRaw(ctx, duckdbQuery, query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("keyword search failed: %w", err)
 	}
@@ -155,6 +160,8 @@ func (e *OntologyCorpusExplorer) executeKeywordSearch(ctx context.Context, query
 }
 
 func (e *OntologyCorpusExplorer) executeRegexSearch(ctx context.Context, pattern string, elementTypes []string, limit int) ([]SearchResult, error) {
+	log.Printf("[MCP:search_corpus:regex] pattern=%q, element_types=%v, limit=%d", pattern, elementTypes, limit)
+
 	// Validate regex pattern
 	_, err := regexp.Compile(pattern)
 	if err != nil {
@@ -178,7 +185,7 @@ func (e *OntologyCorpusExplorer) executeRegexSearch(ctx context.Context, pattern
 		LIMIT $2
 	`, typeFilter)
 
-	rows, err := e.querier.RawQuery(duckdbQuery, pattern, limit)
+	rows, err := e.queryRaw(ctx, duckdbQuery, pattern, limit)
 	if err != nil {
 		return nil, fmt.Errorf("regex search failed: %w", err)
 	}
@@ -197,6 +204,8 @@ func (e *OntologyCorpusExplorer) executeRegexSearch(ctx context.Context, pattern
 }
 
 func (e *OntologyCorpusExplorer) analyzePattern(ctx context.Context, pattern string, elementTypes []string, maxExamples int) (*PatternAnalysis, error) {
+	log.Printf("[MCP:analyze_patterns] pattern=%q, element_types=%v, max_examples=%d", pattern, elementTypes, maxExamples)
+
 	// Validate regex
 	re, err := regexp.Compile(pattern)
 	if err != nil {
@@ -221,7 +230,7 @@ func (e *OntologyCorpusExplorer) analyzePattern(ctx context.Context, pattern str
 		GROUP BY element_type
 	`, typeFilter)
 
-	rows, err := e.querier.RawQuery(duckdbQuery, pattern)
+	rows, err := e.queryRaw(ctx, duckdbQuery, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("pattern analysis failed: %w", err)
 	}
@@ -256,7 +265,7 @@ func (e *OntologyCorpusExplorer) analyzePattern(ctx context.Context, pattern str
 		LIMIT $2
 	`, typeFilter)
 
-	exampleRows, err := e.querier.RawQuery(exampleQuery, pattern, maxExamples)
+	exampleRows, err := e.queryRaw(ctx, exampleQuery, pattern, maxExamples)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get examples: %w", err)
 	}
@@ -287,6 +296,8 @@ func (e *OntologyCorpusExplorer) analyzePattern(ctx context.Context, pattern str
 }
 
 func (e *OntologyCorpusExplorer) computeFrequencies(ctx context.Context, terms []string, caseSensitive bool, elementTypes []string) ([]FrequencyResult, error) {
+	log.Printf("[MCP:compute_frequencies] terms=%v, case_sensitive=%v, element_types=%v", terms, caseSensitive, elementTypes)
+
 	results := []FrequencyResult{}
 
 	for _, term := range terms {
@@ -312,7 +323,7 @@ func (e *OntologyCorpusExplorer) computeFrequencies(ctx context.Context, terms [
 			GROUP BY element_type
 		`, comparison, typeFilter)
 
-		rows, err := e.querier.RawQuery(duckdbQuery, term)
+		rows, err := e.queryRaw(ctx, duckdbQuery, term)
 		if err != nil {
 			return nil, fmt.Errorf("frequency computation failed for %s: %w", term, err)
 		}
@@ -342,6 +353,8 @@ func (e *OntologyCorpusExplorer) computeFrequencies(ctx context.Context, terms [
 }
 
 func (e *OntologyCorpusExplorer) findCooccurrences(ctx context.Context, entity1, entity2, contextWindow string, maxExamples int) (*CooccurrenceResult, error) {
+	log.Printf("[MCP:find_cooccurrences] entity1=%q, entity2=%q, context_window=%s, max_examples=%d", entity1, entity2, contextWindow, maxExamples)
+
 	// Build query based on context window
 	var joinCondition string
 	switch contextWindow {
@@ -382,7 +395,7 @@ func (e *OntologyCorpusExplorer) findCooccurrences(ctx context.Context, entity1,
 		LIMIT $3
 	`, joinCondition)
 
-	rows, err := e.querier.RawQuery(duckdbQuery, entity1, entity2, maxExamples)
+	rows, err := e.queryRaw(ctx, duckdbQuery, entity1, entity2, maxExamples)
 	if err != nil {
 		return nil, fmt.Errorf("cooccurrence search failed: %w", err)
 	}
@@ -413,6 +426,8 @@ func (e *OntologyCorpusExplorer) findCooccurrences(ctx context.Context, entity1,
 }
 
 func (e *OntologyCorpusExplorer) getElementContext(ctx context.Context, elementID string, contextDepth int, includeSiblings, includeChildren bool) (*ElementContext, error) {
+	log.Printf("[MCP:get_element_context] element_id=%s, context_depth=%d, include_siblings=%v, include_children=%v", elementID, contextDepth, includeSiblings, includeChildren)
+
 	// Get the element itself
 	elemQuery := `
 		SELECT element_id, document_id, element_type, content_preview, parent_id, metadata
@@ -420,7 +435,7 @@ func (e *OntologyCorpusExplorer) getElementContext(ctx context.Context, elementI
 		WHERE element_id = $1
 	`
 
-	rows, err := e.querier.RawQuery(elemQuery, elementID)
+	rows, err := e.queryRaw(ctx, elemQuery, elementID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get element: %w", err)
 	}
@@ -462,7 +477,7 @@ func (e *OntologyCorpusExplorer) getElementContext(ctx context.Context, elementI
 				FROM udml_elements
 				WHERE element_id = $1
 			`
-			parentRows, err := e.querier.RawQuery(parentQuery, currentParentID)
+			parentRows, err := e.queryRaw(ctx, parentQuery, currentParentID)
 			if err != nil {
 				break
 			}
@@ -502,7 +517,7 @@ func (e *OntologyCorpusExplorer) getElementContext(ctx context.Context, elementI
 			WHERE parent_id = $1 AND element_id != $2
 			LIMIT 10
 		`
-		siblingRows, err := e.querier.RawQuery(siblingQuery, *parentID, elementID)
+		siblingRows, err := e.queryRaw(ctx, siblingQuery, *parentID, elementID)
 		if err == nil {
 			for siblingRows.Next() {
 				sibling := make(map[string]interface{})
@@ -527,7 +542,7 @@ func (e *OntologyCorpusExplorer) getElementContext(ctx context.Context, elementI
 			WHERE parent_id = $1
 			LIMIT 20
 		`
-		childRows, err := e.querier.RawQuery(childQuery, elementID)
+		childRows, err := e.queryRaw(ctx, childQuery, elementID)
 		if err == nil {
 			for childRows.Next() {
 				child := make(map[string]interface{})
@@ -548,6 +563,8 @@ func (e *OntologyCorpusExplorer) getElementContext(ctx context.Context, elementI
 }
 
 func (e *OntologyCorpusExplorer) aggregateStatistics(ctx context.Context, metrics []string, elementTypes []string) (*Statistics, error) {
+	log.Printf("[MCP:aggregate_statistics] metrics=%v, element_types=%v", metrics, elementTypes)
+
 	result := &Statistics{
 		ElementTypeDistribution: make(map[string]int),
 		EntityTypeDistribution:  make(map[string]int),
@@ -568,7 +585,7 @@ func (e *OntologyCorpusExplorer) aggregateStatistics(ctx context.Context, metric
 				GROUP BY element_type
 			`, typeFilter)
 
-			rows, err := e.querier.RawQuery(query)
+			rows, err := e.queryRaw(ctx, query)
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute element_type_distribution: %w", err)
 			}
@@ -591,7 +608,7 @@ func (e *OntologyCorpusExplorer) aggregateStatistics(ctx context.Context, metric
 				%s
 			`, typeFilter)
 
-			rows, err := e.querier.RawQuery(query)
+			rows, err := e.queryRaw(ctx, query)
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute document_count: %w", err)
 			}
@@ -611,7 +628,7 @@ func (e *OntologyCorpusExplorer) aggregateStatistics(ctx context.Context, metric
 				%s
 			`, typeFilter)
 
-			rows, err := e.querier.RawQuery(query)
+			rows, err := e.queryRaw(ctx, query)
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute avg_content_length: %w", err)
 			}
@@ -632,7 +649,7 @@ func (e *OntologyCorpusExplorer) aggregateStatistics(ctx context.Context, metric
 				GROUP BY entity_type
 			`, strings.Replace(typeFilter, "element_type", "e.element_type", -1))
 
-			rows, err := e.querier.RawQuery(query)
+			rows, err := e.queryRaw(ctx, query)
 			if err != nil {
 				// Entities table might not exist or be populated yet
 				continue

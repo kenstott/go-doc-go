@@ -27,6 +27,8 @@ func runInterview(args []string) {
 	existingSchemaPath := ""
 	nonInteractive := false
 	diversityThreshold := 0.0 // 0.0 means use default (0.85)
+	enableMCP := false
+	embeddingModel := "all-MiniLM-L6-v2" // Default embedding model
 	argsOffset := 1
 
 	// Parse flags
@@ -57,6 +59,17 @@ func runInterview(args []string) {
 				printInterviewUsage()
 				os.Exit(1)
 			}
+			argsOffset += 2
+		case "--enable-mcp":
+			enableMCP = true
+			argsOffset++
+		case "--embedding-model":
+			if len(os.Args) < argsOffset+2 {
+				fmt.Fprintf(os.Stderr, "Error: --embedding-model requires a model name\n\n")
+				printInterviewUsage()
+				os.Exit(1)
+			}
+			embeddingModel = os.Args[argsOffset+1]
 			argsOffset += 2
 		default:
 			fmt.Fprintf(os.Stderr, "Error: unknown flag %s\n\n", os.Args[argsOffset])
@@ -95,6 +108,8 @@ func runInterview(args []string) {
 		LLMMaxTokens:       4096,
 		SchemaName:         "InteractiveOntology",
 		SchemaVersion:      "1.0.0",
+		EnableMCP:          enableMCP,
+		EmbeddingModel:     embeddingModel,
 	}
 
 	// Create builder
@@ -158,7 +173,7 @@ MODES:
    Creates a new ontology from scratch with mandatory user approval.
 
    Usage:
-     %s [--diversity-threshold <value>] [--non-interactive] <parquet_path> [output_path]
+     %s [--diversity-threshold <value>] [--non-interactive] [--enable-mcp] [--embedding-model <model>] <parquet_path> [output_path]
 
    Arguments:
      parquet_path   Path to UDML Parquet storage directory
@@ -168,6 +183,8 @@ MODES:
      --diversity-threshold <value>  Cosine similarity threshold for diversity filtering (0.0-1.0)
                                     Lower values = more diverse samples. Default: 0.85
      --non-interactive              Auto-approve all suggestions (for testing)
+     --enable-mcp                   Enable MCP corpus exploration tools for LLM
+     --embedding-model <model>      Embedding model for semantic search (default: all-MiniLM-L6-v2)
 
    Process (3 phases):
      Phase 1: Domain Selection

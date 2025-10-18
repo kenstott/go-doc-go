@@ -604,6 +604,90 @@ func (d *DuckDBBackend) extractOperator(line string) string {
 	return "UNKNOWN"
 }
 
+// ExecuteRaw executes a raw SQL query with parameters and returns QueryResult
+func (d *DuckDBBackend) ExecuteRaw(ctx context.Context, queryString string, args ...interface{}) (*QueryResult, error) {
+	if !d.initialized {
+		return nil, fmt.Errorf("backend not initialized")
+	}
+
+	startTime := time.Now()
+
+	// Execute query
+	rows, err := d.db.QueryContext(ctx, queryString, args...)
+	if err != nil {
+		return nil, fmt.Errorf("raw query execution failed: %w", err)
+	}
+	defer rows.Close()
+
+	// Get column info
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get columns: %w", err)
+	}
+
+	columnTypes, err := rows.ColumnTypes()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get column types: %w", err)
+	}
+
+	// Build column info
+	columnInfo := make([]ColumnInfo, len(columns))
+	for i, col := range columns {
+		columnInfo[i] = ColumnInfo{
+			Name:     col,
+			Type:     d.mapDuckDBType(columnTypes[i].DatabaseTypeName()),
+			Nullable: true,
+		}
+	}
+
+	// Parse rows
+	resultRows := []Row{}
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		row := make(Row)
+		for i, col := range columns {
+			row[col] = values[i]
+		}
+		resultRows = append(resultRows, row)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	executionTime := time.Since(startTime)
+
+	return &QueryResult{
+		Columns:       columnInfo,
+		Rows:          resultRows,
+		RowCount:      len(resultRows),
+		ExecutionTime: executionTime,
+		BackendType:   "duckdb",
+		Stats: QueryStats{
+			RowsScanned: int64(len(resultRows)),
+		},
+	}, nil
+}
+
+// QueryRaw executes a raw SQL query and returns sql.Rows for direct iteration
+// This is useful for streaming large result sets without loading all data into memory
+func (d *DuckDBBackend) QueryRaw(ctx context.Context, queryString string, args ...interface{}) (*sql.Rows, error) {
+	if !d.initialized {
+		return nil, fmt.Errorf("backend not initialized")
+	}
+
+	return d.db.QueryContext(ctx, queryString, args...)
+}
+
 // Close closes the DuckDB connection
 func (d *DuckDBBackend) Close() error {
 	if d.db != nil {

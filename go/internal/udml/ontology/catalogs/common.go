@@ -76,11 +76,26 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 		EntityType:   "person",
 		Description:  "Individual person or human",
 		Aliases:      []string{"individual", "human", "name"},
-		ElementTypes: []string{"paragraph", "heading", "table_cell"},
+		ElementTypes: []string{"paragraph", "div", "list_item", "table_cell"}, // Added div, removed heading
 		SampleRules: []ontology.ExtractionRule{
+			// HIGH CONFIDENCE: Person with title prefix (Dr., Prof., Mr., Mrs., Ms.)
 			{
 				Type:    ontology.RuleTypeRegex,
-				Pattern: `\b[A-Z][a-z]+\s+[A-Z][a-z]+\b`,
+				Pattern: `\b(?:Dr|Prof|Professor|Mr|Mrs|Ms|Miss)\.?\s+[A-Z][a-z]{1,20}(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]{1,20}\b`,
+				// No semantic filter needed - title is strong signal
+			},
+			// MEDIUM CONFIDENCE: Full names with optional middle initial or suffix
+			{
+				Type:    ontology.RuleTypeRegex,
+				Pattern: `\b[A-Z][a-z]{1,20}(?:\s+[A-Z]\.)?\s+[A-Z][a-z]{1,20}(?:\s+(?:Jr|Sr|II|III|IV)\.?)?\b`,
+				SemanticFilter: &ontology.SemanticFilter{
+					ReferenceConcepts: []string{
+						"individual person with biography or credentials",
+						"author or creator attribution to individual",
+						"personal pronouns (he, she, his, her) referencing the name",
+					},
+					SimilarityThreshold: 0.65,
+				},
 			},
 		},
 	},
@@ -116,6 +131,64 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 		Description:  "Employee or staff member",
 		Aliases:      []string{"staff", "worker", "personnel", "team member", "associate"},
 		ElementTypes: []string{"paragraph", "table_cell"},
+	},
+	"organization": {
+		EntityType:   "organization",
+		Description:  "Company, institution, agency, or group",
+		Aliases:      []string{"company", "institution", "agency", "corporation", "firm", "business"},
+		ElementTypes: []string{"paragraph", "div", "list_item", "table_cell"}, // Removed heading
+		SampleRules: []ontology.ExtractionRule{
+			// HIGH CONFIDENCE: Legal entity with suffix
+			{
+				Type:    ontology.RuleTypeRegex,
+				Pattern: `\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4}\s+(?:Inc|Corp|Corporation|LLC|Ltd|Co|Company|Group|Partners|LP|LLP)\.?\b`,
+				// No semantic filter needed - legal suffix is strong signal
+			},
+			// HIGH CONFIDENCE: "The [Name] [OrgType]" pattern
+			{
+				Type:    ontology.RuleTypeRegex,
+				Pattern: `\bThe\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Foundation|Institute|Organization|Association|Society|Council|Commission|Agency|Department|Ministry)\b`,
+				// No semantic filter needed - structure is strong signal
+			},
+			// MEDIUM CONFIDENCE: Acronyms (2-5 letters)
+			{
+				Type:    ontology.RuleTypeRegex,
+				Pattern: `\b[A-Z]{2,5}\b`,
+				SemanticFilter: &ontology.SemanticFilter{
+					ReferenceConcepts: []string{
+						"corporate actions (announced, reported, filed, acquired)",
+						"business operations (earnings, revenue, products, services)",
+						"company or institution as collective entity",
+					},
+					SimilarityThreshold: 0.70, // Higher threshold for acronyms
+				},
+			},
+			// MEDIUM CONFIDENCE: Multi-word capitalized (3+ words = likely org)
+			{
+				Type:    ontology.RuleTypeRegex,
+				Pattern: `\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){2,4}\b`,
+				SemanticFilter: &ontology.SemanticFilter{
+					ReferenceConcepts: []string{
+						"organizational structure (headquarters, subsidiary, division)",
+						"company or institution as collective entity",
+					},
+					SimilarityThreshold: 0.65,
+				},
+			},
+			// LOW CONFIDENCE: 2-word capitalized (ambiguous - could be person)
+			{
+				Type:    ontology.RuleTypeRegex,
+				Pattern: `\b[A-Z][a-z]+\s+[A-Z][a-z]+\b`,
+				SemanticFilter: &ontology.SemanticFilter{
+					ReferenceConcepts: []string{
+						"corporate actions (announced, reported, filed, acquired)",
+						"business operations (earnings, revenue, products, services)",
+						"organizational structure (headquarters, subsidiary, division)",
+					},
+					SimilarityThreshold: 0.70, // Higher threshold due to ambiguity
+				},
+			},
+		},
 	},
 
 	// ========================================

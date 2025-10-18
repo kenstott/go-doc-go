@@ -250,3 +250,129 @@ func TestEntityRelationshipRule_Structure(t *testing.T) {
 		t.Errorf("Expected confidence 0.7 (pattern reliability), got %.2f", rule.Confidence)
 	}
 }
+
+// MockMCPToolExecutor implements MCPToolExecutor interface for testing
+type MockMCPToolExecutor struct {
+	toolCalls []string // Track which tools were called
+}
+
+func (m *MockMCPToolExecutor) ExecuteTool(ctx context.Context, toolName string, arguments map[string]interface{}) (string, error) {
+	m.toolCalls = append(m.toolCalls, toolName)
+	return fmt.Sprintf(`{"results": ["mock result for %s"]}`, toolName), nil
+}
+
+// TestGetMCPToolDefinitions_Disabled tests that getMCPToolDefinitions returns nil when MCP is disabled
+func TestGetMCPToolDefinitions_Disabled(t *testing.T) {
+	builder := &OntologyBuilder{
+		config: BuilderConfig{
+			EnableMCP: false,
+		},
+	}
+
+	tools := builder.getMCPToolDefinitions()
+
+	if tools != nil {
+		t.Errorf("Expected nil tools when MCP disabled, got %d tools", len(tools))
+	}
+}
+
+// TestGetMCPToolDefinitions_NoServer tests that getMCPToolDefinitions returns nil when server is nil
+func TestGetMCPToolDefinitions_NoServer(t *testing.T) {
+	builder := &OntologyBuilder{
+		config: BuilderConfig{
+			EnableMCP: true,
+		},
+		mcpServer: nil,
+	}
+
+	tools := builder.getMCPToolDefinitions()
+
+	if tools != nil {
+		t.Errorf("Expected nil tools when MCP server is nil, got %d tools", len(tools))
+	}
+}
+
+// TestAnthropicClient_SetMCPServer tests MCP server attachment
+func TestAnthropicClient_SetMCPServer(t *testing.T) {
+	client := NewAnthropicClient("test-key", "test-model")
+
+	if client.mcpServer != nil {
+		t.Error("Expected mcpServer to be nil initially")
+	}
+
+	mockServer := &MockMCPToolExecutor{}
+	client.SetMCPServer(mockServer)
+
+	if client.mcpServer == nil {
+		t.Error("Expected mcpServer to be set")
+	}
+
+	t.Log("MCP server successfully attached to Anthropic client")
+}
+
+// TestMCPCapableLLMClient_Interface tests that AnthropicClient implements MCPCapableLLMClient
+func TestMCPCapableLLMClient_Interface(t *testing.T) {
+	client := NewAnthropicClient("test-key", "test-model")
+
+	// Type assert to MCPCapableLLMClient
+	_, ok := interface{}(client).(MCPCapableLLMClient)
+	if !ok {
+		t.Error("AnthropicClient does not implement MCPCapableLLMClient interface")
+	}
+
+	// Type assert to LLMClient (base interface)
+	_, ok = interface{}(client).(LLMClient)
+	if !ok {
+		t.Error("AnthropicClient does not implement LLMClient interface")
+	}
+
+	t.Log("AnthropicClient correctly implements MCPCapableLLMClient interface")
+}
+
+// TestMCPToolDefinitionTypes tests MCPToolDefinition type structures
+func TestMCPToolDefinitionTypes(t *testing.T) {
+	// Test MCPToolDefinition structure
+	tool := MCPToolDefinition{
+		Name:        "test_tool",
+		Description: "A test tool",
+		Parameters: map[string]ParameterDef{
+			"param1": {
+				Type:        "string",
+				Description: "First parameter",
+				Required:    true,
+			},
+			"param2": {
+				Type:        "array",
+				Description: "Second parameter",
+				Required:    false,
+				Enum:        []string{"option1", "option2"},
+				Items: &ItemDef{
+					Type: "string",
+				},
+			},
+		},
+	}
+
+	if tool.Name != "test_tool" {
+		t.Errorf("Expected tool name 'test_tool', got '%s'", tool.Name)
+	}
+
+	if len(tool.Parameters) != 2 {
+		t.Errorf("Expected 2 parameters, got %d", len(tool.Parameters))
+	}
+
+	param1 := tool.Parameters["param1"]
+	if !param1.Required {
+		t.Error("Expected param1 to be required")
+	}
+
+	param2 := tool.Parameters["param2"]
+	if param2.Items == nil {
+		t.Error("Expected param2 to have Items")
+	}
+	if len(param2.Enum) != 2 {
+		t.Errorf("Expected 2 enum values, got %d", len(param2.Enum))
+	}
+
+	t.Log("MCPToolDefinition type structure validated")
+}

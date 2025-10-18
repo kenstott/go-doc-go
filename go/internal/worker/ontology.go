@@ -86,7 +86,8 @@ func (e *OntologyExtractor) ExtractAndStore() error {
 		// Apply each schema to this document
 		for _, schema := range e.schemas {
 			// Create extractor for this schema
-			extractor := ontology.NewRuleBasedExtractor(schema)
+			// Pass nil for content resolver since elements already have content populated
+			extractor := ontology.NewRuleBasedExtractor(schema, nil)
 
 			// Extract from elements
 			ctx := context.Background()

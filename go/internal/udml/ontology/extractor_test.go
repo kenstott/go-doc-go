@@ -30,7 +30,7 @@ func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -106,7 +106,7 @@ func TestRuleBasedExtractor_RegexExtraction(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -162,7 +162,7 @@ func TestRuleBasedExtractor_KeywordExtraction(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -246,7 +246,7 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -322,7 +322,7 @@ func TestRuleBasedExtractor_ElementTypeFiltering(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -384,7 +384,7 @@ func TestRuleBasedExtractor_NestedMetadata(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -449,7 +449,7 @@ func TestRuleBasedExtractor_MultipleRules(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -512,7 +512,7 @@ func TestRuleBasedExtractor_Deduplication(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -565,7 +565,7 @@ func TestRuleBasedExtractor_EmptySchema(t *testing.T) {
 		CreatedAt:               time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -625,7 +625,7 @@ func TestRuleBasedExtractor_ValidationError(t *testing.T) {
 		CreatedAt: time.Now(),
 	}
 
-	extractor := NewRuleBasedExtractor(schema)
+	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
 		{
@@ -651,4 +651,447 @@ func TestRuleBasedExtractor_ValidationError(t *testing.T) {
 	if len(ontology.Relationships) != 0 {
 		t.Errorf("Expected 0 relationships (no matching target), got %d", len(ontology.Relationships))
 	}
+}
+
+// Mock embedding resolver for testing semantic filtering
+type mockEmbeddingResolver struct {
+	embeddings map[string][]float64
+}
+
+func (m *mockEmbeddingResolver) ResolveContent(contentLocation map[string]interface{}, text bool) (string, error) {
+	return "", nil
+}
+
+func (m *mockEmbeddingResolver) GetEmbedding(contentLocation map[string]interface{}) ([]float64, error) {
+	if elemID, ok := contentLocation["element_id"].(string); ok {
+		if emb, exists := m.embeddings[elemID]; exists {
+			return emb, nil
+		}
+	}
+	return nil, nil
+}
+
+func TestRuleBasedExtractor_SemanticFilteringAccepts(t *testing.T) {
+	// Test that semantic filter accepts matching content
+	schema := &OntologySchema{
+		Name:    "test_schema",
+		Version: "1.0.0",
+		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
+		ElementEntityMappings: []ElementEntityMapping{
+			{
+				EntityType:   "person",
+				Domain:       "medical",
+				Confidence:   0.75,
+				Description:  "Person names from narrative context",
+				ElementTypes: []string{"paragraph"},
+				ExtractionRules: []ExtractionRule{
+					{
+						Type:    RuleTypeRegex,
+						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						SemanticFilter: &SemanticFilter{
+							ReferenceConcepts: []string{
+								"individual person with biography or credentials",
+								"author or creator attribution to individual",
+							},
+							SimilarityThreshold: 0.65,
+						},
+					},
+				},
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	// Mock resolver that provides embeddings
+	mockResolver := &mockEmbeddingResolver{
+		embeddings: map[string][]float64{
+			"elem1": {0.1, 0.2, 0.3, 0.4}, // Simulate biographical context embedding
+		},
+	}
+
+	extractor := NewRuleBasedExtractor(schema, mockResolver)
+
+	// Mock concept embedding cache to simulate matching semantic context
+	// (In reality, this would be computed from the reference concepts)
+	conceptEmbeddingCache = map[string][]float64{
+		"individual person with biography or credentials": {0.15, 0.25, 0.32, 0.38}, // Similar to elem1
+		"author or creator attribution to individual":     {0.12, 0.22, 0.31, 0.39}, // Similar to elem1
+	}
+	defer func() { conceptEmbeddingCache = make(map[string][]float64) }() // Reset after test
+
+	elements := []Element{
+		{
+			ElementID:   "elem1",
+			ElementType: "paragraph",
+			Content:     "Dr. John Smith is a renowned cardiologist who graduated from Harvard Medical School.",
+			ContentLocation: map[string]interface{}{
+				"element_id": "elem1",
+			},
+		},
+	}
+
+	ctx := context.Background()
+	ontology, err := extractor.ExtractFromElements(ctx, "doc1", elements)
+
+	if err != nil {
+		t.Fatalf("ExtractFromElements() error = %v", err)
+	}
+
+	// Should extract both "Dr John" and "John Smith" because semantic filter accepts (similar embeddings)
+	if len(ontology.Entities) < 1 {
+		t.Errorf("Expected at least 1 entity (semantic filter should accept), got %d", len(ontology.Entities))
+	}
+
+	foundJohnSmith := false
+	for _, entity := range ontology.Entities {
+		if entity.Domain != "medical" {
+			t.Errorf("Expected domain 'medical', got '%s'", entity.Domain)
+		}
+		if entity.Name == "John Smith" {
+			foundJohnSmith = true
+		}
+		t.Logf("✓ Semantic filter accepted: %s (confidence: %.2f)", entity.Name, entity.Confidence)
+	}
+
+	if !foundJohnSmith {
+		t.Errorf("Expected 'John Smith' to be extracted")
+	}
+}
+
+func TestRuleBasedExtractor_SemanticFilteringRejects(t *testing.T) {
+	// Test that semantic filter rejects non-matching content (e.g., "After The" from heading)
+	schema := &OntologySchema{
+		Name:    "test_schema",
+		Version: "1.0.0",
+		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
+		ElementEntityMappings: []ElementEntityMapping{
+			{
+				EntityType:   "person",
+				Domain:       "medical",
+				Confidence:   0.75,
+				Description:  "Person names from narrative context",
+				ElementTypes: []string{"paragraph"},
+				ExtractionRules: []ExtractionRule{
+					{
+						Type:    RuleTypeRegex,
+						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						SemanticFilter: &SemanticFilter{
+							ReferenceConcepts: []string{
+								"individual person with biography or credentials",
+								"author or creator attribution to individual",
+							},
+							SimilarityThreshold: 0.65,
+		},
+					},
+				},
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	// Mock resolver that provides embeddings
+	mockResolver := &mockEmbeddingResolver{
+		embeddings: map[string][]float64{
+			"elem1": {0.9, 0.1, 0.05, 0.02}, // Simulate heading/title context embedding (very different)
+		},
+	}
+
+	extractor := NewRuleBasedExtractor(schema, mockResolver)
+
+	// Mock concept embedding cache with person-related concepts
+	conceptEmbeddingCache = map[string][]float64{
+		"individual person with biography or credentials": {0.1, 0.2, 0.3, 0.4}, // Not similar to elem1
+		"author or creator attribution to individual":     {0.12, 0.22, 0.31, 0.39}, // Not similar to elem1
+	}
+	defer func() { conceptEmbeddingCache = make(map[string][]float64) }() // Reset after test
+
+	elements := []Element{
+		{
+			ElementID:   "elem1",
+			ElementType: "paragraph",
+			Content:     "After The Surgery",
+			ContentLocation: map[string]interface{}{
+				"element_id": "elem1",
+			},
+		},
+	}
+
+	ctx := context.Background()
+	ontology, err := extractor.ExtractFromElements(ctx, "doc1", elements)
+
+	if err != nil {
+		t.Fatalf("ExtractFromElements() error = %v", err)
+	}
+
+	// Should NOT extract "After The" because semantic filter rejects (dissimilar embeddings)
+	if len(ontology.Entities) != 0 {
+		t.Errorf("Expected 0 entities (semantic filter should reject 'After The'), got %d", len(ontology.Entities))
+		for _, entity := range ontology.Entities {
+			t.Errorf("  Unexpected entity: %s", entity.Name)
+		}
+	} else {
+		t.Logf("✓ Semantic filter correctly rejected 'After The'")
+	}
+}
+
+func TestRuleBasedExtractor_SemanticFilteringGracefulDegradation(t *testing.T) {
+	// Test that semantic filter gracefully degrades when embeddings unavailable
+	schema := &OntologySchema{
+		Name:    "test_schema",
+		Version: "1.0.0",
+		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
+		ElementEntityMappings: []ElementEntityMapping{
+			{
+				EntityType:   "person",
+				Domain:       "medical",
+				Confidence:   0.75,
+				Description:  "Person names",
+				ElementTypes: []string{"paragraph"},
+				ExtractionRules: []ExtractionRule{
+					{
+						Type:    RuleTypeRegex,
+						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						SemanticFilter: &SemanticFilter{
+							ReferenceConcepts:   []string{"person context"},
+							SimilarityThreshold: 0.65,
+						},
+					},
+				},
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	// No mock resolver - embeddings unavailable
+	extractor := NewRuleBasedExtractor(schema, nil)
+
+	elements := []Element{
+		{
+			ElementID:   "elem1",
+			ElementType: "paragraph",
+			Content:     "John Smith and Jane Doe are here.",
+		},
+	}
+
+	ctx := context.Background()
+	ontology, err := extractor.ExtractFromElements(ctx, "doc1", elements)
+
+	if err != nil {
+		t.Fatalf("ExtractFromElements() error = %v", err)
+	}
+
+	// Should extract both names because semantic filter degrades gracefully (accepts when no embeddings)
+	if len(ontology.Entities) != 2 {
+		t.Errorf("Expected 2 entities (graceful degradation should accept all), got %d", len(ontology.Entities))
+	} else {
+		t.Logf("✓ Graceful degradation: extracted %d entities without embeddings", len(ontology.Entities))
+	}
+}
+
+func TestRuleBasedExtractor_SemanticFilterWithKeywords(t *testing.T) {
+	// Test that semantic filter works with keyword extraction rules
+	schema := &OntologySchema{
+		Name:    "test_schema",
+		Version: "1.0.0",
+		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
+		ElementEntityMappings: []ElementEntityMapping{
+			{
+				EntityType:   "organization",
+				Domain:       "medical",
+				Confidence:   0.75,
+				Description:  "Medical organizations",
+				ElementTypes: []string{"paragraph"},
+				ExtractionRules: []ExtractionRule{
+					{
+						Type:     RuleTypeKeyword,
+						Keywords: []string{"Hospital", "Clinic", "Center"},
+						SemanticFilter: &SemanticFilter{
+							ReferenceConcepts: []string{
+								"healthcare facility providing medical services",
+								"hospital or clinic with patients and doctors",
+							},
+							SimilarityThreshold: 0.60,
+						},
+					},
+				},
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	mockResolver := &mockEmbeddingResolver{
+		embeddings: map[string][]float64{
+			"elem1": {0.2, 0.3, 0.4, 0.3}, // Medical context
+			"elem2": {0.9, 0.1, 0.05, 0.02}, // Non-medical context
+		},
+	}
+
+	extractor := NewRuleBasedExtractor(schema, mockResolver)
+
+	conceptEmbeddingCache = map[string][]float64{
+		"healthcare facility providing medical services":  {0.25, 0.35, 0.38, 0.32}, // Similar to elem1
+		"hospital or clinic with patients and doctors": {0.22, 0.32, 0.41, 0.31}, // Similar to elem1
+	}
+	defer func() { conceptEmbeddingCache = make(map[string][]float64) }()
+
+	elements := []Element{
+		{
+			ElementID:   "elem1",
+			ElementType: "paragraph",
+			Content:     "The Hospital treated 1000 patients last year with excellent outcomes.",
+			ContentLocation: map[string]interface{}{
+				"element_id": "elem1",
+			},
+		},
+		{
+			ElementID:   "elem2",
+			ElementType: "paragraph",
+			Content:     "The Community Center offers yoga classes.",
+			ContentLocation: map[string]interface{}{
+				"element_id": "elem2",
+			},
+		},
+	}
+
+	ctx := context.Background()
+	ontology, err := extractor.ExtractFromElements(ctx, "doc1", elements)
+
+	if err != nil {
+		t.Fatalf("ExtractFromElements() error = %v", err)
+	}
+
+	// Should extract "Hospital" from elem1 but reject "Center" from elem2
+	if len(ontology.Entities) != 1 {
+		t.Errorf("Expected 1 entity (Hospital), got %d", len(ontology.Entities))
+		for _, entity := range ontology.Entities {
+			t.Logf("  Entity: %s from element %s", entity.Name, entity.ElementID)
+		}
+	}
+
+	if len(ontology.Entities) > 0 {
+		entity := ontology.Entities[0]
+		if entity.Name != "Hospital" {
+			t.Errorf("Expected 'Hospital', got '%s'", entity.Name)
+		}
+		if entity.ElementID != "elem1" {
+			t.Errorf("Expected extraction from elem1, got %s", entity.ElementID)
+		}
+		t.Logf("✓ Semantic filter correctly accepted 'Hospital' from medical context")
+		t.Logf("✓ Semantic filter correctly rejected 'Center' from non-medical context")
+	}
+}
+
+func TestRuleBasedExtractor_MultipleRulesWithSemanticFilter(t *testing.T) {
+	// Test multiple rules with different semantic filters (high vs medium confidence)
+	schema := &OntologySchema{
+		Name:    "test_schema",
+		Version: "1.0.0",
+		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
+		ElementEntityMappings: []ElementEntityMapping{
+			// High confidence - title prefix (no semantic filter)
+			{
+				EntityType:   "person",
+				Domain:       "medical",
+				Confidence:   0.95,
+				Description:  "Person with title prefix",
+				ElementTypes: []string{"paragraph"},
+				ExtractionRules: []ExtractionRule{
+					{
+						Type:    RuleTypeRegex,
+						Pattern: `\b(?:Dr|Prof)\.\s+[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						// No semantic filter - title is strong signal
+					},
+				},
+			},
+			// Medium confidence - ambiguous pattern (with semantic filter)
+			{
+				EntityType:   "person",
+				Domain:       "medical",
+				Confidence:   0.75,
+				Description:  "Person without title",
+				ElementTypes: []string{"paragraph"},
+				ExtractionRules: []ExtractionRule{
+					{
+						Type:    RuleTypeRegex,
+						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						SemanticFilter: &SemanticFilter{
+							ReferenceConcepts:   []string{"biographical context"},
+							SimilarityThreshold: 0.65,
+						},
+					},
+				},
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+
+	mockResolver := &mockEmbeddingResolver{
+		embeddings: map[string][]float64{
+			"elem1": {0.1, 0.2, 0.3, 0.4}, // Biographical context
+			"elem2": {0.9, 0.1, 0.05, 0.02}, // Heading context
+		},
+	}
+
+	extractor := NewRuleBasedExtractor(schema, mockResolver)
+
+	conceptEmbeddingCache = map[string][]float64{
+		"biographical context": {0.12, 0.22, 0.31, 0.39},
+	}
+	defer func() { conceptEmbeddingCache = make(map[string][]float64) }()
+
+	elements := []Element{
+		{
+			ElementID:   "elem1",
+			ElementType: "paragraph",
+			Content:     "Dr. Jane Smith and John Doe work together.",
+			ContentLocation: map[string]interface{}{
+				"element_id": "elem1",
+			},
+		},
+		{
+			ElementID:   "elem2",
+			ElementType: "paragraph",
+			Content:     "After The Surgery chapter discusses Dr. Bob Wilson.",
+			ContentLocation: map[string]interface{}{
+				"element_id": "elem2",
+			},
+		},
+	}
+
+	ctx := context.Background()
+	ontology, err := extractor.ExtractFromElements(ctx, "doc1", elements)
+
+	if err != nil {
+		t.Fatalf("ExtractFromElements() error = %v", err)
+	}
+
+	// Should extract:
+	// - Jane Smith (medium confidence, passes semantic filter in elem1)
+	// - John Doe (medium confidence, passes semantic filter in elem1)
+	// - Dr. Jane Smith (high confidence, title prefix, no semantic filter)
+	// - Dr. Bob Wilson (high confidence, title prefix, no semantic filter)
+	// Should NOT extract:
+	// - After The (medium confidence, FAILS semantic filter in elem2)
+
+	// Should extract at least 3-5 entities (depends on deduplication and pattern overlap)
+	if len(ontology.Entities) < 3 {
+		t.Errorf("Expected at least 3 entities, got %d", len(ontology.Entities))
+	}
+
+	foundAfterThe := false
+	for _, entity := range ontology.Entities {
+		t.Logf("Extracted: %s (confidence: %.2f)", entity.Name, entity.Confidence)
+		if entity.Name == "After The" {
+			foundAfterThe = true
+			t.Errorf("'After The' should have been rejected by semantic filter!")
+		}
+	}
+
+	if foundAfterThe {
+		t.Error("'After The' was incorrectly extracted")
+	}
+
+	t.Logf("✓ High confidence rule (title prefix) extracted without semantic filtering")
+	t.Logf("✓ Medium confidence rule extracted with semantic validation")
+	t.Logf("✓ 'After The' correctly rejected by semantic filter")
 }

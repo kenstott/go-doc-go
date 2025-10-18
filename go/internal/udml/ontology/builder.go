@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology/mcp"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/sampler"
 	"gopkg.in/yaml.v3"
 )
@@ -20,7 +23,9 @@ type OntologyBuilder struct {
 	sampler          *sampler.Sampler
 	llmClient        LLMClient
 	config           BuilderConfig
-	substantiveTypes []string // Element types discovered from corpus
+	substantiveTypes []string                  // Element types discovered from corpus
+	mcpServer        *mcp.OntologyCorpusExplorer // Optional: MCP server for LLM corpus exploration
+	queryBackend     query.QueryBackend         // Query backend for MCP server
 }
 
 // BuilderConfig configures the ontology building process
@@ -35,6 +40,10 @@ type BuilderConfig struct {
 	LLMModel      string // Model name
 	LLMAPIKey     string // API key
 	LLMMaxTokens  int    // Max tokens for LLM responses
+
+	// MCP Configuration (optional - enables interactive corpus exploration)
+	EnableMCP      bool   // Enable MCP server for LLM tool calling
+	EmbeddingModel string // Embedding model for semantic search (e.g., "all-MiniLM-L6-v2")
 
 	// Analysis
 	TopEntityCount      int     // Top N entities to analyze for aliases
@@ -61,9 +70,55 @@ type LLMClient interface {
 
 // LLMOptions configures an LLM request
 type LLMOptions struct {
-	MaxTokens   int
-	Temperature float64
+	MaxTokens    int
+	Temperature  float64
 	SystemPrompt string
+}
+
+// MCPToolDefinition describes an MCP tool to the LLM
+type MCPToolDefinition struct {
+	Name        string                    // Tool name (e.g., "search_corpus")
+	Description string                    // What the tool does
+	Parameters  map[string]ParameterDef   // Tool parameters
+}
+
+// ParameterDef describes a tool parameter
+type ParameterDef struct {
+	Type        string   // "string", "number", "boolean", "array"
+	Description string   // Parameter description
+	Required    bool     // Is this parameter required?
+	Enum        []string // Allowed values (optional)
+	Items       *ItemDef // For array types (optional)
+}
+
+// ItemDef describes array item types
+type ItemDef struct {
+	Type string // "string", "number", "boolean"
+}
+
+// MCPToolCall represents a tool call request from the LLM
+type MCPToolCall struct {
+	ID    string                 // Unique tool call ID
+	Name  string                 // Tool name
+	Input map[string]interface{} // Tool arguments
+}
+
+// MCPToolResult represents the result of a tool call
+type MCPToolResult struct {
+	ToolCallID string // ID matching the tool call
+	Content    string // Tool result content (JSON or text)
+	IsError    bool   // Whether this is an error result
+}
+
+// MCPCapableLLMClient extends LLMClient with MCP tool calling capabilities
+// This interface enables the LLM to interactively explore the corpus via MCP tools
+type MCPCapableLLMClient interface {
+	LLMClient
+
+	// CompleteWithTools sends a prompt to the LLM with MCP tool definitions
+	// The LLM can choose to call tools during generation, and the implementation
+	// handles the tool call execution loop, returning the final response
+	CompleteWithTools(ctx context.Context, prompt string, tools []MCPToolDefinition, options LLMOptions) (string, error)
 }
 
 // BuildResult contains the output of the build process
@@ -145,12 +200,72 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 	if config.SchemaVersion == "" {
 		config.SchemaVersion = "1.0.0"
 	}
+	if config.EmbeddingModel == "" {
+		config.EmbeddingModel = "all-MiniLM-L6-v2" // Default embedding model
+	}
+
+	// Create MCP server if enabled
+	var mcpServer *mcp.OntologyCorpusExplorer
+	var queryBackend query.QueryBackend
+
+	if config.EnableMCP {
+		fmt.Println("✓ MCP enabled - creating corpus exploration server...")
+
+		// Create query backend for MCP server
+		backendConfig := query.BackendConfig{
+			Type:        "duckdb",
+			ParquetPath: config.ParquetPath,
+		}
+
+		queryBackend, err = query.NewDuckDBBackend(backendConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create query backend for MCP: %w", err)
+		}
+
+		// Initialize backend
+		ctx := context.Background()
+		if err := queryBackend.Initialize(ctx, backendConfig); err != nil {
+			queryBackend.Close()
+			return nil, fmt.Errorf("failed to initialize query backend for MCP: %w", err)
+		}
+
+		// Create embedding generator for semantic search
+		embConfig := embeddings.Config{
+			Enabled:  true,
+			Provider: "onnx",
+			Model:    config.EmbeddingModel,
+		}
+		embGenerator, err := embeddings.CreateEmbeddingGenerator(embConfig)
+		if err != nil {
+			queryBackend.Close()
+			return nil, fmt.Errorf("failed to create embedding generator for MCP: %w", err)
+		}
+
+		// Create MCP server
+		mcpServer, err = mcp.NewOntologyCorpusExplorer(queryBackend, embGenerator)
+		if err != nil {
+			queryBackend.Close()
+			return nil, fmt.Errorf("failed to create MCP server: %w", err)
+		}
+
+		// Connect MCP server to LLM client if it supports tool calling
+		if anthropicClient, ok := llmClient.(*AnthropicClient); ok {
+			anthropicClient.SetMCPServer(mcpServer)
+			fmt.Println("✓ MCP server connected to Anthropic client")
+		} else {
+			fmt.Printf("Warning: LLM client (%T) does not support MCP tool calling\n", llmClient)
+		}
+
+		fmt.Println("✓ MCP server ready with 6 corpus exploration tools")
+	}
 
 	return &OntologyBuilder{
 		sampler:          samp,
 		llmClient:        llmClient,
 		config:           config,
 		substantiveTypes: substantiveTypes,
+		mcpServer:        mcpServer,
+		queryBackend:     queryBackend,
 	}, nil
 }
 
@@ -415,11 +530,29 @@ Return ONLY domains from the closed list above:
 **CRITICAL VALIDATION:**
 Before returning your response, verify EVERY domain name appears EXACTLY in the closed list above. If a domain name is NOT in the list, you MUST remove it from your response.`, domainListFormatted.String(), sampleTexts)
 
-	response, err := b.llmClient.Complete(ctx, prompt, LLMOptions{
+	// Call LLM with or without MCP tools
+	var response string
+	llmOptions := LLMOptions{
 		MaxTokens:   2000,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at identifying BUSINESS domains using data mesh principles. A domain is a BUSINESS CAPABILITY owned by a business team, NOT a data type, technical concern, or infrastructure component. Focus on business value and organizational ownership. Examples: Financial Management, Legal & Compliance, Healthcare Services, Sales & Marketing.",
-	})
+	}
+
+	if b.config.EnableMCP && b.mcpServer != nil {
+		// Use MCP-capable client with tools
+		mcpClient, ok := b.llmClient.(MCPCapableLLMClient)
+		if !ok {
+			fmt.Printf("Warning: MCP enabled but LLM client (%T) does not support tool calling\n", b.llmClient)
+			response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+		} else {
+			tools := b.getMCPToolDefinitions()
+			fmt.Printf("✓ Calling LLM with %d MCP tools for domain identification\n", len(tools))
+			response, err = mcpClient.CompleteWithTools(ctx, prompt, tools, llmOptions)
+		}
+	} else {
+		response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+	}
+
 	if err != nil {
 		return nil, nil, 1, 0, err
 	}
@@ -497,6 +630,42 @@ Before returning your response, verify EVERY element_types array contains ONLY e
 
 ================================================================================
 
+## ENTITY TYPE DESIGN - PREFER UNIVERSAL TYPES
+
+**IMPORTANT**: When defining entity types, strongly prefer these UNIVERSAL entity types:
+
+**UNIVERSAL ENTITY TYPES (USE THESE FIRST):**
+- **person** - Individual people (names, roles, identities)
+- **organization** - Companies, institutions, groups, agencies
+- **location** - Geographic locations (cities, countries, addresses, regions)
+- **date** - Temporal references (dates, times, periods, durations)
+- **event** - Named events (meetings, conferences, incidents, milestones)
+- **concept** - Abstract ideas, theories, principles, methodologies
+- **product** - Products, services, brands, models
+- **technology** - Technologies, tools, systems, platforms
+
+**DESIGN GUIDELINES:**
+1. **Start with universal types** - Ask yourself: Can this entity be classified as person, organization, location, date, event, concept, product, or technology?
+2. **Only create domain-specific types when necessary** - Create custom entity types (e.g., "medical_procedure", "financial_metric") ONLY when the universal types don't capture the domain-specific semantics
+3. **Use domain assignment for specialization** - Assign universal types to appropriate domains to capture context (e.g., "organization" in "medical" domain for hospitals, "organization" in "financial" domain for banks)
+4. **Combine universal types with attributes** - Use the "attributes" field to add domain-specific details rather than creating new entity types
+
+**EXAMPLES OF GOOD DESIGN:**
+✓ Use "person" assigned to "medical" domain for doctors, patients, medical staff
+✓ Use "organization" assigned to "medical" domain for hospitals, clinics, pharmaceutical companies
+✓ Use "concept" assigned to "medical" domain for diseases, conditions, treatments
+✓ Use "product" assigned to "medical" domain for drugs, medical devices, equipment
+✓ Use "event" assigned to "financial" domain for quarterly earnings, mergers, IPOs
+✓ Use "location" with attributes for specific location types (warehouse, datacenter, store)
+
+**EXAMPLES OF WHEN TO CREATE CUSTOM TYPES:**
+✓ Create "medical_procedure" when "event" or "concept" don't capture the procedural nature
+✓ Create "financial_metric" when "concept" doesn't capture the quantitative measurement aspect
+✓ Create "legal_statute" when "concept" or "document" don't capture the regulatory nature
+✓ Create "chemical_compound" when "product" or "concept" don't capture the scientific structure
+
+================================================================================
+
 Analyze these document samples and define entity types to extract. For each entity type, discover multiple extraction patterns AND assign to the appropriate domain.
 
 ## DISCOVERED DOMAINS
@@ -565,6 +734,101 @@ For each entity type, analyze the samples to discover MULTIPLE extraction patter
    - Example: "author.name", "company_info.ticker"
    - Use for: Structured document properties
    - Pattern returns: TRUE if field exists, FALSE otherwise
+
+5. **JSONPATH PATTERNS** - For JSON/structured data extraction:
+   - Use JSONPath expressions to query JSON content or metadata
+   - Examples:
+     * $.author.name - Extract author name from JSON
+     * $.items[*].price - Extract all item prices
+     * $.metadata.company_info.ticker - Extract stock ticker from metadata
+   - Include jsonpath_expr field with the JSONPath expression
+   - Use for: JSON documents, structured metadata, API responses
+   - Pattern returns: TRUE if JSONPath matches and returns result(s), FALSE otherwise
+
+## SEMANTIC FILTERING - VALIDATE ENTITY CONTEXT
+
+**IMPORTANT**: When extraction patterns are ambiguous (e.g., broad regex matching capitalized words), use semantic filtering to validate entity matches based on element-level context.
+
+**HOW IT WORKS:**
+- Semantic filter validates at the ELEMENT LEVEL (entire element content, not word-level proximity)
+- Uses cosine similarity between element embedding and reference concept embeddings
+- Acts as AND condition: pattern MUST match AND semantic filter MUST pass
+- Gracefully degrades: if embeddings unavailable, filter accepts all matches (pattern-only extraction)
+
+**WHEN TO USE:**
+- Ambiguous regex patterns (e.g., patterns matching two capitalized words can match both person names and title-case headings)
+- Person vs organization disambiguation (both use similar patterns, anthropomorphism complicates semantics)
+- Preventing false positives from formatted text (headings, titles, section names)
+- Distinguishing entity types that share structural patterns but differ in semantic context
+
+**STRUCTURE EXAMPLE:**
+{
+  "type": "regex_pattern",
+  "pattern": "\\b[A-Z][a-z]+(?:\\s+[A-Z]\\.)?\\s+[A-Z][a-z]+\\b",
+  "semantic_filter": {
+    "reference_concepts": [
+      "individual person with biography or credentials",
+      "author or creator attribution to individual",
+      "personal pronouns (he, she, his, her) referencing the name"
+    ],
+    "similarity_threshold": 0.65
+  }
+}
+
+**GUIDELINES:**
+1. **Reference Concepts** - Abstract semantic concepts that indicate entity context:
+   - For person: "biographical context", "professional role attribution", "personal pronouns"
+   - For organization: "corporate actions (announced, acquired)", "business operations", "organizational structure"
+   - For location: "geographic references", "spatial relationships", "addresses"
+   - Be descriptive but concise (5-15 words per concept)
+   - Provide 2-4 reference concepts for redundancy
+
+2. **Similarity Threshold** - Cosine similarity (0.0-1.0):
+   - 0.70-0.75: High confidence requirement (use for highly ambiguous patterns)
+   - 0.65-0.70: Medium confidence (balanced - use for most cases)
+   - 0.60-0.65: Low confidence (more permissive, use when pattern is already strong)
+   - Lower threshold = more permissive (more false positives, fewer false negatives)
+   - Higher threshold = more restrictive (fewer false positives, more false negatives)
+
+3. **Multiple Rules with Confidence Tiers** - Combine structural signals with semantic filtering:
+   - **HIGH CONFIDENCE**: Strong structural signals (titles, suffixes) → NO semantic filter needed
+   - **MEDIUM CONFIDENCE**: Moderate patterns → semantic filter with 0.65-0.70 threshold
+   - **LOW CONFIDENCE**: Ambiguous patterns → semantic filter with 0.70+ threshold
+
+**EXAMPLE - PERSON EXTRACTION WITH SEMANTIC FILTERING:**
+MAPPING 1 (High confidence - title prefix as strong signal):
+- entity_type: "person", domain: "medical", confidence: 0.95
+- element_types: ["paragraph", "div", "list_item", "table_cell"]
+- Pattern: Regex matching Dr/Prof/Mr/Mrs/Ms + Name
+- No semantic filter needed (title is strong structural signal)
+
+MAPPING 2 (Lower confidence - ambiguous pattern needs semantic validation):
+- entity_type: "person", domain: "medical", confidence: 0.75
+- element_types: ["paragraph", "div", "list_item", "table_cell"]
+- Pattern: Regex matching First Last or First M. Last
+- semantic_filter with reference_concepts: ["individual person with biography", "author attribution", "personal pronouns referencing name"]
+- similarity_threshold: 0.65
+
+**EXAMPLE - ORGANIZATION EXTRACTION WITH AMBIGUITY:**
+MAPPING 1 (High confidence - legal suffix as strong signal):
+- entity_type: "organization", domain: "financial", confidence: 0.95
+- element_types: ["paragraph", "div", "list_item", "table_cell"]
+- Pattern: Regex matching Name + Inc/Corp/LLC/Ltd suffix
+- No semantic filter needed (legal suffix is strong signal)
+
+MAPPING 2 (Lower confidence - ambiguous two-word pattern):
+- entity_type: "organization", domain: "financial", confidence: 0.75
+- element_types: ["paragraph", "div", "list_item", "table_cell"]
+- Pattern: Regex matching two capitalized words (Word Word)
+- semantic_filter with reference_concepts: ["corporate actions (announced, acquired)", "business operations (revenue, products)", "organizational structure (headquarters, subsidiary)"]
+- similarity_threshold: 0.70 (higher because very ambiguous)
+
+**NOTES:**
+- Semantic filter applies to ANY rule type (regex, keyword, jsonpath, etc.)
+- Element must match BOTH pattern AND semantic context
+- Only use semantic filtering when necessary - adds computational cost
+- Exclude "header" from element_types to prevent title-case heading false positives
+- Test with actual corpus data to tune similarity thresholds
 
 ## MULTIPLE MAPPINGS FOR SAME ENTITY TYPE
 
@@ -645,14 +909,46 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
         "similarity_threshold": 0.7
       }
     ]
+  },
+  {
+    "entity_type": "stock_ticker",
+    "domain": "financial",
+    "description": "Stock ticker symbols from JSON metadata",
+    "element_types": ["paragraph", "table_cell"],
+    "confidence": 0.95,
+    "extraction_rules": [
+      {
+        "type": "jsonpath_query",
+        "jsonpath_expr": "$.metadata.company_info.ticker"
+      }
+    ]
   }
 ]`, strings.Join(elementTypeList, "\n"), strings.Join(domainList, "\n"), strings.Join(entityList, "\n"), sampleTexts)
 
-	response, err := b.llmClient.Complete(ctx, prompt, LLMOptions{
+	// Call LLM with or without MCP tools
+	var response string
+	var err error
+	llmOptions := LLMOptions{
 		MaxTokens:   8000,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at entity extraction and ontology design.",
-	})
+	}
+
+	if b.config.EnableMCP && b.mcpServer != nil {
+		// Use MCP-capable client with tools
+		mcpClient, ok := b.llmClient.(MCPCapableLLMClient)
+		if !ok {
+			fmt.Printf("Warning: MCP enabled but LLM client (%T) does not support tool calling\n", b.llmClient)
+			response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+		} else {
+			tools := b.getMCPToolDefinitions()
+			fmt.Printf("✓ Calling LLM with %d MCP tools for entity type definition\n", len(tools))
+			response, err = mcpClient.CompleteWithTools(ctx, prompt, tools, llmOptions)
+		}
+	} else {
+		response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+	}
+
 	if err != nil {
 		return nil, 1, 0, err
 	}
@@ -808,11 +1104,30 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
   }
 ]`, strings.Join(entityTypes, ", "), sampleTexts)
 
-	response, err := b.llmClient.Complete(ctx, prompt, LLMOptions{
+	// Call LLM with or without MCP tools
+	var response string
+	var err error
+	llmOptions := LLMOptions{
 		MaxTokens:   8000,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at relationship extraction and pattern discovery. Analyze text samples to find patterns that signal relationships between entities.",
-	})
+	}
+
+	if b.config.EnableMCP && b.mcpServer != nil {
+		// Use MCP-capable client with tools
+		mcpClient, ok := b.llmClient.(MCPCapableLLMClient)
+		if !ok {
+			fmt.Printf("Warning: MCP enabled but LLM client (%T) does not support tool calling\n", b.llmClient)
+			response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+		} else {
+			tools := b.getMCPToolDefinitions()
+			fmt.Printf("✓ Calling LLM with %d MCP tools for relationship type discovery\n", len(tools))
+			response, err = mcpClient.CompleteWithTools(ctx, prompt, tools, llmOptions)
+		}
+	} else {
+		response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+	}
+
 	if err != nil {
 		return nil, 1, 0, err
 	}
@@ -968,11 +1283,116 @@ func (b *OntologyBuilder) log(result *BuildResult, message string) {
 	result.AnalysisLog = append(result.AnalysisLog, fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05"), message))
 }
 
+// getMCPToolDefinitions returns tool definitions for LLM if MCP is enabled
+func (b *OntologyBuilder) getMCPToolDefinitions() []MCPToolDefinition {
+	if !b.config.EnableMCP || b.mcpServer == nil {
+		return nil
+	}
+
+	// Get raw tool definitions from MCP server
+	rawTools := b.mcpServer.GetToolDefinitions()
+
+	// Convert to MCPToolDefinition format
+	tools := make([]MCPToolDefinition, 0, len(rawTools))
+	for _, rawTool := range rawTools {
+		toolMap, ok := rawTool.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		name, _ := toolMap["name"].(string)
+		description, _ := toolMap["description"].(string)
+		paramsMap, _ := toolMap["parameters"].(map[string]interface{})
+
+		// Convert parameters
+		params := make(map[string]ParameterDef)
+		for paramName, paramValue := range paramsMap {
+			paramMap, ok := paramValue.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			paramDef := ParameterDef{
+				Type:        getString(paramMap, "type"),
+				Description: getString(paramMap, "description"),
+				Required:    getBool(paramMap, "required"),
+			}
+
+			// Handle enum
+			if enumVal, ok := paramMap["enum"]; ok {
+				if enumSlice, ok := enumVal.([]string); ok {
+					paramDef.Enum = enumSlice
+				} else if enumIface, ok := enumVal.([]interface{}); ok {
+					paramDef.Enum = make([]string, len(enumIface))
+					for i, v := range enumIface {
+						paramDef.Enum[i], _ = v.(string)
+					}
+				}
+			}
+
+			// Handle items (for array types)
+			if itemsVal, ok := paramMap["items"]; ok {
+				if itemsMap, ok := itemsVal.(map[string]interface{}); ok {
+					paramDef.Items = &ItemDef{
+						Type: getString(itemsMap, "type"),
+					}
+				}
+			}
+
+			params[paramName] = paramDef
+		}
+
+		tools = append(tools, MCPToolDefinition{
+			Name:        name,
+			Description: description,
+			Parameters:  params,
+		})
+	}
+
+	return tools
+}
+
+// Helper functions for type assertions
+func getString(m map[string]interface{}, key string) string {
+	if val, ok := m[key]; ok {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}
+
+func getBool(m map[string]interface{}, key string) bool {
+	if val, ok := m[key]; ok {
+		if b, ok := val.(bool); ok {
+			return b
+		}
+	}
+	return false
+}
+
 // Close closes the builder and releases resources
 func (b *OntologyBuilder) Close() error {
+	var errs []error
+
+	// Close sampler
 	if b.sampler != nil {
-		return b.sampler.Close()
+		if err := b.sampler.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("sampler close error: %w", err))
+		}
 	}
+
+	// Close query backend (which closes MCP server)
+	if b.queryBackend != nil {
+		if err := b.queryBackend.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("query backend close error: %w", err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("close errors: %v", errs)
+	}
+
 	return nil
 }
 

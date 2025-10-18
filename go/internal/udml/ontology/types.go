@@ -97,6 +97,12 @@ const (
 	RuleTypeJSONPath   ExtractionRuleType = "jsonpath_query"   // Extract using JSONPath expressions
 )
 
+// SemanticFilter validates entity matches using element-level semantic similarity
+type SemanticFilter struct {
+	ReferenceConcepts   []string `json:"reference_concepts" yaml:"reference_concepts"`       // Concepts to compare against
+	SimilarityThreshold float64  `json:"similarity_threshold" yaml:"similarity_threshold"` // Min similarity (0.0-1.0)
+}
+
 // ExtractionRule defines a rule for extracting entities (binary match)
 type ExtractionRule struct {
 	Type                ExtractionRuleType `json:"type" yaml:"type"`                                              // Rule type
@@ -106,6 +112,8 @@ type ExtractionRule struct {
 	ReferenceText       string             `json:"reference_text,omitempty" yaml:"reference_text,omitempty"`      // Reference text for similarity (for text_similarity)
 	SimilarityThreshold float64            `json:"similarity_threshold,omitempty" yaml:"similarity_threshold,omitempty"` // Minimum similarity score (for text_similarity)
 	JSONPathExpr        string             `json:"jsonpath_expr,omitempty" yaml:"jsonpath_expr,omitempty"`        // JSONPath expression (for jsonpath_query)
+	InstanceName        string             `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`        // Optional regex with (?P<name>...) capture to extract entity instance name
+	SemanticFilter      *SemanticFilter    `json:"semantic_filter,omitempty" yaml:"semantic_filter,omitempty"`    // Optional semantic context validation (AND condition)
 }
 
 // RelationshipExtractionPatternType defines types of relationship extraction patterns
@@ -477,6 +485,16 @@ func (s *OntologySchema) Validate() error {
 				}
 			default:
 				return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: unknown rule type: %s", i, mapping.EntityType, j, rule.Type))
+			}
+
+			// Validate semantic filter if present
+			if rule.SemanticFilter != nil {
+				if len(rule.SemanticFilter.ReferenceConcepts) == 0 {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: semantic_filter requires reference_concepts", i, mapping.EntityType, j))
+				}
+				if rule.SemanticFilter.SimilarityThreshold < 0.0 || rule.SemanticFilter.SimilarityThreshold > 1.0 {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid similarity_threshold: %.2f (must be 0.0-1.0)", i, mapping.EntityType, j, rule.SemanticFilter.SimilarityThreshold))
+				}
 			}
 		}
 	}

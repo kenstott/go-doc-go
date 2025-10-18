@@ -1254,8 +1254,8 @@ func (w *Worker) queueDiscoveredLinks(docInfo *jobcontrol.DocumentInfo, parseRes
 	// Find all link elements and queue their targets
 	queued := 0
 	for _, elem := range parseResult.Elements {
-		// Check if this is a link element
-		if elem.ElementType != "link" {
+		// Check if this is a hyperlink element (UDML canonical type)
+		if elem.ElementType != "hyperlink" {
 			continue
 		}
 

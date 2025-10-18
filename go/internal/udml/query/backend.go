@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -99,4 +100,17 @@ type BackendCapabilities struct {
 // GetCapabilities returns the backend's capabilities
 func (bc *BackendCapabilities) GetCapabilities() BackendCapabilities {
 	return *bc
+}
+
+// RawQueryBackend is an optional interface for backends that support raw SQL execution
+// This is useful for interactive tools like MCP servers that need direct query access
+type RawQueryBackend interface {
+	QueryBackend
+	// ExecuteRaw executes a raw SQL query string with parameters and returns QueryResult
+	// This parses all rows into memory - use QueryRaw for streaming large result sets
+	ExecuteRaw(ctx context.Context, query string, args ...interface{}) (*QueryResult, error)
+
+	// QueryRaw executes a raw SQL query and returns database/sql.Rows for streaming
+	// This is useful for large result sets that should not be loaded entirely into memory
+	QueryRaw(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
 }

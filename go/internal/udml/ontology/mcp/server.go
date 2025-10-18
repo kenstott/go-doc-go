@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -12,17 +13,37 @@ import (
 )
 
 // OntologyCorpusExplorer provides MCP tools for exploring UDML corpus during ontology refinement
+//
+// IMPORTANT: This MCP server requires a backend that implements query.RawQueryBackend interface.
+// It uses database-specific SQL features (e.g., DuckDB's list_cosine_similarity, regexp_matches)
+// that are not fully abstracted by the query.Expression API.
+//
+// This is by design - the MCP server is a specialized interactive exploration tool for LLMs
+// during ontology refinement, not a general-purpose query interface. The Expression API is
+// designed for programmatic queries that need to be portable across backends.
 type OntologyCorpusExplorer struct {
-	querier      *query.Querier
+	backend      query.RawQueryBackend // Requires RawQueryBackend for specialized features
 	embGenerator embeddings.EmbeddingGenerator
 }
 
 // NewOntologyCorpusExplorer creates a new MCP server for corpus exploration
-func NewOntologyCorpusExplorer(querier *query.Querier, embGenerator embeddings.EmbeddingGenerator) *OntologyCorpusExplorer {
-	return &OntologyCorpusExplorer{
-		querier:      querier,
-		embGenerator: embGenerator,
+// Returns an error if the backend does not implement query.RawQueryBackend
+func NewOntologyCorpusExplorer(backend query.QueryBackend, embGenerator embeddings.EmbeddingGenerator) (*OntologyCorpusExplorer, error) {
+	rawBackend, ok := backend.(query.RawQueryBackend)
+	if !ok {
+		return nil, fmt.Errorf("MCP server requires a backend that implements query.RawQueryBackend interface (got %T)", backend)
 	}
+
+	return &OntologyCorpusExplorer{
+		backend:      rawBackend,
+		embGenerator: embGenerator,
+	}, nil
+}
+
+// queryRaw is a helper that executes a raw query via the RawQueryBackend
+// Note: This calls QueryRaw which returns *sql.Rows directly, not ExecuteRaw which returns QueryResult
+func (e *OntologyCorpusExplorer) queryRaw(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	return e.backend.QueryRaw(ctx, query, args...)
 }
 
 // CreateMCPServer creates and configures the MCP server with all tools
@@ -69,7 +90,7 @@ func (e *OntologyCorpusExplorer) addSearchCorpusTool(s *server.MCPServer) {
 		),
 		mcp.WithArray("element_types",
 			mcp.Description("Filter by element types (paragraph, table_cell, heading, etc.)"),
-			mcp.Items(mcp.ItemsString()),
+			mcp.WithStringItems(),
 		),
 		mcp.WithNumber("limit",
 			mcp.Description("Maximum number of results (default: 10)"),
@@ -94,7 +115,7 @@ func (e *OntologyCorpusExplorer) addAnalyzePatternsTool(s *server.MCPServer) {
 		),
 		mcp.WithArray("element_types",
 			mcp.Description("Filter by element types"),
-			mcp.Items(mcp.ItemsString()),
+			mcp.WithStringItems(),
 		),
 		mcp.WithNumber("max_examples",
 			mcp.Description("Maximum examples to return (default: 20)"),
@@ -113,14 +134,14 @@ func (e *OntologyCorpusExplorer) addComputeFrequenciesTool(s *server.MCPServer) 
 		mcp.WithArray("terms",
 			mcp.Required(),
 			mcp.Description("List of terms/entities to count"),
-			mcp.Items(mcp.ItemsString()),
+			mcp.WithStringItems(),
 		),
 		mcp.WithBoolean("case_sensitive",
 			mcp.Description("Whether search is case-sensitive (default: false)"),
 		),
 		mcp.WithArray("element_types",
 			mcp.Description("Filter by element types"),
-			mcp.Items(mcp.ItemsString()),
+			mcp.WithStringItems(),
 		),
 	)
 
@@ -185,11 +206,11 @@ func (e *OntologyCorpusExplorer) addAggregateStatisticsTool(s *server.MCPServer)
 		mcp.WithDescription("Compute aggregate statistics about the corpus: element type distribution, document counts, average lengths, etc."),
 		mcp.WithArray("metrics",
 			mcp.Description("Metrics to compute: 'element_type_distribution', 'document_count', 'avg_content_length', 'entity_type_distribution'"),
-			mcp.Items(mcp.ItemsString()),
+			mcp.WithStringItems(),
 		),
 		mcp.WithArray("element_types",
 			mcp.Description("Filter by element types"),
-			mcp.Items(mcp.ItemsString()),
+			mcp.WithStringItems(),
 		),
 	)
 
@@ -202,7 +223,11 @@ func (e *OntologyCorpusExplorer) addAggregateStatisticsTool(s *server.MCPServer)
 
 func (e *OntologyCorpusExplorer) handleSearchCorpus(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Parse arguments
-	args := request.Params.Arguments
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments type")
+	}
+
 	query, ok := args["query"].(string)
 	if !ok {
 		return nil, fmt.Errorf("query must be a string")
@@ -263,7 +288,11 @@ func (e *OntologyCorpusExplorer) handleSearchCorpus(ctx context.Context, request
 }
 
 func (e *OntologyCorpusExplorer) handleAnalyzePatterns(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.Params.Arguments
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments type")
+	}
+
 	pattern, ok := args["pattern"].(string)
 	if !ok {
 		return nil, fmt.Errorf("pattern must be a string")
@@ -297,7 +326,10 @@ func (e *OntologyCorpusExplorer) handleAnalyzePatterns(ctx context.Context, requ
 }
 
 func (e *OntologyCorpusExplorer) handleComputeFrequencies(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.Params.Arguments
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments type")
+	}
 
 	var terms []string
 	if t, ok := args["terms"].([]interface{}); ok {
@@ -338,7 +370,10 @@ func (e *OntologyCorpusExplorer) handleComputeFrequencies(ctx context.Context, r
 }
 
 func (e *OntologyCorpusExplorer) handleFindCooccurrences(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.Params.Arguments
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments type")
+	}
 
 	entity1, ok := args["entity1"].(string)
 	if !ok {
@@ -374,7 +409,10 @@ func (e *OntologyCorpusExplorer) handleFindCooccurrences(ctx context.Context, re
 }
 
 func (e *OntologyCorpusExplorer) handleGetElementContext(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.Params.Arguments
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments type")
+	}
 
 	elementID, ok := args["element_id"].(string)
 	if !ok {
@@ -410,7 +448,10 @@ func (e *OntologyCorpusExplorer) handleGetElementContext(ctx context.Context, re
 }
 
 func (e *OntologyCorpusExplorer) handleAggregateStatistics(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args := request.Params.Arguments
+	args, ok := request.Params.Arguments.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid arguments type")
+	}
 
 	var metrics []string
 	if m, ok := args["metrics"].([]interface{}); ok {
@@ -446,4 +487,223 @@ func (e *OntologyCorpusExplorer) handleAggregateStatistics(ctx context.Context, 
 	}
 
 	return mcp.NewToolResultText(string(content)), nil
+}
+
+// GetToolDefinitions returns MCP tool definitions for LLM tool calling
+// This converts the MCP tool definitions into the format expected by OntologyBuilder
+func (e *OntologyCorpusExplorer) GetToolDefinitions() []interface{} {
+	// Import the ontology package's MCPToolDefinition type
+	// For now, return a generic interface{} slice that can be type-asserted by the caller
+
+	tools := []interface{}{
+		map[string]interface{}{
+			"name":        "search_corpus",
+			"description": "Search the UDML corpus using semantic similarity, keywords, or regex patterns. Returns matching elements with context.",
+			"parameters": map[string]interface{}{
+				"query": map[string]interface{}{
+					"type":        "string",
+					"description": "Search query (text for semantic search, keywords, or regex pattern)",
+					"required":    true,
+				},
+				"search_type": map[string]interface{}{
+					"type":        "string",
+					"description": "Search type: 'semantic', 'keyword', or 'regex'",
+					"required":    true,
+					"enum":        []string{"semantic", "keyword", "regex"},
+				},
+				"element_types": map[string]interface{}{
+					"type":        "array",
+					"description": "Filter by element types (paragraph, table_cell, heading, etc.)",
+					"required":    false,
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"limit": map[string]interface{}{
+					"type":        "number",
+					"description": "Maximum number of results (default: 10)",
+					"required":    false,
+				},
+				"similarity_threshold": map[string]interface{}{
+					"type":        "number",
+					"description": "Minimum similarity score for semantic search (default: 0.7)",
+					"required":    false,
+				},
+			},
+		},
+		map[string]interface{}{
+			"name":        "analyze_patterns",
+			"description": "Analyze how a regex pattern matches across the corpus. Returns match examples, frequency, and element type distribution.",
+			"parameters": map[string]interface{}{
+				"pattern": map[string]interface{}{
+					"type":        "string",
+					"description": "Regex pattern to analyze",
+					"required":    true,
+				},
+				"element_types": map[string]interface{}{
+					"type":        "array",
+					"description": "Filter by element types",
+					"required":    false,
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"max_examples": map[string]interface{}{
+					"type":        "number",
+					"description": "Maximum examples to return (default: 20)",
+					"required":    false,
+				},
+			},
+		},
+		map[string]interface{}{
+			"name":        "compute_frequencies",
+			"description": "Compute frequency counts for terms or entities across the corpus. Useful for understanding what concepts are most prominent.",
+			"parameters": map[string]interface{}{
+				"terms": map[string]interface{}{
+					"type":        "array",
+					"description": "List of terms/entities to count",
+					"required":    true,
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"case_sensitive": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Whether search is case-sensitive (default: false)",
+					"required":    false,
+				},
+				"element_types": map[string]interface{}{
+					"type":        "array",
+					"description": "Filter by element types",
+					"required":    false,
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+			},
+		},
+		map[string]interface{}{
+			"name":        "find_cooccurrences",
+			"description": "Find how often two entities appear together in the same context. Useful for discovering relationships.",
+			"parameters": map[string]interface{}{
+				"entity1": map[string]interface{}{
+					"type":        "string",
+					"description": "First entity/term to search for",
+					"required":    true,
+				},
+				"entity2": map[string]interface{}{
+					"type":        "string",
+					"description": "Second entity/term to search for",
+					"required":    true,
+				},
+				"context_window": map[string]interface{}{
+					"type":        "string",
+					"description": "Context window: 'element', 'paragraph', or 'document' (default: 'element')",
+					"required":    false,
+					"enum":        []string{"element", "paragraph", "document"},
+				},
+				"max_examples": map[string]interface{}{
+					"type":        "number",
+					"description": "Maximum examples to return (default: 10)",
+					"required":    false,
+				},
+			},
+		},
+		map[string]interface{}{
+			"name":        "get_element_context",
+			"description": "Retrieve surrounding context for specific elements. Shows parent/sibling/child elements to understand document structure.",
+			"parameters": map[string]interface{}{
+				"element_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Element ID to get context for",
+					"required":    true,
+				},
+				"context_depth": map[string]interface{}{
+					"type":        "number",
+					"description": "Number of parent levels to traverse (default: 2)",
+					"required":    false,
+				},
+				"include_siblings": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Include sibling elements (default: true)",
+					"required":    false,
+				},
+				"include_children": map[string]interface{}{
+					"type":        "boolean",
+					"description": "Include child elements (default: true)",
+					"required":    false,
+				},
+			},
+		},
+		map[string]interface{}{
+			"name":        "aggregate_statistics",
+			"description": "Compute aggregate statistics about the corpus: element type distribution, document counts, average lengths, etc.",
+			"parameters": map[string]interface{}{
+				"metrics": map[string]interface{}{
+					"type":        "array",
+					"description": "Metrics to compute: 'element_type_distribution', 'document_count', 'avg_content_length', 'entity_type_distribution'",
+					"required":    false,
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+				"element_types": map[string]interface{}{
+					"type":        "array",
+					"description": "Filter by element types",
+					"required":    false,
+					"items": map[string]interface{}{
+						"type": "string",
+					},
+				},
+			},
+		},
+	}
+
+	return tools
+}
+
+// ExecuteTool executes an MCP tool by name with given arguments
+// This is used by the LLM client to execute tool calls during CompleteWithTools
+func (e *OntologyCorpusExplorer) ExecuteTool(ctx context.Context, toolName string, arguments map[string]interface{}) (string, error) {
+	// Create a CallToolRequest from the arguments
+	request := mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name:      toolName,
+			Arguments: arguments,
+		},
+	}
+
+	// Route to appropriate handler
+	var result *mcp.CallToolResult
+	var err error
+
+	switch toolName {
+	case "search_corpus":
+		result, err = e.handleSearchCorpus(ctx, request)
+	case "analyze_patterns":
+		result, err = e.handleAnalyzePatterns(ctx, request)
+	case "compute_frequencies":
+		result, err = e.handleComputeFrequencies(ctx, request)
+	case "find_cooccurrences":
+		result, err = e.handleFindCooccurrences(ctx, request)
+	case "get_element_context":
+		result, err = e.handleGetElementContext(ctx, request)
+	case "aggregate_statistics":
+		result, err = e.handleAggregateStatistics(ctx, request)
+	default:
+		return "", fmt.Errorf("unknown tool: %s", toolName)
+	}
+
+	if err != nil {
+		return "", fmt.Errorf("tool execution failed: %w", err)
+	}
+
+	// Extract text content from result
+	if len(result.Content) > 0 {
+		if textContent, ok := result.Content[0].(mcp.TextContent); ok {
+			return textContent.Text, nil
+		}
+	}
+
+	return "", fmt.Errorf("no content in tool result")
 }
