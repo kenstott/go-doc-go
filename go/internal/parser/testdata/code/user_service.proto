@@ -1,0 +1,198 @@
+// User Service API
+// Provides user management and authentication functionality
+syntax = "proto3";
+
+package user.service.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/example/user-service/api/v1";
+
+// UserStatus represents the current status of a user account
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_SUSPENDED = 2;
+  USER_STATUS_DELETED = 3;
+}
+
+// UserRole defines authorization levels
+enum UserRole {
+  USER_ROLE_UNSPECIFIED = 0;
+  USER_ROLE_VIEWER = 1;
+  USER_ROLE_EDITOR = 2;
+  USER_ROLE_ADMIN = 3;
+}
+
+// Address represents a physical or mailing address
+message Address {
+  string street = 1;
+  string city = 2;
+  string state = 3;
+  string postal_code = 4;
+  string country = 5;
+}
+
+// User represents a user account in the system
+message User {
+  // Unique identifier for the user
+  string id = 1;
+
+  // User's email address (must be unique)
+  string email = 2;
+
+  // User's display name
+  string display_name = 3;
+
+  // User's current status
+  UserStatus status = 4;
+
+  // User's role for authorization
+  UserRole role = 5;
+
+  // Physical address
+  Address address = 6;
+
+  // Account creation timestamp
+  google.protobuf.Timestamp created_at = 7;
+
+  // Last update timestamp
+  google.protobuf.Timestamp updated_at = 8;
+
+  // Optional profile metadata
+  map<string, string> metadata = 9;
+
+  // Nested preferences
+  message Preferences {
+    bool email_notifications = 1;
+    bool sms_notifications = 2;
+    string language = 3;
+    string timezone = 4;
+  }
+
+  Preferences preferences = 10;
+}
+
+// CreateUserRequest contains fields needed to create a new user
+message CreateUserRequest {
+  string email = 1;
+  string display_name = 2;
+  UserRole role = 3;
+  Address address = 4;
+}
+
+// CreateUserResponse returns the newly created user
+message CreateUserResponse {
+  User user = 1;
+}
+
+// GetUserRequest identifies a user to retrieve
+message GetUserRequest {
+  string id = 1;
+}
+
+// GetUserResponse returns the requested user
+message GetUserResponse {
+  User user = 1;
+}
+
+// ListUsersRequest contains filters for listing users
+message ListUsersRequest {
+  // Maximum number of users to return
+  int32 page_size = 1;
+
+  // Pagination token from previous response
+  string page_token = 2;
+
+  // Filter by status
+  UserStatus status_filter = 3;
+
+  // Filter by role
+  UserRole role_filter = 4;
+}
+
+// ListUsersResponse returns a page of users
+message ListUsersResponse {
+  repeated User users = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// UpdateUserRequest contains fields to update
+message UpdateUserRequest {
+  string id = 1;
+  string display_name = 2;
+  UserStatus status = 3;
+  UserRole role = 4;
+  Address address = 5;
+}
+
+// UpdateUserResponse returns the updated user
+message UpdateUserResponse {
+  User user = 1;
+}
+
+// DeleteUserRequest identifies a user to delete
+message DeleteUserRequest {
+  string id = 1;
+  bool hard_delete = 2;  // If false, soft delete by setting status
+}
+
+// AuthenticateRequest contains login credentials
+message AuthenticateRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// AuthenticateResponse returns authentication token
+message AuthenticateResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+// UserService provides user management operations
+service UserService {
+  // CreateUser creates a new user account
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+
+  // GetUser retrieves a user by ID
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+
+  // ListUsers returns a paginated list of users
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+
+  // UpdateUser updates an existing user
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+
+  // DeleteUser removes a user account
+  rpc DeleteUser(DeleteUserRequest) returns (google.protobuf.Empty);
+
+  // Authenticate validates credentials and returns token
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+}
+
+// UserEventService provides user activity streaming
+service UserEventService {
+  // StreamUserEvents streams real-time user events
+  rpc StreamUserEvents(google.protobuf.Empty) returns (stream UserEvent);
+
+  // RecordUserAction records a user action
+  rpc RecordUserAction(UserActionRequest) returns (google.protobuf.Empty);
+}
+
+// UserEvent represents a user activity event
+message UserEvent {
+  string user_id = 1;
+  string event_type = 2;
+  google.protobuf.Timestamp timestamp = 3;
+  map<string, string> properties = 4;
+}
+
+// UserActionRequest records a user action
+message UserActionRequest {
+  string user_id = 1;
+  string action = 2;
+  map<string, string> context = 3;
+}
