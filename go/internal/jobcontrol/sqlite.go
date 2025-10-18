@@ -58,10 +58,24 @@ func NewSQLiteJobControl(config Config) (*SQLiteJobControl, error) {
 	}
 
 	// Open database
-	db, err := sql.Open("sqlite3", config.Path+"?_busy_timeout=30000&_journal_mode=WAL")
+	db, err := sql.Open("sqlite3", config.Path+"?_busy_timeout=30000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Enable WAL mode for better concurrency
+	// WAL mode must be set via PRAGMA, not connection string
+	var walMode string
+	err = db.QueryRow("PRAGMA journal_mode=WAL").Scan(&walMode)
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable WAL mode: %w", err)
+	}
+	if walMode != "wal" {
+		db.Close()
+		return nil, fmt.Errorf("WAL mode not enabled, got journal_mode=%s", walMode)
+	}
+	log.Printf("SQLite job control initialized with WAL mode enabled")
 
 	// Set connection pool settings
 	db.SetMaxOpenConns(10)
