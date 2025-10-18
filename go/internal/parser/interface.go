@@ -81,15 +81,17 @@ func (r *ParserRegistry) GetParser(name string) (Parser, error) {
 	return parser, nil
 }
 
-// GetParserForFile returns the appropriate parser for a file based on extension
+// GetParserForFile returns the appropriate parser for a file based on extension or filename
 func (r *ParserRegistry) GetParserForFile(filename string) (Parser, error) {
 	ext := strings.ToLower(filepath.Ext(filename))
+	basename := strings.ToLower(filepath.Base(filename))
 
-	// Try to find a parser that supports this extension
+	// Try to find a parser that supports this extension or filename
 	for _, parser := range r.parsers {
 		for _, format := range parser.GetSupportedFormats() {
-			// Handle both .ext and ext formats
-			if ext == format || ext == "."+format {
+			formatLower := strings.ToLower(format)
+			// Handle both .ext and ext formats, and also full filename matches (e.g., "Dockerfile")
+			if ext == formatLower || ext == "."+formatLower || basename == formatLower {
 				return parser, nil
 			}
 		}
