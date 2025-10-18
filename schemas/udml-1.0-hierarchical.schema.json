@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/udml-1.0-hierarchical.schema.json",
   "title": "UDML Hierarchical Format Schema (UDML-H)",
-  "description": "Universal Document Model Language (UDML) v1.0 - Hierarchical/Nested Format. Nested structure with children arrays optimized for JSONPath queries, ontology extraction, and tree visualization. Also known as UDML-H (Hierarchical).",
+  "description": "Universal Document Markup Language (UDML) v1.0 - Hierarchical/Nested Format. Nested structure with children arrays optimized for JSONPath queries, ontology extraction, and tree visualization. Also known as UDML-H (Hierarchical). Includes Universal Code Markup Language (UCML) subset for source code parsing.",
   "type": "object",
   "required": ["doc_id", "elements"],
   "properties": {
@@ -45,7 +45,7 @@
         },
         "element_type": {
           "type": "string",
-          "description": "Element type classification",
+          "description": "Element type classification (includes UCML types for source code)",
           "enum": [
             "root",
             "body",
@@ -65,7 +65,7 @@
             "table_header",
             "table_header_row",
             "table_header_cell",
-            "table_row",curious
+            "table_row",
             "table_cell",
             "code_block",
             "image",
@@ -99,6 +99,24 @@
             "quote",
             "caption",
             "metadata",
+            "file",
+            "module",
+            "namespace",
+            "package",
+            "docstring",
+            "string_literal",
+            "class",
+            "interface",
+            "function",
+            "method",
+            "parameter",
+            "variable",
+            "import_statement",
+            "expression",
+            "annotation",
+            "decorator",
+            "pragma",
+            "type_hint",
             "other"
           ]
         },

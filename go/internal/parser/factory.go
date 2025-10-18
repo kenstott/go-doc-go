@@ -11,3 +11,6 @@ func NewDOCXParser() *DocxParser {
 func NewPPTXParser() *PptxParser {
 	return NewPptxParser()
 }
+
+// NewPHPParser creates a new PHP parser (factory function)
+// Note: This is already the canonical name, no alias needed

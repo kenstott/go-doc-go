@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers the essential documentation for the UDML (Universal Document Model Language) system.
+This guide covers the essential documentation for the UDML (Universal Document Markup Language) system.
 
 ## Core Documentation
 
@@ -166,7 +166,6 @@ See `go/internal/udml/versioning/` for complete API.
 
 ## Resources
 
-- [UDML Migration Plan](../UDML_MIGRATION_PLAN.md) - Complete implementation roadmap
 - [UDML Specification](./UDML_SPECIFICATION.md) - Format specification
 - [Integration Tests](../go/internal/udml/integration_test.go) - Usage examples
 - [Export Package](../go/internal/export/) - Multi-format export
