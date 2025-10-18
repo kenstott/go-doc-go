@@ -119,6 +119,59 @@ type OntologyMention struct {
 	ExtractedAt   time.Time `json:"extracted_at"`   // Extraction timestamp
 }
 
+// ============================================================================
+// Corpus Exploration Types - for MCP server and interactive exploration
+// ============================================================================
+
+// SearchResult represents a search result with optional similarity/match score
+type SearchResult struct {
+	Element    Element `json:"element"`
+	Score      float64 `json:"score,omitempty"`       // Similarity or relevance score
+	MatchCount int     `json:"match_count,omitempty"` // Number of matches (for keyword search)
+}
+
+// PatternStats represents statistics about regex pattern matches
+type PatternStats struct {
+	Pattern            string         `json:"pattern"`
+	TotalMatches       int            `json:"total_matches"`
+	DocumentCount      int            `json:"document_count"`
+	ElementTypeDistrib map[string]int `json:"element_type_distribution"`
+	Examples           []Element      `json:"examples"` // Sample matching elements
+}
+
+// TermFrequency represents frequency statistics for a term
+type TermFrequency struct {
+	Term               string         `json:"term"`
+	Frequency          int            `json:"frequency"`           // Total occurrences
+	DocumentCount      int            `json:"document_count"`      // Unique documents
+	ElementTypeDistrib map[string]int `json:"element_type_distribution"`
+}
+
+// CooccurrenceResult represents co-occurrence analysis between two terms
+type CooccurrenceResult struct {
+	Entity1       string    `json:"entity1"`
+	Entity2       string    `json:"entity2"`
+	CooccurCount  int       `json:"cooccurrence_count"`
+	ContextWindow string    `json:"context_window"` // "element", "paragraph", "document"
+	Examples      []Element `json:"examples"`       // Sample co-occurrences
+}
+
+// ElementContext represents an element with its hierarchical context
+type ElementContext struct {
+	Element  Element   `json:"element"`
+	Parents  []Element `json:"parents,omitempty"`
+	Siblings []Element `json:"siblings,omitempty"`
+	Children []Element `json:"children,omitempty"`
+}
+
+// CorpusStats represents aggregate statistics about the corpus
+type CorpusStats struct {
+	ElementTypeDistribution map[string]int `json:"element_type_distribution,omitempty"`
+	DocumentCount           int            `json:"document_count,omitempty"`
+	TotalElements           int            `json:"total_elements,omitempty"`
+	AvgContentLength        float64        `json:"avg_content_length,omitempty"`
+}
+
 // Storage defines the interface for analytics storage
 type Storage interface {
 	// UDML-D: Documents
@@ -126,6 +179,15 @@ type Storage interface {
 
 	// UDML-E: Elements
 	AppendElements(elements []Element) error
+	// QueryElements retrieves elements based on filters.
+	// Standard filters:
+	//   - "source_name" (string): Filter by source name
+	//   - "doc_id" (string): Filter by document ID
+	//   - "element_type" (string): Filter by element type
+	//   - "element_category" (string): Filter by element category
+	// Temporal filters (for versioned/partitioned storage):
+	//   - "latest_only" (bool): If true, deduplicate by doc_id to return only latest version (default: false)
+	//   - "as_of_date" (string): Return corpus state as of this date, format "YYYY-MM-DD" (optional)
 	QueryElements(filters map[string]interface{}) ([]Element, error)
 
 	// UDML-R: Structural and semantic relationships between elements
@@ -147,6 +209,45 @@ type Storage interface {
 
 	// Content resolution for samplers/query engines
 	GetContentResolver() interface{}
+
+	// ========================================================================
+	// Corpus Exploration Methods - for MCP server and interactive tools
+	// All methods support temporal filtering through the filters parameter
+	// ========================================================================
+
+	// SearchSemanticSimilarity performs semantic similarity search using vector embeddings
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	SearchSemanticSimilarity(queryVector []float64, filters map[string]interface{}, threshold float64, limit int) ([]SearchResult, error)
+
+	// SearchByRegex performs regex pattern matching on element content
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	SearchByRegex(pattern string, filters map[string]interface{}, limit int) ([]SearchResult, error)
+
+	// SearchByKeyword performs keyword search on element content (case-insensitive substring match)
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	SearchByKeyword(keyword string, filters map[string]interface{}, limit int) ([]SearchResult, error)
+
+	// AnalyzePattern analyzes a regex pattern across the corpus and returns statistics
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	AnalyzePattern(pattern string, filters map[string]interface{}, maxExamples int) (*PatternStats, error)
+
+	// ComputeTermFrequencies computes frequency statistics for given terms
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	ComputeTermFrequencies(terms []string, caseSensitive bool, filters map[string]interface{}) ([]TermFrequency, error)
+
+	// FindCooccurrences finds co-occurrences of two entities within a context window
+	// contextWindow: "element", "paragraph", "document"
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	FindCooccurrences(entity1, entity2 string, contextWindow string, filters map[string]interface{}, maxExamples int) (*CooccurrenceResult, error)
+
+	// GetElementContext retrieves an element with its hierarchical context (parents, siblings, children)
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	GetElementContext(elementID string, filters map[string]interface{}, contextDepth int, includeSiblings, includeChildren bool) (*ElementContext, error)
+
+	// AggregateStatistics computes aggregate statistics about the corpus
+	// metrics: list of metrics to compute (e.g., "element_type_distribution", "document_count", "total_elements", "avg_content_length")
+	// filters: standard filters (source_name, doc_id, element_type, latest_only, as_of_date)
+	AggregateStatistics(metrics []string, filters map[string]interface{}) (*CorpusStats, error)
 
 	Close() error
 }
