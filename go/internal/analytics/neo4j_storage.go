@@ -690,3 +690,47 @@ func (s *Neo4jStorage) QueryOntologyRelationships(filters map[string]interface{}
 	log.Printf("WARNING: Ontology relationship queries not yet supported in Neo4jStorage")
 	return nil, nil
 }
+
+// ============================================================================
+// Corpus Exploration Methods - stubs for Neo4jStorage
+// ============================================================================
+
+func (s *Neo4jStorage) SearchSemanticSimilarity(queryVector []float64, filters map[string]interface{}, threshold float64, limit int) ([]SearchResult, error) {
+	log.Printf("WARNING: Semantic similarity search not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *Neo4jStorage) SearchByRegex(pattern string, filters map[string]interface{}, limit int) ([]SearchResult, error) {
+	log.Printf("WARNING: Regex search not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *Neo4jStorage) SearchByKeyword(keyword string, filters map[string]interface{}, limit int) ([]SearchResult, error) {
+	log.Printf("WARNING: Keyword search not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *Neo4jStorage) AnalyzePattern(pattern string, filters map[string]interface{}, maxExamples int) (*PatternStats, error) {
+	log.Printf("WARNING: Pattern analysis not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *Neo4jStorage) ComputeTermFrequencies(terms []string, caseSensitive bool, filters map[string]interface{}) ([]TermFrequency, error) {
+	log.Printf("WARNING: Term frequency computation not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *Neo4jStorage) FindCooccurrences(entity1, entity2 string, contextWindow string, filters map[string]interface{}, maxExamples int) (*CooccurrenceResult, error) {
+	log.Printf("WARNING: Co-occurrence finding not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *Neo4jStorage) GetElementContext(elementID string, filters map[string]interface{}, contextDepth int, includeSiblings, includeChildren bool) (*ElementContext, error) {
+	log.Printf("WARNING: Element context retrieval not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}
+
+func (s *Neo4jStorage) AggregateStatistics(metrics []string, filters map[string]interface{}) (*CorpusStats, error) {
+	log.Printf("WARNING: Statistics aggregation not yet supported in Neo4jStorage")
+	return nil, fmt.Errorf("not implemented")
+}

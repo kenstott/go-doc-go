@@ -636,6 +636,51 @@ func (s *HiveParquetStorage) GetContentResolver() interface{} {
 	return s.contentResolver
 }
 
+// ============================================================================
+// Corpus Exploration Methods - for MCP server and interactive tools
+// HiveParquetStorage uses the same DuckDB-based implementation as ParquetStorage
+// ============================================================================
+
+// SearchSemanticSimilarity performs semantic similarity search using vector embeddings
+func (s *HiveParquetStorage) SearchSemanticSimilarity(queryVector []float64, filters map[string]interface{}, threshold float64, limit int) ([]SearchResult, error) {
+	return searchSemanticSimilarityImpl(s.basePath, queryVector, filters, threshold, limit)
+}
+
+// SearchByRegex performs regex pattern matching on element content
+func (s *HiveParquetStorage) SearchByRegex(pattern string, filters map[string]interface{}, limit int) ([]SearchResult, error) {
+	return searchByRegexImpl(s.basePath, pattern, filters, limit)
+}
+
+// SearchByKeyword performs keyword search on element content
+func (s *HiveParquetStorage) SearchByKeyword(keyword string, filters map[string]interface{}, limit int) ([]SearchResult, error) {
+	return searchByKeywordImpl(s.basePath, keyword, filters, limit)
+}
+
+// AnalyzePattern analyzes a regex pattern across the corpus
+func (s *HiveParquetStorage) AnalyzePattern(pattern string, filters map[string]interface{}, maxExamples int) (*PatternStats, error) {
+	return analyzePatternImpl(s.basePath, pattern, filters, maxExamples)
+}
+
+// ComputeTermFrequencies computes frequency statistics for given terms
+func (s *HiveParquetStorage) ComputeTermFrequencies(terms []string, caseSensitive bool, filters map[string]interface{}) ([]TermFrequency, error) {
+	return computeTermFrequenciesImpl(s.basePath, terms, caseSensitive, filters)
+}
+
+// FindCooccurrences finds co-occurrences of two entities within a context window
+func (s *HiveParquetStorage) FindCooccurrences(entity1, entity2 string, contextWindow string, filters map[string]interface{}, maxExamples int) (*CooccurrenceResult, error) {
+	return findCooccurrencesImpl(s.basePath, entity1, entity2, contextWindow, filters, maxExamples)
+}
+
+// GetElementContext retrieves an element with its hierarchical context
+func (s *HiveParquetStorage) GetElementContext(elementID string, filters map[string]interface{}, contextDepth int, includeSiblings, includeChildren bool) (*ElementContext, error) {
+	return getElementContextImpl(s.basePath, elementID, filters, contextDepth, includeSiblings, includeChildren)
+}
+
+// AggregateStatistics computes aggregate statistics about the corpus
+func (s *HiveParquetStorage) AggregateStatistics(metrics []string, filters map[string]interface{}) (*CorpusStats, error) {
+	return aggregateStatisticsImpl(s.basePath, metrics, filters)
+}
+
 // Close closes the storage (no-op for Parquet)
 func (s *HiveParquetStorage) Close() error {
 	log.Println("Closing Hive-partitioned Parquet storage")
