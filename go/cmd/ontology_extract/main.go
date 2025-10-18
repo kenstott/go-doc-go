@@ -21,6 +21,10 @@ func main() {
 	maxElements := flag.Int("max-elements", 0, "Maximum number of elements to process (0 = all)")
 	workers := flag.Int("workers", 1, "Number of workers (1=single-worker, >1=distributed parallel extraction)")
 
+	// Temporal filtering flags (for versioned/partitioned corpora)
+	latestOnly := flag.Bool("latest-only", true, "Deduplicate by doc_id to return only latest version (default: true)")
+	asOfDate := flag.String("as-of-date", "", "Return corpus state as of this date, format YYYY-MM-DD (optional)")
+
 	flag.Parse()
 
 	// Validate required flags
@@ -78,6 +82,16 @@ func main() {
 	filters := make(map[string]interface{})
 	if *docID != "" {
 		filters["doc_id"] = *docID
+	}
+
+	// Add temporal filters
+	filters["latest_only"] = *latestOnly
+	if *asOfDate != "" {
+		filters["as_of_date"] = *asOfDate
+	}
+
+	if *latestOnly {
+		log.Printf("  ⏰ Temporal filtering: latest-only=true, as-of-date=%s", *asOfDate)
 	}
 
 	elements, err := storage.QueryElements(filters)

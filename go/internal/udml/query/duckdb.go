@@ -22,6 +22,8 @@ type DuckDBBackend struct {
 	parquetPath string
 	initialized bool
 	version     string
+	latestOnly  bool   // Temporal filtering: only latest version per doc_id
+	asOfDate    string // Temporal filtering: corpus state as of date
 }
 
 // NewDuckDBBackend creates a new DuckDB backend
@@ -57,6 +59,8 @@ func (d *DuckDBBackend) Initialize(ctx context.Context, config BackendConfig) er
 
 	d.db = db
 	d.parquetPath = config.ParquetPath
+	d.latestOnly = config.LatestOnly
+	d.asOfDate = config.AsOfDate
 	d.initialized = true
 
 	// Set DuckDB configuration for optimal Parquet reading
@@ -70,6 +74,13 @@ func (d *DuckDBBackend) Initialize(ctx context.Context, config BackendConfig) er
 		if _, err := d.db.ExecContext(ctx, stmt); err != nil {
 			// Non-fatal - continue if config fails
 			fmt.Printf("Warning: DuckDB config failed: %s\n", err)
+		}
+	}
+
+	// Create temporal filtering VIEW if enabled
+	if d.latestOnly {
+		if err := d.createTemporalView(ctx); err != nil {
+			return fmt.Errorf("failed to create temporal view: %w", err)
 		}
 	}
 
@@ -694,6 +705,67 @@ func (d *DuckDBBackend) Close() error {
 		d.initialized = false
 		return d.db.Close()
 	}
+	return nil
+}
+
+// createTemporalView creates a VIEW named udml_elements that applies temporal filtering
+// This ensures all MCP queries automatically get only the latest version of each document
+func (d *DuckDBBackend) createTemporalView(ctx context.Context) error {
+	// Build the base query with temporal deduplication
+	var viewSQL string
+
+	if d.latestOnly {
+		// Create a view that deduplicates by doc_id, selecting latest date partition
+		dateFilter := ""
+		if d.asOfDate != "" {
+			dateFilter = fmt.Sprintf("AND regexp_extract(filename, 'date=(\\d{4}-\\d{2}-\\d{2})', 1) <= '%s'", d.asOfDate)
+		}
+
+		viewSQL = fmt.Sprintf(`
+			CREATE OR REPLACE VIEW udml_elements AS
+			WITH ranked_elements AS (
+				SELECT
+					element_id, doc_id as document_id, source_name, element_type, element_category,
+					content, content_preview, content_hash, parent_id,
+					element_order, document_position, content_location, metadata,
+					regexp_extract(filename, 'date=(\d{4}-\d{2}-\d{2})', 1) as partition_date,
+					ROW_NUMBER() OVER (
+						PARTITION BY doc_id
+						ORDER BY regexp_extract(filename, 'date=(\d{4}-\d{2}-\d{2})', 1) DESC
+					) as row_num
+				FROM read_parquet('%s/elements/**/*.parquet', filename=true)
+				WHERE 1=1 %s
+			)
+			SELECT
+				element_id, document_id, source_name, element_type, element_category,
+				content, content_preview, content_hash, parent_id,
+				element_order, document_position, content_location, metadata
+			FROM ranked_elements
+			WHERE row_num = 1
+		`, d.parquetPath, dateFilter)
+	} else {
+		// No temporal filtering - simple passthrough view
+		viewSQL = fmt.Sprintf(`
+			CREATE OR REPLACE VIEW udml_elements AS
+			SELECT
+				element_id, doc_id as document_id, source_name, element_type, element_category,
+				content, content_preview, content_hash, parent_id,
+				element_order, document_position, content_location, metadata
+			FROM read_parquet('%s/elements/**/*.parquet', filename=true)
+		`, d.parquetPath)
+	}
+
+	// Execute the VIEW creation
+	if _, err := d.db.ExecContext(ctx, viewSQL); err != nil {
+		return fmt.Errorf("failed to create udml_elements view: %w", err)
+	}
+
+	if d.latestOnly {
+		fmt.Printf("DuckDB: Created temporal filtering view (latest_only=true, as_of_date=%s)\n", d.asOfDate)
+	} else {
+		fmt.Printf("DuckDB: Created standard view (no temporal filtering)\n")
+	}
+
 	return nil
 }
 

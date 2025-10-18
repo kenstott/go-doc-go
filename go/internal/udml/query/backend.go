@@ -52,6 +52,10 @@ type BackendConfig struct {
 	// Features
 	EnableSimilarity bool // Enable semantic similarity queries
 	EmbeddingModel   string
+
+	// Temporal filtering (for versioned/partitioned corpora)
+	LatestOnly bool   // If true, deduplicate by doc_id to return only latest version
+	AsOfDate   string // Return corpus state as of this date, format "YYYY-MM-DD"
 }
 
 // TranslateOptions controls how Expressions are translated to native queries
@@ -113,4 +117,48 @@ type RawQueryBackend interface {
 	// QueryRaw executes a raw SQL query and returns database/sql.Rows for streaming
 	// This is useful for large result sets that should not be loaded entirely into memory
 	QueryRaw(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error)
+}
+
+// NewQuerier creates a DuckDB backend for the given Parquet path with optional temporal filtering
+// This is a convenience function for MCP servers and other tools that need direct query access
+func NewQuerier(parquetPath string, options ...func(*BackendConfig)) (QueryBackend, error) {
+	// Build config with defaults
+	config := BackendConfig{
+		Type:        "duckdb",
+		ParquetPath: parquetPath,
+		LatestOnly:  true, // Default to latest-only for temporal filtering
+	}
+
+	// Apply option functions
+	for _, opt := range options {
+		opt(&config)
+	}
+
+	// Create DuckDB backend
+	backend, err := NewDuckDBBackend(config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize the backend
+	ctx := context.Background()
+	if err := backend.Initialize(ctx, config); err != nil {
+		return nil, err
+	}
+
+	return backend, nil
+}
+
+// WithLatestOnly enables temporal filtering to return only latest document versions
+func WithLatestOnly(enabled bool) func(*BackendConfig) {
+	return func(c *BackendConfig) {
+		c.LatestOnly = enabled
+	}
+}
+
+// WithAsOfDate sets the as-of-date for temporal filtering (format: YYYY-MM-DD)
+func WithAsOfDate(date string) func(*BackendConfig) {
+	return func(c *BackendConfig) {
+		c.AsOfDate = date
+	}
 }
