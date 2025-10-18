@@ -44,21 +44,31 @@ func NewSQLiteJobControl(config Config) (*SQLiteJobControl, error) {
 		config.MaxRetries = 3
 	}
 
+	// Resolve relative paths to absolute paths relative to cwd
+	dbPath := config.Path
+	if !filepath.IsAbs(dbPath) {
+		var err error
+		dbPath, err = filepath.Abs(dbPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve database path: %w", err)
+		}
+	}
+
 	// Ensure directory exists (but not the database file itself)
-	dir := filepath.Dir(config.Path)
+	dir := filepath.Dir(dbPath)
 	if dir != "." && dir != "/" {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory: %w", err)
 		}
 	}
 
-	// Remove if path exists as directory (common error)
-	if info, err := os.Stat(config.Path); err == nil && info.IsDir() {
-		return nil, fmt.Errorf("database path exists as directory: %s", config.Path)
+	// Check if path exists as directory (common error)
+	if info, err := os.Stat(dbPath); err == nil && info.IsDir() {
+		return nil, fmt.Errorf("database path exists as directory: %s", dbPath)
 	}
 
 	// Open database
-	db, err := sql.Open("sqlite3", config.Path+"?_busy_timeout=30000")
+	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=30000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -84,7 +94,7 @@ func NewSQLiteJobControl(config Config) (*SQLiteJobControl, error) {
 
 	jc := &SQLiteJobControl{
 		db:               db,
-		dbPath:           config.Path,
+		dbPath:           dbPath,
 		claimTimeout:     config.ClaimTimeout,
 		heartbeatInterval: config.HeartbeatInterval,
 		maxRetries:       config.MaxRetries,

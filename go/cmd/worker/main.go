@@ -484,11 +484,17 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	// Expand paths to be absolute (only for SQLite - PostgreSQL uses connection strings/URIs)
+	// Relative paths are resolved from the current working directory, not the config file location
 	backend := strings.ToLower(config.Processing.JobControl.Backend)
 	if backend == "" || backend == "sqlite" {
 		if !filepath.IsAbs(config.Processing.JobControl.Path) {
-			configDir := filepath.Dir(path)
-			config.Processing.JobControl.Path = filepath.Join(configDir, config.Processing.JobControl.Path)
+			// Get current working directory
+			cwd, err := os.Getwd()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get current working directory: %w", err)
+			}
+			// Resolve relative path from current working directory
+			config.Processing.JobControl.Path = filepath.Join(cwd, config.Processing.JobControl.Path)
 		}
 	}
 
