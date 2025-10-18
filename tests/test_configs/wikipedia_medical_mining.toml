@@ -57,7 +57,7 @@ min_interval_minutes = 1
 [ontology]
 enabled = false
 schema_path = "./schemas"
-diversity_threshold = 0.0001
+diversity_threshold = 0.85
 queue_idle_trigger_minutes = 0
 
 # Processing configuration
@@ -68,7 +68,7 @@ timeout_seconds = 300
 
 [processing.job_control]
 backend = "sqlite"
-path = "./tests/test_output/wikipedia_medical_mining_test.db"
+path = "../tests/test_output/wikipedia_medical_mining_test.db"
 claim_timeout = 300
 heartbeat_interval = 30
 max_retries = 3
@@ -79,8 +79,8 @@ enabled = true
 
 [[analytics.outputs]]
 type = "parquet"
-path = "./tests/test_output/wikipedia_medical_mining_analytics"
+path = "../tests/test_output/wikipedia_medical_mining_analytics"
 
 [logging]
 level = "DEBUG"
-file = "./tests/test_output/wikipedia_medical_mining_test.log"
+file = "../tests/test_output/wikipedia_medical_mining_test.log"
