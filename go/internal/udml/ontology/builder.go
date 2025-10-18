@@ -13,7 +13,6 @@ import (
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology/mcp"
-	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/query"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/sampler"
 	"gopkg.in/yaml.v3"
 )
@@ -23,9 +22,9 @@ type OntologyBuilder struct {
 	sampler          *sampler.Sampler
 	llmClient        LLMClient
 	config           BuilderConfig
-	substantiveTypes []string                  // Element types discovered from corpus
+	substantiveTypes []string                    // Element types discovered from corpus
 	mcpServer        *mcp.OntologyCorpusExplorer // Optional: MCP server for LLM corpus exploration
-	queryBackend     query.QueryBackend         // Query backend for MCP server
+	mcpStorage       analytics.Storage           // Storage backend for MCP server
 }
 
 // BuilderConfig configures the ontology building process
@@ -206,27 +205,19 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 
 	// Create MCP server if enabled
 	var mcpServer *mcp.OntologyCorpusExplorer
-	var queryBackend query.QueryBackend
+	var mcpStorage analytics.Storage
 
 	if config.EnableMCP {
 		fmt.Println("✓ MCP enabled - creating corpus exploration server...")
 
-		// Create query backend for MCP server
-		backendConfig := query.BackendConfig{
-			Type:        "duckdb",
-			ParquetPath: config.ParquetPath,
+		// Create analytics storage for MCP server (supports temporal filtering via filters parameter)
+		storageConfig := map[string]interface{}{
+			"path": config.ParquetPath,
 		}
 
-		queryBackend, err = query.NewDuckDBBackend(backendConfig)
+		mcpStorage, err = analytics.NewHiveParquetStorage(storageConfig)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create query backend for MCP: %w", err)
-		}
-
-		// Initialize backend
-		ctx := context.Background()
-		if err := queryBackend.Initialize(ctx, backendConfig); err != nil {
-			queryBackend.Close()
-			return nil, fmt.Errorf("failed to initialize query backend for MCP: %w", err)
+			return nil, fmt.Errorf("failed to create storage for MCP: %w", err)
 		}
 
 		// Create embedding generator for semantic search
@@ -237,14 +228,14 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 		}
 		embGenerator, err := embeddings.CreateEmbeddingGenerator(embConfig)
 		if err != nil {
-			queryBackend.Close()
+			mcpStorage.Close()
 			return nil, fmt.Errorf("failed to create embedding generator for MCP: %w", err)
 		}
 
 		// Create MCP server
-		mcpServer, err = mcp.NewOntologyCorpusExplorer(queryBackend, embGenerator)
+		mcpServer, err = mcp.NewOntologyCorpusExplorer(mcpStorage, embGenerator)
 		if err != nil {
-			queryBackend.Close()
+			mcpStorage.Close()
 			return nil, fmt.Errorf("failed to create MCP server: %w", err)
 		}
 
@@ -265,7 +256,7 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 		config:           config,
 		substantiveTypes: substantiveTypes,
 		mcpServer:        mcpServer,
-		queryBackend:     queryBackend,
+		mcpStorage:       mcpStorage,
 	}, nil
 }
 
@@ -1382,10 +1373,10 @@ func (b *OntologyBuilder) Close() error {
 		}
 	}
 
-	// Close query backend (which closes MCP server)
-	if b.queryBackend != nil {
-		if err := b.queryBackend.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("query backend close error: %w", err))
+	// Close MCP storage backend
+	if b.mcpStorage != nil {
+		if err := b.mcpStorage.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("MCP storage close error: %w", err))
 		}
 	}
 
