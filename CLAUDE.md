@@ -5,6 +5,83 @@ Go-Doc-Go is a comprehensive document parsing and analysis system written in **G
 
 **Language:** Go
 
+---
+
+## ⚠️ MANDATORY VERIFICATION CHECKLIST ⚠️
+
+**READ THIS BEFORE ANY ACTION** - These checks prevent the most common errors.
+
+### 🔴 CREATING Files or Directories
+
+**STOP. Verify location rules:**
+
+| File Type | MUST go in | NEVER in |
+|-----------|-----------|----------|
+| Compiled binaries | `<project-root>/bin/` | `go/bin/`, `cmd/*/`, anywhere else |
+| Test configs | `<project-root>/tests/test_configs/` | `/tmp`, `go/tests/`, `go/` |
+| Test outputs | `<project-root>/tests/test_output/` | `/tmp`, `go/tests/`, `go/` |
+| Source code (.go files) | `<project-root>/go/` | Anywhere is fine if in `go/` |
+| Anything else | **NOT in `go/`** | `go/` is CODE ONLY |
+
+**Verification command:**
+```bash
+pwd  # Where am I running from?
+# If in go/ directory and creating files outside go/, use ../ prefix
+# Example: ../bin/goworker, ../tests/test_output/results.json
+```
+
+### 🔴 REPORTING File Locations
+
+**STOP. Verify before claiming:**
+
+```bash
+# NEVER report assumed locations - ALWAYS verify
+ls -la <path> || find . -name "<filename>" | head -5
+```
+
+**Rule:** If you haven't run `ls` or `find`, don't claim a file exists or is in a location.
+
+### 🔴 MODIFYING Parser/Component Code
+
+**STOP. Check downstream integration:**
+
+```bash
+# Who consumes this component's output?
+grep -rn "ElementType\|ComponentName" internal/worker/ internal/*/
+
+# Do the contracts match?
+# Example: If parser outputs "hyperlink", worker must check for "hyperlink" (not "link")
+```
+
+**Rule:** When changing data formats, types, or field names, verify ALL consumers expect the new format.
+
+### 🔴 CLEANUP Operations
+
+**STOP. Search systematically:**
+
+```bash
+# Don't assume - search for ALL matching files
+find <dir> -type f -name "*test*" -o -name "*.log" -o -name "*.db" | head -20
+find <dir> -type d -name "*test*"
+```
+
+**Rule:** Use `find` to discover all targets. List what will be removed. Then remove. Then verify with `find` again.
+
+### 🔴 RELATIVE Path Configurations
+
+**STOP. Consider working directory:**
+
+```bash
+pwd  # What directory do programs run from?
+# If config has path = "./tests/output" but program runs from go/
+# Then path resolves to go/tests/output (WRONG)
+# Use path = "../tests/output" instead
+```
+
+**Rule:** When setting paths in config files, consider where the binary will run from.
+
+---
+
 ## Go Development Standards
 
 ### Code Organization
