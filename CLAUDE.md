@@ -11,6 +11,12 @@ Go-Doc-Go is a comprehensive document parsing and analysis system written in **G
 
 **READ THIS BEFORE ANY ACTION** - These checks prevent the most common errors.
 
+### Feedback Rules
+- Be concise and direct in all responses
+- No enthusiastic affirmations or verbose summaries
+- State what was done, what the result is, nothing more
+
+
 ### 🔴 CREATING Files or Directories
 
 **STOP. Verify location rules:**

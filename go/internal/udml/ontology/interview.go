@@ -199,54 +199,43 @@ func (ib *InterviewBuilderV2) phaseDomainSelection(ctx context.Context) error {
 		domainListFormatted.WriteString(fmt.Sprintf("  • **%s**: %s\n", name, desc))
 	}
 
-	prompt := fmt.Sprintf(`You MUST select domains from this CLOSED LIST ONLY. You are PROHIBITED from creating new domain names.
+	prompt := fmt.Sprintf(`Your task is to identify 3-5 domains that best describe this corpus.
 
-## MANDATORY DOMAIN SELECTION - CLOSED LIST
+## PREFERRED APPROACH: Use Predefined Catalog Domains
 
-**YOUR ONLY ALLOWED CHOICES:**
+**PREDEFINED CATALOG DOMAINS:**
 
 %s
 
-## STRICT REQUIREMENTS - NO EXCEPTIONS
+**IF catalog domains are a good match:**
+- Use the EXACT domain names from the catalog above
+- Do NOT modify or combine catalog names (e.g., "medical_healthcare" is WRONG - use "medical" OR "healthcare")
+- Prefer using multiple separate catalog domains over creating new ones
 
-**YOU MUST:**
-- ✓ Choose ONLY from the exact domain names listed above
-- ✓ Use the EXACT spelling shown (e.g., "medical" NOT "medical_healthcare")
-- ✓ Copy the domain name EXACTLY as written - no modifications
-- ✓ Select 1-5 domains that best match the corpus content
-
-**YOU ARE PROHIBITED FROM:**
-- ✗ Creating ANY new domain names not in the list above
-- ✗ Modifying domain names (no "medical_practice", "healthcare_delivery", etc.)
-- ✗ Combining domains into compound names (no "medical_and_healthcare")
-- ✗ Using variations, synonyms, or paraphrases of listed domains
-- ✗ Adding prefixes, suffixes, or underscores to listed domains
-
-**EXAMPLES OF PROHIBITED BEHAVIOR:**
-- ✗ "medical_healthcare" → WRONG - Use "medical" OR "healthcare"
-- ✗ "cognitive_psychology" → WRONG - Use "education" or omit if no match
-- ✗ "life_sciences_biology" → WRONG - Use "technical" or omit if no match
-- ✗ "financial_services" → WRONG - Use "financial" EXACTLY
+**IF catalog domains are inadequate:**
+- You MAY propose NEW domain names to better represent the corpus
+- New domains must follow naming rules:
+  * Single word, lowercase (e.g., "genomics", "aviation")
+  * OR snake_case for multi-word (e.g., "climate_science", "quantum_computing")
+  * Must be specific and well-defined (no generic names like "business", "general")
+  * Must NOT be variations of existing catalog domains
+  * Must NOT combine existing catalog domains (e.g., "medical_healthcare" is prohibited if catalog has "medical" and "healthcare")
 
 ## YOUR TASK
 
-Analyze these document samples and identify the TOP 3 MOST PROMINENT domains from the CLOSED LIST above.
-
-Focus on:
-- Domains with the highest concentration of content
-- Primary business/operational domains (not meta/infrastructure domains)
-- Domains that represent the core subject matter
+Analyze these document samples and identify the TOP 3-5 MOST PROMINENT domains:
 
 Sample texts:
 %s
 
-For each of the top 3 domains you detect:
-1. Name the domain
-2. Explain WHY with specific evidence (cite sample numbers)
-3. Rate confidence (0.0-1.0) based on evidence strength
-4. Suggest owner (team/department)
-5. List key concepts
-6. Estimate content coverage (what %% of corpus is this domain)
+For each domain you select or propose:
+1. **name**: Exact catalog name OR new proposed name (following rules above)
+2. **source**: "catalog" or "proposed_new"
+3. **reasoning**: Why this domain? Cite specific evidence from samples
+4. **confidence**: 0.0-1.0 based on evidence strength
+5. **suggested_owner**: Team/department who owns this domain
+6. **key_concepts**: List of key terms/concepts
+7. **estimated_coverage**: What %% of corpus belongs to this domain (0.0-1.0)
 
 Ask 2-3 clarifying questions to better understand the corpus and use case.
 
@@ -254,24 +243,38 @@ Return JSON:
 {
   "detected_domains": [
     {
-      "name": "financial",
-      "reasoning": "I see revenue, EBITDA, profit margins in samples 2, 5, 7",
+      "name": "healthcare",
+      "source": "catalog",
+      "reasoning": "I see medical procedures, patient care, hospital operations in samples 2, 5, 7",
       "confidence": 0.95,
-      "suggested_owner": "CFO Office",
-      "key_concepts": ["revenue", "profit", "EBITDA"],
+      "suggested_owner": "Medical Affairs Department",
+      "key_concepts": ["surgery", "patient care", "medical procedures"],
       "estimated_coverage": 0.45
+    },
+    {
+      "name": "genomics",
+      "source": "proposed_new",
+      "reasoning": "Samples 4, 8, 12 contain DNA sequencing, CRISPR, gene editing - not covered by existing catalog domains",
+      "confidence": 0.85,
+      "suggested_owner": "Genomics Research Team",
+      "key_concepts": ["DNA sequencing", "CRISPR", "gene editing"],
+      "estimated_coverage": 0.30
     }
   ],
   "clarifying_questions": [
     "What is the primary purpose of these documents?",
     "Who are the main consumers of this data?"
-  ]
+  ],
+  "catalog_adequacy": "partial",
+  "catalog_adequacy_explanation": "Catalog covers healthcare well, but genomics content requires a new domain"
 }
 
-IMPORTANT: Return ONLY the top 3 most prominent domains, ordered by estimated coverage (highest first).
+**DECISION CRITERIA:**
+- If catalog domains cover >80%% of content → use catalog domains only
+- If catalog domains cover 50-80%% → use catalog + propose new domains for gaps
+- If catalog domains cover <50%% → propose new domains as primary
 
-**CRITICAL VALIDATION BEFORE RESPONDING:**
-Before returning your response, verify EVERY domain name appears EXACTLY in the closed list above. If a domain name is NOT in the list, you MUST remove it from your response.`, domainListFormatted.String(), sampleTexts)
+IMPORTANT: Order domains by estimated coverage (highest first). Return 3-5 domains total.`, domainListFormatted.String(), sampleTexts)
 
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:    2000,
@@ -288,27 +291,78 @@ Before returning your response, verify EVERY domain name appears EXACTLY in the 
 	var result struct {
 		DetectedDomains []struct {
 			Name              string   `json:"name"`
+			Source            string   `json:"source"` // "catalog" or "proposed_new"
 			Reasoning         string   `json:"reasoning"`
 			Confidence        float64  `json:"confidence"`
 			SuggestedOwner    string   `json:"suggested_owner"`
 			KeyConcepts       []string `json:"key_concepts"`
 			EstimatedCoverage float64  `json:"estimated_coverage"`
 		} `json:"detected_domains"`
-		ClarifyingQuestions []string `json:"clarifying_questions"`
+		ClarifyingQuestions      []string `json:"clarifying_questions"`
+		CatalogAdequacy          string   `json:"catalog_adequacy"`
+		CatalogAdequacyExplanation string `json:"catalog_adequacy_explanation"`
 	}
 
 	if err := ib.builder.extractJSON(response, &result); err != nil {
 		return err
 	}
 
+	// Validate proposed new domains
+	catalogDomains := make([]string, 0)
+	proposedDomains := make([]string, 0)
+
+	for _, domain := range result.DetectedDomains {
+		if domain.Source == "proposed_new" {
+			// Validate the proposed domain name
+			if err := validateProposedDomainName(domain.Name, predefinedDomains); err != nil {
+				fmt.Printf("⚠️  WARNING: Rejected proposed domain '%s': %v\n", domain.Name, err)
+				fmt.Println("    This domain will be excluded from the final selection.\n")
+				continue
+			}
+			proposedDomains = append(proposedDomains, domain.Name)
+		} else {
+			// Verify catalog domain exists
+			if _, exists := predefinedDomains[domain.Name]; !exists {
+				fmt.Printf("⚠️  WARNING: Domain '%s' marked as 'catalog' but not found in catalog\n", domain.Name)
+				fmt.Println("    This domain will be excluded from the final selection.\n")
+				continue
+			}
+			catalogDomains = append(catalogDomains, domain.Name)
+		}
+	}
+
 	// Show LLM's analysis
-	fmt.Println("🤖 LLM Analysis - Top 3 Domains:")
+	fmt.Println("🤖 LLM Analysis - Domain Selection:")
 	fmt.Println(strings.Repeat("-", 80))
-	for i, domain := range result.DetectedDomains {
-		fmt.Printf("\n  %d. %s (confidence: %.2f, coverage: %.0f%%)\n", i+1, domain.Name, domain.Confidence, domain.EstimatedCoverage*100)
-		fmt.Printf("     Reasoning: %s\n", domain.Reasoning)
-		fmt.Printf("     Suggested Owner: %s\n", domain.SuggestedOwner)
-		fmt.Printf("     Key Concepts: %v\n", domain.KeyConcepts)
+	fmt.Printf("Catalog Adequacy: %s\n", result.CatalogAdequacy)
+	fmt.Printf("Explanation: %s\n\n", result.CatalogAdequacyExplanation)
+
+	if len(catalogDomains) > 0 {
+		fmt.Printf("CATALOG DOMAINS (%d):\n", len(catalogDomains))
+		for i, domain := range result.DetectedDomains {
+			if domain.Source == "catalog" {
+				if _, exists := predefinedDomains[domain.Name]; exists {
+					fmt.Printf("  %d. %s (confidence: %.2f, coverage: %.0f%%)\n", i+1, domain.Name, domain.Confidence, domain.EstimatedCoverage*100)
+					fmt.Printf("     Reasoning: %s\n", domain.Reasoning)
+					fmt.Printf("     Suggested Owner: %s\n", domain.SuggestedOwner)
+					fmt.Printf("     Key Concepts: %v\n\n", domain.KeyConcepts)
+				}
+			}
+		}
+	}
+
+	if len(proposedDomains) > 0 {
+		fmt.Printf("PROPOSED NEW DOMAINS (%d):\n", len(proposedDomains))
+		for i, domain := range result.DetectedDomains {
+			if domain.Source == "proposed_new" {
+				if validateProposedDomainName(domain.Name, predefinedDomains) == nil {
+					fmt.Printf("  %d. %s (confidence: %.2f, coverage: %.0f%%)\n", i+1, domain.Name, domain.Confidence, domain.EstimatedCoverage*100)
+					fmt.Printf("     Reasoning: %s\n", domain.Reasoning)
+					fmt.Printf("     Suggested Owner: %s\n", domain.SuggestedOwner)
+					fmt.Printf("     Key Concepts: %v\n\n", domain.KeyConcepts)
+				}
+			}
+		}
 	}
 	fmt.Println()
 
@@ -336,7 +390,19 @@ Before returning your response, verify EVERY domain name appears EXACTLY in the 
 	}
 
 	// LLM finalizes domains based on user answers
-	refinementPrompt := fmt.Sprintf(`Based on user answers, finalize domain selection.
+	// Extract exact detected domain names to enforce in refinement
+	detectedNames := make([]string, len(result.DetectedDomains))
+	for i, d := range result.DetectedDomains {
+		detectedNames[i] = d.Name
+	}
+
+	refinementPrompt := fmt.Sprintf(`Based on user answers, finalize domain selection by providing descriptions and owners.
+
+**CRITICAL CONSTRAINT - DO NOT MODIFY DOMAIN NAMES:**
+You MUST use ONLY these exact domain names: %v
+
+Do NOT create new names. Do NOT combine domains. Do NOT modify these names in ANY way.
+You may ONLY add descriptions, owners, and key concepts for these exact names.
 
 Initial analysis:
 %s
@@ -344,7 +410,7 @@ Initial analysis:
 User answers:
 %s
 
-Return final domains as JSON array:
+Return final domains as JSON array using ONLY the exact names from the constraint above:
 [
   {
     "name": "financial",
@@ -352,7 +418,10 @@ Return final domains as JSON array:
     "owner": "CFO Office",
     "key_concepts": ["revenue", "profit", "EBITDA"]
   }
-]`, formatDetectedDomainsV2(result.DetectedDomains), formatUserAnswersV2(result.ClarifyingQuestions, userAnswers))
+]
+
+VALIDATION REQUIREMENT: Before responding, verify EVERY "name" field is EXACTLY one of: %v
+If you create ANY other name, the response will be rejected.`, detectedNames, formatDetectedDomainsV2(result.DetectedDomains), formatUserAnswersV2(result.ClarifyingQuestions, userAnswers), detectedNames)
 
 	finalResponse, err := ib.builder.llmClient.Complete(ctx, refinementPrompt, LLMOptions{
 		MaxTokens:    1500,
@@ -368,163 +437,6 @@ Return final domains as JSON array:
 	var domains []Domain
 	if err := ib.builder.extractJSON(finalResponse, &domains); err != nil {
 		return err
-	}
-
-	// HYBRID MODE: Check coverage and allow LLM to propose new domains if needed
-	totalCoverage := 0.0
-	for _, detected := range result.DetectedDomains {
-		totalCoverage += detected.EstimatedCoverage
-	}
-
-	const coverageThreshold = 0.5
-	if totalCoverage < coverageThreshold {
-		fmt.Printf("\n⚠️  Catalog coverage only %.0f%% - insufficient (threshold: %.0f%%)\n", totalCoverage*100, coverageThreshold*100)
-		fmt.Println("🤖 LLM will now propose NEW domains to fill gaps...\n")
-
-		// Secondary prompt: Allow LLM to propose new domains with validation rules
-		proposalPrompt := fmt.Sprintf(`The predefined domain catalog does not adequately cover this corpus (only %.0f%% coverage).
-You may now propose NEW domain names to fill the gaps.
-
-## VALIDATION RULES FOR NEW DOMAINS
-
-**REQUIRED FORMAT:**
-- Single word, lowercase (e.g., "genomics", "aviation")
-- OR snake_case for multi-word concepts (e.g., "climate_science", "quantum_computing")
-
-**PROHIBITED:**
-- ✗ Compound names combining existing domains (e.g., "medical_healthcare")
-- ✗ Generic/vague names (e.g., "business", "general", "other")
-- ✗ Variations of existing catalog domains (check list below)
-
-**EXISTING CATALOG DOMAINS (DO NOT DUPLICATE):**
-%s
-
-## CORPUS ANALYSIS
-
-Current catalog-based domains (%.0f%% coverage):
-%s
-
-Sample texts showing gaps:
-%s
-
-## YOUR TASK
-
-Propose 1-3 NEW domain names that:
-1. Cover content NOT addressed by existing catalog domains
-2. Follow naming rules above
-3. Are specific and well-defined
-4. Do NOT duplicate or restate existing domains
-
-For each proposed domain:
-- Justify why catalog is inadequate
-- Cite specific samples showing the gap
-- Estimate coverage of new domain
-
-Return JSON:
-{
-  "proposed_domains": [
-    {
-      "name": "genomics",
-      "reasoning": "Samples 4, 8, 12 contain DNA sequencing, gene editing, CRISPR content not covered by existing 'medical' or 'science_research' domains",
-      "estimated_coverage": 0.25,
-      "suggested_owner": "Genomics Research Team",
-      "key_concepts": ["DNA sequencing", "gene editing", "CRISPR"]
-    }
-  ],
-  "validation_notes": "Verified 'genomics' not in catalog. Single-word, specific, covers unique content."
-}`, totalCoverage*100, formatPredefinedDomainsForValidation(predefinedDomains), totalCoverage*100, formatDetectedDomainsV2(result.DetectedDomains), sampleTexts)
-
-		proposalResponse, err := ib.builder.llmClient.Complete(ctx, proposalPrompt, LLMOptions{
-			MaxTokens:    2000,
-			Temperature:  0.3,
-			SystemPrompt: "You are an expert at domain modeling. Propose new domain names only when truly necessary, following strict validation rules.",
-		})
-		if err != nil {
-			return err
-		}
-		ib.llmCalls++
-		ib.tokens += len(proposalResponse)
-
-		var proposalResult struct {
-			ProposedDomains []struct {
-				Name              string   `json:"name"`
-				Reasoning         string   `json:"reasoning"`
-				EstimatedCoverage float64  `json:"estimated_coverage"`
-				SuggestedOwner    string   `json:"suggested_owner"`
-				KeyConcepts       []string `json:"key_concepts"`
-			} `json:"proposed_domains"`
-			ValidationNotes string `json:"validation_notes"`
-		}
-
-		if err := ib.builder.extractJSON(proposalResponse, &proposalResult); err != nil {
-			return fmt.Errorf("failed to parse proposed domains: %w", err)
-		}
-
-		// Validate proposed domains
-		validProposals := []struct {
-			Name              string   `json:"name"`
-			Reasoning         string   `json:"reasoning"`
-			EstimatedCoverage float64  `json:"estimated_coverage"`
-			SuggestedOwner    string   `json:"suggested_owner"`
-			KeyConcepts       []string `json:"key_concepts"`
-		}{}
-
-		for _, prop := range proposalResult.ProposedDomains {
-			if err := validateProposedDomainName(prop.Name, predefinedDomains); err != nil {
-				fmt.Printf("⚠️  Rejected proposed domain '%s': %v\n", prop.Name, err)
-				continue
-			}
-			validProposals = append(validProposals, prop)
-		}
-
-		if len(validProposals) == 0 {
-			fmt.Println("⚠️  No valid domain proposals. Proceeding with catalog domains only.\n")
-		} else {
-			// Show proposed domains
-			fmt.Println("🤖 LLM Proposed New Domains:")
-			fmt.Println(strings.Repeat("-", 80))
-			for i, prop := range validProposals {
-				fmt.Printf("\n  %d. %s (coverage: %.0f%%)\n", i+1, prop.Name, prop.EstimatedCoverage*100)
-				fmt.Printf("     Reasoning: %s\n", prop.Reasoning)
-				fmt.Printf("     Suggested Owner: %s\n", prop.SuggestedOwner)
-				fmt.Printf("     Key Concepts: %v\n", prop.KeyConcepts)
-			}
-			fmt.Println()
-
-			// Ask for user approval
-			var proposalApproval string
-			if ib.nonInteractive {
-				proposalApproval = "yes"
-				fmt.Print("❓ Approve these NEW domain proposals? (yes/no): yes [auto-approved]\n\n")
-			} else {
-				fmt.Print("❓ Approve these NEW domain proposals? (yes/no): ")
-				var err error
-				proposalApproval, err = ib.reader.ReadString('\n')
-				if err != nil {
-					return err
-				}
-			}
-
-			if strings.ToLower(strings.TrimSpace(proposalApproval)) == "yes" {
-				// Convert proposals to Domain objects and append
-				for _, prop := range validProposals {
-					// Generate description from reasoning
-					description := fmt.Sprintf("%s (NEW - not in catalog)", prop.Reasoning)
-					if len(description) > 200 {
-						description = description[:197] + "..."
-					}
-
-					domains = append(domains, Domain{
-						Name:        prop.Name,
-						Description: description,
-						Owner:       prop.SuggestedOwner,
-					})
-				}
-				fmt.Printf("  ✅ Added %d new domains\n\n", len(validProposals))
-			} else {
-				fmt.Println("  ❌ New domain proposals rejected. Using catalog domains only.\n")
-			}
-		}
 	}
 
 	// Show final domains and ask for confirmation
@@ -585,6 +497,7 @@ Apply changes and return updated domain list as JSON array.`, strings.TrimSpace(
 	ib.schema = &OntologySchema{
 		Name:                    ib.builder.config.SchemaName,
 		Version:                 ib.builder.config.SchemaVersion,
+		LLMModel:                ib.builder.config.LLMModel, // Preserve LLM model configuration
 		Domains:                 domains,
 		ElementEntityMappings:   []ElementEntityMapping{},
 		EntityRelationshipRules: []EntityRelationshipRule{},
@@ -1014,6 +927,7 @@ Return the COMPLETE updated schema as JSON.`, string(changesJSON), string(schema
 
 func formatDetectedDomainsV2(domains []struct {
 	Name              string   `json:"name"`
+	Source            string   `json:"source"`
 	Reasoning         string   `json:"reasoning"`
 	Confidence        float64  `json:"confidence"`
 	SuggestedOwner    string   `json:"suggested_owner"`
@@ -1022,8 +936,12 @@ func formatDetectedDomainsV2(domains []struct {
 }) string {
 	var result []string
 	for _, d := range domains {
-		result = append(result, fmt.Sprintf("- %s (confidence: %.2f, coverage: %.0f%%): %s | Owner: %s",
-			d.Name, d.Confidence, d.EstimatedCoverage*100, d.Reasoning, d.SuggestedOwner))
+		sourceLabel := ""
+		if d.Source == "proposed_new" {
+			sourceLabel = " [NEW]"
+		}
+		result = append(result, fmt.Sprintf("- %s%s (confidence: %.2f, coverage: %.0f%%): %s | Owner: %s",
+			d.Name, sourceLabel, d.Confidence, d.EstimatedCoverage*100, d.Reasoning, d.SuggestedOwner))
 	}
 	return strings.Join(result, "\n")
 }

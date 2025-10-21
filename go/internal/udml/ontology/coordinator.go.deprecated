@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -266,9 +267,36 @@ func (c *ExtractionCoordinator) runWorkerPool(ctx context.Context, numWorkers in
 	return nil
 }
 
+// StorageBackedContentResolver wraps a ContentResolver and provides access to Storage for embeddings
+type StorageBackedContentResolver struct {
+	ContentResolver
+	storage analytics.Storage
+}
+
+// GetStorage returns the underlying Storage for embedding resolution
+func (s *StorageBackedContentResolver) GetStorage() interface{} {
+	return s.storage
+}
+
 // runWorker is the main worker loop - claims and processes tasks until none remain
 func (c *ExtractionCoordinator) runWorker(ctx context.Context, workerID string, taskType ExtractionTaskType) error {
-	extractor := NewRuleBasedExtractor(c.schema, c.contentResolver)
+	// Wrap content resolver to provide Storage access for embedding resolution
+	wrappedResolver := &StorageBackedContentResolver{
+		ContentResolver: c.contentResolver,
+		storage:         c.storage,
+	}
+
+	extractor := NewRuleBasedExtractor(c.schema, wrappedResolver)
+
+	// Initialize embedding resolver for semantic filtering
+	embeddingResolver, err := NewEmbeddingResolver(ctx, c.storage)
+	if err != nil {
+		log.Printf("[%s] WARNING: Failed to initialize embedding resolver: %v", workerID, err)
+		log.Printf("[%s] Semantic filters will be DISABLED", workerID)
+	} else {
+		extractor.SetEmbeddingResolver(embeddingResolver)
+		log.Printf("[%s] ✓ Embedding resolver initialized for semantic filtering", workerID)
+	}
 
 	for {
 		// Check context cancellation
@@ -327,7 +355,7 @@ func (c *ExtractionCoordinator) processTask(ctx context.Context, task *Extractio
 		}
 
 		// Extract entities from ALL mappings for this entity type
-		entityMap := make(map[string]*Entity) // Deduplicate by name
+		entityMap := make(map[string]*Entity) // Deduplicate by <type>.<name> (case-insensitive)
 		var entityType string
 
 		for _, mappingIndex := range mappingIndices {
@@ -337,29 +365,43 @@ func (c *ExtractionCoordinator) processTask(ctx context.Context, task *Extractio
 			// Filter elements by type for this mapping
 			relevantElements := extractor.filterElementsByType(c.elements, mapping.ElementTypes)
 
-			// Extract entities for each rule in this mapping
-			for _, rule := range mapping.ExtractionRules {
-				entities, err := extractor.applyExtractionRule(ctx, mapping, rule, relevantElements)
-				if err != nil {
-					return nil, fmt.Errorf("failed to apply extraction rule: %w", err)
-				}
+			// Process each element with rules in order (early stopping)
+			for _, elem := range relevantElements {
+				// Try rules in order until first match
+				for _, rule := range mapping.ExtractionRules {
+					entity := extractor.tryExtractWithRule(ctx, mapping, rule, elem)
 
-				// Deduplicate by name - keep highest confidence entity
-				for _, entity := range entities {
-					if existing, ok := entityMap[entity.Name]; ok {
-						// Replace with higher confidence entity
-						if entity.Confidence > existing.Confidence {
-							// Keep all mentions from both
-							entity.Mentions = append(entity.Mentions, existing.Mentions...)
-							entityCopy := entity
-							entityMap[entity.Name] = &entityCopy
+					if entity != nil {
+						// Match found - add to deduplication map
+						dedupKey := strings.ToLower(string(entity.Type) + "." + entity.Name)
+
+						if existing, ok := entityMap[dedupKey]; ok {
+							// Replace with higher confidence entity
+							if entity.Confidence > existing.Confidence {
+								entity.Mentions = append(entity.Mentions, existing.Mentions...)
+								entityCopy := *entity
+								entityMap[dedupKey] = &entityCopy
+							} else if entity.Confidence == existing.Confidence {
+								// Same confidence - prefer canonical form
+								if extractor.isMoreCanonical(entity.Name, existing.Name) {
+									entity.Mentions = append(entity.Mentions, existing.Mentions...)
+									entityCopy := *entity
+									entityMap[dedupKey] = &entityCopy
+								} else {
+									// Keep existing, merge mentions
+									existing.Mentions = append(existing.Mentions, entity.Mentions...)
+								}
+							} else {
+								// Keep existing (higher confidence), merge mentions
+								existing.Mentions = append(existing.Mentions, entity.Mentions...)
+							}
 						} else {
-							// Keep existing, merge mentions
-							existing.Mentions = append(existing.Mentions, entity.Mentions...)
+							entityCopy := *entity
+							entityMap[dedupKey] = &entityCopy
 						}
-					} else {
-						entityCopy := entity
-						entityMap[entity.Name] = &entityCopy
+
+						// EARLY STOP - don't try remaining rules for this element
+						break
 					}
 				}
 			}

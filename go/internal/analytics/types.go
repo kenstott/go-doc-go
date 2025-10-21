@@ -87,6 +87,7 @@ type OntologyEntity struct {
 	Confidence  float64                `json:"confidence"`   // Extraction confidence (0.0-1.0)
 	Attributes  map[string]interface{} `json:"attributes"`   // Entity properties
 	ElementID   string                 `json:"element_id"`   // Source UDML element
+	RunID       string                 `json:"run_id"`       // Extraction run ID (for versioning)
 	ExtractedAt time.Time              `json:"extracted_at"` // Extraction timestamp
 }
 
@@ -103,6 +104,7 @@ type OntologyRelationship struct {
 	Evidence         string                 `json:"evidence"`          // Supporting text
 	Attributes       map[string]interface{} `json:"attributes"`        // Relationship properties
 	ElementID        string                 `json:"element_id"`        // Source UDML element
+	RunID            string                 `json:"run_id"`            // Extraction run ID (for versioning)
 	ExtractedAt      time.Time              `json:"extracted_at"`      // Extraction timestamp
 }
 
@@ -117,6 +119,32 @@ type OntologyMention struct {
 	StartPosition int       `json:"start_position"` // Character offset start
 	EndPosition   int       `json:"end_position"`   // Character offset end
 	ExtractedAt   time.Time `json:"extracted_at"`   // Extraction timestamp
+}
+
+// CanonicalEntity represents a deduplicated entity resolved from raw extractions
+// Multiple extraction strategies can generate different canonical entity sets from the same raw data
+type CanonicalEntity struct {
+	EntityID     string                 `json:"entity_id"`      // Stable ID from SHA256(entity_type.entity_name)
+	EntityName   string                 `json:"entity_name"`    // Canonical entity name
+	EntityType   string                 `json:"entity_type"`    // person/organization/location/etc
+	Domain       string                 `json:"domain"`         // Domain ownership
+	Confidence   float64                `json:"confidence"`     // Maximum confidence from raw extractions
+	MentionCount int                    `json:"mention_count"`  // Number of raw extractions
+	Strategy     string                 `json:"strategy"`       // Resolution strategy (e.g., "max_confidence")
+	Attributes   map[string]interface{} `json:"attributes"`     // Consolidated attributes
+	RunID        string                 `json:"run_id"`         // Extraction run ID
+	CreatedAt    time.Time              `json:"created_at"`     // Consolidation timestamp
+}
+
+// LLMValidationResult tracks LLM-based false positive validation results
+type LLMValidationResult struct {
+	EntityID         string    `json:"entity_id"`          // Entity ID
+	EntityName       string    `json:"entity_name"`        // Entity name that was validated
+	EntityType       string    `json:"entity_type"`        // Entity type
+	ValidationPrompt string    `json:"validation_prompt"`  // LLM prompt used
+	LLMResponse      bool      `json:"llm_response"`       // true = valid, false = rejected as false positive
+	RunID            string    `json:"run_id"`             // Extraction run ID
+	ValidatedAt      time.Time `json:"validated_at"`       // Validation timestamp
 }
 
 // ============================================================================
@@ -209,6 +237,73 @@ type Storage interface {
 
 	// Content resolution for samplers/query engines
 	GetContentResolver() interface{}
+
+	// ========================================================================
+	// Ontology Extraction Methods - SQL-based extraction for billion-scale datasets
+	// ========================================================================
+
+	// GetAllDocIDs returns all unique document IDs in the corpus
+	// Used for distributed extraction task batching
+	// filters: Optional filters (source_name, latest_only, as_of_date, etc.)
+	GetAllDocIDs(filters map[string]interface{}) ([]string, error)
+
+	// ExtractEntitiesSQL executes ontology entity extraction entirely within the database layer
+	// Uses SQL queries with pattern matching, regex, and semantic similarity (vector search)
+	// Returns extracted entities without loading all elements into memory
+	//
+	// Parameters:
+	//   - schemaJSON: JSON-encoded ontology schema (avoids circular dependency on ontology package)
+	//   - filters: Standard filters plus:
+	//       - "has_embedding" (bool): Only process leaf elements (elements with embeddings)
+	//       - "batch_size" (int): Process in batches for streaming (default: 10000)
+	//       - "max_entities" (int): Early stopping for testing (optional)
+	//       - Plus standard filters: doc_id, source_name, element_type, etc.
+	//   - conceptEmbeddings: Pre-computed embeddings for reference texts/concepts (key: text, value: embedding vector)
+	//
+	// Returns: JSON-encoded array of extracted entities
+	ExtractEntitiesSQL(schemaJSON []byte, filters map[string]interface{}, conceptEmbeddings map[string][]float64) ([]byte, error)
+
+	// ExtractRelationshipsSQL executes relationship extraction within database layer
+	// Parameters similar to ExtractEntitiesSQL
+	// Returns: JSON-encoded array of extracted relationships
+	ExtractRelationshipsSQL(schemaJSON []byte, entitiesJSON []byte, filters map[string]interface{}) ([]byte, error)
+
+	// ExtractAndStoreEntities executes entity extraction for a batch of documents
+	// and writes results directly to Parquet storage (streaming, O(1) memory).
+	// This is the distributed extraction method used by workers.
+	//
+	// Parameters:
+	//   - runID: Extraction run ID for versioning/tracking
+	//   - entityType: Entity type being extracted (person/organization/location/etc)
+	//   - docIDs: Batch of document IDs to process
+	//   - mappingJSON: JSON-encoded ElementEntityMapping for this entity type
+	//   - filters: Optional filters (can include max_entities for early stopping)
+	//   - conceptEmbeddings: Pre-computed embeddings for semantic rules
+	//
+	// Returns: (entityCount, error)
+	//   - entityCount: Number of entities extracted and stored
+	//   - error: Error if extraction or storage fails
+	ExtractAndStoreEntities(
+		runID string,
+		entityType string,
+		docIDs []string,
+		mappingJSON []byte,
+		filters map[string]interface{},
+		conceptEmbeddings map[string][]float64,
+	) (int, error)
+
+	// ConsolidateEntities performs global entity resolution on raw extractions
+	// Creates canonical entities by deduplicating raw extractions using entity_type.entity_name
+	// This is run once by the leader worker after all extraction tasks complete.
+	//
+	// Parameters:
+	//   - runID: Extraction run ID to consolidate
+	//   - strategy: Resolution strategy ("max_confidence", "most_mentions", "composite")
+	//   - llmClient: LLM client for false positive validation (optional - can be nil)
+	//                Must implement ontology.LLMClient interface if provided
+	//
+	// Returns error if consolidation or storage fails
+	ConsolidateEntities(runID string, strategy string, llmClient interface{}) error
 
 	// ========================================================================
 	// Corpus Exploration Methods - for MCP server and interactive tools

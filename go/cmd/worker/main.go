@@ -20,6 +20,32 @@ import (
 	"github.com/kennethstott/doculyzer-go-conversion/internal/worker"
 )
 
+// DiscoveryConfig represents unified discovery/crawling configuration
+type DiscoveryConfig struct {
+	Enabled         bool     `toml:"enabled"`
+	MaxDepth        int      `toml:"max_depth"`
+	IncludePatterns []string `toml:"include_patterns"`
+	ExcludePatterns []string `toml:"exclude_patterns"`
+	Hyperlinks      *HyperlinkDiscoveryConfig      `toml:"hyperlinks"`
+	CodeDependencies *CodeDependencyDiscoveryConfig `toml:"code_dependencies"`
+}
+
+// HyperlinkDiscoveryConfig controls hyperlink crawling behavior
+type HyperlinkDiscoveryConfig struct {
+	Enabled             bool `toml:"enabled"`
+	MaxDepth            *int `toml:"max_depth"` // nil = use parent config
+	SkipExternalDomains bool `toml:"skip_external_domains"`
+}
+
+// CodeDependencyDiscoveryConfig controls code import/dependency crawling
+type CodeDependencyDiscoveryConfig struct {
+	Enabled        bool `toml:"enabled"`
+	MaxDepth       *int `toml:"max_depth"` // nil = use parent config
+	FollowStdlib   bool `toml:"follow_stdlib"`
+	FollowLocal    bool `toml:"follow_local"`
+	FollowExternal bool `toml:"follow_external"`
+}
+
 // Config represents the TOML configuration structure
 type Config struct {
 	Processing struct {

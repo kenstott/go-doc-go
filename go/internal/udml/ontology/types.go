@@ -56,6 +56,8 @@ type OntologySchema struct {
 	Name                    string                    `json:"name" yaml:"name"`                                                     // Schema name
 	Version                 string                    `json:"version" yaml:"version"`                                               // Schema version
 	Description             string                    `json:"description" yaml:"description"`                                       // Schema description
+	LLMModel                string                    `json:"llm_model,omitempty" yaml:"llm_model,omitempty"`                       // Default LLM model for all LLM operations (required for LLM features)
+	LLMValidationModel      string                    `json:"llm_validation_model,omitempty" yaml:"llm_validation_model,omitempty"` // LLM model for validation (optional, falls back to llm_model)
 	Domain                  string                    `json:"domain" yaml:"domain"`                                                 // Primary domain (deprecated, use Domains)
 	Domains                 []Domain                  `json:"domains" yaml:"domains"`                                               // Domain registry (multi-domain support)
 	DocumentTypes           []string                  `json:"document_types,omitempty" yaml:"document_types,omitempty"`             // Applicable document types
@@ -99,8 +101,28 @@ const (
 
 // SemanticFilter validates entity matches using element-level semantic similarity
 type SemanticFilter struct {
-	ReferenceConcepts   []string `json:"reference_concepts" yaml:"reference_concepts"`       // Concepts to compare against
-	SimilarityThreshold float64  `json:"similarity_threshold" yaml:"similarity_threshold"` // Min similarity (0.0-1.0)
+	ReferenceText       string   `json:"reference_text,omitempty" yaml:"reference_text,omitempty"`          // Single reference text (alternative to reference_concepts)
+	ReferenceConcepts   []string `json:"reference_concepts,omitempty" yaml:"reference_concepts,omitempty"`   // Concepts to compare against (alternative to reference_text)
+	SimilarityThreshold float64  `json:"similarity_threshold" yaml:"similarity_threshold"`                  // Min similarity (0.0-1.0)
+}
+
+// DictionaryFilter validates entity matches using dictionary lookups (linguistic/semantic properties)
+type DictionaryFilter struct {
+	RequireUnknownWords        bool       `json:"require_unknown_words,omitempty" yaml:"require_unknown_words,omitempty"`               // At least one word NOT in dictionary (proper names)
+	MaxKnownWordsRatio         float64    `json:"max_known_words_ratio,omitempty" yaml:"max_known_words_ratio,omitempty"`               // Max ratio of words in dictionary (0.0-1.0)
+	RejectIfAllPOS             []string   `json:"reject_if_all_pos,omitempty" yaml:"reject_if_all_pos,omitempty"`                       // Reject if ALL words match these POS (e.g., ["noun"])
+	RejectIfAllCategories      []string   `json:"reject_if_all_categories,omitempty" yaml:"reject_if_all_categories,omitempty"`         // Reject if ALL words match these categories (e.g., ["place"])
+	RejectPOSCombinations      [][]string `json:"reject_pos_combinations,omitempty" yaml:"reject_pos_combinations,omitempty"`           // Reject specific POS sequences (e.g., [["noun","noun"]])
+	RejectCategoryCombinations [][]string `json:"reject_category_combinations,omitempty" yaml:"reject_category_combinations,omitempty"` // Reject category sequences (e.g., [["place","noun"]])
+}
+
+// WordNetFilter is deprecated, use DictionaryFilter instead (kept for backward compatibility)
+type WordNetFilter = DictionaryFilter
+
+// LLMValidationPrompt defines LLM-based validation for filtering false positives
+type LLMValidationPrompt struct {
+	Prompt    string `json:"prompt" yaml:"prompt"`                       // Validation question (e.g., "Is this a valid person name?")
+	BatchSize int    `json:"batch_size,omitempty" yaml:"batch_size,omitempty"` // Batch size for LLM API calls (default: 50)
 }
 
 // ExtractionRule defines a rule for extracting entities (binary match)
@@ -112,8 +134,10 @@ type ExtractionRule struct {
 	ReferenceText       string             `json:"reference_text,omitempty" yaml:"reference_text,omitempty"`      // Reference text for similarity (for text_similarity)
 	SimilarityThreshold float64            `json:"similarity_threshold,omitempty" yaml:"similarity_threshold,omitempty"` // Minimum similarity score (for text_similarity)
 	JSONPathExpr        string             `json:"jsonpath_expr,omitempty" yaml:"jsonpath_expr,omitempty"`        // JSONPath expression (for jsonpath_query)
-	InstanceName        string             `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`        // Optional regex with (?P<name>...) capture to extract entity instance name
-	SemanticFilter      *SemanticFilter    `json:"semantic_filter,omitempty" yaml:"semantic_filter,omitempty"`    // Optional semantic context validation (AND condition)
+	InstanceName           string                `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`        // Optional regex with (?P<name>...) capture to extract entity instance name
+	SemanticFilter         *SemanticFilter       `json:"semantic_filter,omitempty" yaml:"semantic_filter,omitempty"`    // Optional semantic context validation (AND condition)
+	DictionaryFilter       *DictionaryFilter     `json:"dictionary_filter,omitempty" yaml:"dictionary_filter,omitempty"` // Optional linguistic/dictionary validation (AND condition)
+	LLMFalsePositiveTest   *LLMValidationPrompt  `json:"llm_false_positive_test,omitempty" yaml:"llm_false_positive_test,omitempty"` // Optional LLM-based false positive filtering (applied during canonicalization)
 }
 
 // RelationshipExtractionPatternType defines types of relationship extraction patterns
@@ -533,4 +557,49 @@ func (e *ValidationError) Error() string {
 // NewValidationError creates a new validation error
 func NewValidationError(message string) error {
 	return &ValidationError{Message: message}
+}
+
+// ============================================================================
+// DISTRIBUTED EXTRACTION - Task coordination for billion-scale extraction
+// ============================================================================
+
+// ExtractionTaskType represents the type of extraction task
+type ExtractionTaskType string
+
+const (
+	TaskTypeEntityMapping      ExtractionTaskType = "entity_mapping"      // Entity extraction task
+	TaskTypeRelationshipRule   ExtractionTaskType = "relationship_rule"   // Relationship extraction task
+)
+
+// ExtractionTaskStatus represents the status of an extraction task
+type ExtractionTaskStatus string
+
+const (
+	TaskStatusPending   ExtractionTaskStatus = "pending"   // Waiting to be claimed
+	TaskStatusClaimed   ExtractionTaskStatus = "claimed"   // Claimed by a worker
+	TaskStatusCompleted ExtractionTaskStatus = "completed" // Successfully completed
+	TaskStatusFailed    ExtractionTaskStatus = "failed"    // Failed with error
+)
+
+// ExtractionTask represents a unit of work for distributed extraction
+type ExtractionTask struct {
+	ID               string               // Unique task ID
+	RunID            string               // Extraction run ID (for grouping)
+	Type             ExtractionTaskType   // Task type (entity or relationship)
+	EntityType       string               // For entity tasks: entity type to extract
+	RelationshipType string               // For relationship tasks: relationship type to extract
+	DocIDs           []string             // Batch of document IDs to process
+	Status           ExtractionTaskStatus // Current task status
+	ClaimedBy        string               // Worker ID that claimed the task
+	ClaimedAt        *time.Time           // When task was claimed
+	CompletedAt      *time.Time           // When task completed
+	Error            string               // Error message (if failed)
+	CreatedAt        time.Time            // Task creation time
+}
+
+// ExtractionTaskResult represents the result of a completed extraction task
+type ExtractionTaskResult struct {
+	EntitiesExtracted      int // Number of entities extracted
+	RelationshipsExtracted int // Number of relationships extracted
+	ElementsProcessed      int // Number of elements processed
 }

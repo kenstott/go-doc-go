@@ -34,6 +34,7 @@ func (s *HiveParquetStorage) writeOntologyEntitiesToParquet(partKey string, enti
 		{Name: "confidence", Type: arrow.PrimitiveTypes.Float64, Nullable: false},
 		{Name: "attributes", Type: arrow.BinaryTypes.String, Nullable: true}, // JSON
 		{Name: "element_id", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "run_id", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "extracted_at", Type: &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}, Nullable: false},
 	}
 	schema := arrow.NewSchema(fields, nil)
@@ -48,6 +49,7 @@ func (s *HiveParquetStorage) writeOntologyEntitiesToParquet(partKey string, enti
 	confidenceBuilder := array.NewFloat64Builder(s.allocator)
 	attributesBuilder := array.NewStringBuilder(s.allocator)
 	elementIDBuilder := array.NewStringBuilder(s.allocator)
+	runIDBuilder := array.NewStringBuilder(s.allocator)
 	extractedAtBuilder := array.NewTimestampBuilder(s.allocator, &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"})
 
 	defer entityIDBuilder.Release()
@@ -59,6 +61,7 @@ func (s *HiveParquetStorage) writeOntologyEntitiesToParquet(partKey string, enti
 	defer confidenceBuilder.Release()
 	defer attributesBuilder.Release()
 	defer elementIDBuilder.Release()
+	defer runIDBuilder.Release()
 	defer extractedAtBuilder.Release()
 
 	// Append data
@@ -85,6 +88,7 @@ func (s *HiveParquetStorage) writeOntologyEntitiesToParquet(partKey string, enti
 		}
 
 		elementIDBuilder.Append(entity.ElementID)
+		runIDBuilder.Append(entity.RunID)
 		extractedAtBuilder.Append(arrow.Timestamp(entity.ExtractedAt.UnixMicro()))
 	}
 
@@ -99,6 +103,7 @@ func (s *HiveParquetStorage) writeOntologyEntitiesToParquet(partKey string, enti
 		confidenceBuilder.NewArray(),
 		attributesBuilder.NewArray(),
 		elementIDBuilder.NewArray(),
+		runIDBuilder.NewArray(),
 		extractedAtBuilder.NewArray(),
 	}
 	defer func() {
@@ -138,6 +143,7 @@ func (s *HiveParquetStorage) writeOntologyRelationshipsToParquet(partKey string,
 		{Name: "evidence", Type: arrow.BinaryTypes.String, Nullable: true},
 		{Name: "attributes", Type: arrow.BinaryTypes.String, Nullable: true}, // JSON
 		{Name: "element_id", Type: arrow.BinaryTypes.String, Nullable: false},
+		{Name: "run_id", Type: arrow.BinaryTypes.String, Nullable: false},
 		{Name: "extracted_at", Type: &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"}, Nullable: false},
 	}
 	schema := arrow.NewSchema(fields, nil)
@@ -154,6 +160,7 @@ func (s *HiveParquetStorage) writeOntologyRelationshipsToParquet(partKey string,
 	evidenceBuilder := array.NewStringBuilder(s.allocator)
 	attributesBuilder := array.NewStringBuilder(s.allocator)
 	elementIDBuilder := array.NewStringBuilder(s.allocator)
+	runIDBuilder := array.NewStringBuilder(s.allocator)
 	extractedAtBuilder := array.NewTimestampBuilder(s.allocator, &arrow.TimestampType{Unit: arrow.Microsecond, TimeZone: "UTC"})
 
 	defer relationshipIDBuilder.Release()
@@ -167,6 +174,7 @@ func (s *HiveParquetStorage) writeOntologyRelationshipsToParquet(partKey string,
 	defer evidenceBuilder.Release()
 	defer attributesBuilder.Release()
 	defer elementIDBuilder.Release()
+	defer runIDBuilder.Release()
 	defer extractedAtBuilder.Release()
 
 	// Append data
@@ -200,6 +208,7 @@ func (s *HiveParquetStorage) writeOntologyRelationshipsToParquet(partKey string,
 		}
 
 		elementIDBuilder.Append(rel.ElementID)
+		runIDBuilder.Append(rel.RunID)
 		extractedAtBuilder.Append(arrow.Timestamp(rel.ExtractedAt.UnixMicro()))
 	}
 
@@ -216,6 +225,7 @@ func (s *HiveParquetStorage) writeOntologyRelationshipsToParquet(partKey string,
 		evidenceBuilder.NewArray(),
 		attributesBuilder.NewArray(),
 		elementIDBuilder.NewArray(),
+		runIDBuilder.NewArray(),
 		extractedAtBuilder.NewArray(),
 	}
 	defer func() {

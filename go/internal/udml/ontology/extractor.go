@@ -11,6 +11,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology/dictionary"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology/dictionary/providers"
 )
 
 // ContentResolver defines the interface for resolving content from content_location
@@ -20,13 +24,21 @@ type ContentResolver interface {
 
 // RuleBasedExtractor applies ontology schema rules to extract entities and relationships
 type RuleBasedExtractor struct {
-	schema          *OntologySchema
-	contentResolver ContentResolver
-	idCounter       uint64
+	schema             *OntologySchema
+	contentResolver    ContentResolver
+	embeddingResolver  *EmbeddingResolver         // For retrieving element embeddings
+	embeddingGenerator EmbeddingGenerator         // For generating concept embeddings
+	dictionary         *dictionary.UnifiedDictionary // For linguistic/semantic validation (dictionary lookups)
+	idCounter          uint64
 	// Performance optimization caches
 	contentCache map[string]string      // Cache resolved content by element_id
 	jsonDocCache map[string]interface{} // Cache reconstructed JSON documents by doc_id
 	cacheMu      sync.RWMutex           // Mutex for thread-safe cache access
+}
+
+// EmbeddingGenerator generates embedding vectors for text
+type EmbeddingGenerator interface {
+	GenerateEmbedding(text string) ([]float64, error)
 }
 
 // Element represents a minimal UDML element for extraction
@@ -43,12 +55,34 @@ type Element struct {
 
 // NewRuleBasedExtractor creates a new rule-based extractor with the given schema and content resolver
 func NewRuleBasedExtractor(schema *OntologySchema, contentResolver ContentResolver) *RuleBasedExtractor {
+	// Initialize unified dictionary with cache
+	cachePath := "../tests/test_output/dictionary_cache.db"
+	dict, err := dictionary.NewUnifiedDictionary(cachePath)
+	if err != nil {
+		log.Printf("WARNING: Failed to initialize dictionary cache: %v - continuing without cache", err)
+		dict = nil
+	} else {
+		// Add in-memory provider (highest priority - fast lookups)
+		dict.AddProvider(providers.NewInMemoryProvider())
+	}
+
 	return &RuleBasedExtractor{
 		schema:          schema,
 		contentResolver: contentResolver,
+		dictionary:      dict,
 		contentCache:    make(map[string]string),
 		jsonDocCache:    make(map[string]interface{}),
 	}
+}
+
+// SetEmbeddingGenerator sets the embedding generator for semantic filtering (concept embeddings)
+func (e *RuleBasedExtractor) SetEmbeddingGenerator(gen EmbeddingGenerator) {
+	e.embeddingGenerator = gen
+}
+
+// SetEmbeddingResolver sets the embedding resolver for retrieving element embeddings
+func (e *RuleBasedExtractor) SetEmbeddingResolver(resolver *EmbeddingResolver) {
+	e.embeddingResolver = resolver
 }
 
 // ExtractFromElements extracts entities and relationships from UDML elements
@@ -108,55 +142,55 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 	log.Printf("DEBUG: Starting entity extraction with %d entity mappings", len(e.schema.ElementEntityMappings))
 
 	// Process each entity mapping in the schema
-	for i, mapping := range e.schema.ElementEntityMappings {
+	for _, mapping := range e.schema.ElementEntityMappings {
 		// Filter elements by type
 		relevantElements := e.filterElementsByType(elements, mapping.ElementTypes)
-		log.Printf("DEBUG: Mapping %d (%s) targeting %v: filtered %d/%d elements",
-			i, mapping.EntityType, mapping.ElementTypes, len(relevantElements), len(elements))
+		log.Printf("DEBUG: Entity type %s: processing %d relevant elements with %d rules",
+			mapping.EntityType, len(relevantElements), len(mapping.ExtractionRules))
 
-		// Apply each extraction rule
-		for j, rule := range mapping.ExtractionRules {
-			log.Printf("DEBUG: Applying rule %d (type: %s) for entity %s", j, rule.Type, mapping.EntityType)
-			extractedEntities, err := e.applyExtractionRule(ctx, mapping, rule, relevantElements)
-			if err != nil {
-				return nil, fmt.Errorf("failed to apply rule for %s: %w", mapping.EntityType, err)
-			}
-			log.Printf("DEBUG: Rule %d extracted %d entities", j, len(extractedEntities))
+		// NEW: Process each element with rules in order (early stopping)
+		for _, elem := range relevantElements {
+			// Try rules in order until first match
+			for _, rule := range mapping.ExtractionRules {
+				entity := e.tryExtractWithRule(ctx, mapping, rule, elem)
 
-			// Deduplicate entities by <type>.<name> (case-insensitive) - keep highest confidence entity
-			for _, entity := range extractedEntities {
-				// Use <type>.<name> as deduplication key (case-insensitive)
-				// Convert entity.Type from EntityType enum to string for the key
-				typeStr := string(entity.Type)
-				dedupKey := strings.ToLower(typeStr + "." + entity.Name)
+				if entity != nil {
+					// Match found - add to deduplication map
+					typeStr := string(entity.Type)
+					dedupKey := strings.ToLower(typeStr + "." + entity.Name)
 
-				if existing, ok := entityMap[dedupKey]; ok {
-					// Replace with higher confidence entity
-					if entity.Confidence > existing.Confidence {
-						// Keep all mentions from both
-						entity.Mentions = append(entity.Mentions, existing.Mentions...)
-						entityCopy := entity
-						entityMap[dedupKey] = &entityCopy
-					} else if entity.Confidence == existing.Confidence {
-						// Same confidence - prefer the canonical form (title case or most common)
-						if e.isMoreCanonical(entity.Name, existing.Name) {
+					if existing, ok := entityMap[dedupKey]; ok {
+						// Replace with higher confidence entity
+						if entity.Confidence > existing.Confidence {
 							entity.Mentions = append(entity.Mentions, existing.Mentions...)
-							entityCopy := entity
+							entityCopy := *entity
 							entityMap[dedupKey] = &entityCopy
+						} else if entity.Confidence == existing.Confidence {
+							// Same confidence - prefer the canonical form
+							if e.isMoreCanonical(entity.Name, existing.Name) {
+								entity.Mentions = append(entity.Mentions, existing.Mentions...)
+								entityCopy := *entity
+								entityMap[dedupKey] = &entityCopy
+							} else {
+								// Keep existing, merge mentions
+								existing.Mentions = append(existing.Mentions, entity.Mentions...)
+							}
 						} else {
 							// Keep existing, merge mentions
 							existing.Mentions = append(existing.Mentions, entity.Mentions...)
 						}
 					} else {
-						// Keep existing, merge mentions
-						existing.Mentions = append(existing.Mentions, entity.Mentions...)
+						entityCopy := *entity
+						entityMap[dedupKey] = &entityCopy
 					}
-				} else {
-					entityCopy := entity
-					entityMap[dedupKey] = &entityCopy
+
+					// EARLY STOP - don't try remaining rules for this element
+					break
 				}
 			}
 		}
+
+		log.Printf("DEBUG: Entity type %s: extracted %d unique entities", mapping.EntityType, len(entityMap))
 	}
 
 	// Convert map to slice
@@ -164,168 +198,163 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 		entities = append(entities, *entity)
 	}
 
+	log.Printf("DEBUG: Total entities extracted: %d", len(entities))
 	return entities, nil
 }
 
-// applyExtractionRule applies a single extraction rule to elements
-func (e *RuleBasedExtractor) applyExtractionRule(ctx context.Context, mapping ElementEntityMapping, rule ExtractionRule, elements []Element) ([]Entity, error) {
-	var entities []Entity
-
+// tryExtractWithRule attempts to extract an entity from a single element using a single rule
+// Returns the entity if matched, or nil if no match
+func (e *RuleBasedExtractor) tryExtractWithRule(ctx context.Context, mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
 	switch rule.Type {
 	case RuleTypeMetadata:
-		entities = e.extractFromMetadata(mapping, rule, elements)
+		return e.tryExtractWithMetadata(mapping, rule, elem)
 	case RuleTypeRegex:
-		entities = e.extractFromRegex(mapping, rule, elements)
+		return e.tryExtractWithRegex(mapping, rule, elem)
 	case RuleTypeKeyword:
-		entities = e.extractFromKeywords(mapping, rule, elements)
+		return e.tryExtractWithKeywords(mapping, rule, elem)
 	case RuleTypeSimilarity:
-		entities = e.extractFromSimilarity(mapping, rule, elements)
+		return e.tryExtractWithSimilarity(mapping, rule, elem)
 	case RuleTypeJSONPath:
-		entities = e.extractFromJSONPath(mapping, rule, elements)
+		return e.tryExtractWithJSONPath(mapping, rule, elem)
 	default:
-		return nil, fmt.Errorf("unknown rule type: %s", rule.Type)
+		log.Printf("WARNING: Unknown rule type: %s", rule.Type)
+		return nil
 	}
-
-	return entities, nil
 }
 
-// extractFromMetadata extracts entities from element metadata
-func (e *RuleBasedExtractor) extractFromMetadata(mapping ElementEntityMapping, rule ExtractionRule, elements []Element) []Entity {
-	var entities []Entity
-
-	for _, elem := range elements {
-		// Navigate metadata path (e.g., "metadata.speaker")
-		value := e.getMetadataValue(elem.Metadata, rule.FieldPath)
-		if value == "" {
-			continue
-		}
-
-		// Resolve content for instance_name extraction
-		content := e.resolveContent(&elem)
-
-		entity := Entity{
-			ID:         e.generateID("ent"),
-			Name:       e.extractInstanceName(content, rule, value),
-			Type:       EntityType(mapping.EntityType),
-			Domain:     mapping.Domain, // Domain ownership from mapping
-			Confidence: mapping.Confidence,
-			Attributes: map[string]interface{}{
-				"source":     "metadata",
-				"field_path": rule.FieldPath,
-			},
-			ElementID: elem.ElementID,
-			Mentions: []Mention{
-				{
-					ElementID: elem.ElementID,
-					Text:      value,
-					StartPos:  0,
-					EndPos:    len(value),
-				},
-			},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		entities = append(entities, entity)
+// tryExtractWithMetadata attempts to extract an entity from a single element using metadata
+// Returns an entity if metadata field exists, or nil if no match
+func (e *RuleBasedExtractor) tryExtractWithMetadata(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
+	// Navigate metadata path (e.g., "metadata.speaker")
+	value := e.getMetadataValue(elem.Metadata, rule.FieldPath)
+	if value == "" {
+		return nil
 	}
 
-	return entities
+	// Resolve content for instance_name extraction
+	content := e.resolveContent(&elem)
+
+	entity := Entity{
+		ID:         e.generateID("ent"),
+		Name:       e.extractInstanceName(content, rule, value),
+		Type:       EntityType(mapping.EntityType),
+		Domain:     mapping.Domain,
+		Confidence: mapping.Confidence,
+		Attributes: map[string]interface{}{
+			"source":     "metadata",
+			"field_path": rule.FieldPath,
+		},
+		ElementID: elem.ElementID,
+		Mentions: []Mention{
+			{
+				ElementID: elem.ElementID,
+				Text:      value,
+				StartPos:  0,
+				EndPos:    len(value),
+			},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	return &entity
 }
 
-// extractFromRegex extracts entities using regex patterns
-func (e *RuleBasedExtractor) extractFromRegex(mapping ElementEntityMapping, rule ExtractionRule, elements []Element) []Entity {
-	var entities []Entity
+// tryExtractWithRegex attempts to extract an entity from a single element using a regex rule
+// Returns the first matching entity, or nil if no match
+func (e *RuleBasedExtractor) tryExtractWithRegex(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
+	// Apply semantic filter at element level (early exit if element doesn't match context)
+	if rule.SemanticFilter != nil {
+		if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
+			return nil // Element doesn't match semantic context
+		}
+	}
 
-	// Compile regex
+	// Resolve content
+	content := e.resolveContent(&elem)
+	if content == "" {
+		return nil
+	}
+
+	// Compile and apply regex
 	re, err := regexp.Compile(rule.Pattern)
 	if err != nil {
-		return entities // Skip invalid regex
+		return nil // Skip invalid regex
 	}
 
-	for _, elem := range elements {
-		// Apply semantic filter at element level (before pattern matching to save compute)
-		if rule.SemanticFilter != nil {
-			if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
-				continue // Element doesn't match semantic context
-			}
+	matches := re.FindAllStringIndex(content, -1)
+	if len(matches) == 0 {
+		return nil // No match
+	}
+
+	// Extract FIRST match only (early stopping)
+	match := matches[0]
+	entityName := content[match[0]:match[1]]
+
+	// Apply Dictionary filter if configured
+	if rule.DictionaryFilter != nil {
+		if !e.checkDictionaryFilter(entityName, rule.DictionaryFilter) {
+			log.Printf("DEBUG: Entity '%s' rejected by Dictionary filter", entityName)
+			return nil // Rejected by filter
 		}
+	}
 
-		// Resolve content before applying regex
-		content := e.resolveContent(&elem)
-		if content == "" {
-			continue
-		}
-
-		// Find all matches in content
-		matches := re.FindAllStringIndex(content, -1)
-		matchStrings := re.FindAllString(content, -1)
-
-		for i, match := range matches {
-			entityName := matchStrings[i]
-
-			entity := Entity{
-				ID:         e.generateID("ent"),
-				Name:       e.extractInstanceName(content, rule, entityName),
-				Type:       EntityType(mapping.EntityType),
-				Domain:     mapping.Domain, // Domain ownership from mapping
-				Confidence: mapping.Confidence,
-				Attributes: map[string]interface{}{
-					"source":  "regex",
-					"pattern": rule.Pattern,
-				},
+	// Create entity
+	entity := Entity{
+		ID:         e.generateID("ent"),
+		Name:       e.extractInstanceName(content, rule, entityName),
+		Type:       EntityType(mapping.EntityType),
+		Domain:     mapping.Domain,
+		Confidence: mapping.Confidence,
+		Attributes: map[string]interface{}{
+			"source":  "regex",
+			"pattern": rule.Pattern,
+		},
+		ElementID: elem.ElementID,
+		Mentions: []Mention{
+			{
 				ElementID: elem.ElementID,
-				Mentions: []Mention{
-					{
-						ElementID: elem.ElementID,
-						Text:      entityName,
-						StartPos:  match[0],
-						EndPos:    match[1],
-					},
-				},
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-
-			entities = append(entities, entity)
-		}
+				Text:      entityName,
+				StartPos:  match[0],
+				EndPos:    match[1],
+			},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
-	return entities
+	return &entity
 }
 
-// extractFromKeywords extracts entities by keyword matching
-func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, rule ExtractionRule, elements []Element) []Entity {
-	var entities []Entity
-
-	for _, elem := range elements {
-		// Apply semantic filter at element level
-		if rule.SemanticFilter != nil {
-			if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
-				continue // Element doesn't match semantic context
-			}
+// tryExtractWithKeywords attempts to extract an entity from a single element using keyword matching
+// Returns the first matching entity, or nil if no match
+func (e *RuleBasedExtractor) tryExtractWithKeywords(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
+	// Apply semantic filter at element level
+	if rule.SemanticFilter != nil {
+		if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
+			return nil
 		}
+	}
 
-		// Resolve content before applying keywords
-		content := e.resolveContent(&elem)
-		if content == "" {
+	// Resolve content
+	content := e.resolveContent(&elem)
+	if content == "" {
+		return nil
+	}
+
+	// Try each keyword in order
+	for _, keyword := range rule.Keywords {
+		// Use regex with word boundaries for exact word matching
+		pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(keyword))
+		re, err := regexp.Compile("(?i)" + pattern) // Case-insensitive
+		if err != nil {
 			continue
 		}
 
-		for _, keyword := range rule.Keywords {
-			// Use regex with word boundaries for exact word matching
-			pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(keyword))
-			re, err := regexp.Compile("(?i)" + pattern) // Case-insensitive
-			if err != nil {
-				continue
-			}
-
-			// Find all matches
-			matches := re.FindAllStringIndex(content, -1)
-			if len(matches) == 0 {
-				continue
-			}
-
-			// Extract the actual text for first match only (preserving case)
+		// Find matches
+		matches := re.FindAllStringIndex(content, -1)
+		if len(matches) > 0 {
+			// Found match - extract FIRST occurrence and return
 			match := matches[0]
 			actualText := content[match[0]:match[1]]
 
@@ -333,11 +362,11 @@ func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, r
 				ID:         e.generateID("ent"),
 				Name:       e.extractInstanceName(content, rule, actualText),
 				Type:       EntityType(mapping.EntityType),
-				Domain:     mapping.Domain, // Domain ownership from mapping
+				Domain:     mapping.Domain,
 				Confidence: mapping.Confidence,
 				Attributes: map[string]interface{}{
-					"source":   "keyword",
-					"keywords": rule.Keywords,
+					"source":  "keyword",
+					"keyword": keyword,
 				},
 				ElementID: elem.ElementID,
 				Mentions: []Mention{
@@ -352,142 +381,137 @@ func (e *RuleBasedExtractor) extractFromKeywords(mapping ElementEntityMapping, r
 				UpdatedAt: time.Now(),
 			}
 
-			entities = append(entities, entity)
+			return &entity
 		}
 	}
 
-	return entities
+	return nil // No keywords matched
 }
 
-// extractFromSimilarity extracts entities based on text similarity to a reference
-func (e *RuleBasedExtractor) extractFromSimilarity(mapping ElementEntityMapping, rule ExtractionRule, elements []Element) []Entity {
-	var entities []Entity
-
+// tryExtractWithSimilarity attempts to extract an entity from a single element using text similarity
+// Returns an entity if similarity threshold is met, or nil if no match
+func (e *RuleBasedExtractor) tryExtractWithSimilarity(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
 	if rule.ReferenceText == "" {
-		return entities // No reference text provided
+		return nil // No reference text provided
 	}
 
-	for _, elem := range elements {
-		// Resolve content before applying similarity
-		content := e.resolveContent(&elem)
-		if content == "" {
-			continue
-		}
-
-		// Calculate similarity between element content and reference text
-		similarity := e.calculateTextSimilarity(content, rule.ReferenceText)
-
-		// Check if similarity meets threshold
-		if similarity >= rule.SimilarityThreshold {
-			// Extract the whole content as entity when similar
-			// Text similarity is binary: if similarity >= threshold -> TRUE, use mapping confidence
-			entity := Entity{
-				ID:         e.generateID("ent"),
-				Name:       e.extractInstanceName(content, rule, elem.ContentPreview),
-				Type:       EntityType(mapping.EntityType),
-				Domain:     mapping.Domain, // Domain ownership from mapping
-				Confidence: mapping.Confidence, // Use mapping confidence (context quality)
-				Attributes: map[string]interface{}{
-					"source":               "similarity",
-					"reference_text":       rule.ReferenceText,
-					"similarity_score":     similarity,
-					"similarity_threshold": rule.SimilarityThreshold,
-				},
-				ElementID: elem.ElementID,
-				Mentions: []Mention{
-					{
-						ElementID: elem.ElementID,
-						Text:      content,
-						StartPos:  0,
-						EndPos:    len(content),
-					},
-				},
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-
-			entities = append(entities, entity)
-		}
+	// Resolve content
+	content := e.resolveContent(&elem)
+	if content == "" {
+		return nil
 	}
 
-	return entities
+	// Calculate similarity between element content and reference text
+	similarity := e.calculateTextSimilarity(content, rule.ReferenceText)
+
+	// Check if similarity meets threshold
+	if similarity >= rule.SimilarityThreshold {
+		// Extract the whole content as entity when similar
+		entity := Entity{
+			ID:         e.generateID("ent"),
+			Name:       e.extractInstanceName(content, rule, elem.ContentPreview),
+			Type:       EntityType(mapping.EntityType),
+			Domain:     mapping.Domain,
+			Confidence: mapping.Confidence,
+			Attributes: map[string]interface{}{
+				"source":               "similarity",
+				"reference_text":       rule.ReferenceText,
+				"similarity_score":     similarity,
+				"similarity_threshold": rule.SimilarityThreshold,
+			},
+			ElementID: elem.ElementID,
+			Mentions: []Mention{
+				{
+					ElementID: elem.ElementID,
+					Text:      content,
+					StartPos:  0,
+					EndPos:    len(content),
+				},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+
+		return &entity
+	}
+
+	return nil // Similarity threshold not met
 }
 
-// extractFromJSONPath extracts entities using JSONPath expressions
-func (e *RuleBasedExtractor) extractFromJSONPath(mapping ElementEntityMapping, rule ExtractionRule, elements []Element) []Entity {
-	var entities []Entity
-
+// tryExtractWithJSONPath attempts to extract an entity from a single element using JSONPath
+// Returns the first matching entity, or nil if no match
+func (e *RuleBasedExtractor) tryExtractWithJSONPath(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
 	if rule.JSONPathExpr == "" {
-		return entities // No JSONPath expression provided
+		return nil // No JSONPath expression provided
 	}
 
-	for _, elem := range elements {
-		// Apply semantic filter at element level
-		if rule.SemanticFilter != nil {
-			if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
-				continue // Element doesn't match semantic context
-			}
+	// Apply semantic filter at element level
+	if rule.SemanticFilter != nil {
+		if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
+			return nil
 		}
+	}
 
-		// Resolve content and try to parse as JSON
-		content := e.resolveContent(&elem)
+	// Resolve content and try to parse as JSON
+	content := e.resolveContent(&elem)
 
-		var jsonData interface{}
-		if content != "" {
-			if err := json.Unmarshal([]byte(content), &jsonData); err != nil {
-				// If content is not JSON, try metadata
-				jsonData = elem.Metadata
-			}
-		} else {
-			// No content, try metadata
+	var jsonData interface{}
+	if content != "" {
+		if err := json.Unmarshal([]byte(content), &jsonData); err != nil {
+			// If content is not JSON, try metadata
 			jsonData = elem.Metadata
 		}
-
-		// Evaluate JSONPath expression
-		results := e.evaluateJSONPath(jsonData, rule.JSONPathExpr)
-
-		// Create entity for each result
-		for _, result := range results {
-			// Convert result to string
-			var resultStr string
-			if str, ok := result.(string); ok {
-				resultStr = str
-			} else {
-				resultStr = fmt.Sprintf("%v", result)
-			}
-
-			if resultStr == "" {
-				continue
-			}
-
-			entity := Entity{
-				ID:         e.generateID("ent"),
-				Name:       e.extractInstanceName(content, rule, resultStr),
-				Type:       EntityType(mapping.EntityType),
-				Domain:     mapping.Domain, // Domain ownership from mapping
-				Confidence: mapping.Confidence,
-				Attributes: map[string]interface{}{
-					"source":        "jsonpath",
-					"jsonpath_expr": rule.JSONPathExpr,
-				},
-				ElementID: elem.ElementID,
-				Mentions: []Mention{
-					{
-						ElementID: elem.ElementID,
-						Text:      resultStr,
-						StartPos:  0,
-						EndPos:    len(resultStr),
-					},
-				},
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-
-			entities = append(entities, entity)
-		}
+	} else {
+		// No content, try metadata
+		jsonData = elem.Metadata
 	}
 
-	return entities
+	// Evaluate JSONPath expression
+	results := e.evaluateJSONPath(jsonData, rule.JSONPathExpr)
+
+	// Return FIRST result only
+	if len(results) > 0 {
+		result := results[0]
+
+		// Convert result to string
+		var resultStr string
+		if str, ok := result.(string); ok {
+			resultStr = str
+		} else {
+			resultStr = fmt.Sprintf("%v", result)
+		}
+
+		if resultStr == "" {
+			return nil
+		}
+
+		entity := Entity{
+			ID:         e.generateID("ent"),
+			Name:       e.extractInstanceName(content, rule, resultStr),
+			Type:       EntityType(mapping.EntityType),
+			Domain:     mapping.Domain,
+			Confidence: mapping.Confidence,
+			Attributes: map[string]interface{}{
+				"source":        "jsonpath",
+				"jsonpath_expr": rule.JSONPathExpr,
+			},
+			ElementID: elem.ElementID,
+			Mentions: []Mention{
+				{
+					ElementID: elem.ElementID,
+					Text:      resultStr,
+					StartPos:  0,
+					EndPos:    len(resultStr),
+				},
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+
+		return &entity
+	}
+
+	return nil // No JSONPath results
 }
 
 // extractRelationships extracts relationships based on schema rules and extracted entities
@@ -616,9 +640,23 @@ func (e *RuleBasedExtractor) filterElementsByType(elements []Element, elementTyp
 		typeSet[t] = true
 	}
 
+	// Get element IDs that have embeddings (leaf elements only)
+	leafElementIDs := make(map[string]bool)
+	if e.embeddingResolver != nil {
+		for _, elem := range elements {
+			// Check if element has embedding (only leaf elements have embeddings)
+			if _, exists := e.embeddingResolver.GetEmbedding(elem.ElementID); exists {
+				leafElementIDs[elem.ElementID] = true
+			}
+		}
+	}
+
 	for _, elem := range elements {
+		// Filter by type AND only include elements with embeddings (leaf elements)
 		if typeSet[elem.ElementType] {
-			filtered = append(filtered, elem)
+			if len(leafElementIDs) == 0 || leafElementIDs[elem.ElementID] {
+				filtered = append(filtered, elem)
+			}
 		}
 	}
 
@@ -1246,6 +1284,36 @@ var conceptEmbeddingMutex sync.RWMutex
 
 // checkSemanticFilter validates element against semantic filter using element-level embeddings
 func (e *RuleBasedExtractor) checkSemanticFilter(elem *Element, filter *SemanticFilter) bool {
+	// Lazy-load embeddings if not already loaded and semantic filter is needed
+	if e.embeddingResolver == nil {
+		log.Printf("INFO: Semantic filter requested but no embeddings loaded yet - attempting to load from content resolver...")
+		// Try to get storage from content resolver
+		type StorageProvider interface {
+			GetStorage() interface{} // Returns analytics.Storage
+		}
+
+		if provider, ok := e.contentResolver.(StorageProvider); ok {
+			storageInterface := provider.GetStorage()
+			// Type-assert to analytics.Storage
+			if storage, ok := storageInterface.(analytics.Storage); ok {
+				log.Printf("INFO: Loading embeddings from Storage for semantic filtering...")
+				resolver, err := NewEmbeddingResolver(context.Background(), storage)
+				if err != nil {
+					log.Printf("WARNING: Failed to load embeddings from Storage: %v - semantic filter disabled", err)
+					return true // Accept by default on error
+				}
+				e.embeddingResolver = resolver
+				log.Printf("INFO: Successfully loaded %d embeddings for semantic filtering", resolver.Count())
+			} else {
+				log.Printf("WARNING: Storage provider returned invalid type - semantic filter disabled")
+				return true // Accept by default
+			}
+		} else {
+			log.Printf("WARNING: Content resolver does not provide Storage - semantic filter disabled")
+			return true // Accept by default
+		}
+	}
+
 	// Get element embedding
 	elementEmbedding := e.getElementEmbedding(elem)
 	if elementEmbedding == nil {
@@ -1275,20 +1343,25 @@ func (e *RuleBasedExtractor) checkSemanticFilter(elem *Element, filter *Semantic
 
 // getElementEmbedding retrieves embedding vector for an element
 func (e *RuleBasedExtractor) getElementEmbedding(elem *Element) []float64 {
-	// Try to get embedding from content resolver
-	if e.contentResolver == nil {
-		return nil
-	}
-
-	// Check if resolver supports embeddings (type assertion)
-	type EmbeddingResolver interface {
-		GetEmbedding(contentLocation map[string]interface{}) ([]float64, error)
-	}
-
-	if embResolver, ok := e.contentResolver.(EmbeddingResolver); ok {
-		embedding, err := embResolver.GetEmbedding(elem.ContentLocation)
-		if err == nil && len(embedding) > 0 {
+	// Use dedicated embedding resolver if available
+	if e.embeddingResolver != nil {
+		if embedding, exists := e.embeddingResolver.GetEmbedding(elem.ElementID); exists {
 			return embedding
+		}
+	}
+
+	// Fallback: Try to get embedding from content resolver (if it implements EmbeddingResolver)
+	if e.contentResolver != nil {
+		// Check if resolver supports embeddings (type assertion)
+		type EmbeddingResolver interface {
+			GetEmbedding(contentLocation map[string]interface{}) ([]float64, error)
+		}
+
+		if embResolver, ok := e.contentResolver.(EmbeddingResolver); ok {
+			embedding, err := embResolver.GetEmbedding(elem.ContentLocation)
+			if err == nil && len(embedding) > 0 {
+				return embedding
+			}
 		}
 	}
 
@@ -1305,9 +1378,148 @@ func (e *RuleBasedExtractor) getConceptEmbedding(concept string) []float64 {
 	}
 	conceptEmbeddingMutex.RUnlock()
 
-	// Compute embedding for concept
-	// TODO: Integrate with LLM client for embedding generation
-	// For now, return nil (graceful degradation)
-	log.Printf("WARNING: Concept embedding not yet implemented for: %s", concept)
-	return nil
+	// Check if embedding generator is available
+	if e.embeddingGenerator == nil {
+		// Graceful degradation: no embedding generator, log once and return nil
+		log.Printf("DEBUG: No embedding generator available for semantic filtering")
+		return nil
+	}
+
+	// Generate embedding for concept
+	embedding, err := e.embeddingGenerator.GenerateEmbedding(concept)
+	if err != nil {
+		log.Printf("WARNING: Failed to generate embedding for concept '%s': %v", concept, err)
+		return nil
+	}
+
+	if len(embedding) == 0 {
+		log.Printf("WARNING: Generated empty embedding for concept '%s'", concept)
+		return nil
+	}
+
+	// Cache the embedding
+	conceptEmbeddingMutex.Lock()
+	conceptEmbeddingCache[concept] = embedding
+	conceptEmbeddingMutex.Unlock()
+
+	log.Printf("DEBUG: Generated and cached embedding for concept '%s' (dim: %d)", concept, len(embedding))
+	return embedding
+}
+
+// checkDictionaryFilter validates text against a dictionary filter configuration
+func (e *RuleBasedExtractor) checkDictionaryFilter(text string, filter *DictionaryFilter) bool {
+	if e.dictionary == nil {
+		log.Printf("WARNING: Dictionary not initialized - skipping dictionary filter")
+		return true // Pass through if no dictionary
+	}
+
+	// Split text into words
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return false
+	}
+
+	// Look up each word in dictionary
+	var entries []*dictionary.LexicalEntry
+	var unknownCount int
+
+	for _, word := range words {
+		// Clean word (remove punctuation)
+		word = strings.Trim(word, ".,;:!?\"'")
+		if word == "" {
+			continue
+		}
+
+		entry := e.dictionary.Lookup(word)
+		entries = append(entries, entry)
+		if entry == nil {
+			unknownCount++
+		}
+	}
+
+	totalWords := len(entries)
+	if totalWords == 0 {
+		return false
+	}
+
+	// Check: require at least one unknown word (proper noun not in dictionary)
+	if filter.RequireUnknownWords && unknownCount == 0 {
+		return false // All words are known - reject
+	}
+
+	// Check: max known words ratio
+	if filter.MaxKnownWordsRatio > 0 {
+		knownCount := totalWords - unknownCount
+		knownRatio := float64(knownCount) / float64(totalWords)
+		if knownRatio > filter.MaxKnownWordsRatio {
+			return false // Too many known words - reject
+		}
+	}
+
+	// Check: reject if ALL words match specific POS
+	if len(filter.RejectIfAllPOS) > 0 {
+		for _, rejectPOS := range filter.RejectIfAllPOS {
+			allMatch := true
+			for _, entry := range entries {
+				if entry == nil || !entry.HasPOS(rejectPOS) {
+					allMatch = false
+					break
+				}
+			}
+			if allMatch {
+				return false // All words match rejected POS
+			}
+		}
+	}
+
+	// Check: reject if ALL words match specific categories
+	if len(filter.RejectIfAllCategories) > 0 {
+		for _, rejectCat := range filter.RejectIfAllCategories {
+			allMatch := true
+			for _, entry := range entries {
+				if entry == nil || !entry.HasCategory(rejectCat) {
+					allMatch = false
+					break
+				}
+			}
+			if allMatch {
+				return false // All words match rejected category (e.g., all "place")
+			}
+		}
+	}
+
+	// Check: reject specific category combinations
+	if len(filter.RejectCategoryCombinations) > 0 {
+		// Build category sequence for this text
+		var catSequence []string
+		for _, entry := range entries {
+			if entry != nil && len(entry.Categories) > 0 {
+				catSequence = append(catSequence, entry.Categories[0])
+			} else {
+				catSequence = append(catSequence, "unknown")
+			}
+		}
+
+		// Check each rejection pattern
+		for _, rejectSeq := range filter.RejectCategoryCombinations {
+			if matchesSequence(catSequence, rejectSeq) {
+				return false // Category sequence matches rejection pattern
+			}
+		}
+	}
+
+	return true // Passed all filters
+}
+
+// matchesSequence checks if actual sequence contains the rejection pattern
+func matchesSequence(actual []string, pattern []string) bool {
+	if len(actual) != len(pattern) {
+		return false
+	}
+	for i := range actual {
+		if actual[i] != pattern[i] {
+			return false
+		}
+	}
+	return true
 }

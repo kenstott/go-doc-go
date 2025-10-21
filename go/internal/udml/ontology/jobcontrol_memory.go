@@ -12,6 +12,7 @@ import (
 type MemoryExtractionJobControl struct {
 	tasks   map[string]*ExtractionTask        // taskID -> task
 	results map[string]*ExtractionTaskResult  // taskID -> result (just metrics)
+	leaders map[string]string                 // runID -> workerID (leader for that run)
 	mu      sync.RWMutex
 }
 
@@ -20,7 +21,25 @@ func NewMemoryExtractionJobControl() *MemoryExtractionJobControl {
 	return &MemoryExtractionJobControl{
 		tasks:   make(map[string]*ExtractionTask),
 		results: make(map[string]*ExtractionTaskResult),
+		leaders: make(map[string]string),
 	}
+}
+
+// ClaimLeaderRole atomically claims the leader role for a run
+// Returns true if this worker became the leader, false if another worker already claimed it
+func (m *MemoryExtractionJobControl) ClaimLeaderRole(runID string, workerID string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Check if leader already exists for this run
+	if existingLeader, exists := m.leaders[runID]; exists {
+		// Leader already claimed
+		return existingLeader == workerID, nil
+	}
+
+	// Claim leadership
+	m.leaders[runID] = workerID
+	return true, nil
 }
 
 // CreateTasks creates new extraction tasks
@@ -38,7 +57,7 @@ func (m *MemoryExtractionJobControl) CreateTasks(runID string, tasks []Extractio
 			task.Status = TaskStatusPending
 		}
 
-		m.tasks[task.TaskID] = &task
+		m.tasks[task.ID] = &task
 	}
 
 	return nil
@@ -57,7 +76,7 @@ func (m *MemoryExtractionJobControl) ClaimTask(runID string, taskType Extraction
 
 			// Claim the task
 			now := time.Now()
-			task.Status = TaskStatusProcessing
+			task.Status = TaskStatusClaimed
 			task.ClaimedBy = workerID
 			task.ClaimedAt = &now
 
@@ -86,10 +105,7 @@ func (m *MemoryExtractionJobControl) CompleteTask(taskID string, result Extracti
 	task.Status = TaskStatusCompleted
 	task.CompletedAt = &now
 
-	// Store result metrics
-	if result.CreatedAt.IsZero() {
-		result.CreatedAt = time.Now()
-	}
+	// Store result metrics (just store it directly)
 	m.results[taskID] = &result
 
 	return nil
@@ -106,8 +122,7 @@ func (m *MemoryExtractionJobControl) FailTask(taskID string, errorMsg string) er
 	}
 
 	task.Status = TaskStatusFailed
-	task.ErrorMsg = errorMsg
-	task.RetryCount++
+	task.Error = errorMsg
 
 	return nil
 }

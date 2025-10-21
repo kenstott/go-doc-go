@@ -497,7 +497,27 @@ func (b *OntologyBuilder) identifyDomains(ctx context.Context, samples *sampler.
 
 ## YOUR TASK
 
-Analyze these document samples and select which domains from the CLOSED LIST above are present:
+Analyze these document samples and select which domains from the CLOSED LIST above are present.
+
+**CRITICAL: Focus on CONTENT TOPICS, not PRESENTATION FORMAT**
+
+When analyzing the corpus, you MUST:
+- ✓ Identify the SUBJECT MATTER being discussed (medicine, mining, finance, etc.)
+- ✓ Focus on the substantive content and domain knowledge
+- ✓ Look at what the documents are ABOUT
+
+You MUST IGNORE presentation/wrapper metadata:
+- ✗ Do NOT classify based on citation formats (ISBN, DOI, references)
+- ✗ Do NOT classify based on document structure (TOC, headers, sections)
+- ✗ Do NOT classify based on the publishing platform (Wikipedia, encyclopedia, journal)
+- ✗ Do NOT classify based on bibliographic metadata (author names, publication dates)
+
+**EXAMPLES:**
+- A Wikipedia article about cancer → "medical" (NOT "library_science")
+- An SEC filing about a mining company → "mining" (NOT "legal" or "library_science")
+- A journal article about chemistry → "science_research" (NOT "library_science")
+
+The domain should reflect the TOPIC/SUBJECT, not how the information is presented or organized.
 
 Sample texts:
 %s
@@ -641,6 +661,45 @@ Before returning your response, verify EVERY element_types array contains ONLY e
 3. **Use domain assignment for specialization** - Assign universal types to appropriate domains to capture context (e.g., "organization" in "medical" domain for hospitals, "organization" in "financial" domain for banks)
 4. **Combine universal types with attributes** - Use the "attributes" field to add domain-specific details rather than creating new entity types
 
+**CRITICAL: DO NOT USE STRUCTURAL ELEMENT TYPES AS ENTITY TYPES**
+
+Structural/navigational element types describe document structure, NOT business entities. You MUST NOT create entity mappings for these types:
+
+**ABSOLUTELY PROHIBITED ENTITY TYPE NAMES:**
+- ✗ **hyperlink** - NEVER use "hyperlink" as entity_type (it's structural navigation)
+- ✗ **heading** / **header** - Document structure (NOT entity types)
+- ✗ **footer** - Document structure (NOT entity type)
+- ✗ **reference** - Use "citation" or "bibliography_entry" instead if needed
+- ✗ **bookmark** - Navigation aid (NOT entity type)
+- ✗ **annotation** / **comment** - Metadata (NOT entity types)
+- ✗ **tag** / **keyword** - Classification metadata (NOT entity types)
+- ✗ **div** / **span** / **section** - HTML/layout containers (NOT entity types)
+- ✗ **table** / **table_row** / **table_cell** / **list** / **list_item** - Structural containers (NOT entity types)
+- ✗ **code_block** / **code_function** / **code_data** - Code structure (NOT entity types)
+
+**WHY THIS MATTERS:**
+- Element types (heading, hyperlink, div) describe document STRUCTURE
+- Entity types (person, organization, concept) describe BUSINESS CONCEPTS
+- NEVER use an element type name as an entity type name
+
+**EXAMPLES OF VIOLATIONS (DO NOT DO THIS):**
+
+Example 1: {"entity_type": "hyperlink", "element_types": ["div", "paragraph"]}
+❌ WRONG - hyperlink is an element type, not an entity
+
+Example 2: {"entity_type": "heading", "element_types": ["paragraph"]}
+❌ WRONG - heading is an element type, not an entity
+
+**CORRECT APPROACH:**
+
+Example: {"entity_type": "url", "element_types": ["hyperlink", "paragraph"], "extraction_rules": [{"type": "regex_pattern", "pattern": "https?://..."}]}
+✅ CORRECT - if you need to extract URLs/links as entities, hyperlink is used correctly here (as element_type)
+
+- Extract entities FROM the content of structural elements
+- Don't treat the structural element itself as an entity type
+- Example: A hyperlink contains a URL → Extract as entity_type "url", NOT "hyperlink"
+- Example: A heading contains "Dr. John Smith" → Extract as entity_type "person", NOT "heading"
+
 **EXAMPLES OF GOOD DESIGN:**
 ✓ Use "person" assigned to "medical" domain for doctors, patients, medical staff
 ✓ Use "organization" assigned to "medical" domain for hospitals, clinics, pharmaceutical companies
@@ -654,6 +713,27 @@ Before returning your response, verify EVERY element_types array contains ONLY e
 ✓ Create "financial_metric" when "concept" doesn't capture the quantitative measurement aspect
 ✓ Create "legal_statute" when "concept" or "document" don't capture the regulatory nature
 ✓ Create "chemical_compound" when "product" or "concept" don't capture the scientific structure
+
+**ENTITY TYPE SPECIFICITY RULES:**
+
+Use the MOST SPECIFIC entity type that accurately describes the entity:
+- ✓ Prefer concrete types: chemical_compound, research_methodology, publication, medication, technique, process
+- ⚠ Use "concept" ONLY as last resort for genuinely abstract ideas/principles/theoretical frameworks
+- ✗ Do NOT use "concept" for physical things, concrete processes, or identifiable objects
+
+**Examples of GOOD "concept" usage (genuinely abstract):**
+✓ "net zero" → concept (abstract goal/target)
+✓ "circular economy" → concept (theoretical framework)
+✓ "patient-centered care" → concept (abstract principle)
+✓ "sustainability" → concept (abstract idea)
+
+**Examples of BAD "concept" usage (be more specific):**
+✗ "DNA barcoding" → research_methodology or technique (NOT concept)
+✗ "calcium carbonate" → chemical_compound (NOT concept)
+✗ "marble finishing" → process or technique (NOT concept)
+✗ "Journal of Medicine" → publication (NOT concept)
+✗ "aspirin" → medication or chemical_compound (NOT concept)
+✗ "recycling" → process (NOT concept)
 
 ================================================================================
 

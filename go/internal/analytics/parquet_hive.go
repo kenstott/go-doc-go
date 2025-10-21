@@ -1,7 +1,9 @@
 package analytics
 
 import (
+	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -24,7 +26,35 @@ import (
 	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml"
 	_ "github.com/marcboeker/go-duckdb"
+	"reflect"
 )
+
+// Local interfaces to avoid circular dependency with ontology package
+// These match the interfaces defined in ontology package
+
+// llmClientInterface defines the LLM client interface for validation
+type llmClientInterface interface {
+	Complete(ctx context.Context, prompt string, options llmOptionsInterface) (string, error)
+}
+
+// llmOptionsInterface defines LLM completion options
+type llmOptionsInterface interface {
+	GetMaxTokens() int
+	GetTemperature() float64
+	GetSystemPrompt() string
+}
+
+// llmValidatorInterface defines the validator interface
+type llmValidatorInterface interface {
+	BatchValidate(ctx context.Context, entities []entityToValidate) ([]bool, error)
+}
+
+// entityToValidate represents an entity for validation
+type entityToValidate struct {
+	EntityName string
+	Prompt     string // Deprecated - validation templates use entity_type instead
+	EntityType string // Entity type for template lookup
+}
 
 // HiveParquetStorage implements Storage interface with Hive-partitioned structure
 // Partition scheme: element_type=X/version=Y/date=Z/source=W/
@@ -167,8 +197,20 @@ func (s *HiveParquetStorage) QueryElements(filters map[string]interface{}) ([]El
 		whereClauses = append(whereClauses, fmt.Sprintf("element_category = '%s'", elementCategory))
 	}
 
+	// Filter to only leaf elements (elements with embeddings)
+	if hasEmbedding, ok := filters["has_embedding"].(bool); ok && hasEmbedding {
+		whereClauses = append(whereClauses, fmt.Sprintf(
+			"element_id IN (SELECT DISTINCT element_id FROM '%s/embeddings/**/*.parquet')",
+			s.basePath))
+	}
+
 	if len(whereClauses) > 0 {
 		query += " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Add LIMIT if specified - critical for not loading billions into memory
+	if limit, ok := filters["limit"].(int); ok && limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
 	}
 
 	// Execute query
@@ -354,6 +396,9 @@ func (s *HiveParquetStorage) QueryEmbeddings(filters map[string]interface{}) ([]
 	if docID, ok := filters["doc_id"].(string); ok && docID != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf("doc_id = '%s'", docID))
 	}
+	if elementID, ok := filters["element_id"].(string); ok && elementID != "" {
+		whereClauses = append(whereClauses, fmt.Sprintf("element_id = '%s'", elementID))
+	}
 
 	if len(whereClauses) > 0 {
 		query += " WHERE " + strings.Join(whereClauses, " AND ")
@@ -370,17 +415,27 @@ func (s *HiveParquetStorage) QueryEmbeddings(filters map[string]interface{}) ([]
 	var embeddings []Embedding
 	for rows.Next() {
 		var emb Embedding
-		var embeddingJSON string
+		var embeddingRaw interface{} // DuckDB returns arrays as []interface{}
 
-		err := rows.Scan(&emb.ElementID, &emb.DocID, &emb.SourceName, &embeddingJSON, &emb.Text)
+		err := rows.Scan(&emb.ElementID, &emb.DocID, &emb.SourceName, &embeddingRaw, &emb.Text)
 		if err != nil {
 			log.Printf("Failed to scan embedding row: %v", err)
 			continue
 		}
 
-		// Parse embedding from JSON array string
-		if err := json.Unmarshal([]byte(embeddingJSON), &emb.Embedding); err != nil {
-			log.Printf("Failed to unmarshal embedding for element %s: %v", emb.ElementID, err)
+		// Convert embedding from DuckDB array type to []float64
+		// DuckDB returns arrays as []interface{} where each element is float64
+		if embeddingArray, ok := embeddingRaw.([]interface{}); ok {
+			emb.Embedding = make([]float64, len(embeddingArray))
+			for i, val := range embeddingArray {
+				if floatVal, ok := val.(float64); ok {
+					emb.Embedding[i] = floatVal
+				} else {
+					log.Printf("WARNING: Embedding element %d for %s is not float64: %T", i, emb.ElementID, val)
+				}
+			}
+		} else {
+			log.Printf("Failed to parse embedding for element %s: expected []interface{}, got %T", emb.ElementID, embeddingRaw)
 			continue
 		}
 
@@ -400,13 +455,13 @@ func (s *HiveParquetStorage) QueryEmbeddings(filters map[string]interface{}) ([]
 // ============================================================================
 
 // AppendOntologyEntities writes ontology entities to Parquet files
-// Partitioning: source=X/domain=Y/date=Z/
+// Partitioning: source=X/domain=Y/run_id=Z/
 func (s *HiveParquetStorage) AppendOntologyEntities(entities []OntologyEntity) error {
 	if len(entities) == 0 {
 		return nil
 	}
 
-	// Group entities by partition keys (source, domain, date)
+	// Group entities by partition keys (source, domain, run_id)
 	partitioned := s.partitionOntologyEntities(entities)
 
 	for partKey, ents := range partitioned {
@@ -420,13 +475,13 @@ func (s *HiveParquetStorage) AppendOntologyEntities(entities []OntologyEntity) e
 }
 
 // AppendOntologyRelationships writes ontology relationships to Parquet files
-// Partitioning: source=X/domain=Y/date=Z/
+// Partitioning: source=X/domain=Y/run_id=Z/
 func (s *HiveParquetStorage) AppendOntologyRelationships(relationships []OntologyRelationship) error {
 	if len(relationships) == 0 {
 		return nil
 	}
 
-	// Group relationships by partition keys
+	// Group relationships by partition keys (source, domain, run_id)
 	partitioned := s.partitionOntologyRelationships(relationships)
 
 	for partKey, rels := range partitioned {
@@ -681,6 +736,789 @@ func (s *HiveParquetStorage) AggregateStatistics(metrics []string, filters map[s
 	return aggregateStatisticsImpl(s.basePath, metrics, filters)
 }
 
+// ============================================================================
+// SQL-Based Ontology Extraction - Scalable to billions of elements
+// ============================================================================
+
+// GetAllDocIDs returns all unique document IDs in the corpus
+// Used for distributed extraction task batching
+func (s *HiveParquetStorage) GetAllDocIDs(filters map[string]interface{}) ([]string, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Build query
+	query := fmt.Sprintf(`
+		SELECT DISTINCT doc_id
+		FROM '%s/elements/**/*.parquet'
+		ORDER BY doc_id
+	`, s.basePath)
+
+	// Execute query
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query doc IDs: %w", err)
+	}
+	defer rows.Close()
+
+	// Collect results
+	var docIDs []string
+	for rows.Next() {
+		var docID string
+		if err := rows.Scan(&docID); err != nil {
+			return nil, fmt.Errorf("failed to scan doc ID: %w", err)
+		}
+		docIDs = append(docIDs, docID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating doc IDs: %w", err)
+	}
+
+	return docIDs, nil
+}
+
+// ExtractAndStoreEntities executes entity extraction for a batch of documents
+// and writes results directly to Parquet (no memory accumulation).
+// This is the distributed extraction method used by workers.
+func (s *HiveParquetStorage) ExtractAndStoreEntities(
+	runID string,
+	entityType string,
+	docIDs []string,
+	mappingJSON []byte,
+	filters map[string]interface{},
+	conceptEmbeddings map[string][]float64,
+) (int, error) {
+	log.Printf("Extracting entity type '%s' for %d documents", entityType, len(docIDs))
+
+	// Parse mapping to check for LLM validation prompts
+	// We need to import the ontology package types, but to avoid circular dependency
+	// we'll define a minimal struct here just for parsing the validation prompt
+	type llmPrompt struct {
+		Prompt    string `json:"prompt"`
+		BatchSize int    `json:"batch_size,omitempty"`
+	}
+	type extractionRule struct {
+		LLMFalsePositiveTest *llmPrompt `json:"llm_false_positive_test,omitempty"`
+	}
+	type elementMapping struct {
+		ExtractionRules []extractionRule `json:"extraction_rules"`
+	}
+
+	var mapping elementMapping
+	var llmValidationPrompt *llmPrompt
+	if err := json.Unmarshal(mappingJSON, &mapping); err != nil {
+		log.Printf("WARNING: Failed to parse mapping JSON for LLM validation check: %v", err)
+	} else {
+		// Check if any extraction rule has LLM validation
+		for _, rule := range mapping.ExtractionRules {
+			if rule.LLMFalsePositiveTest != nil {
+				llmValidationPrompt = rule.LLMFalsePositiveTest
+				log.Printf("  LLM validation ENABLED for entity type '%s': %s", entityType, llmValidationPrompt.Prompt)
+				break
+			}
+		}
+	}
+
+	// Build SQL query
+	builder := NewExtractionQueryBuilder(s.basePath)
+
+	// Add doc_ids filter
+	filters["doc_ids"] = docIDs
+
+	query, err := builder.BuildEntityExtractionQuery(mappingJSON, filters, conceptEmbeddings)
+	if err != nil {
+		return 0, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	// DEBUG: Log the generated SQL query (only for person entities to reduce noise)
+	if entityType == "person" {
+		log.Printf("DEBUG: Generated SQL query for entity type 'person':\n%s", query.SQL)
+	}
+
+	// Execute query and stream results
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return 0, fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query(query.SQL)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Write raw entity records directly (no deduplication)
+	// Each SQL result becomes one entity record
+	entities := make([]OntologyEntity, 0, 100)
+
+	for rows.Next() {
+		var elementID, domain, entityName string
+		var confidence float64
+
+		if err := rows.Scan(&elementID, &entityType, &domain, &entityName, &confidence); err != nil {
+			return 0, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		docID := extractDocIDFromElementID(elementID)
+
+		// Create raw entity record with attributes
+		attributes := make(map[string]interface{})
+
+		// Store LLM validation prompt if configured for this mapping
+		if llmValidationPrompt != nil {
+			attributes["llm_validation_prompt"] = llmValidationPrompt.Prompt
+			if llmValidationPrompt.BatchSize > 0 {
+				attributes["llm_validation_batch_size"] = llmValidationPrompt.BatchSize
+			}
+		}
+
+		entity := OntologyEntity{
+			EntityID:    generateRandomHex(16), // Unique ID per extraction
+			DocID:       docID,
+			SourceName:  "unknown", // TODO: get from elements table if needed
+			EntityName:  entityName,
+			EntityType:  entityType,
+			Domain:      domain,
+			Confidence:  confidence,
+			Attributes:  attributes,
+			ElementID:   elementID,
+			RunID:       runID,
+			ExtractedAt: time.Now(),
+		}
+		entities = append(entities, entity)
+	}
+
+	// Check for row iteration errors
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	// Write raw entities to Parquet with Hive partitioning
+	if len(entities) > 0 {
+		partKey := fmt.Sprintf("run_id=%s", runID)
+		if err := s.writeOntologyEntitiesToParquet(partKey, entities); err != nil {
+			return 0, fmt.Errorf("failed to write entities: %w", err)
+		}
+	}
+
+	entityCount := len(entities)
+	if llmValidationPrompt != nil {
+		log.Printf("  ✓ Completed extraction for entity type '%s': %d raw entities (LLM validation will be applied during consolidation)",
+			entityType, entityCount)
+	} else {
+		log.Printf("  ✓ Completed extraction for entity type '%s': %d raw entities",
+			entityType, entityCount)
+	}
+	return entityCount, nil
+}
+
+// Helper functions for entity ID generation and doc_id extraction
+// These are used by ExtractAndStoreEntities
+
+func generateEntityID() string {
+	return fmt.Sprintf("entity_%s", generateRandomHex(16))
+}
+
+func generateRandomHex(n int) string {
+	bytes := make([]byte, n)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based random if crypto/rand fails
+		return fmt.Sprintf("%x", time.Now().UnixNano())[:n]
+	}
+	return hex.EncodeToString(bytes)[:n]
+}
+
+// generateStableID generates a deterministic hash from a dedup key
+// This ensures the same entity name always gets the same ID
+func generateStableID(dedupKey string) string {
+	h := sha256.New()
+	h.Write([]byte(dedupKey))
+	hash := h.Sum(nil)
+	return hex.EncodeToString(hash)[:16]
+}
+
+func extractDocIDFromElementID(elementID string) string {
+	// Split by underscores
+	parts := strings.Split(elementID, "_")
+	if len(parts) < 2 {
+		// If format is unexpected, return the whole elementID
+		return elementID
+	}
+
+	// Element ID format: <doc_id>_<element_type>_<hash>
+	// doc_id itself may contain underscores, so we need to find where element_type starts
+	// Common element types: paragraph, text, list_item, table, title, heading
+	elementTypes := []string{"paragraph", "text", "list_item", "list", "table", "title", "heading", "hyperlink", "diagram", "image"}
+
+	// Scan from right to left to find element type
+	for i := len(parts) - 2; i >= 1; i-- {
+		for _, elemType := range elementTypes {
+			if parts[i] == elemType {
+				// Found element type at position i
+				// doc_id is everything before position i
+				return strings.Join(parts[:i], "_")
+			}
+		}
+	}
+
+	// Fallback: assume last 2 parts are element_type and hash
+	// Return everything except last 2 parts
+	if len(parts) > 2 {
+		return strings.Join(parts[:len(parts)-2], "_")
+	}
+
+	return elementID
+}
+
+// ConsolidateEntities performs global entity resolution on raw extractions
+// Creates canonical entities by deduplicating raw extractions
+// llmValidator should be an *ontology.LLMValidator for validation, or nil to disable
+func (s *HiveParquetStorage) ConsolidateEntities(runID string, strategy string, llmValidator interface{}) error {
+	log.Printf("========================================")
+	log.Printf("ENTITY CONSOLIDATION")
+	log.Printf("========================================")
+	log.Printf("  Run ID: %s", runID)
+	log.Printf("  Strategy: %s", strategy)
+	log.Printf("  Storage: %s", s.basePath)
+
+	// LLM validation status
+	if llmValidator != nil {
+		log.Printf("  LLM Validation: ENABLED")
+	} else {
+		log.Printf("  LLM Validation: DISABLED")
+	}
+	log.Printf("========================================\n")
+
+	// Open DuckDB connection
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Check which entity types have LLM validation templates available
+	// Use reflection to avoid circular dependency with ontology package
+	// Map of entity_type -> validation prompt (string is kept for backward compatibility,
+	// but actual prompts are generated from templates in llm_validator.go)
+	entityTypeValidation := make(map[string]string)
+
+	if llmValidator != nil {
+		// Get available entity types using reflection
+		// llmValidator is an LLMValidator from ontology package
+		// We need to call GetAvailableEntityTypes() method
+		validatorVal := reflect.ValueOf(llmValidator)
+		getTypesMethod := validatorVal.MethodByName("GetAvailableEntityTypes")
+
+		if getTypesMethod.IsValid() {
+			// Call GetAvailableEntityTypes()
+			callResults := getTypesMethod.Call([]reflect.Value{})
+			if len(callResults) == 1 {
+				// Extract []string result
+				typesVal := callResults[0]
+				if typesVal.Kind() == reflect.Slice {
+					for i := 0; i < typesVal.Len(); i++ {
+						entityType := typesVal.Index(i).String()
+						// Mark this entity type as having validation available
+						// The actual prompt is generated from templates, not stored here
+						entityTypeValidation[entityType] = "template-based"
+						log.Printf("  Entity type '%s' has LLM validation template", entityType)
+					}
+				}
+			}
+		} else {
+			log.Printf("  WARNING: LLM validator does not have GetAvailableEntityTypes method - LLM validation disabled")
+		}
+	}
+
+	// Build DuckDB query to consolidate raw entities
+	// Filter out empty/whitespace entity names - these are invalid extractions
+	query := fmt.Sprintf(`
+WITH raw_entities AS (
+  SELECT
+    entity_name,
+    entity_type,
+    domain,
+    confidence
+  FROM '%s/ontology_entities/run_id=%s/*.parquet'
+  WHERE entity_name IS NOT NULL
+    AND TRIM(entity_name) != ''
+),
+canonical AS (
+  SELECT
+    LOWER(entity_type || '.' || entity_name) as dedup_key,
+    entity_name,
+    entity_type,
+    domain,
+    MAX(confidence) as confidence,
+    COUNT(*) as mention_count
+  FROM raw_entities
+  GROUP BY dedup_key, entity_name, entity_type, domain
+)
+SELECT
+  dedup_key,
+  entity_name,
+  entity_type,
+  domain,
+  confidence,
+  mention_count
+FROM canonical
+ORDER BY entity_type, entity_name;
+	`, s.basePath, runID)
+
+	log.Println("Executing consolidation query...")
+	rows, err := db.Query(query)
+	if err != nil {
+		return fmt.Errorf("failed to execute consolidation query: %w", err)
+	}
+	defer rows.Close()
+
+	// Collect canonical entities grouped by entity type for validation
+	entitiesByType := make(map[string][]CanonicalEntity)
+
+	for rows.Next() {
+		var dedupKey, entityName, entityType, domain string
+		var confidence float64
+		var mentionCount int
+
+		if err := rows.Scan(&dedupKey, &entityName, &entityType, &domain, &confidence, &mentionCount); err != nil {
+			return fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// Generate stable entity ID from dedup key
+		entityID := generateStableID(dedupKey)
+
+		canonical := CanonicalEntity{
+			EntityID:     entityID,
+			EntityName:   entityName,
+			EntityType:   entityType,
+			Domain:       domain,
+			Confidence:   confidence,
+			MentionCount: mentionCount,
+			Strategy:     strategy,
+			Attributes:   make(map[string]interface{}),
+			RunID:        runID,
+			CreatedAt:    time.Now(),
+		}
+
+		entitiesByType[entityType] = append(entitiesByType[entityType], canonical)
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	totalEntities := 0
+	for _, entities := range entitiesByType {
+		totalEntities += len(entities)
+	}
+	log.Printf("  ✓ Resolved %d canonical entities from raw extractions", totalEntities)
+
+	// Apply LLM validation to entity types that have validation prompts
+	finalEntities := make([]CanonicalEntity, 0, totalEntities)
+
+	for entityType, entities := range entitiesByType {
+		validationPrompt, hasValidation := entityTypeValidation[entityType]
+
+		if !hasValidation || llmValidator == nil {
+			// No validation needed - include all entities
+			finalEntities = append(finalEntities, entities...)
+			log.Printf("  ✓ Entity type '%s': %d entities (no LLM validation)", entityType, len(entities))
+			continue
+		}
+
+		// Apply LLM validation
+		log.Printf("  Applying LLM validation to entity type '%s' (%d entities)...", entityType, len(entities))
+
+		// Build validation entities
+		validationEntities := make([]entityToValidate, len(entities))
+		for i, entity := range entities {
+			validationEntities[i] = entityToValidate{
+				EntityName: entity.EntityName,
+				Prompt:     validationPrompt,
+				EntityType: entityType,
+			}
+		}
+
+		// Call LLM validation in batches (batch size 50)
+		// batchValidateLLM uses reflection to call the Complete method
+		validationResults, err := s.batchValidateLLM(context.Background(), llmValidator, validationEntities, 50)
+		if err != nil {
+			log.Printf("  WARNING: LLM validation failed: %v - including all entities (permissive)", err)
+			finalEntities = append(finalEntities, entities...)
+			continue
+		}
+
+		// Filter entities based on validation results
+		acceptedCount := 0
+		rejectedCount := 0
+		for i, isValid := range validationResults {
+			if isValid {
+				// Store validation info in attributes
+				entities[i].Attributes["llm_validation_prompt"] = validationPrompt
+				entities[i].Attributes["llm_validation_result"] = "accepted"
+				finalEntities = append(finalEntities, entities[i])
+				acceptedCount++
+			} else {
+				rejectedCount++
+				log.Printf("    LLM rejected entity: '%s' (type=%s)", entities[i].EntityName, entityType)
+			}
+		}
+
+		log.Printf("  ✓ LLM validation complete: %d accepted, %d rejected", acceptedCount, rejectedCount)
+	}
+
+	// Write canonical entities to Parquet
+	if len(finalEntities) > 0 {
+		if err := s.writeCanonicalEntitiesToParquet(runID, finalEntities); err != nil {
+			return fmt.Errorf("failed to write canonical entities: %w", err)
+		}
+	}
+
+	log.Printf("  ✓ Consolidation complete: %d final canonical entities", len(finalEntities))
+	log.Printf("========================================\n")
+	return nil
+}
+
+// llmOptions implements llmOptionsInterface
+type llmOptions struct {
+	maxTokens    int
+	temperature  float64
+	systemPrompt string
+}
+
+func (o llmOptions) GetMaxTokens() int      { return o.maxTokens }
+func (o llmOptions) GetTemperature() float64 { return o.temperature }
+func (o llmOptions) GetSystemPrompt() string { return o.systemPrompt }
+
+// batchValidateLLM validates entities using LLM in batches via ValidateInBatches reflection call
+// Returns []bool in same order as input entities
+// On error, returns all false (strict - reject entities)
+func (s *HiveParquetStorage) batchValidateLLM(ctx context.Context, validator interface{}, entities []entityToValidate, batchSize int) ([]bool, error) {
+	if len(entities) == 0 {
+		return []bool{}, nil
+	}
+
+	// Convert []entityToValidate to the format expected by LLMValidator.ValidateInBatches
+	// The ontology package defines: type EntityToValidate struct { EntityName string; Prompt string; EntityType string }
+	// We need to create a slice of these structs dynamically using reflection
+
+	validatorVal := reflect.ValueOf(validator)
+	validateMethod := validatorVal.MethodByName("ValidateInBatches")
+
+	if !validateMethod.IsValid() {
+		// Strict error handling - on failure, reject all entities
+		log.Printf("WARNING: Validator does not have ValidateInBatches method - rejecting all entities (strict)")
+		results := make([]bool, len(entities))
+		// results are already false (zero value)
+		return results, nil
+	}
+
+	// Get the method signature to determine the EntityToValidate type
+	validateMethodType := validateMethod.Type()
+	if validateMethodType.NumIn() != 3 {
+		log.Printf("WARNING: ValidateInBatches has unexpected signature - rejecting all entities (strict)")
+		results := make([]bool, len(entities))
+		return results, nil
+	}
+
+	// Get the slice element type (EntityToValidate)
+	entitiesParamType := validateMethodType.In(1) // 2nd parameter (0=ctx, 1=entities, 2=batchSize)
+	if entitiesParamType.Kind() != reflect.Slice {
+		log.Printf("WARNING: ValidateInBatches entities parameter is not a slice - rejecting all entities (strict)")
+		results := make([]bool, len(entities))
+		return results, nil
+	}
+	entityType := entitiesParamType.Elem()
+
+	// Create a slice of EntityToValidate structs using reflection
+	entitiesSlice := reflect.MakeSlice(entitiesParamType, len(entities), len(entities))
+	for i, entity := range entities {
+		entityStruct := reflect.New(entityType).Elem()
+
+		// Set fields: EntityName, Prompt, EntityType
+		entityNameField := entityStruct.FieldByName("EntityName")
+		if entityNameField.IsValid() && entityNameField.CanSet() {
+			entityNameField.SetString(entity.EntityName)
+		}
+
+		promptField := entityStruct.FieldByName("Prompt")
+		if promptField.IsValid() && promptField.CanSet() {
+			promptField.SetString(entity.Prompt)
+		}
+
+		entityTypeField := entityStruct.FieldByName("EntityType")
+		if entityTypeField.IsValid() && entityTypeField.CanSet() {
+			entityTypeField.SetString(entity.EntityType)
+		}
+
+		entitiesSlice.Index(i).Set(entityStruct)
+	}
+
+	// Call ValidateInBatches(ctx context.Context, entities []EntityToValidate, batchSize int) ([]bool, error)
+	args := []reflect.Value{
+		reflect.ValueOf(ctx),
+		entitiesSlice,
+		reflect.ValueOf(batchSize),
+	}
+
+	callResults := validateMethod.Call(args)
+	if len(callResults) != 2 {
+		log.Printf("WARNING: ValidateInBatches returned unexpected number of values - rejecting all entities (strict)")
+		results := make([]bool, len(entities))
+		return results, nil
+	}
+
+	// Extract results and error
+	var results []bool
+	var err error
+
+	if callResults[0].IsValid() && callResults[0].CanInterface() {
+		if resultsInterface := callResults[0].Interface(); resultsInterface != nil {
+			results = resultsInterface.([]bool)
+		}
+	}
+
+	if !callResults[1].IsNil() {
+		err = callResults[1].Interface().(error)
+	}
+
+	if err != nil {
+		// Strict error handling - on failure, reject all entities
+		log.Printf("WARNING: LLM validation failed: %v - rejecting all entities (strict)", err)
+		results = make([]bool, len(entities))
+		return results, nil
+	}
+
+	// Verify results length matches
+	if len(results) != len(entities) {
+		log.Printf("WARNING: ValidateInBatches returned %d results but expected %d - rejecting all entities (strict)",
+			len(results), len(entities))
+		results = make([]bool, len(entities))
+		return results, nil
+	}
+
+	return results, nil
+}
+
+// writeCanonicalEntitiesToParquet writes canonical entities to Parquet storage
+func (s *HiveParquetStorage) writeCanonicalEntitiesToParquet(runID string, entities []CanonicalEntity) error {
+	if len(entities) == 0 {
+		return nil
+	}
+
+	// Create output directory with run_id partition
+	outputDir := filepath.Join(s.basePath, "canonical_entities", fmt.Sprintf("run_id=%s", runID))
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Generate unique filename
+	filename := fmt.Sprintf("canonical_entities_%s.parquet", generateRandomHex(8))
+	outputPath := filepath.Join(outputDir, filename)
+
+	// Open DuckDB connection
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Use DuckDB to write Parquet
+	placeholders := make([]string, len(entities))
+	for i := range entities {
+		placeholders[i] = fmt.Sprintf(
+			"('%s', '%s', '%s', '%s', %.2f, %d, '%s', '%s', '%s')",
+			escapeSQL(entities[i].EntityID),
+			escapeSQL(entities[i].EntityName),
+			escapeSQL(entities[i].EntityType),
+			escapeSQL(entities[i].Domain),
+			entities[i].Confidence,
+			entities[i].MentionCount,
+			escapeSQL(entities[i].Strategy),
+			runID,
+			entities[i].CreatedAt.Format(time.RFC3339),
+		)
+	}
+
+	query := fmt.Sprintf(`
+		COPY (
+			SELECT
+				entity_id,
+				entity_name,
+				entity_type,
+				domain,
+				confidence,
+				mention_count,
+				strategy,
+				run_id,
+				CAST(created_at AS TIMESTAMP) as created_at
+			FROM (VALUES %s) AS t(entity_id, entity_name, entity_type, domain, confidence, mention_count, strategy, run_id, created_at)
+		) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD);
+	`, strings.Join(placeholders, ", "), outputPath)
+
+	if _, err := db.Exec(query); err != nil {
+		return fmt.Errorf("failed to write canonical entities to Parquet: %w", err)
+	}
+
+	log.Printf("  Wrote %d canonical entities to: %s", len(entities), outputPath)
+	return nil
+}
+
+// ExtractEntitiesSQL executes ontology entity extraction entirely within DuckDB
+// This method processes elements in-database using SQL queries, avoiding the need
+// to load all elements into Go memory. Scales to billions of elements.
+func (s *HiveParquetStorage) ExtractEntitiesSQL(
+	schemaJSON []byte,
+	filters map[string]interface{},
+	conceptEmbeddings map[string][]float64,
+) ([]byte, error) {
+	log.Printf("========================================")
+	log.Printf("SQL-BASED ENTITY EXTRACTION")
+	log.Printf("========================================")
+	log.Printf("  Storage: %s", s.basePath)
+	log.Printf("  Filters: %v", filters)
+	log.Printf("  Concept embeddings: %d", len(conceptEmbeddings))
+	log.Printf("========================================")
+
+	// Parse ontology schema
+	var schema map[string]interface{}
+	if err := json.Unmarshal(schemaJSON, &schema); err != nil {
+		return nil, fmt.Errorf("failed to parse ontology schema: %w", err)
+	}
+
+	// Get element_entity_mappings from schema
+	mappings, ok := schema["element_entity_mappings"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("schema missing element_entity_mappings")
+	}
+
+	log.Printf("  Entity mappings to process: %d", len(mappings))
+
+	// Create query builder
+	builder := NewExtractionQueryBuilder(s.basePath)
+
+	// Extract entities for each mapping
+	var allEntities []map[string]interface{}
+
+	for idx, mappingInterface := range mappings {
+		mappingMap := mappingInterface.(map[string]interface{})
+		entityType := mappingMap["entity_type"].(string)
+
+		log.Printf("  [%d/%d] Processing entity type: %s", idx+1, len(mappings), entityType)
+
+		// Convert mapping to JSON
+		mappingJSON, err := json.Marshal(mappingMap)
+		if err != nil {
+			log.Printf("    ERROR: Failed to marshal mapping: %v", err)
+			continue
+		}
+
+		// Build SQL query for this mapping
+		query, err := builder.BuildEntityExtractionQuery(mappingJSON, filters, conceptEmbeddings)
+		if err != nil {
+			log.Printf("    ERROR: Failed to build query: %v", err)
+			continue
+		}
+
+		// Log the SQL query for debugging
+		if idx == 0 {
+			log.Printf("    DEBUG: Generated SQL query:\n%s\n", query.SQL)
+		}
+
+		// Execute query in DuckDB
+		entities, err := s.executeEntityExtractionQuery(query)
+		if err != nil {
+			log.Printf("    ERROR: Failed to execute query: %v", err)
+			continue
+		}
+
+		log.Printf("    ✓ Extracted %d entities", len(entities))
+		allEntities = append(allEntities, entities...)
+	}
+
+	log.Printf("========================================")
+	log.Printf("  TOTAL ENTITIES EXTRACTED: %d", len(allEntities))
+	log.Printf("========================================")
+
+	// Convert to JSON
+	result, err := json.Marshal(allEntities)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal results: %w", err)
+	}
+
+	return result, nil
+}
+
+// executeEntityExtractionQuery executes a single entity extraction SQL query
+func (s *HiveParquetStorage) executeEntityExtractionQuery(query *EntityExtractionQuery) ([]map[string]interface{}, error) {
+	// Open DuckDB connection
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB connection: %w", err)
+	}
+	defer db.Close()
+
+	// Execute query
+	rows, err := db.Query(query.SQL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute extraction query: %w\nSQL: %s", err, query.SQL)
+	}
+	defer rows.Close()
+
+	// Get column names
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get columns: %w", err)
+	}
+
+	// Parse results
+	var entities []map[string]interface{}
+	for rows.Next() {
+		// Create slice of interface{} to hold column values
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		// Scan row
+		if err := rows.Scan(valuePtrs...); err != nil {
+			log.Printf("WARNING: Failed to scan row: %v", err)
+			continue
+		}
+
+		// Build entity map
+		entity := make(map[string]interface{})
+		for i, col := range columns {
+			entity[col] = values[i]
+		}
+
+		entities = append(entities, entity)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration error: %w", err)
+	}
+
+	return entities, nil
+}
+
+// ExtractRelationshipsSQL executes relationship extraction within DuckDB
+// TODO: Implement relationship extraction (similar pattern to entity extraction)
+func (s *HiveParquetStorage) ExtractRelationshipsSQL(
+	schemaJSON []byte,
+	entitiesJSON []byte,
+	filters map[string]interface{},
+) ([]byte, error) {
+	// Placeholder - will implement after entity extraction is validated
+	log.Printf("ExtractRelationshipsSQL: Not yet implemented")
+	return []byte("[]"), nil
+}
+
 // Close closes the storage (no-op for Parquet)
 func (s *HiveParquetStorage) Close() error {
 	log.Println("Closing Hive-partitioned Parquet storage")
@@ -737,21 +1575,21 @@ func (s *HiveParquetStorage) partitionLinks(links []Link) map[string][]Link {
 	return partitioned
 }
 
-// partitionOntologyEntities groups ontology entities by partition keys (source, domain, date)
+// partitionOntologyEntities groups ontology entities by partition keys (source, domain, run_id)
 func (s *HiveParquetStorage) partitionOntologyEntities(entities []OntologyEntity) map[string][]OntologyEntity {
 	partitioned := make(map[string][]OntologyEntity)
 	for _, entity := range entities {
-		key := s.getOntologyPartitionKey(time.Now(), entity.SourceName, entity.Domain)
+		key := s.getOntologyPartitionKey(entity.SourceName, entity.Domain, entity.RunID)
 		partitioned[key] = append(partitioned[key], entity)
 	}
 	return partitioned
 }
 
-// partitionOntologyRelationships groups ontology relationships by partition keys
+// partitionOntologyRelationships groups ontology relationships by partition keys (source, domain, run_id)
 func (s *HiveParquetStorage) partitionOntologyRelationships(relationships []OntologyRelationship) map[string][]OntologyRelationship {
 	partitioned := make(map[string][]OntologyRelationship)
 	for _, rel := range relationships {
-		key := s.getOntologyPartitionKey(time.Now(), rel.SourceName, rel.Domain)
+		key := s.getOntologyPartitionKey(rel.SourceName, rel.Domain, rel.RunID)
 		partitioned[key] = append(partitioned[key], rel)
 	}
 	return partitioned
@@ -774,10 +1612,9 @@ func (s *HiveParquetStorage) getPartitionKey(timestamp time.Time, sourceName str
 	return fmt.Sprintf("date=%s/source=%s", date, sourceName)
 }
 
-// getOntologyPartitionKey generates partition key for ontology data (source, domain, date)
-func (s *HiveParquetStorage) getOntologyPartitionKey(timestamp time.Time, sourceName, domain string) string {
-	date := timestamp.Format("2006-01-02")
-	return fmt.Sprintf("source=%s/domain=%s/date=%s", sourceName, domain, date)
+// getOntologyPartitionKey generates partition key for ontology data (source, domain, run_id)
+func (s *HiveParquetStorage) getOntologyPartitionKey(sourceName, domain, runID string) string {
+	return fmt.Sprintf("source=%s/domain=%s/run_id=%s", sourceName, domain, runID)
 }
 
 // getHivePartitionPath returns the full Hive partition path for elements

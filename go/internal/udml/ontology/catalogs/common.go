@@ -79,15 +79,41 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 		ElementTypes: []string{"paragraph", "div", "list_item", "table_cell"}, // Added div, removed heading
 		SampleRules: []ontology.ExtractionRule{
 			// HIGH CONFIDENCE: Person with title prefix (Dr., Prof., Mr., Mrs., Ms.)
+			// Pattern excludes whitespace characters (tabs, newlines) via [^\s\n\r\t] requirement
 			{
 				Type:    ontology.RuleTypeRegex,
 				Pattern: `\b(?:Dr|Prof|Professor|Mr|Mrs|Ms|Miss)\.?\s+[A-Z][a-z]{1,20}(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]{1,20}\b`,
-				// No semantic filter needed - title is strong signal
+				// Dictionary-based linguistic validation
+				DictionaryFilter: &ontology.DictionaryFilter{
+					RequireUnknownWords:   true,             // At least one word not in dictionary (proper name)
+					MaxKnownWordsRatio:    0.5,              // Max 50% of words can be common words
+					RejectIfAllPOS:        []string{"noun"}, // Reject if ALL words are common nouns
+					RejectIfAllCategories: []string{"place", "ui_action", "temporal"}, // Reject if all words are places/UI/temporal
+					RejectCategoryCombinations: [][]string{
+						{"place", "common_noun"},   // "Capitol Reef", "Bloomsbury Academic"
+						{"common_noun", "common_noun"}, // "World Health"
+						{"ui_action", "ui_action"}, // "Donate Create"
+					},
+				},
 			},
 			// MEDIUM CONFIDENCE: Full names with optional middle initial or suffix
+			// Pattern excludes whitespace characters (tabs, newlines)
 			{
 				Type:    ontology.RuleTypeRegex,
 				Pattern: `\b[A-Z][a-z]{1,20}(?:\s+[A-Z]\.)?\s+[A-Z][a-z]{1,20}(?:\s+(?:Jr|Sr|II|III|IV)\.?)?\b`,
+				// Dictionary-based linguistic validation - requires proper names, not common nouns
+				DictionaryFilter: &ontology.DictionaryFilter{
+					RequireUnknownWords:   true,             // At least one word NOT in dictionary (proper name signal)
+					MaxKnownWordsRatio:    0.5,              // Max 50% can be known words (allows "John" if rare)
+					RejectIfAllPOS:        []string{"noun"}, // Reject if ALL words are common nouns
+					RejectIfAllCategories: []string{"place", "ui_action", "temporal"}, // Reject if all words are places/UI/temporal
+					RejectCategoryCombinations: [][]string{
+						{"place", "common_noun"},   // "Capitol Reef", "Bloomsbury Academic" (publisher)
+						{"common_noun", "common_noun"}, // "World Health"
+						{"ui_action", "ui_action"}, // "Donate Create"
+					},
+				},
+				// Semantic filter for additional context validation
 				SemanticFilter: &ontology.SemanticFilter{
 					ReferenceConcepts: []string{
 						"individual person with biography or credentials",
@@ -110,6 +136,96 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 		Description:  "Job title, position, or functional role",
 		Aliases:      []string{"title", "position", "job title", "occupation", "function"},
 		ElementTypes: []string{"paragraph", "table_cell"},
+		SampleRules: []ontology.ExtractionRule{
+			{
+				Type: ontology.RuleTypeKeyword,
+				Keywords: []string{
+					// C-Suite and Executive Roles
+					"CEO", "CFO", "CTO", "COO", "CIO", "CMO", "CHRO", "CPO", "CLO",
+					"Chief Executive Officer", "Chief Financial Officer", "Chief Technology Officer",
+					"Chief Operating Officer", "Chief Information Officer", "Chief Marketing Officer",
+					"Chief Human Resources Officer", "Chief Product Officer", "Chief Legal Officer",
+					"Chief Data Officer", "Chief Security Officer", "Chief Strategy Officer",
+
+					// Corporate Leadership
+					"President", "Vice President", "Senior Vice President", "Executive Vice President",
+					"VP", "SVP", "EVP", "Managing Director", "General Manager",
+					"Chairman", "Chairwoman", "Chairperson", "Board Member", "Director",
+					"Executive Director", "Senior Director", "Associate Director",
+
+					// Management Roles
+					"Manager", "Senior Manager", "Department Manager", "Project Manager",
+					"Program Manager", "Product Manager", "Account Manager", "Operations Manager",
+					"Regional Manager", "District Manager", "Branch Manager",
+					"Team Leader", "Team Lead", "Supervisor", "Coordinator",
+
+					// Professional/Technical Roles
+					"Engineer", "Senior Engineer", "Lead Engineer", "Principal Engineer", "Staff Engineer",
+					"Architect", "Senior Architect", "Technical Architect", "Solutions Architect",
+					"Developer", "Senior Developer", "Software Developer", "Lead Developer",
+					"Analyst", "Senior Analyst", "Data Analyst", "Business Analyst", "Systems Analyst",
+					"Scientist", "Senior Scientist", "Research Scientist", "Principal Scientist",
+					"Researcher", "Research Associate", "Research Fellow",
+					"Consultant", "Senior Consultant", "Principal Consultant",
+					"Specialist", "Senior Specialist", "Technical Specialist",
+					"Designer", "Senior Designer", "Lead Designer", "UX Designer", "UI Designer",
+
+					// Academic Roles
+					"Professor", "Associate Professor", "Assistant Professor", "Adjunct Professor",
+					"Lecturer", "Senior Lecturer", "Instructor", "Teaching Assistant",
+					"Dean", "Associate Dean", "Department Chair", "Department Head",
+					"Researcher", "Postdoctoral Researcher", "Research Assistant",
+					"Chancellor", "Provost", "Registrar",
+
+					// Education/Training
+					"Teacher", "Head Teacher", "Lead Teacher", "Educator",
+					"Tutor", "Mentor", "Coach", "Trainer", "Facilitator",
+					"Student", "Graduate Student", "Undergraduate", "PhD Candidate",
+					"Principal", "Vice Principal", "Headmaster", "Superintendent",
+
+					// Political/Government Roles
+					"President", "Vice President", "Governor", "Lieutenant Governor",
+					"Senator", "Congressman", "Congresswoman", "Representative",
+					"Mayor", "Deputy Mayor", "Councilmember", "Alderman",
+					"Minister", "Prime Minister", "Secretary", "Undersecretary",
+					"Ambassador", "Diplomat", "Consul", "Attaché",
+					"Judge", "Justice", "Chief Justice", "Magistrate",
+					"Commissioner", "Director General", "Administrator",
+
+					// Medical/Healthcare Roles
+					"Doctor", "Physician", "Surgeon", "Cardiologist", "Oncologist",
+					"Nurse", "Registered Nurse", "Nurse Practitioner", "Head Nurse",
+					"Physician Assistant", "Medical Assistant", "Paramedic",
+					"Pharmacist", "Therapist", "Psychologist", "Psychiatrist",
+					"Dentist", "Veterinarian", "Medical Director", "Chief Medical Officer",
+
+					// Legal Roles
+					"Lawyer", "Attorney", "Counsel", "General Counsel", "Legal Counsel",
+					"Partner", "Senior Partner", "Associate", "Senior Associate",
+					"Paralegal", "Legal Assistant",
+
+					// Creative/Media Roles
+					"Author", "Writer", "Journalist", "Reporter", "Editor",
+					"Senior Editor", "Managing Editor", "Copy Editor",
+					"Producer", "Director", "Cinematographer", "Photographer",
+					"Artist", "Illustrator", "Graphic Designer", "Creative Director",
+
+					// Sales/Marketing
+					"Sales Representative", "Account Executive", "Sales Director",
+					"Marketing Manager", "Marketing Director", "Brand Manager",
+
+					// Operations/Support
+					"Administrator", "Office Manager", "Executive Assistant",
+					"Officer", "Senior Officer", "Operations Officer",
+					"Technician", "Senior Technician", "Support Specialist",
+
+					// Family/Social Roles
+					"Parent", "Mother", "Father", "Guardian",
+					"Child", "Son", "Daughter", "Sibling",
+					"Spouse", "Partner", "Husband", "Wife",
+				},
+			},
+		},
 	},
 	"executive": {
 		EntityType:   "executive",
@@ -139,16 +255,24 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 		ElementTypes: []string{"paragraph", "div", "list_item", "table_cell"}, // Removed heading
 		SampleRules: []ontology.ExtractionRule{
 			// HIGH CONFIDENCE: Legal entity with suffix
+			// Restricts to max 5 total words to avoid sentence fragments
 			{
 				Type:    ontology.RuleTypeRegex,
-				Pattern: `\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4}\s+(?:Inc|Corp|Corporation|LLC|Ltd|Co|Company|Group|Partners|LP|LLP)\.?\b`,
+				Pattern: `\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Inc|Corp|Corporation|LLC|Ltd|Limited|Co|Company|Group|Partners|LP|LLP)\.?\b`,
 				// No semantic filter needed - legal suffix is strong signal
 			},
 			// HIGH CONFIDENCE: "The [Name] [OrgType]" pattern
+			// Restricts to max 5 total words (The + 3 name words + type word)
 			{
 				Type:    ontology.RuleTypeRegex,
-				Pattern: `\bThe\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Foundation|Institute|Organization|Association|Society|Council|Commission|Agency|Department|Ministry)\b`,
+				Pattern: `\bThe\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,2}\s+(?:Foundation|Institute|Organization|Association|Society|Council|Commission|Agency|Department|Ministry|Bureau|Office)\b`,
 				// No semantic filter needed - structure is strong signal
+			},
+			// HIGH CONFIDENCE: Specific institutional patterns
+			// Universities, colleges, institutes with strong contextual indicators
+			{
+				Type:    ontology.RuleTypeRegex,
+				Pattern: `\b(?:[A-Z][a-z]+\s+){0,3}(?:University|Institute|College|Laboratory|Center|Centre)(?:\s+of\s+[A-Z][a-z]+)?\b`,
 			},
 			// MEDIUM CONFIDENCE: Acronyms (2-5 letters)
 			{
@@ -163,16 +287,18 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 					SimilarityThreshold: 0.70, // Higher threshold for acronyms
 				},
 			},
-			// MEDIUM CONFIDENCE: Multi-word capitalized (3+ words = likely org)
+			// MEDIUM CONFIDENCE: Multi-word capitalized (3-4 words = likely org)
+			// Avoids 5+ word captures that are likely sentence fragments
 			{
 				Type:    ontology.RuleTypeRegex,
-				Pattern: `\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){2,4}\b`,
+				Pattern: `\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){2,3}\b`,
 				SemanticFilter: &ontology.SemanticFilter{
 					ReferenceConcepts: []string{
 						"organizational structure (headquarters, subsidiary, division)",
 						"company or institution as collective entity",
+						"specific named organization",
 					},
-					SimilarityThreshold: 0.65,
+					SimilarityThreshold: 0.70, // Raised from 0.65 to reduce false positives
 				},
 			},
 			// LOW CONFIDENCE: 2-word capitalized (ambiguous - could be person)
@@ -185,7 +311,7 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 						"business operations (earnings, revenue, products, services)",
 						"organizational structure (headquarters, subsidiary, division)",
 					},
-					SimilarityThreshold: 0.70, // Higher threshold due to ambiguity
+					SimilarityThreshold: 0.75, // Raised from 0.70 due to high ambiguity
 				},
 			},
 		},
@@ -435,6 +561,132 @@ var CommonEntityTemplates = map[string]EntityTemplate{
 	},
 }
 
+// LLMValidationTemplate defines LLM validation prompts for entity types
+type LLMValidationTemplate struct {
+	EntityType          string   // Entity type this validation applies to
+	QuestionTemplate    string   // Template for validation question (use {entity} placeholder)
+	RejectExamples      []string // Examples of things that should be rejected
+	AcceptExamples      []string // Examples of things that should be accepted
+	AdditionalGuidance  string   // Optional additional guidance for the LLM
+	RequireVeryConfident bool    // If true, emphasizes "VERY confident" language
+}
+
+// CommonLLMValidationTemplates defines reusable LLM validation prompts
+var CommonLLMValidationTemplates = map[string]LLMValidationTemplate{
+	"person": {
+		EntityType:          "person",
+		QuestionTemplate:    "Is '{entity}' an individual human person's name (not an organization, concept, or place)?",
+		RequireVeryConfident: true,
+		RejectExamples: []string{
+			"Medical Association", // Organization
+			"Medicine",            // Concept/field
+			"Medical Science",     // Academic field
+			"Department of Health", // Government org
+			"World Health",        // Org fragment
+			"Public Health",       // Field/concept
+			"Harvard Medical",     // Institution fragment
+		},
+		AcceptExamples: []string{
+			"John Smith",
+			"Dr. Jane Doe",
+			"Professor Albert Einstein",
+			"Mary Johnson",
+			"Dr. Robert Koch",
+		},
+		AdditionalGuidance: "Answer 'yes' ONLY if you are VERY confident it is an individual human person's name. Answer 'no' for organizations, departments, concepts, academic fields, or anything uncertain.",
+	},
+	"organization": {
+		EntityType:       "organization",
+		QuestionTemplate: "Is '{entity}' a specific, real organization name (not a sentence fragment, generic term, or concatenated list)?",
+		RequireVeryConfident: true,
+		RejectExamples: []string{
+			"Endemol Shine Group Takeover Approved By European Commission", // Sentence fragment
+			"Agriculture Banking Communications Companies Energy Insurance Manufacturing", // Concatenated list
+			"Jesus Christ Ministry Crucifixion Resurrection Great Commission", // Religious text fragment
+			"American Revolution War Second Continental Congress", // Historical event description
+			"Advanced Manufacturing", // Too generic
+			"American Council",       // Incomplete/generic
+			"The Institute",          // Too generic
+		},
+		AcceptExamples: []string{
+			"Harvard University",
+			"Microsoft Corporation",
+			"World Health Organization",
+			"Stanford University",
+			"General Electric",
+			"United Nations",
+		},
+		AdditionalGuidance: "Answer 'yes' ONLY for specific, real organization names. Answer 'no' for sentence fragments, generic terms (like 'Manufacturing', 'Council'), incomplete names, or concatenated lists of words.",
+	},
+}
+
+// GetLLMValidationTemplate retrieves an LLM validation template by entity type
+func GetLLMValidationTemplate(entityType string) (LLMValidationTemplate, bool) {
+	template, exists := CommonLLMValidationTemplates[entityType]
+	return template, exists
+}
+
+// CommonRelationshipTemplates defines common relationship patterns
+var CommonRelationshipTemplates = []RelationshipTemplate{
+	// Role-Person relationships
+	{
+		Name:             "person_has_role",
+		SourceType:       "person",
+		TargetType:       "role",
+		RelationshipType: ontology.RelationshipCustom,
+		Description:      "A person holds or performs a role/position",
+		SamplePatterns: []string{
+			"[Person] is the [Role]",
+			"[Person] serves as [Role]",
+			"[Person], [Role]",
+			"[Role] [Person]",
+			"[Person] was appointed [Role]",
+			"[Person] worked as [Role]",
+			"[Person], who is [Role]",
+			"[Person] holds the position of [Role]",
+		},
+	},
+	{
+		Name:             "role_held_by",
+		SourceType:       "role",
+		TargetType:       "person",
+		RelationshipType: ontology.RelationshipCustom,
+		Description:      "A role is held/performed by a person (inverse of person_has_role)",
+		SamplePatterns: []string{
+			"[Role] [Person]",
+			"The [Role], [Person]",
+		},
+	},
+	// Role-Organization relationships
+	{
+		Name:             "role_at_organization",
+		SourceType:       "role",
+		TargetType:       "organization",
+		RelationshipType: ontology.RelationshipLocatedIn,
+		Description:      "A role exists within an organization",
+		SamplePatterns: []string{
+			"[Role] at [Organization]",
+			"[Role] of [Organization]",
+			"[Organization]'s [Role]",
+			"[Role] for [Organization]",
+		},
+	},
+	{
+		Name:             "person_works_at",
+		SourceType:       "person",
+		TargetType:       "organization",
+		RelationshipType: ontology.RelationshipRelatedTo,
+		Description:      "A person is employed by or affiliated with an organization",
+		SamplePatterns: []string{
+			"[Person] at [Organization]",
+			"[Person] works for [Organization]",
+			"[Person] of [Organization]",
+			"[Person], [Organization]",
+			"[Organization] employee [Person]",
+		},
+	},
+}
+
 // GetCommonEntityTemplate retrieves a common entity template by name
 func GetCommonEntityTemplate(entityType string) (EntityTemplate, bool) {
 	template, exists := CommonEntityTemplates[entityType]
@@ -448,4 +700,31 @@ func ListCommonEntityTypes() []string {
 		types = append(types, entityType)
 	}
 	return types
+}
+
+// GetCommonRelationshipTemplates returns all common relationship templates
+func GetCommonRelationshipTemplates() []RelationshipTemplate {
+	return CommonRelationshipTemplates
+}
+
+// GetRelationshipTemplatesBySourceType returns relationship templates for a given source entity type
+func GetRelationshipTemplatesBySourceType(sourceType string) []RelationshipTemplate {
+	var templates []RelationshipTemplate
+	for _, template := range CommonRelationshipTemplates {
+		if template.SourceType == sourceType {
+			templates = append(templates, template)
+		}
+	}
+	return templates
+}
+
+// GetRelationshipTemplatesByTargetType returns relationship templates for a given target entity type
+func GetRelationshipTemplatesByTargetType(targetType string) []RelationshipTemplate {
+	var templates []RelationshipTemplate
+	for _, template := range CommonRelationshipTemplates {
+		if template.TargetType == targetType {
+			templates = append(templates, template)
+		}
+	}
+	return templates
 }

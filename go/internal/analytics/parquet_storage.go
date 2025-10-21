@@ -1,9 +1,7 @@
 package analytics
 
 import (
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -878,15 +876,7 @@ func (s *ParquetStorage) writeLinksToParquet(partKey string, links []Link) error
 	return s.writeRecordToFile(filepath, schema, record)
 }
 
-// generateRandomHex generates a random hex string of specified length
-func generateRandomHex(length int) string {
-	bytes := make([]byte, length/2)
-	if _, err := rand.Read(bytes); err != nil {
-		// Fallback to timestamp-based if random fails
-		return fmt.Sprintf("%08x", time.Now().UnixNano()&0xFFFFFFFF)[:length]
-	}
-	return hex.EncodeToString(bytes)[:length]
-}
+// Note: generateRandomHex is defined in parquet_hive.go to avoid duplication
 
 // sanitizeUTF8 removes invalid UTF-8 sequences from a string
 func sanitizeUTF8(s string) string {
