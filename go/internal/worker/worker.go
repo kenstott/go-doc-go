@@ -17,6 +17,7 @@ import (
 	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/contentsource"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/importer"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/jobcontrol"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/parser"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
@@ -904,6 +905,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 	sourceConfig, hasConfig := w.contentSourceConfigs[docInfo.Source]
 	if hasConfig {
 		w.queueDiscoveredLinks(docInfo, parseResult, sourceConfig)
+		// Queue code dependencies (imports) discovered during parsing
+		w.queueDiscoveredCodeDependencies(docInfo, parseResult, sourceConfig)
 	}
 
 	// Store document metadata for change tracking on future refreshes
@@ -1437,6 +1440,252 @@ func (w *Worker) shouldIncludeLink(link string, sourceConfig map[string]interfac
 
 	// If no include patterns specified, allow by default
 	return true
+}
+
+// queueDiscoveredCodeDependencies queues code dependencies (imports) discovered during parsing
+func (w *Worker) queueDiscoveredCodeDependencies(docInfo *jobcontrol.DocumentInfo, parseResult *parser.ParseResult, sourceConfig map[string]interface{}) {
+	// TODO: This function will be fully implemented when discovery config is properly parsed
+	// For now, this is a stub that will be expanded once we update content source config handling
+
+	// Get discovery config from source config
+	discoveryRaw, hasDiscovery := sourceConfig["discovery"]
+	if !hasDiscovery {
+		return
+	}
+
+	discoveryConfig, ok := discoveryRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// Check if discovery is enabled
+	enabled, _ := discoveryConfig["enabled"].(bool)
+	if !enabled {
+		return
+	}
+
+	// Check if code_dependencies discovery is enabled
+	codeDepsRaw, hasCodeDeps := discoveryConfig["code_dependencies"]
+	if !hasCodeDeps {
+		return
+	}
+
+	codeDepsConfig, ok := codeDepsRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	codeDepsEnabled, _ := codeDepsConfig["enabled"].(bool)
+	if !codeDepsEnabled {
+		return
+	}
+
+	// Get current depth
+	currentDepth := 0
+	if depth, ok := docInfo.Metadata["discovery_depth"].(float64); ok {
+		currentDepth = int(depth)
+	}
+
+	// Get max depth from discovery config
+	maxDepth := 1 // default
+	if configDepth, ok := discoveryConfig["max_depth"].(int); ok {
+		maxDepth = configDepth
+	} else if configDepth, ok := discoveryConfig["max_depth"].(float64); ok {
+		maxDepth = int(configDepth)
+	}
+
+	// Check for code_dependencies specific max_depth override
+	if codeDepsDepth, ok := codeDepsConfig["max_depth"].(int); ok {
+		maxDepth = codeDepsDepth
+	} else if codeDepsDepth, ok := codeDepsConfig["max_depth"].(float64); ok {
+		maxDepth = int(codeDepsDepth)
+	}
+
+	// Check if we've reached max depth
+	if currentDepth >= maxDepth {
+		log.Printf("Not extracting code dependencies from %s - at max depth %d", docInfo.DocID, maxDepth)
+		return
+	}
+
+	// Determine language from doc type
+	language := parseResult.Document.DocType
+	if language == "" {
+		// Try to infer from file extension
+		language = inferLanguageFromPath(docInfo.DocID)
+	}
+
+	// Create appropriate resolver
+	var resolver importer.ImportResolver
+	var err error
+
+	switch language {
+	case "go", "golang":
+		resolver, err = importer.NewGoResolver(docInfo.DocID)
+	case "javascript", "typescript", "js", "ts":
+		resolver = importer.NewJSResolver()
+	case "python", "py":
+		resolver = importer.NewPythonResolver()
+	case "java":
+		resolver = importer.NewJavaResolver(docInfo.DocID)
+	default:
+		// Unsupported language for code dependency discovery
+		return
+	}
+
+	if err != nil {
+		log.Printf("Failed to create resolver for %s: %v", language, err)
+		return
+	}
+
+	// Find all code_dependency elements with import kind
+	queued := 0
+	for _, elem := range parseResult.Elements {
+		if elem.ElementType != "code_dependency" {
+			continue
+		}
+
+		// Only process imports (not function calls or type usage)
+		dependencyKind, _ := elem.Metadata["dependency_kind"].(string)
+		if dependencyKind != "import" {
+			continue
+		}
+
+		// Get import path
+		importPath, _ := elem.Metadata["import_path"].(string)
+		if importPath == "" {
+			continue
+		}
+
+		// Resolve import to file paths
+		resolution, err := resolver.ResolveImport(importPath, docInfo.DocID)
+		if err != nil {
+			log.Printf("Error resolving import %s: %v", importPath, err)
+			continue
+		}
+
+		// Check if resolution was successful
+		if resolution.Status != importer.StatusResolved {
+			// Log for debugging but don't error
+			if resolution.Status == importer.StatusUnresolvable {
+				log.Printf("DEBUG: Could not resolve import %s: %s", importPath, resolution.Reason)
+			}
+			continue
+		}
+
+		// Apply filtering based on package type
+		if !w.shouldFollowDependency(resolution, codeDepsConfig, discoveryConfig) {
+			continue
+		}
+
+		// Queue each resolved file
+		for _, filePath := range resolution.FilePaths {
+			metadata := map[string]interface{}{
+				"parent_doc":      docInfo.DocID,
+				"discovery_depth": currentDepth + 1,
+				"import_path":     importPath,
+				"package_type":    resolution.PackageType,
+				"source_name":     docInfo.Source,
+			}
+
+			if err := w.jobControl.EnqueueDocument(filePath, docInfo.Source, metadata); err != nil {
+				log.Printf("Failed to enqueue code dependency %s: %v", filePath, err)
+			} else {
+				queued++
+			}
+		}
+	}
+
+	if queued > 0 {
+		log.Printf("Queued %d discovered code dependencies from %s for processing", queued, docInfo.DocID)
+	}
+}
+
+// shouldFollowDependency checks if a resolved import should be followed based on config
+func (w *Worker) shouldFollowDependency(resolution *importer.ImportResolution, codeDepsConfig map[string]interface{}, discoveryConfig map[string]interface{}) bool {
+	// Check package type filters
+	followStdlib, _ := codeDepsConfig["follow_stdlib"].(bool)
+	followLocal, _ := codeDepsConfig["follow_local"].(bool)
+	followExternal, _ := codeDepsConfig["follow_external"].(bool)
+
+	switch resolution.PackageType {
+	case importer.PackageTypeStdlib, importer.PackageTypeBuiltin:
+		if !followStdlib {
+			return false
+		}
+	case importer.PackageTypeLocal:
+		if !followLocal {
+			return false
+		}
+	case importer.PackageTypeExternal:
+		if !followExternal {
+			return false
+		}
+	}
+
+	// Apply global include/exclude patterns
+	includePatterns := []string{}
+	excludePatterns := []string{}
+
+	if includePatternsRaw, ok := discoveryConfig["include_patterns"].([]interface{}); ok {
+		for _, p := range includePatternsRaw {
+			if pattern, ok := p.(string); ok {
+				includePatterns = append(includePatterns, pattern)
+			}
+		}
+	}
+
+	if excludePatternsRaw, ok := discoveryConfig["exclude_patterns"].([]interface{}); ok {
+		for _, p := range excludePatternsRaw {
+			if pattern, ok := p.(string); ok {
+				excludePatterns = append(excludePatterns, pattern)
+			}
+		}
+	}
+
+	// Check each file path against patterns
+	for _, filePath := range resolution.FilePaths {
+		// Check exclude patterns first
+		for _, pattern := range excludePatterns {
+			if strings.Contains(filePath, pattern) || strings.Contains(resolution.ImportPath, pattern) {
+				return false
+			}
+		}
+
+		// If include patterns exist, at least one must match
+		if len(includePatterns) > 0 {
+			matched := false
+			for _, pattern := range includePatterns {
+				if strings.Contains(filePath, pattern) || strings.Contains(resolution.ImportPath, pattern) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// inferLanguageFromPath infers programming language from file path
+func inferLanguageFromPath(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".go":
+		return "go"
+	case ".js", ".mjs", ".cjs":
+		return "javascript"
+	case ".ts", ".tsx":
+		return "typescript"
+	case ".py":
+		return "python"
+	case ".java":
+		return "java"
+	default:
+		return ""
+	}
 }
 
 // Helper functions
