@@ -18,6 +18,8 @@ func main() {
 		runInterview(os.Args[1:])
 	case "extract":
 		runExtract(os.Args[1:])
+	case "analyze-graph":
+		runAnalyzeGraph(os.Args[1:])
 	case "cache":
 		runCache(os.Args[1:])
 	case "help", "--help", "-h":
@@ -41,11 +43,12 @@ USAGE:
   ontology <command> [options]
 
 COMMANDS:
-  interview    Create or refine an ontology schema through LLM-guided interview
-  extract      Extract entities and relationships using an ontology schema
-  cache        Manage content cache (clear, stats)
-  help         Show this help message
-  version      Show version information
+  interview      Create or refine an ontology schema through LLM-guided interview
+  extract        Extract entities and relationships using an ontology schema
+  analyze-graph  Analyze extracted ontology as knowledge graph with community detection
+  cache          Manage content cache (clear, stats)
+  help           Show this help message
+  version        Show version information
 
 Run 'ontology <command> --help' for more information on a specific command.
 
@@ -54,7 +57,10 @@ EXAMPLES:
   ontology interview ./corpus.parquet ./ontology.json
 
   # Extract entities using ontology
-  ontology extract --schema ./ontology.json --parquet ./corpus.parquet --output ./results.json
+  ontology extract --schema ./ontology.json --parquet ./corpus.parquet --job-db ./extraction.db
+
+  # Analyze extracted ontology as knowledge graph
+  ontology analyze-graph --parquet ./corpus.parquet --run-id extraction_12345 --output-gob ./graph.gob
 
   # View cache statistics
   ontology cache stats
