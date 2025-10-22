@@ -1,20 +1,34 @@
-# UDML Ontology Builder CLI
+# UDML Ontology Management CLI
 
-Interactive command-line tool for automatically generating ontology schemas from UDML document corpora using LLM-powered analysis.
+Unified command-line tool for creating, extracting, and analyzing ontologies from UDML document corpora.
 
 ## Overview
 
-The Ontology Builder analyzes your UDML Parquet storage to automatically discover:
-- Domain(s) within your document corpus
+The Ontology CLI provides three main capabilities:
+
+### 1. Interview (Schema Creation)
+Automatically generates ontology schemas from UDML Parquet storage:
+- Domain detection within your document corpus
 - Entity types (organizations, people, products, concepts, etc.)
 - Relationship types between entities
 - Extraction rules (keywords, regex patterns, metadata paths)
 
-The output is an OntologySchema JSON file that can be used with the rule-based extractor for fast, deterministic entity extraction.
+### 2. Extract (Entity Extraction)
+Applies ontology schemas to extract entities and relationships from documents:
+- Rule-based extraction (fast, deterministic, no LLM costs)
+- Optional LLM validation for high-precision extraction
+- Distributed processing with job control
+
+### 3. Analyze-Graph (Knowledge Graph Analysis)
+Converts extracted ontologies into knowledge graphs with advanced analysis:
+- Community detection (Louvain, Label Propagation)
+- Graph query engine with native Go API
+- RDF export (N-Triples, Turtle, RDF/XML)
+- MCP server integration for LLM-driven exploration
 
 ## Architecture
 
-**Two-Phase Design:**
+**Three-Phase Design:**
 1. **Ontology Building** (ONE-TIME, uses LLM):
    - Samples corpus using stratified sampling
    - Analyzes entity frequencies
@@ -22,10 +36,17 @@ The output is an OntologySchema JSON file that can be used with the rule-based e
    - Automatically detects aliases for frequent entities
    - Outputs: OntologySchema JSON
 
-2. **Entity Extraction** (RUNTIME, NO LLM):
+2. **Entity Extraction** (RUNTIME, minimal LLM):
    - Uses the generated OntologySchema
    - Applies rules deterministically
-   - Fast, cheap, no API costs per document
+   - Optional LLM validation for precision tuning
+   - Fast, cheap, minimal API costs per document
+
+3. **Graph Analysis** (POST-EXTRACTION, NO LLM):
+   - Converts entities/relationships to property graph
+   - Runs community detection algorithms
+   - Supports graph queries and pathfinding
+   - Exports to standard graph formats
 
 ## Installation
 
@@ -436,6 +457,311 @@ Adjust sampling parameters:
 --top-entities 100
 ```
 
+## Knowledge Graph Analysis
+
+### Overview
+
+The `analyze-graph` command converts extracted ontologies into property graphs and provides advanced analysis capabilities.
+
+### Basic Usage
+
+```bash
+# Analyze extracted ontology and export graph
+ontology analyze-graph \
+  --parquet /data/sec_filings/udml_storage \
+  --run-id extraction_12345 \
+  --output-gob ./knowledge_graph.gob \
+  --output-json ./graph_metadata.json
+```
+
+### Command-Line Flags
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--parquet` | Yes | - | Path to UDML Parquet storage directory |
+| `--run-id` | Yes | - | Run ID from extraction (found in job database) |
+| `--algorithm` | No | louvain | Community detection algorithm: `louvain` or `label_propagation` |
+| `--enrich-communities` | No | true | Add explicit community nodes to graph |
+| `--output-gob` | No | - | Output path for graph in GOB format |
+| `--output-json` | No | - | Output path for graph metadata in JSON |
+| `--stats-only` | No | false | Only print statistics, don't write output files |
+
+### Community Detection Algorithms
+
+**Louvain Algorithm:**
+- Hierarchical community detection
+- Optimizes modularity (Newman-Girvan metric)
+- Fast for large graphs (O(n log n))
+- Generally produces better-defined communities
+- Recommended for most use cases
+
+**Label Propagation:**
+- Simple, fast algorithm (O(m + n))
+- Nodes adopt most frequent label among neighbors
+- Non-deterministic (may produce different results)
+- Good for very large graphs
+- Useful for quick exploratory analysis
+
+### Example Workflow
+
+**1. Extract Entities:**
+```bash
+ontology extract \
+  --schema medical_ontology.json \
+  --parquet /data/wikipedia/udml_storage \
+  --job-db extraction.db \
+  --doc-batch-size 50
+```
+
+**2. Find Run ID:**
+```bash
+sqlite3 extraction.db "SELECT run_id FROM runs ORDER BY created_at DESC LIMIT 1"
+# Output: extraction_2025_01_22_abc123
+```
+
+**3. Analyze Graph:**
+```bash
+ontology analyze-graph \
+  --parquet /data/wikipedia/udml_storage \
+  --run-id extraction_2025_01_22_abc123 \
+  --algorithm louvain \
+  --enrich-communities \
+  --output-gob medical_knowledge_graph.gob \
+  --output-json medical_graph_metadata.json
+```
+
+**Output:**
+```
+========================================
+KNOWLEDGE GRAPH ANALYSIS
+========================================
+  Parquet: /data/wikipedia/udml_storage
+  Run ID: extraction_2025_01_22_abc123
+  Algorithm: louvain
+  Enrich communities: true
+========================================
+
+📊 Initializing Parquet storage...
+📖 Loading ontology from Parquet...
+  ✓ Loaded ontology:
+    - Entities: 1,247
+    - Relationships: 3,891
+
+🔄 Converting ontology to knowledge graph...
+  ✓ Knowledge graph created:
+    - Nodes: 1,247
+    - Edges: 3,891
+
+🔍 Preparing graph for analysis...
+🧩 Running community detection (louvain)...
+  ✓ Community detection complete:
+    - Communities found: 23
+    - Modularity: 0.7234
+
+  Top communities by size:
+    1. Community 0: 312 nodes
+    2. Community 1: 198 nodes
+    3. Community 2: 147 nodes
+    4. Community 3: 89 nodes
+    5. Community 4: 76 nodes
+
+🌟 Enriching graph with community nodes...
+  ✓ Graph enrichment complete:
+    - Original nodes: 1,247
+    - Enriched nodes: 1,270
+    - Community nodes added: 23
+    - BELONGS_TO edges added: 1,247
+    - Avg community size: 54.2 nodes
+
+🔎 Analyzing graph structure...
+  Entity nodes: 1,247
+  Community nodes: 23
+
+  Nodes by domain:
+    - medical: 1,247
+    - community: 23
+
+  Edges by type:
+    - RELATED_TO: 2,341
+    - PART_OF: 892
+    - MENTIONED_BY: 658
+    - BELONGS_TO: 1,247
+
+💾 Saving graph to GOB format: medical_knowledge_graph.gob
+  ✓ Graph saved successfully
+💾 Saving graph metadata to JSON: medical_graph_metadata.json
+  ✓ Metadata saved successfully
+
+========================================
+GRAPH ANALYSIS COMPLETE
+========================================
+  Graph (GOB): medical_knowledge_graph.gob
+  Metadata (JSON): medical_graph_metadata.json
+========================================
+```
+
+### Graph Query Engine
+
+The generated graph can be queried using the native Go query API:
+
+```go
+package main
+
+import (
+    "github.com/kennethstott/go-doc-go/internal/graph"
+)
+
+func main() {
+    // Load graph from GOB file
+    kg, err := graph.LoadGraph("medical_knowledge_graph.gob")
+    if err != nil {
+        panic(err)
+    }
+
+    // Create query engine
+    qe := graph.NewGraphQueryEngine(kg)
+
+    // Find all person entities
+    people := qe.FindNodesByLabel("Entity:person", graph.DefaultQueryOptions())
+    fmt.Printf("Found %d people\n", len(people))
+
+    // Find high-confidence entities
+    highConfidence := qe.FindNodesByConfidence(0.9, graph.DefaultQueryOptions())
+
+    // Find shortest path between two entities
+    path := qe.FindShortestPath("person_123", "org_456", 10)
+    if path != nil {
+        fmt.Printf("Path length: %d hops\n", len(path.Nodes)-1)
+    }
+
+    // Get neighbors of an entity
+    neighbors := qe.GetNeighbors("person_123", graph.BothNeighbors, graph.DefaultQueryOptions())
+
+    // Extract subgraph of medical domain
+    medicalSubgraph := qe.GetSubgraph(graph.DomainFilter("medical"))
+}
+```
+
+### RDF Export
+
+Export graphs to RDF for SPARQL querying:
+
+```go
+import (
+    "os"
+    "github.com/kennethstott/go-doc-go/internal/graph/export"
+)
+
+func main() {
+    kg, _ := graph.LoadGraph("knowledge_graph.gob")
+
+    // Export as N-Triples
+    exporter := export.NewRDFExporter(
+        export.WithFormat(export.FormatNTriples),
+        export.WithBaseURI("http://example.org/kg/"),
+    )
+
+    f, _ := os.Create("knowledge_graph.nt")
+    defer f.Close()
+    exporter.ExportGraph(kg, f)
+
+    // Export as Turtle (more compact)
+    turtleExporter := export.NewRDFExporter(
+        export.WithFormat(export.FormatTurtle),
+        export.WithBaseURI("http://example.org/kg/"),
+    )
+
+    f2, _ := os.Create("knowledge_graph.ttl")
+    defer f2.Close()
+    turtleExporter.ExportGraph(kg, f2)
+}
+```
+
+**Supported RDF Formats:**
+- **N-Triples** (`.nt`): Line-based, easy to parse, large file size
+- **Turtle** (`.ttl`): Compact, human-readable, supports prefixes
+- **RDF/XML** (`.rdf`): XML-based, widely supported, verbose
+
+### MCP Server Integration
+
+The graph package includes MCP (Model Context Protocol) server integration for LLM-driven exploration:
+
+```go
+import (
+    "github.com/kennethstott/go-doc-go/internal/graph/mcp"
+    "github.com/kennethstott/go-doc-go/internal/analytics"
+)
+
+func main() {
+    // Initialize storage
+    storage, _ := analytics.NewHiveParquetStorage(map[string]interface{}{
+        "path":    "/data/udml_storage",
+        "version": "v2.0.0",
+    })
+
+    // Create MCP server for graph exploration
+    explorer := mcp.NewGraphQueryExplorer(storage)
+    mcpServer := explorer.CreateMCPServer()
+
+    // Start MCP server (stdio transport)
+    mcpServer.Start()
+}
+```
+
+**Available MCP Tools:**
+1. `query_graph_nodes` - Query nodes by label, property, domain, confidence
+2. `query_graph_edges` - Query edges by type, source, target
+3. `find_shortest_path` - BFS pathfinding between nodes
+4. `get_neighbors` - Retrieve connected nodes (incoming/outgoing/both)
+5. `get_subgraph` - Extract filtered subgraphs
+6. `analyze_communities` - Run community detection algorithms
+7. `graph_statistics` - Compute graph-wide statistics
+
+### Graph Metadata JSON Structure
+
+The `--output-json` file contains graph metadata:
+
+```json
+{
+  "id": "graph_analysis_extraction_2025_01_22_abc123",
+  "name": "Knowledge Graph from extraction_2025_01_22_abc123",
+  "version": "1.0.0",
+  "node_count": 1270,
+  "edge_count": 5138,
+  "domains": {
+    "medical": 1247,
+    "community": 23
+  },
+  "edge_types": {
+    "RELATED_TO": 2341,
+    "PART_OF": 892,
+    "MENTIONED_BY": 658,
+    "BELONGS_TO": 1247
+  },
+  "run_id": "extraction_2025_01_22_abc123",
+  "community_count": 23,
+  "modularity": 0.7234,
+  "algorithm": "louvain"
+}
+```
+
+### Performance
+
+**Graph Conversion:**
+- 1,000 entities: ~50-100ms
+- 10,000 entities: ~500ms-1s
+- Conversion is linear O(n + m) where n=entities, m=relationships
+
+**Community Detection:**
+- Louvain (1,000 nodes): ~100-200ms
+- Louvain (10,000 nodes): ~1-2s
+- Label Propagation (10,000 nodes): ~500ms-1s
+
+**Graph Export:**
+- GOB serialization (10,000 nodes): ~100-200ms
+- RDF N-Triples (10,000 nodes): ~300-500ms
+- RDF Turtle (10,000 nodes): ~400-600ms
+
 ## Best Practices
 
 1. **Start with automatic generation** - Let the LLM create initial draft
@@ -443,9 +769,14 @@ Adjust sampling parameters:
 3. **Test on sample documents** - Validate extraction before full corpus processing
 4. **Iterate on rules** - Refine based on extraction results
 5. **Version control schemas** - Track schema evolution over time
+6. **Analyze extraction results** - Use analyze-graph to understand entity relationships
+7. **Choose appropriate algorithms** - Louvain for quality, Label Propagation for speed
+8. **Export for downstream analysis** - Use RDF export for SPARQL querying
 
 ## Related Documentation
 
 - [UDML Architecture](../../docs/UDML_ARCHITECTURE.md)
 - [Rule-Based Extractor](../../internal/udml/ontology/README.md)
 - [UDML Sampler](../../internal/udml/sampler/README.md)
+- [Knowledge Graph Package](../../internal/graph/README.md)
+- [MCP Server Integration](../../internal/graph/mcp/README.md)
