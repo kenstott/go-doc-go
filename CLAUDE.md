@@ -242,6 +242,170 @@ func (c *Config) Validate() error {
 }
 ```
 
+### Discovery Configuration (Content Crawling)
+
+The system supports **automatic discovery and crawling** of related documents through:
+- **Hyperlinks** in HTML/Markdown documents
+- **Code dependencies** (imports) in source code files
+
+#### Unified Discovery Schema
+
+All discovery/crawling behavior is configured per content source using the `discovery` configuration block:
+
+```toml
+[[content_sources]]
+name = "my_source"
+type = "file"  # or "web"
+base_path = "./src"
+
+[content_sources.discovery]
+enabled = true
+max_depth = 2  # Maximum crawl depth
+include_patterns = ["github.com/myorg/**"]  # Patterns to include
+exclude_patterns = ["**/test/**", "**/vendor/**"]  # Patterns to exclude
+
+[content_sources.discovery.hyperlinks]
+enabled = true  # Follow HTML/Markdown links
+
+[content_sources.discovery.code_dependencies]
+enabled = true  # Follow code imports
+follow_stdlib = false    # Don't follow language standard libraries
+follow_local = true      # Follow same-project/module imports
+follow_external = false  # Don't follow third-party packages
+```
+
+#### Discovery Options
+
+**Global Discovery Settings** (`[content_sources.discovery]`):
+- `enabled` (bool): Master switch for all discovery
+- `max_depth` (int): Maximum crawl depth (default: 1)
+- `include_patterns` ([]string): Only follow paths matching these patterns
+- `exclude_patterns` ([]string): Never follow paths matching these patterns
+
+**Hyperlink Discovery** (`[content_sources.discovery.hyperlinks]`):
+- `enabled` (bool): Whether to follow hyperlinks in HTML/Markdown
+- `max_depth` (int, optional): Override global max_depth for hyperlinks only
+
+**Code Dependency Discovery** (`[content_sources.discovery.code_dependencies]`):
+- `enabled` (bool): Whether to follow code imports/dependencies
+- `max_depth` (int, optional): Override global max_depth for code dependencies
+- `follow_stdlib` (bool): Follow language standard library imports (e.g., `fmt` in Go)
+- `follow_local` (bool): Follow same-project/module imports
+- `follow_external` (bool): Follow third-party dependency imports
+
+#### Supported Languages for Code Dependency Crawling
+
+- **Go**: Uses `go list -json` to resolve imports to source files
+- **JavaScript/TypeScript**: Implements Node.js module resolution algorithm
+- **Python**: Resolves stdlib, local packages, and installed packages
+- **Java**: Detects Maven/Gradle source roots and resolves class imports
+
+#### Example Configurations
+
+**Web Crawling (Hyperlinks Only)**:
+```toml
+[[content_sources]]
+name = "documentation_site"
+type = "web"
+base_url = "https://docs.example.com"
+url_list = ["https://docs.example.com/api"]
+
+[content_sources.discovery]
+enabled = true
+max_depth = 2
+include_patterns = ["^https://docs.example.com/"]
+exclude_patterns = ["/archive/", "/old/"]
+
+[content_sources.discovery.hyperlinks]
+enabled = true
+
+[content_sources.discovery.code_dependencies]
+enabled = false  # Not applicable for web content
+```
+
+**Code Crawling (Local Packages Only)**:
+```toml
+[[content_sources]]
+name = "my_codebase"
+type = "file"
+base_path = "./go/internal"
+file_pattern = "**/*.go"
+
+[content_sources.discovery]
+enabled = true
+max_depth = 3
+include_patterns = ["github.com/myorg/**"]  # Only our modules
+exclude_patterns = ["**/test/**", "**/*_test.go"]
+
+[content_sources.discovery.hyperlinks]
+enabled = false  # Not applicable for code
+
+[content_sources.discovery.code_dependencies]
+enabled = true
+follow_stdlib = false   # Skip Go standard library
+follow_local = true     # Follow our packages
+follow_external = false # Skip third-party deps
+```
+
+**Mixed Content (Both Links and Code)**:
+```toml
+[[content_sources]]
+name = "project_docs_and_code"
+type = "file"
+base_path = "./project"
+file_pattern = "**/*"
+
+[content_sources.discovery]
+enabled = true
+max_depth = 2
+include_patterns = []  # Allow all by default
+exclude_patterns = ["**/node_modules/**", "**/vendor/**"]
+
+[content_sources.discovery.hyperlinks]
+enabled = true
+
+[content_sources.discovery.code_dependencies]
+enabled = true
+follow_stdlib = false
+follow_local = true
+follow_external = false
+```
+
+#### How Discovery Works
+
+1. **Initial Documents**: Process documents from `url_list` (web) or `file_pattern` (file) at depth 0
+2. **Element Extraction**: Parsers create `hyperlink` or `code_dependency` elements
+3. **Resolution**:
+   - Hyperlinks: Resolve relative URLs to absolute
+   - Code dependencies: Resolve import paths to source file paths using language-specific resolvers
+4. **Filtering**: Apply `include_patterns`, `exclude_patterns`, package type filters
+5. **Depth Check**: Only queue if `current_depth < max_depth`
+6. **Queueing**: Add discovered documents to job queue with `discovery_depth = current_depth + 1`
+7. **Recursion**: Repeat for newly queued documents until max depth reached
+
+#### Migration from Old Configuration
+
+**Old configuration** (deprecated):
+```toml
+[[content_sources]]
+max_link_depth = 2
+include_patterns = ["https://example.com/**"]
+exclude_patterns = ["/archive/"]
+```
+
+**New configuration**:
+```toml
+[[content_sources]]
+[content_sources.discovery]
+enabled = true
+max_depth = 2
+include_patterns = ["https://example.com/**"]
+exclude_patterns = ["/archive/"]
+
+[content_sources.discovery.hyperlinks]
+enabled = true
+```
+
 ## Testing Guidelines
 
 ### Test Organization
