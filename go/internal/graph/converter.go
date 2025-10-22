@@ -11,9 +11,11 @@ import (
 // OntologyConverter converts ontologies to generic graphs
 type OntologyConverter struct {
 	// Configuration options
-	IncludeProvenance bool // Include UDML provenance in properties
-	IncludeMentions   bool // Include mention details in properties
-	LabelPrefix       string // Prefix for node labels (e.g., "Ont_")
+	IncludeProvenance  bool   // Include UDML provenance in properties
+	IncludeMentions    bool   // Include mention details in properties
+	CreateMentionNodes bool   // Create separate mention nodes with MENTIONED_BY edges
+	EnrichContext      bool   // Add element_type and section_title properties
+	LabelPrefix        string // Prefix for node labels (e.g., "Ont_")
 }
 
 // NewOntologyConverter creates a new ontology converter with default settings
@@ -51,6 +53,31 @@ func (c *OntologyConverter) ConvertToGraph(ont *ontology.Ontology) (*Graph, erro
 	for _, entity := range ont.Entities {
 		node := c.entityToNode(entity, ont.DocID)
 		builder.AddNode(node)
+	}
+
+	// Create mention nodes and MENTIONED_BY edges if enabled
+	if c.CreateMentionNodes {
+		for _, entity := range ont.Entities {
+			for _, mention := range entity.Mentions {
+				// Create mention node
+				mentionNode := c.mentionToNode(mention, entity, ont.DocID)
+				builder.AddNode(mentionNode)
+
+				// Create MENTIONED_BY edge from mention to canonical entity
+				mentionEdge := Edge{
+					ID:              "mentioned_by_" + mentionNode.ID,
+					Type:            "MENTIONED_BY",
+					SourceID:        mentionNode.ID,
+					TargetID:        entity.ID,
+					Properties:      make(map[string]interface{}),
+					SourceElementID: mention.ElementID,
+					Domain:          entity.Domain,
+					Confidence:      entity.Confidence,
+					CreatedAt:       entity.CreatedAt,
+				}
+				builder.AddEdge(mentionEdge)
+			}
+		}
 	}
 
 	// Convert relationships to edges
@@ -110,6 +137,8 @@ func (c *OntologyConverter) entityToNode(entity ontology.Entity, docID string) N
 
 	// Add provenance if enabled
 	if c.IncludeProvenance {
+		properties["element_id"] = entity.ElementID
+		properties["doc_id"] = docID
 		properties["extracted_at"] = entity.CreatedAt.Format(time.RFC3339)
 		properties["updated_at"] = entity.UpdatedAt.Format(time.RFC3339)
 	}
@@ -182,6 +211,48 @@ func (c *OntologyConverter) normalizeEdgeType(relType string) string {
 	return strings.ToUpper(relType)
 }
 
+// mentionToNode converts an ontology mention to a graph node
+// Mention nodes share the same entity type labels as their canonical entity, plus "Mention"
+func (c *OntologyConverter) mentionToNode(mention ontology.Mention, canonicalEntity ontology.Entity, docID string) Node {
+	// Generate unique ID for mention node
+	mentionID := "mention_" + canonicalEntity.ID + "_" + mention.ElementID
+
+	// Create labels - same entity type as canonical, plus "Mention"
+	labels := []string{
+		c.LabelPrefix + "Mention",
+		c.LabelPrefix + c.normalizeLabel(string(canonicalEntity.Type)),
+	}
+
+	// Build properties bag
+	properties := make(map[string]interface{})
+
+	// Core mention properties
+	properties["mention_text"] = mention.Text
+	properties["canonical_entity_id"] = canonicalEntity.ID
+	properties["canonical_entity_name"] = canonicalEntity.Name
+	properties["start_position"] = mention.StartPos
+	properties["end_position"] = mention.EndPos
+
+	// Add provenance
+	if c.IncludeProvenance {
+		properties["element_id"] = mention.ElementID
+		properties["doc_id"] = docID
+		properties["extracted_at"] = canonicalEntity.CreatedAt.Format(time.RFC3339)
+	}
+
+	return Node{
+		ID:              mentionID,
+		Labels:          labels,
+		Properties:      properties,
+		SourceElementID: mention.ElementID,
+		SourceDocID:     docID,
+		Domain:          canonicalEntity.Domain,
+		Confidence:      canonicalEntity.Confidence, // Inherit from canonical
+		CreatedAt:       canonicalEntity.CreatedAt,
+		UpdatedAt:       canonicalEntity.UpdatedAt,
+	}
+}
+
 // ConvertMultipleToGraph converts multiple ontologies into a single merged graph
 func (c *OntologyConverter) ConvertMultipleToGraph(ontologies []*ontology.Ontology) (*Graph, error) {
 	if len(ontologies) == 0 {
@@ -209,18 +280,22 @@ func (c *OntologyConverter) ConvertMultipleToGraph(ontologies []*ontology.Ontolo
 // ConvertWithOptions converts an ontology to a graph with custom options
 func ConvertWithOptions(ont *ontology.Ontology, opts ConversionOptions) (*Graph, error) {
 	converter := &OntologyConverter{
-		IncludeProvenance: opts.IncludeProvenance,
-		IncludeMentions:   opts.IncludeMentions,
-		LabelPrefix:       opts.LabelPrefix,
+		IncludeProvenance:  opts.IncludeProvenance,
+		IncludeMentions:    opts.IncludeMentions,
+		CreateMentionNodes: opts.CreateMentionNodes,
+		EnrichContext:      opts.EnrichContext,
+		LabelPrefix:        opts.LabelPrefix,
 	}
 	return converter.ConvertToGraph(ont)
 }
 
 // ConversionOptions configures ontology-to-graph conversion
 type ConversionOptions struct {
-	IncludeProvenance bool   // Include UDML provenance in properties
-	IncludeMentions   bool   // Include mention details in properties
-	LabelPrefix       string // Prefix for node labels
+	IncludeProvenance bool    // Include UDML provenance in properties
+	IncludeMentions   bool    // Include mention details in properties
+	CreateMentionNodes bool   // Create separate mention nodes with MENTIONED_BY edges
+	EnrichContext     bool    // Add element_type and section_title properties
+	LabelPrefix       string  // Prefix for node labels
 	MinConfidence     float64 // Minimum confidence threshold (0.0-1.0)
 }
 
