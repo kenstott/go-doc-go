@@ -27,6 +27,7 @@ require (
 	github.com/xuri/excelize/v2 v2.9.1
 	github.com/yalue/onnxruntime_go v1.21.0
 	golang.org/x/net v0.44.0
+	gonum.org/v1/gonum v0.15.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
