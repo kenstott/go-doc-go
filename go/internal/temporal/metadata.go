@@ -36,7 +36,7 @@ func generateDateMetadata(dateStr string) map[string]interface{} {
 	// Parse the date
 	parsedDate, err := parseDate(dateStr)
 	if err != nil {
-		log.Printf("Failed to parse date %s: %v", dateStr, err)
+		// Silently return basic metadata without logging - many false positives
 		return map[string]interface{}{
 			"temporal_type": "date",
 			"raw_value":     dateStr,
@@ -82,7 +82,7 @@ func generateDateTimeMetadata(datetimeStr string) map[string]interface{} {
 	// Parse the datetime
 	parsedDT, err := parseDate(datetimeStr)
 	if err != nil {
-		log.Printf("Failed to parse datetime %s: %v", datetimeStr, err)
+		// Silently return basic metadata without logging - many false positives
 		return map[string]interface{}{
 			"temporal_type": "datetime",
 			"raw_value":     datetimeStr,
