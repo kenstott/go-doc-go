@@ -49,6 +49,33 @@ enabled = false  # Not applicable for web content
 [content_sources.headers]
 User-Agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+# File-based content source for test assets
+[[content_sources]]
+name = "test_assets"
+type = "file"
+base_path = "./tests/assets"
+file_pattern = "**/*"
+refresh_interval = 604800  # 7 days in seconds
+
+[content_sources.discovery]
+enabled = true
+max_depth = 10
+include_patterns = []
+exclude_patterns = [
+    "**/.*",
+    "**/*.tmp",
+    "**/*.temp"
+]
+
+[content_sources.discovery.hyperlinks]
+enabled = false
+
+[content_sources.discovery.code_dependencies]
+enabled = true
+follow_stdlib = false
+follow_local = true
+follow_external = false
+
 [relationship_detection]
 enabled = true
 structural = true
@@ -77,7 +104,7 @@ timeout_seconds = 300
 
 [processing.job_control]
 backend = "sqlite"
-path = "../tests/test_output/wikipedia_medical_mining_test.db"
+path = "./tests/test_output/test.db"
 claim_timeout = 300
 heartbeat_interval = 30
 max_retries = 3
@@ -88,8 +115,8 @@ enabled = true
 
 [[analytics.outputs]]
 type = "parquet"
-path = "../tests/test_output/wikipedia_medical_mining_analytics"
+path = "./tests/test_output/test"
 
 [logging]
 level = "DEBUG"
-file = "../tests/test_output/wikipedia_medical_mining_test.log"
+file = "./tests/test_output/test.log"
