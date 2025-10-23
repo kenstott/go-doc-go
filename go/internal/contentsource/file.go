@@ -243,6 +243,15 @@ func (f *FileContentSource) ListDocuments() ([]DocumentInfo, error) {
 			continue
 		}
 
+		// Skip .jsx files if .tsx equivalent exists in same directory
+		if strings.HasSuffix(filePath, ".jsx") {
+			tsxPath := strings.TrimSuffix(filePath, ".jsx") + ".tsx"
+			if _, err := os.Stat(tsxPath); err == nil {
+				// TSX file exists, skip JSX
+				continue
+			}
+		}
+
 		// Get relative path
 		relPath, err := filepath.Rel(f.basePath, filePath)
 		if err != nil {

@@ -21,6 +21,11 @@ url_list = [
     "https://en.wikipedia.org/wiki/Medicine",
     "https://en.wikipedia.org/wiki/Mining"
 ]
+refresh_interval = 604800  # 7 days in seconds
+
+[content_sources.discovery]
+enabled = true
+max_depth = 1  # Crawl depth of 1
 include_patterns = [
     "^https://en.wikipedia.org/wiki/"
 ]
@@ -34,8 +39,12 @@ exclude_patterns = [
     "/Portal:",
     "/Template:"
 ]
-max_link_depth = 1  # Crawl depth of 1
-refresh_interval = 604800  # 7 days in seconds
+
+[content_sources.discovery.hyperlinks]
+enabled = true
+
+[content_sources.discovery.code_dependencies]
+enabled = false  # Not applicable for web content
 
 [content_sources.headers]
 User-Agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -53,7 +62,7 @@ rate_limit_batch_size = 1000
 rate_limit_sleep_ms = 100
 min_interval_minutes = 1
 
-# UDML-O: Ontology extraction disabled for this test
+# Ontology extraction disabled for this test
 [ontology]
 enabled = false
 schema_path = "./schemas"
