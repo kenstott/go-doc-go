@@ -185,14 +185,74 @@ func runAnalyzeGraph(args []string) {
 		return
 	}
 
-	// Save graph in GOB format if requested
+	// Convert community results to ontology entities/relationships and store in Parquet
+	log.Println("")
+	log.Println("💾 Storing community structure in Parquet...")
+	communityEntities, communityRelationships, err := graph.ConvertCommunityGraphToOntology(
+		kg, // Use original graph (before enrichment)
+		communities,
+		*runID,
+	)
+	if err != nil {
+		log.Fatalf("Failed to convert communities to ontology: %v", err)
+	}
+
+	log.Printf("  Converted to ontology format:")
+	log.Printf("    - Community entities: %d", len(communityEntities))
+	log.Printf("    - Community relationships: %d", len(communityRelationships))
+
+	// Convert to analytics types
+	analyticsEntities := make([]analytics.OntologyEntity, len(communityEntities))
+	for i, entity := range communityEntities {
+		analyticsEntities[i] = analytics.OntologyEntity{
+			EntityID:    entity.ID,
+			EntityName:  entity.Name,
+			EntityType:  string(entity.Type),
+			Domain:      entity.Domain,
+			Confidence:  entity.Confidence,
+			Attributes:  entity.Attributes,
+			ElementID:   entity.ElementID,
+			RunID:       *runID,
+			ExtractedAt: entity.CreatedAt,
+		}
+	}
+
+	analyticsRelationships := make([]analytics.OntologyRelationship, len(communityRelationships))
+	for i, rel := range communityRelationships {
+		analyticsRelationships[i] = analytics.OntologyRelationship{
+			RelationshipID:   rel.ID,
+			SourceEntityID:   rel.SourceID,
+			TargetEntityID:   rel.TargetID,
+			RelationshipType: string(rel.Type),
+			Domain:           rel.Domain,
+			Confidence:       rel.Confidence,
+			Evidence:         rel.Evidence,
+			Attributes:       rel.Attributes,
+			ElementID:        rel.ElementID,
+			RunID:            *runID,
+			ExtractedAt:      rel.CreatedAt,
+		}
+	}
+
+	// Batch write to Parquet
+	if err := storage.AppendOntologyEntities(analyticsEntities); err != nil {
+		log.Fatalf("Failed to append community entities: %v", err)
+	}
+
+	if err := storage.AppendOntologyRelationships(analyticsRelationships); err != nil {
+		log.Fatalf("Failed to append community relationships: %v", err)
+	}
+
+	log.Println("  ✓ Community structure stored in Parquet")
+
+	// Save graph in GOB format if requested (optional export)
 	if *outputGOB != "" {
 		log.Println("")
-		log.Printf("💾 Saving graph to GOB format: %s", *outputGOB)
+		log.Printf("💾 Exporting graph to GOB format: %s", *outputGOB)
 		if err := graph.SaveGraph(enrichedGraph, *outputGOB); err != nil {
 			log.Fatalf("Failed to save graph: %v", err)
 		}
-		log.Println("  ✓ Graph saved successfully")
+		log.Println("  ✓ Graph exported to GOB successfully")
 	}
 
 	// Save graph metadata in JSON format if requested

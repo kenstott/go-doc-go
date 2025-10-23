@@ -308,3 +308,134 @@ func DefaultConversionOptions() ConversionOptions {
 		MinConfidence:     0.0,
 	}
 }
+
+// ConvertCommunityGraphToOntology converts community detection results to ontology entities and relationships
+// This enables community structure to be stored in Parquet alongside extracted entities
+func ConvertCommunityGraphToOntology(
+	graph *Graph,
+	communities *CommunityResult,
+	sourceRunID string,
+) ([]ontology.Entity, []ontology.Relationship, error) {
+	if graph == nil || communities == nil {
+		return nil, nil, fmt.Errorf("graph and communities cannot be nil")
+	}
+
+	entities := []ontology.Entity{}
+	relationships := []ontology.Relationship{}
+	now := time.Now()
+
+	// Convert each community to an OntologyEntity
+	for _, comm := range communities.Communities {
+		// Create community entity
+		entity := ontology.Entity{
+			ID:         fmt.Sprintf("community_%s_%d", communities.Algorithm, comm.ID),
+			Name:       fmt.Sprintf("Community %d (Level %d)", comm.ID, comm.Level),
+			Type:       "community",
+			Domain:     "graph_analysis",
+			Confidence: 1.0, // Community detection is deterministic
+			Attributes: map[string]interface{}{
+				"community_id":  comm.ID,
+				"algorithm":     string(communities.Algorithm),
+				"level":         comm.Level,
+				"size":          comm.Size,
+				"member_count":  len(comm.NodeIDs),
+				"modularity":    communities.Modularity,
+				"max_level":     communities.MaxLevel,
+			},
+			ElementID: "", // Synthetic entity - no source element
+			Mentions:  []ontology.Mention{},
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+
+		// Add parent reference if exists
+		if comm.ParentID != nil {
+			entity.Attributes["parent_id"] = *comm.ParentID
+		}
+
+		// Add child references if exist
+		if len(comm.ChildIDs) > 0 {
+			entity.Attributes["child_ids"] = comm.ChildIDs
+		}
+
+		// Add member node IDs
+		entity.Attributes["member_node_ids"] = comm.NodeIDs
+
+		entities = append(entities, entity)
+	}
+
+	// Create BELONGS_TO relationships from original graph nodes to their Level 0 communities
+	// Find all Level 0 communities
+	level0Communities := map[string]int{} // nodeID -> communityID mapping
+	for _, comm := range communities.Communities {
+		if comm.Level == 0 {
+			for _, nodeID := range comm.NodeIDs {
+				level0Communities[nodeID] = comm.ID
+			}
+		}
+	}
+
+	// Create BELONGS_TO relationships for original graph nodes
+	for _, node := range graph.Nodes {
+		// Skip synthetic community nodes
+		isCommunityNode := false
+		for _, label := range node.Labels {
+			if label == "Community" {
+				isCommunityNode = true
+				break
+			}
+		}
+		if isCommunityNode {
+			continue
+		}
+
+		// Find which Level 0 community this node belongs to
+		if commID, found := level0Communities[node.ID]; found {
+			rel := ontology.Relationship{
+				ID:         fmt.Sprintf("belongs_to_%s_comm_%d", node.ID, commID),
+				Type:       "BELONGS_TO",
+				Domain:     "graph_analysis",
+				SourceID:   node.ID,
+				TargetID:   fmt.Sprintf("community_%s_%d", communities.Algorithm, commID),
+				Confidence: 1.0,
+				Attributes: map[string]interface{}{
+					"algorithm":    string(communities.Algorithm),
+					"community_id": commID,
+					"level":        0,
+				},
+				ElementID: "", // Synthetic relationship
+				Evidence:  fmt.Sprintf("Node %s assigned to community %d by %s algorithm", node.ID, commID, communities.Algorithm),
+				CreatedAt: now,
+			}
+			relationships = append(relationships, rel)
+		}
+	}
+
+	// Create PARENT_OF relationships for community hierarchy
+	for _, comm := range communities.Communities {
+		if comm.ParentID != nil {
+			rel := ontology.Relationship{
+				ID:       fmt.Sprintf("parent_of_%d_to_%d", *comm.ParentID, comm.ID),
+				Type:     "PARENT_OF",
+				Domain:   "graph_analysis",
+				SourceID: fmt.Sprintf("community_%s_%d", communities.Algorithm, *comm.ParentID),
+				TargetID: fmt.Sprintf("community_%s_%d", communities.Algorithm, comm.ID),
+				Confidence: 1.0,
+				Attributes: map[string]interface{}{
+					"algorithm":    string(communities.Algorithm),
+					"parent_id":    *comm.ParentID,
+					"child_id":     comm.ID,
+					"parent_level": comm.Level + 1,
+					"child_level":  comm.Level,
+				},
+				ElementID: "",
+				Evidence: fmt.Sprintf("Community %d (Level %d) is parent of community %d (Level %d)",
+					*comm.ParentID, comm.Level+1, comm.ID, comm.Level),
+				CreatedAt: now,
+			}
+			relationships = append(relationships, rel)
+		}
+	}
+
+	return entities, relationships, nil
+}
