@@ -27,17 +27,52 @@ refresh_interval = 604800  # 7 days in seconds
 enabled = true
 max_depth = 1  # Crawl depth of 1
 include_patterns = [
-    "^https://en.wikipedia.org/wiki/"
+    "https://en.wikipedia.org/wiki/"  # Only English Wikipedia wiki pages
 ]
 exclude_patterns = [
-    "/Special:",
-    "/Talk:",
-    "/Category:",
-    "/File:",
-    "/Wikipedia:",
-    "/Help:",
-    "/Portal:",
-    "/Template:"
+    "Special:",                    # Special pages (search, login, etc.)
+    "Talk:",                       # Discussion pages
+    "Category:",                   # Category pages
+    "File:",                       # File/image pages
+    "Wikipedia:",                  # Wikipedia meta pages (About, Contact, etc.)
+    "Help:",                       # Help/documentation pages
+    "Portal:",                     # Portal pages
+    "Template:",                   # Template pages
+    "Main_Page",                   # Main landing page
+    "w/index.php",                 # API and login URLs
+    "mobileaction=",               # Mobile view toggles
+    "foundation.wikimedia.org",    # Wikimedia Foundation pages
+    "wikimediafoundation.org",     # Wikimedia Foundation domain
+    "developer.wikimedia.org",     # Developer portal
+    "stats.wikimedia.org",         # Statistics pages
+    "donate.wikimedia",            # Donation pages
+    "://af.wikipedia",             # Block all non-English Wikipedias
+    "://als.wikipedia",
+    "://ar.wikipedia",
+    "://an.wikipedia",
+    "://as.wikipedia",
+    "://ast.wikipedia",
+    "://az.wikipedia",
+    "://bn.wikipedia",
+    "://zh-min-nan.wikipedia",
+    "://ba.wikipedia",
+    "://be.wikipedia",
+    "://be-tarask.wikipedia",
+    "://bs.wikipedia",
+    "://ca.wikipedia",
+    "://cs.wikipedia",
+    "://cy.wikipedia",
+    "://dag.wikipedia",
+    "://da.wikipedia",
+    "://ary.wikipedia",
+    "://de.wikipedia",
+    "://et.wikipedia",
+    "://el.wikipedia",
+    "://es.wikipedia",
+    "://eo.wikipedia",
+    "://eu.wikipedia",
+    "://fa.wikipedia",
+    "://fr.wikipedia"
 ]
 
 [content_sources.discovery.hyperlinks]
