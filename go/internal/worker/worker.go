@@ -735,7 +735,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 	}
 
 	if err != nil {
-		log.Printf("Failed to parse document %s: %v", docInfo.DocID, err)
+		log.Printf("Failed to parse document %s (type=%s): %v", docInfo.DocID, docType, err)
 		return false
 	}
 
@@ -1275,18 +1275,53 @@ func (w *Worker) queueDiscoveredLinks(docInfo *jobcontrol.DocumentInfo, parseRes
 		return
 	}
 
+	// Try to read from new discovery config structure first
+	discoveryRaw, hasDiscovery := sourceConfig["discovery"]
+	var discoveryConfig map[string]interface{}
+	var hyperlinksConfig map[string]interface{}
+
+	if hasDiscovery {
+		discoveryConfig, _ = discoveryRaw.(map[string]interface{})
+		if discoveryConfig != nil {
+			// Check if discovery is enabled
+			if enabled, ok := discoveryConfig["enabled"].(bool); ok && !enabled {
+				return
+			}
+			// Check if hyperlinks discovery is enabled
+			if hyperlinksRaw, ok := discoveryConfig["hyperlinks"].(map[string]interface{}); ok {
+				hyperlinksConfig = hyperlinksRaw
+				if hlEnabled, ok := hyperlinksConfig["enabled"].(bool); ok && !hlEnabled {
+					return
+				}
+			}
+		}
+	}
+
 	// Get current depth from metadata
 	currentDepth := 0
 	if depth, ok := docInfo.Metadata["discovery_depth"].(float64); ok {
 		currentDepth = int(depth)
 	}
 
-	// Get max depth from source config
+	// Get max depth from discovery config
 	maxDepth := 1 // default
-	if configDepth, ok := sourceConfig["max_link_depth"].(int); ok {
-		maxDepth = configDepth
-	} else if configDepth, ok := sourceConfig["max_link_depth"].(float64); ok {
-		maxDepth = int(configDepth)
+
+	// Check hyperlinks-specific max_depth override
+	if hyperlinksConfig != nil {
+		if configDepth, ok := hyperlinksConfig["max_depth"].(int); ok {
+			maxDepth = configDepth
+		} else if configDepth, ok := hyperlinksConfig["max_depth"].(float64); ok {
+			maxDepth = int(configDepth)
+		}
+	}
+
+	// Fall back to discovery-level max_depth
+	if maxDepth == 1 && discoveryConfig != nil {
+		if configDepth, ok := discoveryConfig["max_depth"].(int); ok {
+			maxDepth = configDepth
+		} else if configDepth, ok := discoveryConfig["max_depth"].(float64); ok {
+			maxDepth = int(configDepth)
+		}
 	}
 
 	// Check if we've reached max depth
@@ -1337,9 +1372,12 @@ func (w *Worker) queueDiscoveredLinks(docInfo *jobcontrol.DocumentInfo, parseRes
 			}
 		}
 
+		// Normalize URL to prevent duplicates (strip fragments/query params for URLs, clean paths for files)
+		normalizedURL := normalizeURL(targetURL)
+
 		// Apply filters if this is a URL with a protocol
-		if strings.Contains(targetURL, "://") {
-			if !w.shouldIncludeLink(targetURL, sourceConfig) {
+		if strings.Contains(normalizedURL, "://") {
+			if !w.shouldIncludeLink(normalizedURL, sourceConfig) {
 				continue
 			}
 		}
@@ -1350,17 +1388,17 @@ func (w *Worker) queueDiscoveredLinks(docInfo *jobcontrol.DocumentInfo, parseRes
 			linkType = "discovered"
 		}
 
-		// Queue the link for processing
+		// Queue the link for processing (using normalized URL as doc_id)
 		metadata := map[string]interface{}{
-			"url":             targetURL,
+			"url":             normalizedURL,
 			"parent_url":      docInfo.DocID,
 			"discovery_depth": currentDepth + 1,
 			"source_name":     docInfo.Source,
 			"link_type":       linkType,
 		}
 
-		if err := w.jobControl.EnqueueDocument(targetURL, docInfo.Source, metadata); err != nil {
-			log.Printf("Failed to enqueue link %s: %v", targetURL, err)
+		if err := w.jobControl.EnqueueDocument(normalizedURL, docInfo.Source, metadata); err != nil {
+			log.Printf("Failed to enqueue link %s: %v", normalizedURL, err)
 		} else {
 			queued++
 		}
@@ -1402,8 +1440,19 @@ func (w *Worker) resolveRelativeLink(parentDocID, relativeLink string) string {
 
 // shouldIncludeLink checks if a link should be included based on config patterns
 func (w *Worker) shouldIncludeLink(link string, sourceConfig map[string]interface{}) bool {
+	// Get discovery config
+	discoveryRaw, hasDiscovery := sourceConfig["discovery"]
+	if !hasDiscovery {
+		return true // No discovery config = allow all
+	}
+
+	discoveryConfig, ok := discoveryRaw.(map[string]interface{})
+	if !ok {
+		return true
+	}
+
 	// Check exclude patterns first
-	if excludePatternsRaw, ok := sourceConfig["exclude_patterns"]; ok {
+	if excludePatternsRaw, ok := discoveryConfig["exclude_patterns"]; ok {
 		if excludePatterns, ok := excludePatternsRaw.([]interface{}); ok {
 			for _, patternRaw := range excludePatterns {
 				if pattern, ok := patternRaw.(string); ok {
@@ -1416,7 +1465,7 @@ func (w *Worker) shouldIncludeLink(link string, sourceConfig map[string]interfac
 	}
 
 	// Check include patterns
-	if includePatternsRaw, ok := sourceConfig["include_patterns"]; ok {
+	if includePatternsRaw, ok := discoveryConfig["include_patterns"]; ok {
 		if includePatterns, ok := includePatternsRaw.([]interface{}); ok {
 			for _, patternRaw := range includePatterns {
 				if pattern, ok := patternRaw.(string); ok {
@@ -1440,6 +1489,44 @@ func (w *Worker) shouldIncludeLink(link string, sourceConfig map[string]interfac
 
 	// If no include patterns specified, allow by default
 	return true
+}
+
+// normalizeURL normalizes URLs and file paths to prevent duplicate enqueueing
+// - For HTTP/HTTPS URLs: strips fragment identifiers and query parameters
+// - For file:// URLs: converts to file path and normalizes
+// - For file paths: normalizes using filepath.Clean
+func normalizeURL(targetURL string) string {
+	// URL normalization (http/https)
+	if strings.HasPrefix(targetURL, "http://") || strings.HasPrefix(targetURL, "https://") {
+		return stripFragmentAndQuery(targetURL)
+	}
+
+	// file:// URL - convert to path
+	if strings.HasPrefix(targetURL, "file://") {
+		path := strings.TrimPrefix(targetURL, "file://")
+		return filepath.Clean(path)
+	}
+
+	// File path - clean it (removes ./ and ../ components)
+	if strings.HasPrefix(targetURL, "/") || strings.HasPrefix(targetURL, "\\") {
+		return filepath.Clean(targetURL)
+	}
+
+	// Other (shouldn't happen, but return as-is)
+	return targetURL
+}
+
+// stripFragmentAndQuery removes fragment identifiers (#...) and query parameters (?...) from URLs
+func stripFragmentAndQuery(urlStr string) string {
+	// Strip fragment (#...)
+	if idx := strings.Index(urlStr, "#"); idx != -1 {
+		urlStr = urlStr[:idx]
+	}
+	// Strip query params (?...)
+	if idx := strings.Index(urlStr, "?"); idx != -1 {
+		urlStr = urlStr[:idx]
+	}
+	return urlStr
 }
 
 // queueDiscoveredCodeDependencies queues code dependencies (imports) discovered during parsing
