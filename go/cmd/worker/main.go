@@ -113,6 +113,15 @@ func main() {
 
 	flag.Parse()
 
+	// Log GOGC setting for memory tuning visibility
+	// GOGC controls garbage collection frequency (default 100 = GC when heap doubles)
+	// Setting GOGC=20 forces more aggressive GC to prevent memory accumulation
+	if gogc := os.Getenv("GOGC"); gogc != "" {
+		log.Printf("GOGC environment variable set to: %s (more aggressive GC)", gogc)
+	} else {
+		log.Printf("GOGC not set, using default (100). Set GOGC=20 for aggressive GC if memory issues occur")
+	}
+
 	// Get instances from environment variable if not specified via CLI
 	if *numInstances == 1 {
 		if envInstances := os.Getenv("NUM_INSTANCES"); envInstances != "" {

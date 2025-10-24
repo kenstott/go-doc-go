@@ -72,7 +72,30 @@ exclude_patterns = [
     "://eo.wikipedia",
     "://eu.wikipedia",
     "://fa.wikipedia",
-    "://fr.wikipedia"
+    "://fr.wikipedia",
+    # Other Wikimedia projects (not Wikipedia articles)
+    "wikidata.org",                # Wikidata structured data
+    "commons.wikimedia.org",       # Wikimedia Commons media repository
+    "wikibooks.org",               # Wikibooks textbooks
+    "wikiquote.org",               # Wikiquote quotations
+    "wikisource.org",              # Wikisource source documents
+    "wiktionary.org",              # Wiktionary dictionaries
+    "wikinews.org",                # Wikinews news
+    "wikiversity.org",             # Wikiversity learning resources
+    "upload.wikimedia.org",        # Media upload domain
+    # Additional Wikipedia namespaces
+    "Module:",                     # Lua modules
+    "User:",                       # User pages
+    "Book:",                       # Wikipedia books
+    "Draft:",                      # Draft articles
+    "TimedText:",                  # Video subtitles
+    "MediaWiki:",                  # MediaWiki system messages
+    # External reference domains (citations, not article content)
+    "web.archive.org",             # Archive.org snapshots
+    "doi.org",                     # Academic DOI links
+    "ncbi.nlm.nih.gov",           # NCBI research database
+    "pubmed.ncbi.nlm.nih.gov",    # PubMed citations
+    "worldcat.org"                 # WorldCat library catalog
 ]
 
 [content_sources.discovery.hyperlinks]
@@ -134,7 +157,7 @@ queue_idle_trigger_minutes = 0
 # Processing configuration
 [processing]
 batch_size = 10
-max_workers = 2
+max_workers = 1  # Changed from 2 to isolate per-goroutine memory issue
 timeout_seconds = 300
 
 [processing.job_control]
@@ -151,6 +174,7 @@ enabled = true
 [[analytics.outputs]]
 type = "parquet"
 path = "./tests/test_output/test"
+store_full_content = false  # Only store ContentPreview, not full Content (reduces memory usage)
 
 [logging]
 level = "DEBUG"

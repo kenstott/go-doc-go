@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,6 +50,7 @@ type Worker struct {
 	contentSources       map[string]contentsource.ContentSource
 	contentSourceConfigs map[string]map[string]interface{}
 	analyticsStorages    []analytics.Storage
+	storeFullContent     bool // Whether to store full element content in analytics (default: false)
 	embeddingGenerator   embeddings.EmbeddingGenerator // Native ONNX generator (thread-safe)
 	contextualBuilder    *embeddings.ContextualTextBuilder
 	embeddingAggregator  *EmbeddingBatchAggregator      // Cross-document batch aggregator
@@ -230,12 +233,25 @@ func NewWorker(config Config) (*Worker, error) {
 
 	// Create analytics storages
 	var storages []analytics.Storage
+	storeFullContent := false // Default: only store ContentPreview
 	for _, analyticsConfig := range config.AnalyticsConfigs {
 		storage, err := analytics.NewStorage(analyticsConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create analytics storage: %w", err)
 		}
 		storages = append(storages, storage)
+
+		// Extract store_full_content flag from first analytics config
+		if len(storages) == 1 {
+			if val, ok := analyticsConfig["store_full_content"].(bool); ok {
+				storeFullContent = val
+			}
+		}
+	}
+	if storeFullContent {
+		log.Printf("Full element content storage ENABLED (memory usage will be higher)")
+	} else {
+		log.Printf("Full element content storage DISABLED (only previews stored, reduces memory usage)")
 	}
 
 	// Create embedding generator if configured (ONNX only)
@@ -316,6 +332,7 @@ func NewWorker(config Config) (*Worker, error) {
 		contentSources:       sources,
 		contentSourceConfigs: sourceConfigs,
 		analyticsStorages:    storages,
+		storeFullContent:     storeFullContent,
 		embeddingGenerator:   embeddingGenerator,
 		contextualBuilder:    contextualBuilder,
 		embeddingAggregator:  embeddingAggregator,
@@ -811,6 +828,14 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		}
 	}
 
+	// Clear Content fields from parseResult.Elements if not storing full content
+	// This reduces memory usage after embeddings are generated
+	if !w.storeFullContent {
+		for i := range parseResult.Elements {
+			parseResult.Elements[i].Content = ""
+		}
+	}
+
 	// Store in analytics outputs
 	for _, storage := range w.analyticsStorages {
 		// Store document
@@ -828,6 +853,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 			log.Printf("Failed to store documents: %v", err)
 			return false
 		}
+		// Clear slice to help GC reclaim memory
+		docs = nil
 
 		// Store elements with complete schema
 		var elements []analytics.Element
@@ -857,7 +884,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 				SourceName:       docInfo.Source,
 				ElementType:      elem.ElementType,
 				ElementCategory:  parser.GetElementCategory(elem.ElementType), // Enrich with category
-				Content:          elem.Content,
+				Content:          func() string { if w.storeFullContent { return elem.Content }; return "" }(),
 				ContentPreview:   elem.ContentPreview,
 				ContentHash:      contentHash,
 				ContentLocation:  elem.ContentLocation,
@@ -872,6 +899,8 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 				log.Printf("Failed to store elements: %v", err)
 				return false
 			}
+			// Clear slice to help GC reclaim memory
+			elements = nil
 		}
 
 		// Note: Relationships and Links storage removed during UDML migration
@@ -897,7 +926,11 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 				log.Printf("Failed to store embeddings: %v", err)
 				// Don't return false - embeddings are optional
 			}
+			// Clear slices to help GC reclaim memory
+			embeddingsToStore = nil
 		}
+		// Clear embedding map after processing
+		embeddingMap = nil
 	}
 
 	// Queue links discovered during parsing (works for all document types)
@@ -949,6 +982,11 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		log.Printf("Stored metadata for document %s (hash: %s, size: %d bytes)",
 			docInfo.DocID, docContent.ContentHash[:8], fileSize)
 	}
+
+	// Force garbage collection to prevent memory accumulation
+	// This ensures memory from large documents is released promptly
+	runtime.GC()
+	debug.FreeOSMemory()
 
 	log.Printf("Successfully processed document %s", docInfo.DocID)
 	return true
