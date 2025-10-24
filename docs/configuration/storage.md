@@ -489,7 +489,7 @@ neo4j:
 storage:
   # Batch processing
   batch_size: 1000
-  max_workers: 8
+  workers: 8
   
   # Memory management
   max_memory_usage: "4GB"
@@ -698,7 +698,7 @@ storage:
 ```yaml  
 storage:
   batch_size: 500        # Reduce batch size
-  max_workers: 4         # Reduce parallelism
+  workers: 4         # Reduce parallelism
   stream_results: true   # Don't load all into memory
 ```yaml
 

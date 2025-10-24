@@ -170,7 +170,7 @@ export NUM_WORKERS=8
 **Priority Order**:
 1. `--workers` flag (highest)
 2. `NUM_WORKERS` environment variable
-3. `max_workers` in config file (ignored - kept for compatibility)
+3. `workers` in config file (ignored - kept for compatibility)
 4. Default: 1
 
 ---
@@ -392,10 +392,10 @@ export NUM_WORKERS=8
 ### 3. Configuration File (Lowest Priority)
 ```toml
 [processing]
-max_workers = 4
+workers = 4
 ```toml
 
-**Note**: For `--workers` flag, config file `max_workers` is ignored to maintain predictable defaults.
+**Note**: For `--workers` flag, config file `workers` is ignored to maintain predictable defaults.
 
 ### Example Priority Resolution
 
@@ -403,7 +403,7 @@ max_workers = 4
 ## Scenario: All three sources specified
 ## config.toml:
 [processing]
-max_workers = 4
+workers = 4
 
 ## Environment:
 export NUM_WORKERS=8

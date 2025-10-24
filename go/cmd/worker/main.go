@@ -49,7 +49,7 @@ type CodeDependencyDiscoveryConfig struct {
 // Config represents the TOML configuration structure
 type Config struct {
 	Processing struct {
-		MaxWorkers int `toml:"max_workers"`
+		MaxWorkers int `toml:"workers"`
 		JobControl struct {
 			Backend           string `toml:"backend"` // "sqlite" or "postgres"
 			Path              string `toml:"path"`    // SQLite: file path; PostgreSQL: DSN
@@ -180,12 +180,12 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	// Only use max_workers from config if explicitly set via CLI or env var
+	// Only use workers from config if explicitly set via CLI or env var
 	// Default is 1, not from config file
 	if !workersFromCLI && !workersFromEnv && config.Processing.MaxWorkers > 0 {
 		// Config file is lowest priority - only use if nothing else specified
 		// But since we want default=1, we skip config file entirely
-		log.Printf("Ignoring max_workers from config (%d), using default: %d", config.Processing.MaxWorkers, *numWorkers)
+		log.Printf("Ignoring workers from config (%d), using default: %d", config.Processing.MaxWorkers, *numWorkers)
 	}
 
 	// Generate worker ID if not provided

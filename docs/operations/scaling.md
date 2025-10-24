@@ -61,7 +61,7 @@ type = "file"
 base_path = "./docs"
 
 [workers]
-max_workers = 4  # Use all CPU cores
+workers = 4  # Use all CPU cores
 worker_timeout = 300  # 5 minutes
 ```bash
 
@@ -185,7 +185,7 @@ data:
 worker_id = "${HOSTNAME}-${WORKER_ID}"
 
 ## Concurrency
-max_workers = 8            # Parallel workers per node
+workers = 8            # Parallel workers per node
 max_concurrent_docs = 32   # Documents per worker can handle
 
 ## Timing
@@ -453,7 +453,7 @@ pool_size = 100           # Increase connection pool
 max_overflow = 50         # Allow more overflow connections
 
 [workers]
-max_workers = 8           # Reduce workers per node
+workers = 8           # Reduce workers per node
 ```bash
 
 ### Debug Mode

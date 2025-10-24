@@ -102,7 +102,7 @@ queue_idle_trigger_minutes = 0  # Run after queue idle (0 = 30 seconds via code)
 # Processing configuration
 [processing]
 batch_size = 100
-max_workers = 4
+workers = 4
 timeout_seconds = 300
 
 [processing.job_control]

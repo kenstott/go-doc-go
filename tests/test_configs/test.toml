@@ -157,7 +157,7 @@ queue_idle_trigger_minutes = 0
 # Processing configuration
 [processing]
 batch_size = 10
-max_workers = 1  # Changed from 2 to isolate per-goroutine memory issue
+workers = 1  # Default worker count (only used if --workers CLI flag not specified)
 timeout_seconds = 300
 
 [processing.job_control]

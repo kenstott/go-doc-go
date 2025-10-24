@@ -263,7 +263,7 @@ content_sources:
     include_extensions: [".pdf", ".docx", ".md"]
     
     # Parallel processing
-    max_workers: 10
+    workers: 10
     batch_size: 100
 ```yaml
 
@@ -676,7 +676,7 @@ content_sources:
     
     # Batch processing
     batch_size: 1000        # Process in chunks
-    max_workers: 4          # Parallel workers (reserved for future use)
+    workers: 4          # Parallel workers (reserved for future use)
     connection_pool_size: 8 # DB connection pool
     
     # Memory management

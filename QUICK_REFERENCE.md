@@ -114,7 +114,7 @@ Go-Doc-Go supports the following environment variables:
 **Priority Order** (highest to lowest):
 1. CLI flags (`--workers`, `--instances`)
 2. Environment variables (`NUM_WORKERS`, `NUM_INSTANCES`)
-3. Config file settings (`max_workers`)
+3. Config file settings (`workers`)
 4. Built-in defaults (1 worker)
 
 ### Example

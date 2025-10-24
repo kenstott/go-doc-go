@@ -269,7 +269,7 @@ region = "us-west-2"
 
 ## Options
 include_extensions = [".pdf", ".docx", ".txt"]
-max_workers = 10
+workers = 10
 ```toml
 
 ### SharePoint
@@ -355,7 +355,7 @@ Configure the document processing pipeline.
 [processing]
 ## Batch processing
 batch_size = 100
-max_workers = 4
+workers = 4
 timeout_seconds = 300
 
 ## Job control for distributed processing
@@ -481,7 +481,7 @@ path = "./dev.db"
 enabled = false  # Skip embeddings for faster development
 
 [processing]
-max_workers = 2
+workers = 2
 batch_size = 10
 
 [logging]
@@ -504,7 +504,7 @@ provider = "fastembed"
 batch_size = 128
 
 [processing]
-max_workers = 16
+workers = 16
 batch_size = 1000
 
 [logging]
@@ -549,7 +549,7 @@ provider = "fastembed"
 batch_size = 256
 
 [processing]
-max_workers = 32
+workers = 32
 batch_size = 1000
 
 [[analytics.outputs]]
@@ -580,7 +580,7 @@ type = "confluence"
 ## ... Confluence config
 
 [processing]
-max_workers = 16
+workers = 16
 
 [logging]
 level = "INFO"
@@ -614,7 +614,7 @@ level = "INFO"
 ### Performance issues
 
 - Reduce `batch_size` if memory is limited
-- Decrease `max_workers` if CPU is overloaded
+- Decrease `workers` if CPU is overloaded
 - Monitor goroutine worker performance with `--workers` flag
 - Adjust job control `claim_timeout` if workers are slow
 

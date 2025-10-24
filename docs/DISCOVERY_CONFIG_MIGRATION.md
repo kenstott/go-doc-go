@@ -273,7 +273,7 @@ name = "test_source"
 # ... your configuration ...
 
 [processing]
-max_workers = 1  # Single worker for easier debugging
+workers = 1  # Single worker for easier debugging
 ```
 
 Run worker:
