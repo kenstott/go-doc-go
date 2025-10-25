@@ -1,5 +1,5 @@
 domain: library_science
-description: Library cataloging, circulation, collections, archives, and information management
+description: "Library operations including cataloging workflows, circulation systems, collection development policies, archival procedures, and reference services. NOTE: Mere presence of bibliographic identifiers (ISBN, DOI, PMID) or citation formats does NOT indicate library science content - this domain requires discussion of library processes, operations, or professional practices."
 subdomains:
   - cataloging
   - circulation

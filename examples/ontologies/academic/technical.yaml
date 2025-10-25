@@ -1,5 +1,5 @@
 domain: technical
-description: Software documentation, API specifications, technical manuals, architecture documents, and IT infrastructure documentation
+description: "Technical documentation about software systems, API specifications, architecture documents, and IT infrastructure. NOTE: Mere presence of code files or technical syntax does NOT indicate \"technical\" domain - classify code by its business function (e.g., payment processing code → \"financial\" domain, not \"technical\"). This domain is for documentation ABOUT technical infrastructure, not code implementing business logic."
 subdomains:
     - software_development
     - api_documentation
