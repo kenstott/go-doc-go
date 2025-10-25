@@ -35,12 +35,13 @@ type ParseRequest struct {
 
 // ParserConfig holds parser-specific configuration
 type ParserConfig struct {
-	MaxContentPreview int  // Content preview length (default: 100)
-	ExtractImages     bool // Extract image elements
-	ExtractTables     bool // Extract table structure
-	ExtractHeaders    bool // Extract headers/footers (DOCX/PPTX)
-	ExtractComments   bool // Extract comments/annotations
-	MaxImageSize      int  // Maximum image size in bytes
+	MaxContentPreview int      // Content preview length (default: 100)
+	ExtractImages     bool     // Extract image elements
+	ExtractTables     bool     // Extract table structure
+	ExtractHeaders    bool     // Extract headers/footers (DOCX/PPTX)
+	ExtractComments   bool     // Extract comments/annotations
+	MaxImageSize      int      // Maximum image size in bytes
+	ExcludePatterns   []string // Patterns for excluding hyperlinks (from discovery config)
 }
 
 // DefaultParserConfig returns default configuration

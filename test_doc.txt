@@ -1,9 +1,0 @@
-Company Overview
-
-Acme Corporation Inc is a leading technology company based in San Francisco, California.
-The company was founded in 2010 and has offices in New York and Seattle.
-
-IBM Corp is a major competitor located in Armonk, New York.
-
-Recent partnerships include working with Microsoft Corporation in Redmond and
-Google LLC in Mountain View.

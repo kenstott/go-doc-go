@@ -83,6 +83,7 @@ type HTMLParser struct {
 	EnableCaching     bool
 	StoreFullContent  bool              // If true, populate Content field with full (untruncated) text
 	Headers           map[string]string // HTTP headers to use when fetching URLs
+	ExcludePatterns   []string          // Patterns for excluding hyperlinks (from config)
 	documentCache     map[string]string // In-memory cache of HTML content by source URL
 	diskCache         *ContentCache     // Disk-based persistent cache
 	cacheMu           sync.RWMutex      // Mutex for thread-safe cache access
@@ -154,6 +155,11 @@ func (p *HTMLParser) Parse(ctx context.Context, req ParseRequest) (*ParseResult,
 		htmlContent = string(v)
 	default:
 		return nil, fmt.Errorf("unsupported content type: %T", req.Content)
+	}
+
+	// Copy exclude patterns from config to parser
+	if req.Config != nil && len(req.Config.ExcludePatterns) > 0 {
+		p.ExcludePatterns = req.Config.ExcludePatterns
 	}
 
 	// Cache the HTML content for later resolution
@@ -550,6 +556,24 @@ func (p *HTMLParser) extractTextRecursive(node *html.Node, text *strings.Builder
 	}
 }
 
+// isExcludedHyperlink checks if a hyperlink should be excluded from parsing
+// Uses exclusion patterns from config (same patterns used for URL traversal)
+func (p *HTMLParser) isExcludedHyperlink(href string) bool {
+	// Fragment-only links (#section) are kept - they're internal navigation
+	if strings.HasPrefix(href, "#") {
+		return false
+	}
+
+	// Use config-driven exclusion patterns
+	for _, pattern := range p.ExcludePatterns {
+		if strings.Contains(href, pattern) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // parseAnchorTag creates a hyperlink element for an HTML anchor tag
 // Hyperlink elements are containers that can have text/image children
 func (p *HTMLParser) parseAnchorTag(node *html.Node, elements *[]HTMLElement,
@@ -562,6 +586,16 @@ func (p *HTMLParser) parseAnchorTag(node *html.Node, elements *[]HTMLElement,
 			href = attr.Val
 			break
 		}
+	}
+
+	// Skip excluded hyperlinks using config patterns
+	if p.isExcludedHyperlink(href) {
+		// Still parse children but without creating the hyperlink element
+		// This preserves any text content that might be valuable
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			p.parseNode(child, elements, parentID, sourceID, counter)
+		}
+		return parentID // Return parent since we didn't create a link element
 	}
 
 	// Extract text content for preview (truncated)

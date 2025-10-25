@@ -607,6 +607,29 @@ func (w *Worker) independentWorkerGoroutine(id int) {
 	log.Printf("Worker goroutine %d stopped", id)
 }
 
+// createParserConfig creates parser config with exclude patterns from source discovery config
+func (w *Worker) createParserConfig(sourceName string) *parser.ParserConfig {
+	config := parser.DefaultParserConfig()
+
+	// Extract exclude patterns from discovery config
+	if sourceConfig, ok := w.contentSourceConfigs[sourceName]; ok {
+		if discoveryRaw, ok := sourceConfig["discovery"]; ok {
+			if discoveryConfig, ok := discoveryRaw.(map[string]interface{}); ok {
+				if excludePatternsRaw, ok := discoveryConfig["exclude_patterns"].([]interface{}); ok {
+					excludePatterns := make([]string, 0, len(excludePatternsRaw))
+					for _, p := range excludePatternsRaw {
+						if pattern, ok := p.(string); ok {
+							excludePatterns = append(excludePatterns, pattern)
+						}
+					}
+					config.ExcludePatterns = excludePatterns
+				}
+			}
+		}
+	}
+
+	return config
+}
 
 // processDocument processes a single document
 func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
@@ -667,6 +690,9 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 	log.Printf("DEBUG: Determined docType=%s for document %s", docType, docInfo.DocID)
 
 	// Parse the document using appropriate parser with unified Parser interface
+	// Create parser config with exclude patterns from source config
+	parserConfig := w.createParserConfig(docInfo.Source)
+
 	ctx := context.Background()
 	switch docType {
 	case "docx":
@@ -675,7 +701,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		parseResult, err = docxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: docContent.BinaryPath, // DOCX parser expects file path
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "pptx", "ppt":
 		log.Printf("DEBUG: Parsing PPTX with BinaryPath=%s", docContent.BinaryPath)
@@ -683,63 +709,63 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		parseResult, err = pptxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: docContent.BinaryPath, // PPTX parser expects file path
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "xlsx", "xls":
 		xlsxParser := parser.NewXLSXParser()
 		parseResult, err = xlsxParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "pdf":
 		pdfParser := parser.NewPDFParser()
 		parseResult, err = pdfParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "csv":
 		csvParser := parser.NewCSVParser()
 		parseResult, err = csvParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "json":
 		jsonParser := parser.NewJSONParser()
 		parseResult, err = jsonParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "xml":
 		xmlParser := parser.NewXMLParser()
 		parseResult, err = xmlParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "html":
 		htmlParser := parser.NewHTMLParser()
 		parseResult, err = htmlParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "markdown", "md":
 		markdownParser := parser.NewMarkdownParser()
 		parseResult, err = markdownParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	case "text", "txt":
 		textParser := parser.NewTextParser()
 		parseResult, err = textParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	default:
 		// Default to text parser
@@ -747,7 +773,7 @@ func (w *Worker) processDocument(docInfo *jobcontrol.DocumentInfo) bool {
 		parseResult, err = textParser.Parse(ctx, parser.ParseRequest{
 			ID:      docInfo.DocID,
 			Content: contentToUse,
-			Config:  parser.DefaultParserConfig(),
+			Config:  parserConfig,
 		})
 	}
 
