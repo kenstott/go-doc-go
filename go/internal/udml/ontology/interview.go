@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -176,6 +177,47 @@ func (ib *InterviewBuilderV2) sampleCorpus(ctx context.Context) error {
 	return nil
 }
 
+// formatCorpusStatistics creates a summary of corpus statistics from samples
+func (ib *InterviewBuilderV2) formatCorpusStatistics() string {
+	if ib.samples == nil || len(ib.samples.Samples) == 0 {
+		return "No corpus statistics available"
+	}
+
+	// Count element types
+	elementTypeCounts := make(map[string]int)
+	uniqueDocs := make(map[string]bool)
+	for _, sample := range ib.samples.Samples {
+		elementTypeCounts[sample.ElementType]++
+		uniqueDocs[sample.DocID] = true
+	}
+
+	// Format element type distribution (sorted by count descending)
+	type typeCount struct {
+		Type  string
+		Count int
+	}
+	var typeCounts []typeCount
+	for t, c := range elementTypeCounts {
+		typeCounts = append(typeCounts, typeCount{t, c})
+	}
+	sort.Slice(typeCounts, func(i, j int) bool {
+		return typeCounts[i].Count > typeCounts[j].Count
+	})
+
+	var stats strings.Builder
+	stats.WriteString(fmt.Sprintf("## Corpus Statistics (from %d sampled elements)\n\n", len(ib.samples.Samples)))
+	stats.WriteString(fmt.Sprintf("- **Total elements sampled**: %d\n", len(ib.samples.Samples)))
+	stats.WriteString(fmt.Sprintf("- **Unique documents**: %d\n", len(uniqueDocs)))
+	stats.WriteString(fmt.Sprintf("- **Element type distribution**:\n"))
+	for _, tc := range typeCounts {
+		pct := float64(tc.Count) / float64(len(ib.samples.Samples)) * 100
+		stats.WriteString(fmt.Sprintf("  - %s: %d (%.1f%%)\n", tc.Type, tc.Count, pct))
+	}
+	stats.WriteString("\n")
+
+	return stats.String()
+}
+
 // phaseDomainSelection - Hybrid approach: LLM selects from catalog OR proposes new domains if needed
 func (ib *InterviewBuilderV2) phaseDomainSelection(ctx context.Context) error {
 	fmt.Println("\n" + strings.Repeat("-", 80))
@@ -186,6 +228,9 @@ func (ib *InterviewBuilderV2) phaseDomainSelection(ctx context.Context) error {
 	fmt.Printf("DEBUG: nonInteractive flag = %v\n\n", ib.nonInteractive)
 
 	sampleTexts := ib.builder.prepareSampleTexts(ib.samples.Samples, 20)
+
+	// Get corpus statistics from samples
+	corpusStats := ib.formatCorpusStatistics()
 
 	// Load predefined domains from catalog
 	predefinedDomains, err := loadPredefinedDomains()
@@ -220,6 +265,52 @@ func (ib *InterviewBuilderV2) phaseDomainSelection(ctx context.Context) error {
   * Must be specific and well-defined (no generic names like "business", "general")
   * Must NOT be variations of existing catalog domains
   * Must NOT combine existing catalog domains (e.g., "medical_healthcare" is prohibited if catalog has "medical" and "healthcare")
+
+## CRITICAL: Distinguishing Metadata/Format from Domain Topics
+
+**Metadata Format ≠ Domain Content**
+**Code Format ≠ "Technical" Domain**
+
+Many documents contain bibliographic metadata or code syntax. The **presence of these formats does NOT determine the domain**. Classify by BUSINESS FUNCTION or SUBJECT MATTER, not by format.
+
+**Common Misclassifications:**
+
+**1. Bibliographic Metadata → library_science (WRONG)**
+- ❌ Seeing "ISBN: 978-0-123456-78-9" → identifying as "library_science"
+- ❌ Seeing "DOI: 10.1000/xyz123" → identifying as "library_science"
+- ❌ Seeing "PMID: 12345678" → identifying as "library_science"
+- ❌ Seeing citation templates or Handle System URIs → identifying as "library_science"
+- ✓ CORRECT: Medical article with PMID → "medical" domain
+- ✓ CORRECT: Economic policy paper with ISBN → "government" domain
+
+**library_science domain specifically requires:**
+- Discussion of cataloging processes, workflows, or standards
+- Content about circulation systems, lending policies
+- Topics on collection development, archival procedures
+
+**2. Code Files → "technical" Domain (WRONG)**
+- ❌ Seeing payment processing code → identifying as "technical"
+- ❌ Seeing customer relationship code → identifying as "technical"
+- ❌ Seeing inventory management code → identifying as "technical"
+- ❌ ANY business logic code → identifying as "technical"
+- ✓ CORRECT: Payment processing code → "financial" domain
+- ✓ CORRECT: CRM code → "sales" or "marketing" domain
+- ✓ CORRECT: Inventory code → "supply_chain" or "manufacturing" domain
+
+**technical domain specifically requires:**
+- Documentation ABOUT software infrastructure (API specs, architecture docs)
+- IT infrastructure documentation (networking, databases, deployment)
+- System architecture or technical manuals
+
+**Domain Classification Rules:**
+1. Ignore format indicators (metadata, code syntax, file types)
+2. Read the actual content to determine WHAT IT'S ABOUT
+3. Classify by business function or subject matter
+4. Ask: "What business problem does this solve?" or "What topic does this discuss?"
+
+## CORPUS STATISTICS
+
+%s
 
 ## YOUR TASK
 
@@ -274,12 +365,15 @@ Return JSON:
 - If catalog domains cover 50-80%% → use catalog + propose new domains for gaps
 - If catalog domains cover <50%% → propose new domains as primary
 
-IMPORTANT: Order domains by estimated coverage (highest first). Return 3-5 domains total.`, domainListFormatted.String(), sampleTexts)
+IMPORTANT: Order domains by estimated coverage (highest first). Return 3-5 domains total.`, domainListFormatted.String(), corpusStats, sampleTexts)
+
+	// Build system prompt
+	systemPrompt := "You are an expert at domain analysis and data mesh principles. Identify distinct domains based on ownership boundaries and vocabulary."
 
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:    2000,
 		Temperature:  0.3,
-		SystemPrompt: "You are an expert at domain analysis and data mesh principles. Identify distinct domains based on ownership boundaries and vocabulary.",
+		SystemPrompt: systemPrompt,
 	})
 	if err != nil {
 		return err

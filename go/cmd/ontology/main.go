@@ -54,13 +54,13 @@ Run 'ontology <command> --help' for more information on a specific command.
 
 EXAMPLES:
   # Create a new ontology
-  ontology interview ./corpus.parquet ./ontology.json
+  ontology interview --config config.toml
 
   # Extract entities using ontology
-  ontology extract --schema ./ontology.json --parquet ./corpus.parquet --job-db ./extraction.db
+  ontology extract --config config.toml --schema ontology.json --job-db extraction.db
 
   # Analyze extracted ontology as knowledge graph
-  ontology analyze-graph --parquet ./corpus.parquet --run-id extraction_12345 --output-gob ./graph.gob
+  ontology analyze-graph --config config.toml --run-id extraction_12345 --output-gob graph.gob
 
   # View cache statistics
   ontology cache stats

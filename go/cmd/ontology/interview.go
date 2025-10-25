@@ -25,23 +25,41 @@ func runInterview(args []string) {
 	// Check for mode and option flags
 	mode := ontology.ModeNewOntology
 	existingSchemaPath := ""
+	configPath := ""
 	nonInteractive := false
 	diversityThreshold := 0.0 // 0.0 means use default (0.85)
 	enableMCP := false
 	embeddingModel := "all-MiniLM-L6-v2" // Default embedding model
+	outputPath := "ontology.json"
 	argsOffset := 1
 
 	// Parse flags
 	for argsOffset < len(os.Args) && strings.HasPrefix(os.Args[argsOffset], "--") {
 		switch os.Args[argsOffset] {
+		case "--config":
+			if len(os.Args) < argsOffset+2 {
+				fmt.Fprintf(os.Stderr, "Error: --config requires a path to configuration file\n\n")
+				printInterviewUsage()
+				os.Exit(1)
+			}
+			configPath = os.Args[argsOffset+1]
+			argsOffset += 2
 		case "--refine":
 			mode = ontology.ModeRefineOntology
-			if len(os.Args) < argsOffset+3 {
-				fmt.Fprintf(os.Stderr, "Error: --refine requires <existing_schema> <parquet_path> [output_path]\n\n")
+			if len(os.Args) < argsOffset+2 {
+				fmt.Fprintf(os.Stderr, "Error: --refine requires <existing_schema>\n\n")
 				printInterviewUsage()
 				os.Exit(1)
 			}
 			existingSchemaPath = os.Args[argsOffset+1]
+			argsOffset += 2
+		case "--output":
+			if len(os.Args) < argsOffset+2 {
+				fmt.Fprintf(os.Stderr, "Error: --output requires a path\n\n")
+				printInterviewUsage()
+				os.Exit(1)
+			}
+			outputPath = os.Args[argsOffset+1]
 			argsOffset += 2
 		case "--non-interactive":
 			nonInteractive = true
@@ -78,17 +96,23 @@ func runInterview(args []string) {
 		}
 	}
 
-	// Parse command line arguments
-	if argsOffset >= len(os.Args) {
-		fmt.Fprintf(os.Stderr, "Error: missing required argument <parquet_path>\n\n")
+	// Validate required flags
+	if configPath == "" {
+		fmt.Fprintf(os.Stderr, "Error: --config is required\n\n")
 		printInterviewUsage()
 		os.Exit(1)
 	}
 
-	parquetPath := os.Args[argsOffset]
-	outputPath := "ontology.json"
-	if len(os.Args) > argsOffset+1 {
-		outputPath = os.Args[argsOffset+1]
+	// Load configuration
+	config, err := loadConfig(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Extract storage path from config
+	storagePath, err := getStoragePath(config)
+	if err != nil {
+		log.Fatalf("Failed to get storage path from config: %v", err)
 	}
 
 	// Check for API key
@@ -98,8 +122,8 @@ func runInterview(args []string) {
 	}
 
 	// Create builder config
-	config := ontology.BuilderConfig{
-		ParquetPath:        parquetPath,
+	builderConfig := ontology.BuilderConfig{
+		StoragePath:        storagePath,
 		SampleSize:         1000,
 		DiversityThreshold: diversityThreshold, // 0.0 uses default of 0.85 (filters out >85% similar samples)
 		LLMProvider:        "anthropic",
@@ -113,7 +137,7 @@ func runInterview(args []string) {
 	}
 
 	// Create builder
-	builder, err := ontology.NewOntologyBuilder(config)
+	builder, err := ontology.NewOntologyBuilder(builderConfig)
 	if err != nil {
 		log.Fatalf("Failed to create builder: %v", err)
 	}
@@ -173,13 +197,13 @@ MODES:
    Creates a new ontology from scratch with mandatory user approval.
 
    Usage:
-     %s [--diversity-threshold <value>] [--non-interactive] [--enable-mcp] [--embedding-model <model>] <parquet_path> [output_path]
+     %s --config <config_file> [options]
 
-   Arguments:
-     parquet_path   Path to UDML Parquet storage directory
-     output_path    Output path for ontology schema (default: ontology.json)
+   Required:
+     --config <path>  Path to configuration file (same config used by worker)
 
    Options:
+     --output <path>                Output path for ontology schema (default: ontology.json)
      --diversity-threshold <value>  Cosine similarity threshold for diversity filtering (0.0-1.0)
                                     Lower values = more diverse samples. Default: 0.85
      --non-interactive              Auto-approve all suggestions (for testing)
@@ -204,12 +228,14 @@ MODES:
    Refines an existing ontology by comparing it against the corpus.
 
    Usage:
-     %s --refine <existing_schema> <parquet_path> [output_path]
+     %s --config <config_file> --refine <existing_schema> [--output <output_path>]
 
-   Arguments:
-     existing_schema  Path to existing ontology JSON file
-     parquet_path     Path to UDML Parquet storage directory
-     output_path      Output path for refined schema (default: ontology.json)
+   Required:
+     --config <path>  Path to configuration file
+     --refine <path>  Path to existing ontology JSON file to refine
+
+   Optional:
+     --output <path>  Output path for refined schema (default: ontology.json)
 
    Process (3 phases):
      Phase 1: Analysis
@@ -230,11 +256,11 @@ Environment:
 Examples:
   # Create new ontology
   export ANTHROPIC_API_KEY=your_key_here
-  %s ./output/udml.parquet
-  %s ./corpus.parquet ./my-ontology.json
+  %s --config config.toml
+  %s --config config.toml --output my-ontology.json
 
   # Refine existing ontology
-  %s --refine ./current-ontology.json ./corpus.parquet ./improved-ontology.json
+  %s --config config.toml --refine current-ontology.json --output improved-ontology.json
 
 Features:
   ✓ LLM-guided conversation

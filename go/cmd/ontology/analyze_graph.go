@@ -18,7 +18,7 @@ func runAnalyzeGraph(args []string) {
 	fs := flag.NewFlagSet("analyze-graph", flag.ExitOnError)
 
 	// Parse command-line flags
-	parquetPath := fs.String("parquet", "", "Path to UDML Parquet storage (required)")
+	configPath := fs.String("config", "", "Path to configuration file (required)")
 	runID := fs.String("run-id", "", "Run ID for extraction results (required)")
 	outputGOB := fs.String("output-gob", "", "Output path for graph in GOB format (optional)")
 	outputJSON := fs.String("output-json", "", "Output path for graph metadata in JSON format (optional)")
@@ -29,31 +29,44 @@ func runAnalyzeGraph(args []string) {
 	fs.Parse(args[1:])
 
 	// Validate required flags
-	if *parquetPath == "" || *runID == "" {
-		fmt.Fprintln(os.Stderr, "Error: --parquet and --run-id are required")
+	if *configPath == "" || *runID == "" {
+		fmt.Fprintln(os.Stderr, "Error: --config and --run-id are required")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Usage:")
 		fs.PrintDefaults()
 		os.Exit(1)
 	}
 
+	// Load configuration
+	config, err := loadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Extract storage path from config
+	storagePath, err := getStoragePath(config)
+	if err != nil {
+		log.Fatalf("Failed to get storage path from config: %v", err)
+	}
+
 	log.Printf("========================================")
 	log.Printf("KNOWLEDGE GRAPH ANALYSIS")
 	log.Printf("========================================")
-	log.Printf("  Parquet: %s", *parquetPath)
+	log.Printf("  Config: %s", *configPath)
+	log.Printf("  Storage: %s", storagePath)
 	log.Printf("  Run ID: %s", *runID)
 	log.Printf("  Algorithm: %s", *algorithm)
 	log.Printf("  Enrich communities: %v", *enrichCommunities)
 	log.Printf("========================================\n")
 
-	// Initialize Parquet storage
-	log.Println("📊 Initializing Parquet storage...")
+	// Initialize storage
+	log.Println("📊 Initializing storage...")
 	storage, err := analytics.NewHiveParquetStorage(map[string]interface{}{
-		"path":    *parquetPath,
+		"path":    storagePath,
 		"version": "v2.0.0",
 	})
 	if err != nil {
-		log.Fatalf("Failed to initialize Parquet storage: %v", err)
+		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 	defer storage.Close()
 

@@ -23,20 +23,32 @@ func runExtract(args []string) {
 	fs := flag.NewFlagSet("extract", flag.ExitOnError)
 
 	// Parse command-line flags
+	configPath := fs.String("config", "", "Path to configuration file (required)")
 	schemaPath := fs.String("schema", "", "Path to ontology schema JSON (required)")
-	parquetPath := fs.String("parquet", "", "Path to UDML Parquet storage (required)")
 	jobDBPath := fs.String("job-db", "", "Path to SQLite job control database (optional, in-memory if not provided)")
 	docBatchSize := fs.Int("doc-batch-size", 500, "Number of documents per extraction task")
 
 	fs.Parse(args[1:])
 
 	// Validate required flags
-	if *schemaPath == "" || *parquetPath == "" {
-		fmt.Fprintln(os.Stderr, "Error: --schema and --parquet are required")
+	if *configPath == "" || *schemaPath == "" {
+		fmt.Fprintln(os.Stderr, "Error: --config and --schema are required")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Usage:")
 		fs.PrintDefaults()
 		os.Exit(1)
+	}
+
+	// Load configuration
+	config, err := loadConfig(*configPath)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Extract storage path from config
+	storagePath, err := getStoragePath(config)
+	if err != nil {
+		log.Fatalf("Failed to get storage path from config: %v", err)
 	}
 
 	// Generate unique run ID and worker ID
@@ -48,8 +60,9 @@ func runExtract(args []string) {
 	log.Printf("========================================")
 	log.Printf("  Run ID: %s", runID)
 	log.Printf("  Worker ID: %s", workerID)
+	log.Printf("  Config: %s", *configPath)
 	log.Printf("  Schema: %s", *schemaPath)
-	log.Printf("  Parquet: %s", *parquetPath)
+	log.Printf("  Storage: %s", storagePath)
 	log.Printf("  Doc batch size: %d", *docBatchSize)
 	if *jobDBPath != "" {
 		log.Printf("  Job DB: %s", *jobDBPath)
@@ -66,7 +79,7 @@ func runExtract(args []string) {
 	}
 
 	var schema ontology.OntologySchema
-	if err := json.Unmarshal(schemaData, &schema); err != nil {
+	if err = json.Unmarshal(schemaData, &schema); err != nil {
 		log.Fatalf("Failed to parse schema JSON: %v", err)
 	}
 
@@ -75,14 +88,14 @@ func runExtract(args []string) {
 	log.Printf("    - Entity mappings: %d", len(schema.ElementEntityMappings))
 	log.Printf("    - Relationship rules: %d\n", len(schema.EntityRelationshipRules))
 
-	// Initialize Parquet storage
-	log.Println("📊 Initializing Parquet storage...")
+	// Initialize storage
+	log.Println("📊 Initializing storage...")
 	storage, err := analytics.NewHiveParquetStorage(map[string]interface{}{
-		"path":    *parquetPath,
+		"path":    storagePath,
 		"version": "v2.0.0",
 	})
 	if err != nil {
-		log.Fatalf("Failed to initialize Parquet storage: %v", err)
+		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 	defer storage.Close()
 
@@ -186,12 +199,12 @@ func runExtract(args []string) {
 	log.Printf("Worker %s finished", workerID)
 	log.Printf("Run ID: %s", runID)
 	log.Println("")
-	log.Println("Results written to Parquet:")
-	log.Printf("  - Raw entities: %s/ontology_entities/run_id=%s/", *parquetPath, runID)
+	log.Println("Results written to storage:")
+	log.Printf("  - Raw entities: %s/ontology_entities/run_id=%s/", storagePath, runID)
 	if isLeader {
-		log.Printf("  - Canonical entities: %s/canonical_entities/run_id=%s/", *parquetPath, runID)
+		log.Printf("  - Canonical entities: %s/canonical_entities/run_id=%s/", storagePath, runID)
 	}
-	log.Printf("  - Relationships: %s/ontology_relationships/run_id=%s/", *parquetPath, runID)
+	log.Printf("  - Relationships: %s/ontology_relationships/run_id=%s/", storagePath, runID)
 	log.Println("========================================")
 }
 

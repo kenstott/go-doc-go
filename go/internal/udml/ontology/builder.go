@@ -12,6 +12,7 @@ import (
 	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
+	"github.com/kennethstott/doculyzer-go-conversion/internal/udml"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology/mcp"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/sampler"
 	"gopkg.in/yaml.v3"
@@ -31,7 +32,7 @@ type OntologyBuilder struct {
 type BuilderConfig struct {
 	// Sampling
 	SampleSize          int     // Number of elements to sample
-	ParquetPath         string  // Path to UDML Parquet storage
+	StoragePath         string  // Path to UDML storage (format-agnostic)
 	DiversityThreshold  float64 // Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse)
 
 	// LLM
@@ -149,7 +150,7 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 	fmt.Printf("DEBUG: BuilderConfig.DiversityThreshold = %.6f, using = %.6f\n", config.DiversityThreshold, diversityThreshold)
 
 	samplerConfig := sampler.SamplerConfig{
-		ParquetPath:         config.ParquetPath,
+		ParquetPath:         config.StoragePath,
 		SampleSize:          config.SampleSize,
 		MaxTextLength:       2000,
 		ElementTypes:        substantiveTypes,    // Focus sampling on substantive content (excludes links, images, divs)
@@ -168,7 +169,7 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 
 	// Configure sampler with resolver from analytics storage
 	// This enables content resolution from content_location pointers
-	if err := configureResolverFromStorage(samp, config.ParquetPath); err != nil {
+	if err := configureResolverFromStorage(samp, config.StoragePath); err != nil {
 		// Log warning but don't fail - sampler can work without resolver (falls back to content_preview)
 		fmt.Printf("Warning: Failed to configure content resolver: %v\n", err)
 		fmt.Println("  Sampler will fall back to content_preview (100 chars)")
@@ -212,7 +213,7 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 
 		// Create analytics storage for MCP server (supports temporal filtering via filters parameter)
 		storageConfig := map[string]interface{}{
-			"path": config.ParquetPath,
+			"path": config.StoragePath,
 		}
 
 		mcpStorage, err = analytics.NewHiveParquetStorage(storageConfig)
@@ -1498,64 +1499,11 @@ func configureResolverFromStorage(samp *sampler.Sampler, parquetPath string) err
 	return nil
 }
 
-// loadUDMLElementTypes loads the authoritative UDML element types from element_taxonomy.json
+// loadUDMLElementTypes loads the authoritative UDML element types from SchemaRegistry
 func loadUDMLElementTypes() ([]string, error) {
-	// ElementTaxonomy represents the structure of element_taxonomy.json
-	type ElementTaxonomy struct {
-		Version     string `json:"version"`
-		Description string `json:"description"`
-		Categories  map[string]struct {
-			Description  string   `json:"description"`
-			ElementTypes []string `json:"element_types"`
-		} `json:"categories"`
-		DefaultCategory string `json:"default_category"`
-		CodeElements    struct {
-			Description string `json:"description"`
-			Types       map[string]struct {
-				Category string `json:"category"`
-			} `json:"types"`
-		} `json:"code_elements"`
-	}
-
-	// Try multiple paths to find element_taxonomy.json
-	possiblePaths := []string{
-		"element_taxonomy.json",
-		"../element_taxonomy.json",
-		"../../element_taxonomy.json",
-		"../../../element_taxonomy.json",
-	}
-
-	var taxonomyData []byte
-	var err error
-	var foundPath string
-
-	for _, path := range possiblePaths {
-		taxonomyData, err = os.ReadFile(path)
-		if err == nil {
-			foundPath = path
-			break
-		}
-	}
-
-	if foundPath == "" {
-		return nil, fmt.Errorf("element_taxonomy.json not found - checked paths: %v", possiblePaths)
-	}
-
-	var taxonomy ElementTaxonomy
-	if err := json.Unmarshal(taxonomyData, &taxonomy); err != nil {
-		return nil, fmt.Errorf("failed to parse element_taxonomy.json: %w", err)
-	}
-
-	// Extract all element types from all categories
-	var allTypes []string
-	for _, category := range taxonomy.Categories {
-		allTypes = append(allTypes, category.ElementTypes...)
-	}
-
-	// Add code element types
-	for typeName := range taxonomy.CodeElements.Types {
-		allTypes = append(allTypes, typeName)
-	}
+	// Get element types from SchemaRegistry (single source of truth)
+	registry := udml.NewSchemaRegistry()
+	allTypes := registry.GetRegisteredTypes()
 
 	// Filter out non-substantive types that shouldn't be used for entity extraction
 	// These are container/metadata types that don't carry extractable entities
@@ -1574,49 +1522,8 @@ func loadUDMLElementTypes() ([]string, error) {
 		}
 	}
 
-	fmt.Printf("✓ Loaded %d UDML element types from %s (%d total, %d substantive)\n",
-		len(substantive), foundPath, len(allTypes), len(substantive))
-
-	return substantive, nil
-}
-
-// queryElementTypesFromParquet queries the actual element types from Parquet storage
-// DEPRECATED: Use loadUDMLElementTypes() instead to get authoritative UDML taxonomy
-func queryElementTypesFromParquet(parquetPath string) ([]string, error) {
-	// Create analytics storage
-	storageConfig := map[string]interface{}{
-		"path": parquetPath,
-	}
-
-	storage, err := analytics.NewHiveParquetStorage(storageConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create analytics storage: %w", err)
-	}
-	defer storage.Close()
-
-	// Query distinct element types
-	elementTypes, err := storage.GetDistinctElementTypes()
-	if err != nil {
-		return nil, fmt.Errorf("failed to query element types: %w", err)
-	}
-
-	// Filter out container types and keep only substantive content types
-	// Exclude: link, image, nav, script, style, meta
-	excluded := map[string]bool{
-		"link":   true,
-		"image":  true,
-		"nav":    true,
-		"script": true,
-		"style":  true,
-		"meta":   true,
-	}
-
-	var substantive []string
-	for _, et := range elementTypes {
-		if !excluded[et] {
-			substantive = append(substantive, et)
-		}
-	}
+	fmt.Printf("✓ Loaded %d UDML element types from SchemaRegistry (%d total, %d substantive)\n",
+		len(substantive), len(allTypes), len(substantive))
 
 	return substantive, nil
 }
