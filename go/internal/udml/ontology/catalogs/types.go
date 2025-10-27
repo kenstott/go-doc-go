@@ -23,6 +23,9 @@ type Term struct {
 // EntityTemplate represents a template for an entity type
 type EntityTemplate struct {
 	EntityType   string
+	ParentType   string   // Optional: qualified parent reference (e.g., "global.person")
+	WCategory    string   // 5 W's category: who, what, where, when, why
+	Domain       string   // Domain this template belongs to (e.g., "global", "medical")
 	Description  string
 	Aliases      []string
 	Subdomain    string   // Optional: for domain-specific entities
@@ -64,47 +67,25 @@ func ListDomains() []string {
 	return domains
 }
 
-// GetAllEntityTemplates returns both domain-specific and common entity templates
+// GetAllEntityTemplates returns domain-specific entity templates
+// Note: Global entity references are now handled via parent_type in OntologySchema
 func (dc *DomainCatalog) GetAllEntityTemplates() []EntityTemplate {
-	// Estimate capacity: domain entities + common entity references
-	entities := make([]EntityTemplate, 0, len(dc.EntityTypes)+len(dc.CommonEntityRefs))
-
-	// Add domain-specific entities
-	entities = append(entities, dc.EntityTypes...)
-
-	// Add referenced common entities
-	for _, ref := range dc.CommonEntityRefs {
-		if commonEntity, exists := GetCommonEntityTemplate(ref); exists {
-			entities = append(entities, commonEntity)
-		}
-	}
-
-	return entities
+	return dc.EntityTypes
 }
 
-// init loads all built-in domain catalogs from YAML configuration files
+// init loads all built-in global domain catalogs from YAML configuration files
+// Global catalogs are located at: <project-root>/catalogs/global/
 // This replaces the previous hardcoded catalog registrations
 func init() {
-	// Auto-load built-in catalogs from embedded directory or default location
-	// Users can also manually load custom catalogs via RegisterFromDirectory()
+	// Load global catalogs from fixed location relative to project root
+	// The catalog path is relative to where binaries are executed (typically project root)
+	catalogPath := "catalogs/global"
 
-	// Try multiple possible paths for the examples/ontologies directory
-	catalogPaths := []string{
-		"./examples/ontologies",
-		"../examples/ontologies",
-		"../../examples/ontologies",
-		"../../../examples/ontologies",
+	err := RegisterFromDirectory(catalogPath)
+	if err != nil {
+		// Failed to load - likely running from wrong directory or catalogs missing
+		// This is OK - users can manually load via catalogs.RegisterFromDirectory()
+		// or the system will work without global catalogs (domain-specific only)
+		return
 	}
-
-	for _, catalogPath := range catalogPaths {
-		err := RegisterFromDirectory(catalogPath)
-		if err == nil {
-			// Successfully loaded from this path
-			return
-		}
-	}
-
-	// Catalogs directory not found - user must manually load
-	// This is OK for custom deployments where users provide their own catalogs
-	// Users can call catalogs.RegisterFromDirectory("path/to/catalogs") explicitly
 }

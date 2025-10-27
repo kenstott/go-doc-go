@@ -30,6 +30,9 @@ type TermConfig struct {
 // EntityTemplateConfig represents an entity template in the config file
 type EntityTemplateConfig struct {
 	EntityType   string                      `yaml:"entity_type" json:"entity_type"`
+	ParentType   string                      `yaml:"parent_type,omitempty" json:"parent_type,omitempty"`
+	WCategory    string                      `yaml:"w_category,omitempty" json:"w_category,omitempty"`
+	Domain       string                      `yaml:"domain,omitempty" json:"domain,omitempty"`
 	Description  string                      `yaml:"description" json:"description"`
 	Aliases      []string                    `yaml:"aliases,omitempty" json:"aliases,omitempty"`
 	Subdomain    string                      `yaml:"subdomain,omitempty" json:"subdomain,omitempty"`
@@ -138,6 +141,9 @@ func convertConfigToCatalog(config *DomainCatalogConfig) *DomainCatalog {
 	for i, e := range config.EntityTypes {
 		catalog.EntityTypes[i] = EntityTemplate{
 			EntityType:   e.EntityType,
+			ParentType:   e.ParentType,
+			WCategory:    e.WCategory,
+			Domain:       e.Domain,
 			Description:  e.Description,
 			Aliases:      e.Aliases,
 			Subdomain:    e.Subdomain,
@@ -168,13 +174,11 @@ func convertRuleConfigs(configs []ExtractionRuleConfig) []ontology.ExtractionRul
 	rules := make([]ontology.ExtractionRule, len(configs))
 	for i, c := range configs {
 		rules[i] = ontology.ExtractionRule{
-			Type:                ontology.ExtractionRuleType(c.Type),
-			FieldPath:           c.FieldPath,
-			Pattern:             c.Pattern,
-			Keywords:            c.Keywords,
-			ReferenceText:       c.ReferenceText,
-			SimilarityThreshold: c.SimilarityThreshold,
-			JSONPathExpr:        c.JSONPathExpr,
+			FieldPath:    c.FieldPath,
+			Pattern:      c.Pattern,
+			JSONPathExpr: c.JSONPathExpr,
+			// TODO: Map other fields from config to new ExtractionRule structure
+			// Keywords, ReferenceText, SimilarityThreshold moved to filter structures
 		}
 	}
 	return rules
@@ -250,13 +254,10 @@ func convertRulesToConfigs(rules []ontology.ExtractionRule) []ExtractionRuleConf
 	configs := make([]ExtractionRuleConfig, len(rules))
 	for i, r := range rules {
 		configs[i] = ExtractionRuleConfig{
-			Type:                string(r.Type),
-			FieldPath:           r.FieldPath,
-			Pattern:             r.Pattern,
-			Keywords:            r.Keywords,
-			ReferenceText:       r.ReferenceText,
-			SimilarityThreshold: r.SimilarityThreshold,
-			JSONPathExpr:        r.JSONPathExpr,
+			FieldPath:    r.FieldPath,
+			Pattern:      r.Pattern,
+			JSONPathExpr: r.JSONPathExpr,
+			// TODO: Extract from filter structures to config format
 		}
 	}
 	return configs
