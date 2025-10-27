@@ -1,0 +1,219 @@
+domain: global
+description: HOW category - Global entity types for processes, methods, and procedures
+w_category: how
+
+entity_types:
+  # Top-level: process
+  - entity_type: process
+    parent_type: ""
+    w_category: how
+    domain: global
+    description: Multi-step procedure with ordered actions
+    aliases:
+      - procedure
+      - routine
+      - sequence
+    element_types:
+      - paragraph
+      - list_item
+      - ordered_list
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Process|Procedure|Protocol))'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        proximity:
+          cooccurrence_terms:
+            - step
+            - steps
+            - procedure
+            - perform
+            - conduct
+            - execute
+            - carry out
+          max_distance: 100
+          distance_unit: word
+        semantic:
+          reference_concepts:
+            - multi-step procedure with ordering
+            - process with sequential actions
+            - workflow with defined steps
+          similarity_threshold: 0.70
+
+  # Top-level: method
+  - entity_type: method
+    parent_type: ""
+    w_category: how
+    domain: global
+    description: Technique or approach for accomplishing something
+    aliases:
+      - technique
+      - approach
+      - methodology
+    element_types:
+      - paragraph
+      - list_item
+      - heading
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Method|Technique|Approach))'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        proximity:
+          cooccurrence_terms:
+            - method
+            - technique
+            - approach
+            - methodology
+            - using
+            - by means of
+            - via
+          max_distance: 50
+          distance_unit: word
+        semantic:
+          reference_concepts:
+            - technique for achieving result
+            - approach to solving problem
+            - method with defined steps
+          similarity_threshold: 0.65
+
+  # Subtype: algorithm
+  - entity_type: algorithm
+    parent_type: global.process
+    w_category: how
+    domain: global
+    description: Computational procedure with defined steps and logic
+    aliases:
+      - computation
+      - calculation method
+    element_types:
+      - paragraph
+      - code_block
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+Algorithm)'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        proximity:
+          cooccurrence_terms:
+            - algorithm
+            - compute
+            - calculate
+            - sort
+            - search
+            - iterate
+          max_distance: 50
+          distance_unit: word
+
+  # Subtype: protocol
+  - entity_type: protocol
+    parent_type: global.process
+    w_category: how
+    domain: global
+    description: Standardized, formal procedure with defined rules
+    aliases:
+      - standard procedure
+      - formal process
+      - guideline
+    element_types:
+      - paragraph
+      - list_item
+      - ordered_list
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+Protocol)'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        proximity:
+          cooccurrence_terms:
+            - protocol
+            - standard
+            - guideline
+            - specification
+            - requirement
+            - must follow
+          max_distance: 50
+          distance_unit: word
+        semantic:
+          reference_concepts:
+            - standardized procedure with rules
+            - formal protocol with requirements
+            - regulated process with compliance
+          similarity_threshold: 0.70
+
+  # Subtype: workflow
+  - entity_type: workflow
+    parent_type: global.process
+    w_category: how
+    domain: global
+    description: Business or operational process flow with stages
+    aliases:
+      - process flow
+      - operational flow
+      - pipeline
+    element_types:
+      - paragraph
+      - list_item
+      - diagram
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Workflow|Pipeline|Flow))'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        proximity:
+          cooccurrence_terms:
+            - workflow
+            - pipeline
+            - flow
+            - stage
+            - phase
+            - handoff
+          max_distance: 100
+          distance_unit: word
+
+entity_relationship_rules:
+  - name: entity_uses_method
+    source_entity_type: ""  # Any entity type
+    target_entity_type: method
+    relationship_type: uses
+    description: Entity uses method to accomplish goal or perform action
+    confidence: 0.65
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - uses
+          - using
+          - via
+          - by means of
+          - through
+          - with
+        max_distance: 30
+        direction: forward
+
+  - name: entity_follows_process
+    source_entity_type: ""  # Any entity type
+    target_entity_type: process
+    relationship_type: follows
+    description: Entity follows multi-step process or procedure
+    confidence: 0.70
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - follows
+          - according to
+          - as per
+          - per
+          - implements
+        max_distance: 40
+        direction: forward
+
+  - name: action_step_of_process
+    source_entity_type: ""  # Any action/verb phrase
+    target_entity_type: process
+    relationship_type: part_of
+    description: Action or step is part of larger process (with ordering)
+    confidence: 0.75
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - step
+          - stage
+          - phase
+          - first
+          - second
+          - next
+          - then
+          - finally
+        max_distance: 20
+        direction: bidirectional
