@@ -812,3 +812,4 @@ if field == "" {
     field = config.AncientName
 }
 ```
+- Always run tests from the project root.

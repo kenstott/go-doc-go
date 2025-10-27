@@ -15,7 +15,7 @@ func (s *Neo4jStorage) ExtractAndStoreEntities(
 }
 
 // ConsolidateEntities is not yet implemented for Neo4jStorage (use HiveParquetStorage)
-func (s *Neo4jStorage) ConsolidateEntities(runID string, strategy string, llmClient interface{}) error {
+func (s *Neo4jStorage) ConsolidateEntities(runID string, strategy string, llmClient interface{}, schema interface{}) error {
 	return fmt.Errorf("ConsolidateEntities not implemented for Neo4jStorage - use HiveParquetStorage instead")
 }
 

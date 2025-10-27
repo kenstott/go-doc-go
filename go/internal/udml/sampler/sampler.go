@@ -106,7 +106,7 @@ func NewSampler(config SamplerConfig) (*Sampler, error) {
 		config.RandomSeed = time.Now().UnixNano()
 	}
 	if config.DiversityThreshold == 0 {
-		config.DiversityThreshold = 0.85 // Default to 0.85 - filters out samples with >85% similarity (near-duplicates)
+		config.DiversityThreshold = 0.70 // Default to 0.70 - filters out samples with >70% similarity (moderate diversity, better coverage)
 	}
 
 	return &Sampler{

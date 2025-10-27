@@ -15,7 +15,7 @@ func (s *ParquetStorage) ExtractAndStoreEntities(
 }
 
 // ConsolidateEntities is not yet implemented for ParquetStorage (use HiveParquetStorage)
-func (s *ParquetStorage) ConsolidateEntities(runID string, strategy string, llmClient interface{}) error {
+func (s *ParquetStorage) ConsolidateEntities(runID string, strategy string, llmClient interface{}, schema interface{}) error {
 	return fmt.Errorf("ConsolidateEntities not implemented for ParquetStorage - use HiveParquetStorage instead")
 }
 

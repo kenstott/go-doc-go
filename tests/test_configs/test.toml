@@ -151,7 +151,7 @@ min_interval_minutes = 1
 [ontology]
 enabled = false
 schema_path = "./schemas"
-diversity_threshold = 0.85
+diversity_threshold = 0.70  # Lower threshold = better coverage of majority content (prev: 0.85)
 queue_idle_trigger_minutes = 0
 
 # Processing configuration

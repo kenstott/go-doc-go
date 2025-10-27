@@ -614,8 +614,8 @@ func (ib *InterviewBuilderV2) phaseDraftGeneration(ctx context.Context) error {
 
 	topEntities := ib.samples.GetTopEntities(ib.builder.config.TopEntityCount)
 
-	// Generate entities using builder's existing logic
-	entityMappings, calls1, tokens1, err := ib.builder.defineEntityTypes(ctx, ib.samples, topEntities, ib.schema.Domains)
+	// Generate entities using builder's multi-step logic (universal + domain-specific)
+	entityMappings, calls1, tokens1, err := ib.builder.defineEntityTypesMultiStep(ctx, ib.samples, topEntities, ib.schema.Domains)
 	if err != nil {
 		return err
 	}
