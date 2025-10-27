@@ -856,14 +856,12 @@ func (s *HiveParquetStorage) ExtractAndStoreEntities(
 	entities := make([]OntologyEntity, 0, 100)
 
 	for rows.Next() {
-		var elementID, domain, entityName string
+		var elementID, docID, sourceName, domain, entityName string
 		var confidence float64
 
-		if err := rows.Scan(&elementID, &entityType, &domain, &entityName, &confidence); err != nil {
+		if err := rows.Scan(&elementID, &docID, &sourceName, &entityType, &domain, &entityName, &confidence); err != nil {
 			return 0, fmt.Errorf("failed to scan row: %w", err)
 		}
-
-		docID := extractDocIDFromElementID(elementID)
 
 		// Create raw entity record with attributes
 		attributes := make(map[string]interface{})
@@ -879,7 +877,7 @@ func (s *HiveParquetStorage) ExtractAndStoreEntities(
 		entity := OntologyEntity{
 			EntityID:    generateRandomHex(16), // Unique ID per extraction
 			DocID:       docID,
-			SourceName:  "unknown", // TODO: get from elements table if needed
+			SourceName:  sourceName,
 			EntityName:  entityName,
 			EntityType:  entityType,
 			Domain:      domain,
@@ -974,10 +972,486 @@ func extractDocIDFromElementID(elementID string) string {
 	return elementID
 }
 
+// Cross-domain entity merging data structures
+
+// DomainEntityInstance represents a canonical entity from a specific domain
+type DomainEntityInstance struct {
+	EntityID     string   // Canonical entity ID from domain
+	Domain       string   // Domain name
+	EntityName   string   // Entity name
+	Confidence   float64  // Confidence score
+	MentionCount int      // Number of mentions
+	Contexts     []string // Sample contexts (up to 3)
+}
+
+// CrossDomainEntityCandidate represents entities with same name across multiple domains
+type CrossDomainEntityCandidate struct {
+	EntityType string                 // Entity type (e.g., "person", "organization")
+	EntityName string                 // Normalized entity name
+	Instances  []DomainEntityInstance // Instances from different domains
+}
+
+// CrossDomainMergeJudgment represents LLM's decision on whether to merge cross-domain entities
+type CrossDomainMergeJudgment struct {
+	EntityType  string  // Entity type
+	EntityName  string  // Entity name
+	ShouldMerge bool    // Whether to create global entity
+	Confidence  float64 // LLM confidence (0.0-1.0)
+	Reasoning   string  // LLM explanation
+}
+
+// findCrossDomainCandidates identifies entities appearing in multiple domains
+func (s *HiveParquetStorage) findCrossDomainCandidates(runID string, minDomains int) ([]CrossDomainEntityCandidate, error) {
+	// Open DuckDB connection
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Query to find entities appearing in multiple domains
+	query := fmt.Sprintf(`
+WITH canonical_with_contexts AS (
+  SELECT
+    ce.entity_type,
+    ce.entity_name,
+    ce.domain,
+    ce.entity_id,
+    ce.confidence,
+    ce.mention_count,
+    LIST(em.context ORDER BY em.confidence DESC LIMIT 3) as contexts
+  FROM '%s/canonical_entities/run_id=%s/*.parquet' ce
+  LEFT JOIN '%s/entity_mentions/run_id=%s/*.parquet' em
+    ON ce.representative_entity_id = em.entity_id
+  GROUP BY ce.entity_type, ce.entity_name, ce.domain, ce.entity_id, ce.confidence, ce.mention_count
+),
+cross_domain_groups AS (
+  SELECT
+    entity_type,
+    LOWER(TRIM(entity_name)) as normalized_name,
+    COUNT(DISTINCT domain) as domain_count,
+    LIST(STRUCT_PACK(
+      entity_id := entity_id,
+      domain := domain,
+      entity_name := entity_name,
+      confidence := confidence,
+      mention_count := mention_count,
+      contexts := contexts
+    )) as instances
+  FROM canonical_with_contexts
+  GROUP BY entity_type, LOWER(TRIM(entity_name))
+  HAVING COUNT(DISTINCT domain) >= %d
+)
+SELECT
+  entity_type,
+  normalized_name,
+  domain_count,
+  instances
+FROM cross_domain_groups
+ORDER BY entity_type, normalized_name;
+	`, s.basePath, runID, s.basePath, runID, minDomains)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query cross-domain candidates: %w", err)
+	}
+	defer rows.Close()
+
+	var candidates []CrossDomainEntityCandidate
+	for rows.Next() {
+		var entityType, normalizedName string
+		var domainCount int
+		var instancesJSON string
+
+		if err := rows.Scan(&entityType, &normalizedName, &domainCount, &instancesJSON); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		// Parse instances JSON
+		var rawInstances []map[string]interface{}
+		if err := json.Unmarshal([]byte(instancesJSON), &rawInstances); err != nil {
+			return nil, fmt.Errorf("failed to parse instances JSON: %w", err)
+		}
+
+		// Convert to DomainEntityInstance structs
+		var instances []DomainEntityInstance
+		for _, raw := range rawInstances {
+			instance := DomainEntityInstance{
+				EntityID:     raw["entity_id"].(string),
+				Domain:       raw["domain"].(string),
+				EntityName:   raw["entity_name"].(string),
+				Confidence:   raw["confidence"].(float64),
+				MentionCount: int(raw["mention_count"].(float64)),
+			}
+
+			// Parse contexts array
+			if contextsRaw, ok := raw["contexts"].([]interface{}); ok {
+				for _, ctx := range contextsRaw {
+					if ctxStr, ok := ctx.(string); ok {
+						instance.Contexts = append(instance.Contexts, ctxStr)
+					}
+				}
+			}
+
+			instances = append(instances, instance)
+		}
+
+		candidates = append(candidates, CrossDomainEntityCandidate{
+			EntityType: entityType,
+			EntityName: normalizedName,
+			Instances:  instances,
+		})
+	}
+
+	return candidates, nil
+}
+
+// llmBatchJudgeCrossDomainMerges uses LLM to determine which cross-domain entities should be merged
+func (s *HiveParquetStorage) llmBatchJudgeCrossDomainMerges(ctx context.Context, candidates []CrossDomainEntityCandidate, llmValidator interface{}, threshold float64) ([]CrossDomainMergeJudgment, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+
+	// Use reflection to call LLM Complete method
+	validatorVal := reflect.ValueOf(llmValidator)
+	completeMethod := validatorVal.MethodByName("Complete")
+	if !completeMethod.IsValid() {
+		return nil, fmt.Errorf("LLM validator does not have Complete method")
+	}
+
+	// Process in batches of 50
+	batchSize := 50
+	var allJudgments []CrossDomainMergeJudgment
+
+	for i := 0; i < len(candidates); i += batchSize {
+		end := i + batchSize
+		if end > len(candidates) {
+			end = len(candidates)
+		}
+		batch := candidates[i:end]
+
+		// Build prompt for this batch
+		prompt := s.buildCrossDomainMergePrompt(batch)
+
+		// Call LLM Complete method via reflection
+		// Complete(ctx, prompt, options) (string, error)
+		callArgs := []reflect.Value{
+			reflect.ValueOf(ctx),
+			reflect.ValueOf(prompt),
+			reflect.ValueOf(llmOptions{
+				maxTokens:    4000,
+				temperature:  0.0,
+				systemPrompt: "You are an expert at entity resolution and determining if entities from different domains represent the same real-world entity.",
+			}),
+		}
+
+		results := completeMethod.Call(callArgs)
+		if len(results) != 2 {
+			return nil, fmt.Errorf("unexpected number of return values from Complete method")
+		}
+
+		// Check for error
+		if !results[1].IsNil() {
+			return nil, fmt.Errorf("LLM call failed: %v", results[1].Interface())
+		}
+
+		// Parse response
+		response := results[0].String()
+		judgments, err := s.parseCrossDomainMergeResponse(response, batch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse LLM response: %w", err)
+		}
+
+		// Filter by confidence threshold
+		for _, judgment := range judgments {
+			if judgment.Confidence >= threshold {
+				allJudgments = append(allJudgments, judgment)
+			}
+		}
+
+		// Rate limiting - small delay between batches
+		if end < len(candidates) {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	return allJudgments, nil
+}
+
+// buildCrossDomainMergePrompt creates the LLM prompt for cross-domain entity merging
+func (s *HiveParquetStorage) buildCrossDomainMergePrompt(candidates []CrossDomainEntityCandidate) string {
+	var sb strings.Builder
+
+	sb.WriteString("# Cross-Domain Entity Merging Task\n\n")
+	sb.WriteString("Analyze the following entities that appear in multiple domains and determine if they represent the same real-world entity.\n\n")
+	sb.WriteString("For each entity, provide:\n")
+	sb.WriteString("- should_merge: true/false\n")
+	sb.WriteString("- confidence: 0.0-1.0 (how confident you are)\n")
+	sb.WriteString("- reasoning: brief explanation\n\n")
+	sb.WriteString("## Entities to Analyze\n\n")
+
+	for i, candidate := range candidates {
+		sb.WriteString(fmt.Sprintf("### Entity %d\n", i+1))
+		sb.WriteString(fmt.Sprintf("- Type: %s\n", candidate.EntityType))
+		sb.WriteString(fmt.Sprintf("- Name: %s\n", candidate.EntityName))
+		sb.WriteString(fmt.Sprintf("- Appears in %d domains:\n", len(candidate.Instances)))
+
+		for _, instance := range candidate.Instances {
+			sb.WriteString(fmt.Sprintf("  - Domain: %s (confidence: %.2f, mentions: %d)\n",
+				instance.Domain, instance.Confidence, instance.MentionCount))
+			if len(instance.Contexts) > 0 {
+				sb.WriteString("    Sample contexts:\n")
+				for _, ctx := range instance.Contexts {
+					sb.WriteString(fmt.Sprintf("    - %s\n", ctx))
+				}
+			}
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n## Response Format\n\n")
+	sb.WriteString("Return a JSON array with one judgment per entity:\n")
+	sb.WriteString("```json\n")
+	sb.WriteString("[\n")
+	sb.WriteString("  {\n")
+	sb.WriteString("    \"entity_type\": \"person\",\n")
+	sb.WriteString("    \"entity_name\": \"john smith\",\n")
+	sb.WriteString("    \"should_merge\": true,\n")
+	sb.WriteString("    \"confidence\": 0.95,\n")
+	sb.WriteString("    \"reasoning\": \"Same person mentioned in medical and education contexts with consistent titles\"\n")
+	sb.WriteString("  }\n")
+	sb.WriteString("]\n")
+	sb.WriteString("```\n")
+
+	return sb.String()
+}
+
+// createCrossDomainGlobalEntities creates global entities for cross-domain merges
+func (s *HiveParquetStorage) createCrossDomainGlobalEntities(ctx context.Context, runID string, schema interface{}, llmValidator interface{}) error {
+	// Use reflection to get CrossDomainMerging config from schema
+	schemaVal := reflect.ValueOf(schema)
+	if schemaVal.Kind() == reflect.Ptr {
+		schemaVal = schemaVal.Elem()
+	}
+
+	crossDomainField := schemaVal.FieldByName("CrossDomainMerging")
+	if !crossDomainField.IsValid() || crossDomainField.IsNil() {
+		log.Printf("  Cross-domain merging not configured - skipping")
+		return nil
+	}
+
+	// Extract configuration values
+	crossDomainConfig := crossDomainField.Elem()
+	enabled := crossDomainConfig.FieldByName("Enabled").Bool()
+	if !enabled {
+		log.Printf("  Cross-domain merging disabled - skipping")
+		return nil
+	}
+
+	threshold := crossDomainConfig.FieldByName("SimilarityThreshold").Float()
+	minDomainsField := crossDomainConfig.FieldByName("MinDomains")
+	minDomains := 2 // default
+	if minDomainsField.IsValid() && minDomainsField.Int() > 0 {
+		minDomains = int(minDomainsField.Int())
+	}
+
+	log.Printf("========================================")
+	log.Printf("CROSS-DOMAIN ENTITY MERGING")
+	log.Printf("========================================")
+	log.Printf("  Run ID: %s", runID)
+	log.Printf("  Min domains: %d", minDomains)
+	log.Printf("  Similarity threshold: %.2f", threshold)
+	log.Printf("========================================\n")
+
+	// Find cross-domain candidates
+	log.Printf("  Finding entities appearing in multiple domains...")
+	candidates, err := s.findCrossDomainCandidates(runID, minDomains)
+	if err != nil {
+		return fmt.Errorf("failed to find cross-domain candidates: %w", err)
+	}
+
+	if len(candidates) == 0 {
+		log.Printf("  ✓ No cross-domain candidates found")
+		log.Printf("========================================\n")
+		return nil
+	}
+
+	log.Printf("  ✓ Found %d cross-domain candidate entities", len(candidates))
+
+	// LLM judgment on whether to merge
+	if llmValidator == nil {
+		log.Printf("  WARNING: LLM validator not available - skipping cross-domain merging")
+		log.Printf("========================================\n")
+		return nil
+	}
+
+	log.Printf("  Calling LLM to judge cross-domain merges...")
+	judgments, err := s.llmBatchJudgeCrossDomainMerges(ctx, candidates, llmValidator, threshold)
+	if err != nil {
+		log.Printf("  WARNING: LLM judgment failed: %v - skipping cross-domain merging", err)
+		log.Printf("========================================\n")
+		return nil
+	}
+
+	log.Printf("  ✓ LLM approved %d merges (threshold: %.2f)", len(judgments), threshold)
+
+	if len(judgments) == 0 {
+		log.Printf("  ✓ No entities meet merging criteria")
+		log.Printf("========================================\n")
+		return nil
+	}
+
+	// Create global entities
+	log.Printf("  Creating global entities and has_instance relationships...")
+
+	var globalEntities []CanonicalEntity
+	var hasInstanceRelationships []OntologyRelationship
+
+	for _, judgment := range judgments {
+		// Find the candidate for this judgment
+		var candidate *CrossDomainEntityCandidate
+		for i := range candidates {
+			if candidates[i].EntityType == judgment.EntityType &&
+				candidates[i].EntityName == judgment.EntityName {
+				candidate = &candidates[i]
+				break
+			}
+		}
+
+		if candidate == nil {
+			continue
+		}
+
+		// Generate global entity ID
+		dedupKey := fmt.Sprintf("%s.global.%s", judgment.EntityType, strings.ToLower(strings.TrimSpace(judgment.EntityName)))
+		globalEntityID := generateStableID(dedupKey)
+
+		// Calculate total mention count across domains
+		totalMentions := 0
+		for _, instance := range candidate.Instances {
+			totalMentions += instance.MentionCount
+		}
+
+		// Create global canonical entity
+		globalEntity := CanonicalEntity{
+			EntityID:               globalEntityID,
+			RepresentativeEntityID: candidate.Instances[0].EntityID, // Use first instance as representative
+			EntityName:             judgment.EntityName,
+			EntityType:             judgment.EntityType,
+			Domain:                 "global",
+			Confidence:             judgment.Confidence,
+			MentionCount:           totalMentions,
+			Strategy:               "cross_domain_merge",
+			Attributes: map[string]interface{}{
+				"llm_merge_confidence": judgment.Confidence,
+				"llm_merge_reasoning":  judgment.Reasoning,
+				"source_domains":       len(candidate.Instances),
+			},
+			RunID:     runID,
+			CreatedAt: time.Now(),
+		}
+		globalEntities = append(globalEntities, globalEntity)
+
+		// Create has_instance relationships for each domain instance
+		for _, instance := range candidate.Instances {
+			relationshipID := fmt.Sprintf("rel_%s", generateRandomHex(16))
+			relationship := OntologyRelationship{
+				RelationshipID:   relationshipID,
+				SourceEntityID:   globalEntityID,
+				TargetEntityID:   instance.EntityID,
+				RelationshipType: "has_instance",
+				Confidence:       judgment.Confidence,
+				Evidence:         fmt.Sprintf("Global entity has instance in %s domain", instance.Domain),
+				Attributes: map[string]interface{}{
+					"domain":                   instance.Domain,
+					"instance_confidence":      instance.Confidence,
+					"instance_mention_count":   instance.MentionCount,
+					"cross_domain_merge":       true,
+					"llm_merge_confidence":     judgment.Confidence,
+				},
+				RunID:       runID,
+				ExtractedAt: time.Now(),
+			}
+			hasInstanceRelationships = append(hasInstanceRelationships, relationship)
+		}
+	}
+
+	// Write global entities to Parquet (domain=global partition)
+	if len(globalEntities) > 0 {
+		if err := s.writeGlobalEntitiesToParquet(runID, globalEntities); err != nil {
+			return fmt.Errorf("failed to write global entities: %w", err)
+		}
+		log.Printf("  ✓ Wrote %d global entities to domain=global partition", len(globalEntities))
+	}
+
+	// Write has_instance relationships to Parquet
+	if len(hasInstanceRelationships) > 0 {
+		if err := s.writeOntologyRelationshipsToParquet(runID, hasInstanceRelationships); err != nil {
+			return fmt.Errorf("failed to write has_instance relationships: %w", err)
+		}
+		log.Printf("  ✓ Wrote %d has_instance relationships", len(hasInstanceRelationships))
+	}
+
+	log.Printf("  ✓ Cross-domain merging complete: %d global entities created", len(globalEntities))
+	log.Printf("========================================\n")
+	return nil
+}
+
+// writeGlobalEntitiesToParquet writes global entities to the domain=global partition
+func (s *HiveParquetStorage) writeGlobalEntitiesToParquet(runID string, entities []CanonicalEntity) error {
+	// Override domain to "global" for all entities
+	for i := range entities {
+		entities[i].Domain = "global"
+	}
+
+	// Use existing writeCanonicalEntitiesToParquet - it will use the domain field for partitioning
+	return s.writeCanonicalEntitiesToParquet(runID, entities)
+}
+
+// parseCrossDomainMergeResponse parses LLM JSON response into judgments
+func (s *HiveParquetStorage) parseCrossDomainMergeResponse(response string, candidates []CrossDomainEntityCandidate) ([]CrossDomainMergeJudgment, error) {
+	// Extract JSON from response (may be wrapped in markdown code blocks)
+	jsonStart := strings.Index(response, "[")
+	jsonEnd := strings.LastIndex(response, "]")
+	if jsonStart == -1 || jsonEnd == -1 {
+		return nil, fmt.Errorf("no JSON array found in response")
+	}
+
+	jsonStr := response[jsonStart : jsonEnd+1]
+
+	var rawJudgments []struct {
+		EntityType  string  `json:"entity_type"`
+		EntityName  string  `json:"entity_name"`
+		ShouldMerge bool    `json:"should_merge"`
+		Confidence  float64 `json:"confidence"`
+		Reasoning   string  `json:"reasoning"`
+	}
+
+	if err := json.Unmarshal([]byte(jsonStr), &rawJudgments); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	var judgments []CrossDomainMergeJudgment
+	for _, raw := range rawJudgments {
+		if raw.ShouldMerge {
+			judgments = append(judgments, CrossDomainMergeJudgment{
+				EntityType:  raw.EntityType,
+				EntityName:  raw.EntityName,
+				ShouldMerge: raw.ShouldMerge,
+				Confidence:  raw.Confidence,
+				Reasoning:   raw.Reasoning,
+			})
+		}
+	}
+
+	return judgments, nil
+}
+
 // ConsolidateEntities performs global entity resolution on raw extractions
 // Creates canonical entities by deduplicating raw extractions
 // llmValidator should be an *ontology.LLMValidator for validation, or nil to disable
-func (s *HiveParquetStorage) ConsolidateEntities(runID string, strategy string, llmValidator interface{}) error {
+// schema should be an *ontology.OntologySchema for cross-domain merging configuration, or nil to disable
+func (s *HiveParquetStorage) ConsolidateEntities(runID string, strategy string, llmValidator interface{}, schema interface{}) error {
 	log.Printf("========================================")
 	log.Printf("ENTITY CONSOLIDATION")
 	log.Printf("========================================")
@@ -1036,9 +1510,11 @@ func (s *HiveParquetStorage) ConsolidateEntities(runID string, strategy string, 
 
 	// Build DuckDB query to consolidate raw entities
 	// Filter out empty/whitespace entity names - these are invalid extractions
+	// Select representative entity (highest confidence) for each canonical
 	query := fmt.Sprintf(`
 WITH raw_entities AS (
   SELECT
+    entity_id,
     entity_name,
     entity_type,
     domain,
@@ -1049,14 +1525,15 @@ WITH raw_entities AS (
 ),
 canonical AS (
   SELECT
-    LOWER(entity_type || '.' || entity_name) as dedup_key,
-    entity_name,
+    entity_type || '.' || LOWER(TRIM(entity_name)) as dedup_key,
+    LOWER(TRIM(entity_name)) as entity_name,
     entity_type,
-    domain,
+    FIRST(domain) as domain,
     MAX(confidence) as confidence,
-    COUNT(*) as mention_count
+    COUNT(*) as mention_count,
+    ARG_MAX(entity_id, confidence) as representative_entity_id
   FROM raw_entities
-  GROUP BY dedup_key, entity_name, entity_type, domain
+  GROUP BY entity_type, LOWER(TRIM(entity_name))
 )
 SELECT
   dedup_key,
@@ -1064,7 +1541,8 @@ SELECT
   entity_type,
   domain,
   confidence,
-  mention_count
+  mention_count,
+  representative_entity_id
 FROM canonical
 ORDER BY entity_type, entity_name;
 	`, s.basePath, runID)
@@ -1080,11 +1558,11 @@ ORDER BY entity_type, entity_name;
 	entitiesByType := make(map[string][]CanonicalEntity)
 
 	for rows.Next() {
-		var dedupKey, entityName, entityType, domain string
+		var dedupKey, entityName, entityType, domain, representativeEntityID string
 		var confidence float64
 		var mentionCount int
 
-		if err := rows.Scan(&dedupKey, &entityName, &entityType, &domain, &confidence, &mentionCount); err != nil {
+		if err := rows.Scan(&dedupKey, &entityName, &entityType, &domain, &confidence, &mentionCount, &representativeEntityID); err != nil {
 			return fmt.Errorf("failed to scan row: %w", err)
 		}
 
@@ -1092,16 +1570,17 @@ ORDER BY entity_type, entity_name;
 		entityID := generateStableID(dedupKey)
 
 		canonical := CanonicalEntity{
-			EntityID:     entityID,
-			EntityName:   entityName,
-			EntityType:   entityType,
-			Domain:       domain,
-			Confidence:   confidence,
-			MentionCount: mentionCount,
-			Strategy:     strategy,
-			Attributes:   make(map[string]interface{}),
-			RunID:        runID,
-			CreatedAt:    time.Now(),
+			EntityID:               entityID,
+			RepresentativeEntityID: representativeEntityID,
+			EntityName:             entityName,
+			EntityType:             entityType,
+			Domain:                 domain,
+			Confidence:             confidence,
+			MentionCount:           mentionCount,
+			Strategy:               strategy,
+			Attributes:             make(map[string]interface{}),
+			RunID:                  runID,
+			CreatedAt:              time.Now(),
 		}
 
 		entitiesByType[entityType] = append(entitiesByType[entityType], canonical)
@@ -1178,8 +1657,21 @@ ORDER BY entity_type, entity_name;
 		}
 	}
 
+	// Write entity mentions mapping to Parquet
+	if err := s.writeEntityMentionsToParquet(runID); err != nil {
+		return fmt.Errorf("failed to write entity mentions: %w", err)
+	}
+
 	log.Printf("  ✓ Consolidation complete: %d final canonical entities", len(finalEntities))
 	log.Printf("========================================\n")
+
+	// Perform cross-domain entity merging if configured
+	if schema != nil {
+		if err := s.createCrossDomainGlobalEntities(context.Background(), runID, schema, llmValidator); err != nil {
+			return fmt.Errorf("failed to create cross-domain global entities: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -1331,8 +1823,9 @@ func (s *HiveParquetStorage) writeCanonicalEntitiesToParquet(runID string, entit
 	placeholders := make([]string, len(entities))
 	for i := range entities {
 		placeholders[i] = fmt.Sprintf(
-			"('%s', '%s', '%s', '%s', %.2f, %d, '%s', '%s', '%s')",
+			"('%s', '%s', '%s', '%s', '%s', %.2f, %d, '%s', '%s', '%s')",
 			escapeSQL(entities[i].EntityID),
+			escapeSQL(entities[i].RepresentativeEntityID),
 			escapeSQL(entities[i].EntityName),
 			escapeSQL(entities[i].EntityType),
 			escapeSQL(entities[i].Domain),
@@ -1348,6 +1841,7 @@ func (s *HiveParquetStorage) writeCanonicalEntitiesToParquet(runID string, entit
 		COPY (
 			SELECT
 				entity_id,
+				representative_entity_id,
 				entity_name,
 				entity_type,
 				domain,
@@ -1356,7 +1850,7 @@ func (s *HiveParquetStorage) writeCanonicalEntitiesToParquet(runID string, entit
 				strategy,
 				run_id,
 				CAST(created_at AS TIMESTAMP) as created_at
-			FROM (VALUES %s) AS t(entity_id, entity_name, entity_type, domain, confidence, mention_count, strategy, run_id, created_at)
+			FROM (VALUES %s) AS t(entity_id, representative_entity_id, entity_name, entity_type, domain, confidence, mention_count, strategy, run_id, created_at)
 		) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD);
 	`, strings.Join(placeholders, ", "), outputPath)
 
@@ -1365,6 +1859,75 @@ func (s *HiveParquetStorage) writeCanonicalEntitiesToParquet(runID string, entit
 	}
 
 	log.Printf("  Wrote %d canonical entities to: %s", len(entities), outputPath)
+	return nil
+}
+
+// writeEntityMentionsToParquet writes entity mentions mapping to Parquet storage
+// Creates mappings from canonical entity IDs to all raw entity IDs (mentions)
+func (s *HiveParquetStorage) writeEntityMentionsToParquet(runID string) error {
+	// Create output directory with run_id partition
+	outputDir := filepath.Join(s.basePath, "entity_mentions", fmt.Sprintf("run_id=%s", runID))
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	// Generate unique filename
+	filename := fmt.Sprintf("entity_mentions_%s.parquet", generateRandomHex(8))
+	outputPath := filepath.Join(outputDir, filename)
+
+	// Open DuckDB connection
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Query to generate entity mentions from raw entities
+	// Maps each raw entity to its canonical entity using the dedup key
+	query := fmt.Sprintf(`
+		COPY (
+			WITH raw_entities AS (
+				SELECT
+					entity_id as raw_entity_id,
+					entity_name,
+					entity_type
+				FROM '%s/ontology_entities/run_id=%s/*.parquet'
+				WHERE entity_name IS NOT NULL
+					AND TRIM(entity_name) != ''
+			),
+			canonical_mapping AS (
+				SELECT
+					entity_type || '.' || LOWER(TRIM(entity_name)) as dedup_key,
+					raw_entity_id
+				FROM raw_entities
+			)
+			SELECT
+				'%s' || to_hex(sha256(dedup_key)) as canonical_entity_id,
+				raw_entity_id,
+				'%s' as run_id,
+				CURRENT_TIMESTAMP as mapped_at
+			FROM canonical_mapping
+			ORDER BY canonical_entity_id, raw_entity_id
+		) TO '%s' (FORMAT PARQUET, COMPRESSION ZSTD);
+	`, s.basePath, runID, "ont_canonical_", runID, outputPath)
+
+	if _, err := db.Exec(query); err != nil {
+		return fmt.Errorf("failed to write entity mentions to Parquet: %w", err)
+	}
+
+	// Count mentions written
+	var mentionCount int64
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*) FROM '%s/ontology_entities/run_id=%s/*.parquet'
+		WHERE entity_name IS NOT NULL AND TRIM(entity_name) != ''
+	`, s.basePath, runID)
+
+	if err := db.QueryRow(countQuery).Scan(&mentionCount); err != nil {
+		log.Printf("  WARNING: Failed to count entity mentions: %v", err)
+	} else {
+		log.Printf("  Wrote %d entity mentions to: %s", mentionCount, outputPath)
+	}
+
 	return nil
 }
 

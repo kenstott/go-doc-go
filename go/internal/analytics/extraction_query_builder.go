@@ -58,7 +58,7 @@ func (b *ExtractionQueryBuilder) BuildEntityExtractionQuery(
 	params["confidence"] = confidence
 
 	// Build WHERE clauses for extraction rules (OR logic)
-	// Each rule can have its own semantic filter that is AND-ed with the extraction pattern
+	// Filters are applied in cost order: pattern → proximity → instance_name → semantic
 	var ruleClauses []string
 	var extractionExprs []string           // Expressions to extract entity name
 
@@ -66,44 +66,61 @@ func (b *ExtractionQueryBuilder) BuildEntityExtractionQuery(
 		ruleMap := rule.(map[string]interface{})
 		ruleType := ruleMap["type"].(string)
 
-		var baseClause string
+		var filterConditions []string  // AND-ed filter conditions
 		var extractExpr string
 
 		switch ruleType {
-		case "keyword_match":
-			baseClause, extractExpr = b.buildKeywordMatchClause(ruleMap, i, params)
-			if extractExpr != "" {
-				extractionExprs = append(extractionExprs, extractExpr)
+		case "content_extraction":
+			// UNIFIED CONTENT EXTRACTION with optimized filter ordering
+			// Apply filters in order of cost: cheapest first, semantic last
+
+			// 1. Pattern filter (cheapest - regex on content)
+			if pattern, ok := ruleMap["pattern"].(string); ok && pattern != "" {
+				filterConditions = append(filterConditions, fmt.Sprintf("regexp_matches(content, '%s')", escapeSQL(pattern)))
 			}
 
-		case "regex_pattern":
-			baseClause = b.buildRegexClause(ruleMap, i, params)
-			// Add regex extraction expression for entity name
-			if pattern, ok := ruleMap["pattern"].(string); ok {
-				extractionExprs = append(extractionExprs,
-					fmt.Sprintf("regexp_extract(content, '%s', 0)", escapeSQL(pattern)))
+			// 2. Proximity filter (moderate cost - co-occurrence checking)
+			if proximityFilter, ok := ruleMap["proximity_filter"].(map[string]interface{}); ok && proximityFilter != nil {
+				proximityClause := b.buildProximityFilterClause(proximityFilter, i, params)
+				if proximityClause != "" {
+					filterConditions = append(filterConditions, proximityClause)
+				}
 			}
 
-		case "text_similarity":
-			baseClause = b.buildTextSimilarityClause(ruleMap, i, params, conceptEmbeddings)
+			// 3. Instance name extraction (REQUIRED - must succeed for entity to be included)
+			instanceName, ok := ruleMap["instance_name"].(string)
+			if !ok || instanceName == "" {
+				// Skip rule if instance_name missing
+				continue
+			}
+			// Check that instance_name regex can extract successfully (not NULL)
+			filterConditions = append(filterConditions, fmt.Sprintf("regexp_extract(content, '%s', 1) IS NOT NULL", escapeSQL(instanceName)))
+			extractExpr = fmt.Sprintf("regexp_extract(content, '%s', 1)", escapeSQL(instanceName))
+
+			// 4. Semantic filter (most expensive - embedding similarity, applied LAST)
+			if semanticFilter, ok := ruleMap["semantic_filter"].(map[string]interface{}); ok && semanticFilter != nil {
+				semanticClause := b.buildSemanticFilterClauseInline(semanticFilter, i, params, conceptEmbeddings)
+				if semanticClause != "" {
+					filterConditions = append(filterConditions, semanticClause)
+				}
+			}
+
+			// Combine all filters with AND
+			if len(filterConditions) > 0 {
+				ruleClauses = append(ruleClauses, "("+strings.Join(filterConditions, " AND ")+")")
+				if extractExpr != "" {
+					extractionExprs = append(extractionExprs, extractExpr)
+				}
+			}
 
 		case "metadata_field":
-			baseClause = b.buildMetadataClause(ruleMap, i, params)
+			baseClause := b.buildMetadataClause(ruleMap, i, params)
+			ruleClauses = append(ruleClauses, baseClause)
 
 		case "jsonpath_query":
-			baseClause = b.buildJSONPathClause(ruleMap, i, params)
+			baseClause := b.buildJSONPathClause(ruleMap, i, params)
+			ruleClauses = append(ruleClauses, baseClause)
 		}
-
-		// Check if this rule has a semantic_filter - if so, AND it with the base clause
-		if semanticFilter, ok := ruleMap["semantic_filter"]; ok && semanticFilter != nil {
-			filterClause := b.buildSemanticFilterClauseInline(semanticFilter.(map[string]interface{}), i, params, conceptEmbeddings)
-			if filterClause != "" {
-				// Combine: (extraction_pattern) AND (semantic_filter)
-				baseClause = fmt.Sprintf("(%s AND %s)", baseClause, filterClause)
-			}
-		}
-
-		ruleClauses = append(ruleClauses, baseClause)
 	}
 
 	// Combine extraction rules with OR
@@ -158,6 +175,8 @@ WITH
 
 SELECT
   element_id,
+  doc_id,
+  source_name,
   '%s' as entity_type,
   '%s' as domain,
   %s as entity_name,
@@ -225,12 +244,13 @@ func (b *ExtractionQueryBuilder) buildRegexClause(rule map[string]interface{}, i
 }
 
 // buildTextSimilarityClause builds SQL for semantic similarity using embeddings
+// Returns both WHERE clause and extraction expression
 func (b *ExtractionQueryBuilder) buildTextSimilarityClause(
 	rule map[string]interface{},
 	idx int,
 	params map[string]interface{},
 	conceptEmbeddings map[string][]float64,
-) string {
+) (string, string) {
 	referenceText := rule["reference_text"].(string)
 	threshold := rule["similarity_threshold"].(float64)
 
@@ -238,21 +258,32 @@ func (b *ExtractionQueryBuilder) buildTextSimilarityClause(
 	refEmbedding, ok := conceptEmbeddings[referenceText]
 	if !ok {
 		// If embedding not provided, skip this rule (can't execute without embedding)
-		return "FALSE"
+		return "FALSE", ""
 	}
 
 	// Convert embedding to SQL array literal: [val1, val2, ...]
 	embeddingSQL := embeddingArrayToSQL(refEmbedding)
 
-	// Build subquery that joins with embeddings table
-	// DuckDB has list_cosine_similarity function for vector similarity
-	return fmt.Sprintf(`
+	// Build WHERE clause subquery
+	whereClause := fmt.Sprintf(`
 		element_id IN (
 			SELECT emb.element_id
 			FROM '%s/embeddings/**/*.parquet' emb
 			WHERE list_cosine_similarity(emb.embedding, %s::DOUBLE[]) > %.2f
 		)
 	`, b.basePath, embeddingSQL, threshold)
+
+	// Build extraction expression - instance_name is required for text_similarity
+	instanceName, ok := rule["instance_name"].(string)
+	if !ok || instanceName == "" {
+		// Missing required instance_name - skip this rule
+		return "FALSE", ""
+	}
+
+	// Use regex extraction from instance_name field
+	extractExpr := fmt.Sprintf("regexp_extract(content, '%s', 1)", escapeSQL(instanceName))
+
+	return whereClause, extractExpr
 }
 
 // buildMetadataClause builds SQL for metadata field extraction
@@ -442,6 +473,59 @@ func embeddingArrayToSQL(embedding []float64) string {
 		embeddingStrs[i] = fmt.Sprintf("%.6f", val)
 	}
 	return fmt.Sprintf("[%s]", strings.Join(embeddingStrs, ", "))
+}
+
+// buildProximityFilterClause builds SQL for proximity/co-occurrence filtering
+// Returns WHERE clause that checks if entity appears near specified terms
+func (b *ExtractionQueryBuilder) buildProximityFilterClause(
+	proximityFilter map[string]interface{},
+	idx int,
+	params map[string]interface{},
+) string {
+	cooccurrenceTerms, ok := proximityFilter["cooccurrence_terms"].([]interface{})
+	if !ok || len(cooccurrenceTerms) == 0 {
+		return ""
+	}
+
+	// Get max_distance (default: 0 = same element)
+	maxDistance := 0
+	if dist, ok := proximityFilter["max_distance"].(float64); ok {
+		maxDistance = int(dist)
+	}
+
+	// Get distance_unit (default: "element")
+	distanceUnit := "element"
+	if unit, ok := proximityFilter["distance_unit"].(string); ok {
+		distanceUnit = unit
+	}
+
+	// Build conditions for co-occurrence terms
+	var termConditions []string
+	for i, term := range cooccurrenceTerms {
+		termStr := term.(string)
+		paramName := fmt.Sprintf("proximity_term_%d_%d", idx, i)
+		params[paramName] = termStr
+
+		if distanceUnit == "element" || maxDistance == 0 {
+			// Simple co-occurrence: terms must appear somewhere in the same element
+			termConditions = append(termConditions, fmt.Sprintf("content LIKE '%%%s%%'", escapeSQL(termStr)))
+		} else if distanceUnit == "word" {
+			// Word-based distance: use regex with word boundaries
+			// This is a simplified implementation - DuckDB has limited regex distance support
+			// For now, just check if terms appear in content (full word-distance requires UDF)
+			termConditions = append(termConditions, fmt.Sprintf("regexp_matches(content, '\\b%s\\b')", escapeSQL(termStr)))
+		} else if distanceUnit == "character" {
+			// Character-based distance: similar limitation
+			termConditions = append(termConditions, fmt.Sprintf("content LIKE '%%%s%%'", escapeSQL(termStr)))
+		}
+	}
+
+	// All terms must appear (AND logic)
+	if len(termConditions) > 0 {
+		return "(" + strings.Join(termConditions, " AND ") + ")"
+	}
+
+	return ""
 }
 
 // escapeSQL escapes single quotes in SQL strings

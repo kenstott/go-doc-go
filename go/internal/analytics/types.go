@@ -124,16 +124,25 @@ type OntologyMention struct {
 // CanonicalEntity represents a deduplicated entity resolved from raw extractions
 // Multiple extraction strategies can generate different canonical entity sets from the same raw data
 type CanonicalEntity struct {
-	EntityID     string                 `json:"entity_id"`      // Stable ID from SHA256(entity_type.entity_name)
-	EntityName   string                 `json:"entity_name"`    // Canonical entity name
-	EntityType   string                 `json:"entity_type"`    // person/organization/location/etc
-	Domain       string                 `json:"domain"`         // Domain ownership
-	Confidence   float64                `json:"confidence"`     // Maximum confidence from raw extractions
-	MentionCount int                    `json:"mention_count"`  // Number of raw extractions
-	Strategy     string                 `json:"strategy"`       // Resolution strategy (e.g., "max_confidence")
-	Attributes   map[string]interface{} `json:"attributes"`     // Consolidated attributes
-	RunID        string                 `json:"run_id"`         // Extraction run ID
-	CreatedAt    time.Time              `json:"created_at"`     // Consolidation timestamp
+	EntityID               string                 `json:"entity_id"`                 // Stable ID from SHA256(entity_type.entity_name)
+	RepresentativeEntityID string                 `json:"representative_entity_id"`  // FK to best raw entity
+	EntityName             string                 `json:"entity_name"`               // Canonical entity name
+	EntityType             string                 `json:"entity_type"`               // person/organization/location/etc
+	Domain                 string                 `json:"domain"`                    // Domain ownership
+	Confidence             float64                `json:"confidence"`                // Maximum confidence from raw extractions
+	MentionCount           int                    `json:"mention_count"`             // Number of raw extractions
+	Strategy               string                 `json:"strategy"`                  // Resolution strategy (e.g., "max_confidence")
+	Attributes             map[string]interface{} `json:"attributes"`                // Consolidated attributes
+	RunID                  string                 `json:"run_id"`                    // Extraction run ID
+	CreatedAt              time.Time              `json:"created_at"`                // Consolidation timestamp
+}
+
+// EntityMention maps raw entity mentions to their canonical entity
+type EntityMention struct {
+	CanonicalEntityID string    `json:"canonical_entity_id"` // FK to canonical entity
+	RawEntityID       string    `json:"raw_entity_id"`       // FK to raw entity in ontology_entities
+	RunID             string    `json:"run_id"`              // Extraction run ID
+	MappedAt          time.Time `json:"mapped_at"`           // Mapping timestamp
 }
 
 // LLMValidationResult tracks LLM-based false positive validation results
@@ -301,9 +310,11 @@ type Storage interface {
 	//   - strategy: Resolution strategy ("max_confidence", "most_mentions", "composite")
 	//   - llmClient: LLM client for false positive validation (optional - can be nil)
 	//                Must implement ontology.LLMClient interface if provided
+	//   - schema: Ontology schema for cross-domain merging (optional - can be nil)
+	//             Must implement *ontology.OntologySchema if provided
 	//
 	// Returns error if consolidation or storage fails
-	ConsolidateEntities(runID string, strategy string, llmClient interface{}) error
+	ConsolidateEntities(runID string, strategy string, llmClient interface{}, schema interface{}) error
 
 	// ========================================================================
 	// Corpus Exploration Methods - for MCP server and interactive tools
