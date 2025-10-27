@@ -4,24 +4,30 @@
 
 This document provides a step-by-step implementation checklist for the refactoring.
 
-**Total Steps**: 10 (Step 0-9)
-**Estimated Total Changes**: ~1,083 lines
+**Total Steps**: 11 (Step 0-10)
+**Estimated Total Changes**: ~1,263 lines
+
+**Framework**: 6 W's (Who, What, Where, When, Why, hoW)
 
 ---
 
-## Step 0: Create Global Domain Catalogs
+## Step 0: Create Global Domain Catalogs ✅ COMPLETED
 
-### Files to Create
+### Files Created
 
 **New files** (5 total):
-- `go/internal/udml/ontology/catalogs/global_who.go`
-- `go/internal/udml/ontology/catalogs/global_what.go`
-- `go/internal/udml/ontology/catalogs/global_where.go`
-- `go/internal/udml/ontology/catalogs/global_when.go`
-- `go/internal/udml/ontology/catalogs/global_why.go`
+- `catalogs/global/global_who.yaml` - WHO category (12 entities, 3 relationship rules)
+- `catalogs/global/global_what.yaml` - WHAT category (8 entities, 2 relationship rules)
+- `catalogs/global/global_where.yaml` - WHERE category (6 entities, 0 relationship rules)
+- `catalogs/global/global_when.yaml` - WHEN category (4 entities, 2 relationship rules)
+- `catalogs/global/global_why.yaml` - WHY category (2 entities, 1 relationship rule)
 
-**File to delete**:
-- `go/internal/udml/ontology/catalogs/common.go` (existing 730 lines)
+**Total**: 32 entity types (10 top-level + 22 subtypes), 8 relationship rules
+
+**Note**: Original plan stated 33 entities (10 + 23 subtypes), but detailed specifications only define 22 subtypes. Implementation matches detailed specifications.
+
+**File deleted**:
+- `go/internal/udml/ontology/catalogs/common.go` (existing 730 lines) - NOT APPLICABLE (approach changed to YAML-based catalogs)
 
 ### Actions
 
@@ -1489,11 +1495,108 @@ Generate entity mappings in JSON format.
 
 ---
 
+## Step 10: Add HOW Category to Global Domain
+
+### File to Create
+
+**New file**:
+- `catalogs/global/global_how.yaml` - HOW category (5 entities, 3 relationship rules)
+
+### Actions
+
+1. **Add 2 top-level HOW entity types**:
+   - `process` - Multi-step procedure with ordered actions
+   - `method` - Technique or approach for accomplishing something
+
+2. **Add 3 HOW subtypes**:
+   - `algorithm` (child of process) - Computational procedure with steps
+   - `protocol` (child of process) - Standardized, formal procedure
+   - `workflow` (child of process) - Business process flow with stages
+
+3. **Add 3 HOW relationship rules**:
+   - `entity_uses_method` - Any entity uses method (confidence: 0.65)
+   - `entity_follows_process` - Any entity follows process (confidence: 0.70)
+   - `action_step_of_process` - Action is step of process (confidence: 0.75)
+
+4. **Update terminology**:
+   - Framework: "5 W's" → "6 W's (Who, What, Where, When, Why, hoW)"
+   - Total global entities: 32 → 37 (12 top-level + 25 subtypes)
+   - Total relationship rules: 8 → 11
+
+### Example: global_how.yaml Structure
+
+```yaml
+domain: global
+description: HOW category - Global entity types for processes, methods, and procedures
+w_category: how
+
+entity_types:
+  - entity_type: process
+    parent_type: ""
+    w_category: how
+    domain: global
+    description: Multi-step procedure with ordered actions
+    aliases: [procedure, routine, sequence]
+    element_types: [paragraph, list_item, ordered_list]
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Process|Procedure|Protocol))'
+        proximity:
+          cooccurrence_terms: [step, procedure, perform, conduct]
+          max_distance: 100
+          distance_unit: word
+
+  - entity_type: method
+    parent_type: ""
+    w_category: how
+    domain: global
+    description: Technique or approach for accomplishing something
+    # ... similar structure
+
+  - entity_type: algorithm
+    parent_type: global.process
+    w_category: how
+    domain: global
+    description: Computational procedure with defined steps and logic
+    # ... similar structure
+
+entity_relationship_rules:
+  - name: entity_uses_method
+    source_entity_type: ""  # Any entity
+    target_entity_type: method
+    relationship_type: uses
+    confidence: 0.65
+    extraction_patterns:
+      - type: proximity
+        signal_words: [uses, using, via, by means of]
+        max_distance: 30
+        direction: forward
+```
+
+### Rationale
+
+**Why add HOW as 6th W**:
+- Completes the journalistic "5 W's + H" framework
+- Enables extraction of processes, methods, and procedures
+- Critical for technical/medical domains (protocols, algorithms, workflows)
+- Natural extension of existing 5 W's structure
+
+**Why as Step 10 (future enhancement)**:
+- Core 5 W's (Steps 0-9) are sufficient for initial implementation
+- HOW extraction is more complex (sequential, multi-element)
+- Can be added independently without breaking existing steps
+- Allows domain catalogs to be built first, then extended with HOW
+
+### Estimated Changes
+
+**+180 lines** (new YAML file)
+
+---
+
 ## Summary of Changes
 
 | Step | Component | File(s) | Change Type | Lines |
 |------|-----------|---------|-------------|-------|
-| 0 | Global catalogs | catalogs/global_*.go | NEW (5), DELETE (1) | +70 |
+| 0 | Global catalogs (5 W's) | catalogs/global/*.yaml | NEW (5 files) | +70 |
 | 1 | Schema types | types.go | ADD fields | +3 |
 | 2 | Extraction rules | types.go | REMOVE Type, UPDATE | -40 |
 | 3 | Hierarchy logic | types.go | ADD validation | +150 |
@@ -1503,7 +1606,8 @@ Generate entity mappings in JSON format.
 | 7 | Catalog loader | catalogs/loader.go | UPDATE schema | +40 |
 | 8 | Unit tests | *_test.go | NEW tests | +400 |
 | 9 | Builder | builder.go | UPDATE prompts | +150 |
-| **TOTAL** | | | | **~1,083** |
+| 10 | HOW category (6th W) | catalogs/global/global_how.yaml | NEW (1 file) | +180 |
+| **TOTAL** | | | | **~1,263** |
 
 ---
 

@@ -1,10 +1,10 @@
-# Global Domain Structure (33 Entity Types)
+# Global Domain Structure (37 Entity Types)
 
 ## Overview
 
-The global domain provides **33 reusable entity types** organized by the 5 W's framework:
-- **10 top-level types** (2 WHO, 3 WHAT, 1 WHERE, 2 WHEN, 2 WHY)
-- **23 subtypes** (organized under top-level parents)
+The global domain provides **37 reusable entity types** organized by the **6 W's framework** (Who, What, Where, When, Why, hoW):
+- **12 top-level types** (2 WHO, 3 WHAT, 1 WHERE, 2 WHEN, 2 WHY, 2 HOW)
+- **25 subtypes** (organized under top-level parents)
 
 These types serve as **baseline templates** that can be:
 1. **Used directly** as extraction targets (leaves)
@@ -263,9 +263,52 @@ These types serve as **baseline templates** that can be:
 
 ---
 
+## HOW (5 total: 2 top-level + 3 subtypes)
+
+### process (top-level, w_category: how)
+
+**Description**: Multi-step procedure with ordered actions
+
+**Baseline Extraction Rules**:
+- Pattern: `(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Process|Procedure|Protocol))` (procedural names)
+- Proximity: Step, steps, procedure, perform, conduct, execute
+- Semantic filter: Sequential actions, workflow context
+
+**Children** (3 subtypes):
+
+#### algorithm
+- **parent_type**: `global.process`
+- **Description**: Computational procedure with defined steps and logic
+- **Additional patterns**: Algorithm suffix, computational keywords
+
+#### protocol
+- **parent_type**: `global.process`
+- **Description**: Standardized, formal procedure with defined rules
+- **Additional patterns**: Protocol suffix, standard/guideline keywords
+
+#### workflow
+- **parent_type**: `global.process`
+- **Description**: Business or operational process flow with stages
+- **Additional patterns**: Workflow/pipeline suffix, stage/phase keywords
+
+---
+
+### method (top-level, w_category: how)
+
+**Description**: Technique or approach for accomplishing something
+
+**Baseline Extraction Rules**:
+- Pattern: `(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Method|Technique|Approach))` (methodological names)
+- Proximity: Method, technique, approach, using, via, by means of
+- Semantic filter: Technique for achieving result
+
+**Children**: None (standalone)
+
+---
+
 ## File Organization
 
-The 33 types are split into 5 files by W category:
+The 37 types are split into 6 files by W category:
 
 ### global_who.go (~300 lines)
 - person (+ 3 children: public_figure, executive, employee)
@@ -287,7 +330,11 @@ The 33 types are split into 5 files by W category:
 - assertion (standalone)
 - hypothesis (standalone)
 
-**Total**: ~950 lines across 5 files (avg ~190 lines/file)
+### global_how.yaml (~180 lines)
+- process (+ 3 children: algorithm, protocol, workflow)
+- method (standalone)
+
+**Total**: ~1,130 lines across 6 files (avg ~188 lines/file)
 
 ---
 
@@ -478,13 +525,61 @@ entity_relationship_rules:
         direction: forward
 ```
 
+### HOW Category Relationships
+
+#### entity_uses_method
+```yaml
+  - name: entity_uses_method
+    source_entity_type: ""  # Any entity type
+    target_entity_type: method
+    relationship_type: uses
+    description: Entity uses method to accomplish goal or perform action
+    confidence: 0.65
+    extraction_patterns:
+      - type: proximity
+        signal_words: [uses, using, via, by means of, through, with]
+        max_distance: 30
+        direction: forward
+```
+
+#### entity_follows_process
+```yaml
+  - name: entity_follows_process
+    source_entity_type: ""  # Any entity type
+    target_entity_type: process
+    relationship_type: follows
+    description: Entity follows multi-step process or procedure
+    confidence: 0.70
+    extraction_patterns:
+      - type: proximity
+        signal_words: [follows, according to, as per, per, implements]
+        max_distance: 40
+        direction: forward
+```
+
+#### action_step_of_process
+```yaml
+  - name: action_step_of_process
+    source_entity_type: ""  # Any action/verb phrase
+    target_entity_type: process
+    relationship_type: part_of
+    description: Action or step is part of larger process (with ordering)
+    confidence: 0.75
+    extraction_patterns:
+      - type: proximity
+        signal_words: [step, stage, phase, first, second, next, then, finally]
+        max_distance: 20
+        direction: bidirectional
+```
+
 ### Total Global Relationship Rules
 
-**8 relationship rules** across 4 W categories:
+**11 relationship rules** across 5 W categories:
 - WHO: 3 rules (person-organization, person-location, organization-location)
 - WHAT: 2 rules (document-person, document-organization)
 - WHEN: 2 rules (event-date, event-location)
 - WHY: 1 rule (assertion-related_to-assertion)
+- HOW: 3 rules (entity-uses-method, entity-follows-process, action-step-of-process)
 
 ### Inheritance Benefits
 
@@ -524,11 +619,12 @@ entity_relationship_rules:
 | W Category | Top-Level | Subtypes | Total |
 |------------|-----------|----------|-------|
 | WHO        | 2         | 10       | 12    |
-| WHAT       | 3         | 6        | 9     |
+| WHAT       | 3         | 5        | 8     |
 | WHERE      | 1         | 5        | 6     |
 | WHEN       | 2         | 2        | 4     |
 | WHY        | 2         | 0        | 2     |
-| **TOTAL**  | **10**    | **23**   | **33** |
+| HOW        | 2         | 3        | 5     |
+| **TOTAL**  | **12**    | **25**   | **37** |
 
 ### Relationship Rules
 
@@ -538,8 +634,9 @@ entity_relationship_rules:
 | WHAT       | 2                  | document_authored_by_person |
 | WHERE      | 0                  | (covered by located_in rules) |
 | WHEN       | 2                  | event_occurred_at_date |
-| WHY        | 1                  | assertion_related_to_assertion |
-| **TOTAL**  | **8**              | |
+| WHY        | 1                  | assertion_supports_assertion |
+| HOW        | 3                  | entity_uses_method |
+| **TOTAL**  | **11**             | |
 
 ---
 
