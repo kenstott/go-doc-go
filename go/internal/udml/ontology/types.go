@@ -37,6 +37,7 @@ const (
 	RelationshipExtends      RelationshipType = "extends"        // Technical
 	RelationshipContains     RelationshipType = "contains"       // Containment
 	RelationshipReferencedBy RelationshipType = "referenced_by" // Back-reference
+	RelationshipHasInstance  RelationshipType = "has_instance"   // Global entity has instance in domain
 	RelationshipCustom       RelationshipType = "custom"         // User-defined
 )
 
@@ -49,6 +50,14 @@ type Domain struct {
 	Name        string `json:"name" yaml:"name"`                                   // Domain name
 	Description string `json:"description,omitempty" yaml:"description,omitempty"` // Domain description
 	Owner       string `json:"owner,omitempty" yaml:"owner,omitempty"`             // Domain owner (team/person)
+}
+
+// CrossDomainMerging defines configuration for cross-domain entity merging
+type CrossDomainMerging struct {
+	Enabled             bool     `json:"enabled" yaml:"enabled"`                                                // Enable cross-domain entity merging
+	SimilarityThreshold float64  `json:"similarity_threshold" yaml:"similarity_threshold"`                      // Minimum similarity score (0.0-1.0) to merge entities across domains
+	EvidenceTypes       []string `json:"evidence_types,omitempty" yaml:"evidence_types,omitempty"`              // Types of evidence: "fuzzy_match", "semantic_similarity"
+	MinDomains          int      `json:"min_domains,omitempty" yaml:"min_domains,omitempty"`                    // Minimum number of domains entity must appear in (default: 2)
 }
 
 // OntologySchema defines the extraction rules for a domain
@@ -66,6 +75,7 @@ type OntologySchema struct {
 	ElementEntityMappings   []ElementEntityMapping    `json:"element_entity_mappings" yaml:"element_entity_mappings"`               // Entity extraction rules
 	EntityRelationshipRules []EntityRelationshipRule  `json:"entity_relationship_rules,omitempty" yaml:"entity_relationship_rules,omitempty"` // Relationship extraction rules
 	DerivedEntities         []DerivedEntity           `json:"derived_entities,omitempty" yaml:"derived_entities,omitempty"`         // Derived entity definitions
+	CrossDomainMerging      *CrossDomainMerging       `json:"cross_domain_merging,omitempty" yaml:"cross_domain_merging,omitempty"` // Cross-domain entity merging configuration
 	Metadata                map[string]interface{}    `json:"metadata,omitempty" yaml:"metadata,omitempty"`                         // Additional metadata
 	CreatedAt               time.Time                 `json:"created_at" yaml:"created_at"`                                         // Creation timestamp
 }
@@ -92,11 +102,9 @@ type ElementEntityMapping struct {
 type ExtractionRuleType string
 
 const (
-	RuleTypeMetadata   ExtractionRuleType = "metadata_field"   // Extract from element metadata
-	RuleTypeRegex      ExtractionRuleType = "regex_pattern"    // Extract using regex pattern
-	RuleTypeKeyword    ExtractionRuleType = "keyword_match"    // Extract by keyword matching
-	RuleTypeSimilarity ExtractionRuleType = "text_similarity"  // Extract based on text similarity
-	RuleTypeJSONPath   ExtractionRuleType = "jsonpath_query"   // Extract using JSONPath expressions
+	RuleTypeContent  ExtractionRuleType = "content_extraction" // Extract from element content using regex with optional filters
+	RuleTypeMetadata ExtractionRuleType = "metadata_field"     // Extract from element metadata
+	RuleTypeJSONPath ExtractionRuleType = "jsonpath_query"     // Extract using JSONPath expressions
 )
 
 // SemanticFilter validates entity matches using element-level semantic similarity
@@ -104,6 +112,13 @@ type SemanticFilter struct {
 	ReferenceText       string   `json:"reference_text,omitempty" yaml:"reference_text,omitempty"`          // Single reference text (alternative to reference_concepts)
 	ReferenceConcepts   []string `json:"reference_concepts,omitempty" yaml:"reference_concepts,omitempty"`   // Concepts to compare against (alternative to reference_text)
 	SimilarityThreshold float64  `json:"similarity_threshold" yaml:"similarity_threshold"`                  // Min similarity (0.0-1.0)
+}
+
+// ProximityFilter requires entity to appear near certain terms (co-occurrence/distance-based filtering)
+type ProximityFilter struct {
+	CooccurrenceTerms []string `json:"cooccurrence_terms" yaml:"cooccurrence_terms"`             // Terms that must appear in the same element
+	MaxDistance       int      `json:"max_distance,omitempty" yaml:"max_distance,omitempty"`     // Maximum word/character distance (0 = same element, >0 = word distance)
+	DistanceUnit      string   `json:"distance_unit,omitempty" yaml:"distance_unit,omitempty"`   // Distance unit: "element" (default), "word", "character"
 }
 
 // DictionaryFilter validates entity matches using dictionary lookups (linguistic/semantic properties)
@@ -125,19 +140,29 @@ type LLMValidationPrompt struct {
 	BatchSize int    `json:"batch_size,omitempty" yaml:"batch_size,omitempty"` // Batch size for LLM API calls (default: 50)
 }
 
-// ExtractionRule defines a rule for extracting entities (binary match)
+// ExtractionRule defines a rule for extracting entities
+//
+// UNIFIED CONTENT EXTRACTION:
+//   - instance_name: REQUIRED - regex with (?P<name>...) capture group to extract entity name
+//     - Can include keywords as OR patterns: (?P<name>keyword1|keyword2|keyword3)
+//   - Optional pre-filters (applied before instance_name extraction, in order of cost):
+//     1. pattern: regex pattern match (cheap - pre-filter on content before extraction)
+//     2. proximity_filter: entity must appear near certain terms (moderate cost)
+//     3. semantic_filter: embedding similarity (expensive - applied last)
+//
+// METADATA EXTRACTION:
+//   - field_path: metadata JSON path
+//   - jsonpath_expr: JSONPath query
 type ExtractionRule struct {
-	Type                ExtractionRuleType `json:"type" yaml:"type"`                                              // Rule type
-	FieldPath           string             `json:"field_path,omitempty" yaml:"field_path,omitempty"`              // Metadata field path (for metadata_field)
-	Pattern             string             `json:"pattern,omitempty" yaml:"pattern,omitempty"`                    // Regex pattern (for regex_pattern)
-	Keywords            []string           `json:"keywords,omitempty" yaml:"keywords,omitempty"`                  // Keywords to match (for keyword_match)
-	ReferenceText       string             `json:"reference_text,omitempty" yaml:"reference_text,omitempty"`      // Reference text for similarity (for text_similarity)
-	SimilarityThreshold float64            `json:"similarity_threshold,omitempty" yaml:"similarity_threshold,omitempty"` // Minimum similarity score (for text_similarity)
-	JSONPathExpr        string             `json:"jsonpath_expr,omitempty" yaml:"jsonpath_expr,omitempty"`        // JSONPath expression (for jsonpath_query)
-	InstanceName           string                `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`        // Optional regex with (?P<name>...) capture to extract entity instance name
-	SemanticFilter         *SemanticFilter       `json:"semantic_filter,omitempty" yaml:"semantic_filter,omitempty"`    // Optional semantic context validation (AND condition)
-	DictionaryFilter       *DictionaryFilter     `json:"dictionary_filter,omitempty" yaml:"dictionary_filter,omitempty"` // Optional linguistic/dictionary validation (AND condition)
-	LLMFalsePositiveTest   *LLMValidationPrompt  `json:"llm_false_positive_test,omitempty" yaml:"llm_false_positive_test,omitempty"` // Optional LLM-based false positive filtering (applied during canonicalization)
+	Type                 ExtractionRuleType   `json:"type" yaml:"type"`                                                       // Rule type (content_extraction, metadata_field, jsonpath_query)
+	InstanceName         string               `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`                 // REQUIRED for content_extraction: regex with (?P<name>...) to extract entity name
+	Pattern              string               `json:"pattern,omitempty" yaml:"pattern,omitempty"`                             // Optional pre-filter: regex pattern (applied first - cheapest)
+	ProximityFilter      *ProximityFilter     `json:"proximity_filter,omitempty" yaml:"proximity_filter,omitempty"`           // Optional pre-filter: entity must appear near certain terms (applied second - moderate cost)
+	SemanticFilter       *SemanticFilter      `json:"semantic_filter,omitempty" yaml:"semantic_filter,omitempty"`             // Optional pre-filter: embedding similarity (applied last - most expensive)
+	FieldPath            string               `json:"field_path,omitempty" yaml:"field_path,omitempty"`                       // Metadata field path (for metadata_field)
+	JSONPathExpr         string               `json:"jsonpath_expr,omitempty" yaml:"jsonpath_expr,omitempty"`                 // JSONPath expression (for jsonpath_query)
+	DictionaryFilter     *DictionaryFilter    `json:"dictionary_filter,omitempty" yaml:"dictionary_filter,omitempty"`         // Optional linguistic/dictionary validation (AND condition)
+	LLMFalsePositiveTest *LLMValidationPrompt `json:"llm_false_positive_test,omitempty" yaml:"llm_false_positive_test,omitempty"` // Optional LLM-based false positive filtering (applied during canonicalization)
 }
 
 // RelationshipExtractionPatternType defines types of relationship extraction patterns
@@ -150,6 +175,16 @@ const (
 	RelPatternDependency   RelationshipExtractionPatternType = "dependency"    // Grammatical dependency pattern
 	RelPatternCooccurrence RelationshipExtractionPatternType = "cooccurrence"  // Statistical co-occurrence
 )
+
+// EntityConstraints defines optional filters that entities must satisfy
+// Uses the same filter architecture as ExtractionRule to constrain which
+// entities qualify as source/target nodes in a relationship
+type EntityConstraints struct {
+	InstanceName    string           `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`       // Regex with named capture group - entity name must match
+	Pattern         string           `json:"pattern,omitempty" yaml:"pattern,omitempty"`                   // Pre-filter regex for entity name
+	ProximityFilter *ProximityFilter `json:"proximity_filter,omitempty" yaml:"proximity_filter,omitempty"` // Co-occurrence filter on entity context
+	SemanticFilter  *SemanticFilter  `json:"semantic_filter,omitempty" yaml:"semantic_filter,omitempty"`   // Embedding similarity on entity context
+}
 
 // RelationshipExtractionPattern defines a pattern for extracting a relationship (binary match)
 type RelationshipExtractionPattern struct {
@@ -173,14 +208,20 @@ type RelationshipExtractionPattern struct {
 // graph structure terms (for Neo4j/RDF export). In data governance contexts, this
 // pattern aligns with consumer ownership of integration logic and producer ownership
 // of data access approvals.
+//
+// INHERITANCE: Rules can extend parent rules to inherit extraction patterns and constraints.
+// Example: "physician_works_at_hospital" extends "global.person_works_at_organization"
 type EntityRelationshipRule struct {
-	Name               string                          `json:"name" yaml:"name"`                                       // Rule name
-	SourceEntityType   string                          `json:"source_entity_type" yaml:"source_entity_type"`           // Source entity type
-	TargetEntityType   string                          `json:"target_entity_type" yaml:"target_entity_type"`           // Target entity type
-	RelationshipType   RelationshipType                `json:"relationship_type" yaml:"relationship_type"`             // Relationship type
-	Description        string                          `json:"description,omitempty" yaml:"description,omitempty"`     // Rule description
-	Confidence         float64                         `json:"confidence" yaml:"confidence"`                           // Pattern reliability confidence (0.0-1.0)
-	ExtractionPatterns []RelationshipExtractionPattern `json:"extraction_patterns" yaml:"extraction_patterns"`         // Patterns for extracting relationship (OR logic)
+	Name               string                          `json:"name" yaml:"name"`                                                         // Rule name
+	ParentRelationship string                          `json:"parent_relationship,omitempty" yaml:"parent_relationship,omitempty"`       // Parent rule to inherit from (e.g., "global.person_works_at_organization")
+	SourceEntityType   string                          `json:"source_entity_type" yaml:"source_entity_type"`                             // Source entity type (must be subtype of parent if inheritance used)
+	TargetEntityType   string                          `json:"target_entity_type" yaml:"target_entity_type"`                             // Target entity type (must be subtype of parent if inheritance used)
+	RelationshipType   RelationshipType                `json:"relationship_type" yaml:"relationship_type"`                               // Relationship type (inherited from parent if not specified)
+	Description        string                          `json:"description,omitempty" yaml:"description,omitempty"`                       // Rule description
+	Confidence         float64                         `json:"confidence" yaml:"confidence"`                                             // Pattern reliability confidence (0.0-1.0, must be >= parent confidence)
+	ExtractionPatterns []RelationshipExtractionPattern `json:"extraction_patterns" yaml:"extraction_patterns"`                           // Patterns for extracting relationship (APPENDED to parent patterns if inheritance used, OR logic)
+	SourceConstraints  *EntityConstraints              `json:"source_constraints,omitempty" yaml:"source_constraints,omitempty"`         // Optional filters for source entity (ADDED to parent constraints if inheritance used, AND logic)
+	TargetConstraints  *EntityConstraints              `json:"target_constraints,omitempty" yaml:"target_constraints,omitempty"`         // Optional filters for target entity (ADDED to parent constraints if inheritance used, AND logic)
 }
 
 // DerivedEntity defines an entity derived from combinations of other entities
@@ -484,29 +525,50 @@ func (s *OntologySchema) Validate() error {
 		// Validate extraction rules
 		for j, rule := range mapping.ExtractionRules {
 			switch rule.Type {
+			// Modern unified content extraction
+			case RuleTypeContent:
+				// instance_name is REQUIRED
+				if rule.InstanceName == "" {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: content_extraction requires instance_name with regex pattern (e.g., (?P<name>.+))", i, mapping.EntityType, j))
+				}
+				// At least one filter is recommended (pattern, proximity_filter, or semantic_filter)
+				hasFilter := rule.Pattern != "" || rule.ProximityFilter != nil || rule.SemanticFilter != nil
+				if !hasFilter {
+					fmt.Printf("Warning: entity mapping %d (%s), rule %d: content_extraction has no filters (pattern/proximity_filter/semantic_filter) - will match all elements\n", i, mapping.EntityType, j)
+				}
+				// Validate proximity_filter if present
+				if rule.ProximityFilter != nil {
+					if len(rule.ProximityFilter.CooccurrenceTerms) == 0 {
+						return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: proximity_filter requires cooccurrence_terms", i, mapping.EntityType, j))
+					}
+					// Validate distance_unit if specified
+					if rule.ProximityFilter.DistanceUnit != "" {
+						validUnits := map[string]bool{"element": true, "word": true, "character": true}
+						if !validUnits[rule.ProximityFilter.DistanceUnit] {
+							return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid proximity_filter.distance_unit: %s (must be 'element', 'word', or 'character')", i, mapping.EntityType, j, rule.ProximityFilter.DistanceUnit))
+						}
+					}
+				}
+				// Validate semantic_filter if present
+				if rule.SemanticFilter != nil {
+					if rule.SemanticFilter.ReferenceText == "" && len(rule.SemanticFilter.ReferenceConcepts) == 0 {
+						return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: semantic_filter requires reference_text or reference_concepts", i, mapping.EntityType, j))
+					}
+					if rule.SemanticFilter.SimilarityThreshold < 0.0 || rule.SemanticFilter.SimilarityThreshold > 1.0 {
+						return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid semantic_filter.similarity_threshold: %.2f (must be 0.0-1.0)", i, mapping.EntityType, j, rule.SemanticFilter.SimilarityThreshold))
+					}
+				}
+
+			// Metadata extraction
 			case RuleTypeMetadata:
 				if rule.FieldPath == "" {
 					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: metadata_field requires field_path", i, mapping.EntityType, j))
-				}
-			case RuleTypeRegex:
-				if rule.Pattern == "" {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: regex_pattern requires pattern", i, mapping.EntityType, j))
-				}
-			case RuleTypeKeyword:
-				if len(rule.Keywords) == 0 {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: keyword_match requires keywords", i, mapping.EntityType, j))
-				}
-			case RuleTypeSimilarity:
-				if rule.ReferenceText == "" {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: text_similarity requires reference_text", i, mapping.EntityType, j))
-				}
-				if rule.SimilarityThreshold < 0.0 || rule.SimilarityThreshold > 1.0 {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid similarity_threshold: %.2f (must be 0.0-1.0)", i, mapping.EntityType, j, rule.SimilarityThreshold))
 				}
 			case RuleTypeJSONPath:
 				if rule.JSONPathExpr == "" {
 					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: jsonpath_query requires jsonpath_expr", i, mapping.EntityType, j))
 				}
+
 			default:
 				return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: unknown rule type: %s", i, mapping.EntityType, j, rule.Type))
 			}
