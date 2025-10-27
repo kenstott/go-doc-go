@@ -1,0 +1,357 @@
+domain: global
+description: WHO category - Global entity types for agents and actors (people and organizations)
+w_category: who
+
+entity_types:
+  # Top-level: person
+  - entity_type: person
+    parent_type: ""
+    w_category: who
+    domain: global
+    description: Individual human being
+    aliases:
+      - individual
+      - human
+      - people
+    element_types:
+      - paragraph
+      - div
+      - list_item
+      - table_cell
+      - heading
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+        dictionary:
+          require_unknown_words: true
+          max_known_words_ratio: 0.5
+        semantic:
+          reference_concepts:
+            - individual person with biography
+            - personal pronouns referencing name
+            - human being with identity
+          similarity_threshold: 0.65
+
+  # Subtype: public_figure
+  - entity_type: public_figure
+    parent_type: global.person
+    w_category: who
+    domain: global
+    description: Notable public figure, celebrity, or prominent individual
+    aliases:
+      - celebrity
+      - notable
+      - public person
+      - famous person
+    element_types:
+      - paragraph
+      - heading
+      - div
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+        proximity:
+          cooccurrence_terms:
+            - famous
+            - notable
+            - celebrity
+            - renowned
+            - prominent
+          max_distance: 50
+          distance_unit: word
+
+  # Subtype: executive
+  - entity_type: executive
+    parent_type: global.person
+    w_category: who
+    domain: global
+    description: Company executive or senior leader (CEO, CTO, CFO, etc.)
+    aliases:
+      - leader
+      - c-suite
+      - senior leadership
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+        proximity:
+          cooccurrence_terms:
+            - CEO
+            - CTO
+            - CFO
+            - COO
+            - executive
+            - president
+            - vice president
+          max_distance: 30
+          distance_unit: word
+
+  # Subtype: employee
+  - entity_type: employee
+    parent_type: global.person
+    w_category: who
+    domain: global
+    description: Employee or staff member of an organization
+    aliases:
+      - staff
+      - worker
+      - team member
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+        proximity:
+          cooccurrence_terms:
+            - employee
+            - staff
+            - team member
+            - works
+            - employed
+          max_distance: 50
+          distance_unit: word
+
+  # Top-level: organization
+  - entity_type: organization
+    parent_type: ""
+    w_category: who
+    domain: global
+    description: Company, institution, agency, or group entity
+    aliases:
+      - company
+      - institution
+      - agency
+      - group
+    element_types:
+      - paragraph
+      - heading
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Inc|Corp|LLC|Ltd|Limited|Corporation|Company))'
+      - instance_name: '(?P<name>The\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Institute|Center|Association))'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+        semantic:
+          reference_concepts:
+            - corporate entity with operations
+            - business organization with employees
+            - institutional organization
+          similarity_threshold: 0.70
+
+  # Subtype: business
+  - entity_type: business
+    parent_type: global.organization
+    w_category: who
+    domain: global
+    description: For-profit company or corporation
+    aliases:
+      - company
+      - corporation
+      - firm
+      - enterprise
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+        proximity:
+          cooccurrence_terms:
+            - revenue
+            - earnings
+            - profit
+            - customers
+            - products
+            - services
+            - business
+          max_distance: 100
+          distance_unit: word
+
+  # Subtype: nonprofit
+  - entity_type: nonprofit
+    parent_type: global.organization
+    w_category: who
+    domain: global
+    description: Nonprofit organization, charity, foundation, or NGO
+    aliases:
+      - charity
+      - foundation
+      - NGO
+      - non-profit
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Charity|Fund))'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+        proximity:
+          cooccurrence_terms:
+            - nonprofit
+            - charity
+            - donation
+            - grant
+            - mission
+            - 501c3
+          max_distance: 50
+          distance_unit: word
+
+  # Subtype: government
+  - entity_type: government
+    parent_type: global.organization
+    w_category: who
+    domain: global
+    description: Government agency, department, bureau, or public sector entity
+    aliases:
+      - agency
+      - department
+      - bureau
+      - public sector
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>(?:Department|Agency|Bureau|Office)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+        proximity:
+          cooccurrence_terms:
+            - government
+            - federal
+            - state
+            - agency
+            - department
+            - regulation
+            - policy
+          max_distance: 50
+          distance_unit: word
+
+  # Subtype: educational
+  - entity_type: educational
+    parent_type: global.organization
+    w_category: who
+    domain: global
+    description: 'Educational institution: university, school, college, research center'
+    aliases:
+      - university
+      - school
+      - college
+      - institute
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:University|College|School|Institute))'
+      - instance_name: '(?P<name>(?:University|College)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+
+  # Subtype: healthcare
+  - entity_type: healthcare
+    parent_type: global.organization
+    w_category: who
+    domain: global
+    description: 'Healthcare organization: hospital, clinic, medical center'
+    aliases:
+      - hospital
+      - clinic
+      - medical center
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Hospital|Clinic|Medical Center|Health System))'
+
+  # Subtype: religious
+  - entity_type: religious
+    parent_type: global.organization
+    w_category: who
+    domain: global
+    description: 'Religious organization: church, temple, mosque, religious institution'
+    aliases:
+      - church
+      - temple
+      - mosque
+      - synagogue
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Church|Temple|Mosque|Synagogue|Cathedral))'
+
+  # Subtype: media
+  - entity_type: media
+    parent_type: global.organization
+    w_category: who
+    domain: global
+    description: 'Media organization: news outlet, publisher, broadcaster'
+    aliases:
+      - news
+      - publisher
+      - broadcaster
+      - press
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>(?:The\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Times|Post|News|Journal|Tribune|Herald))'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+        proximity:
+          cooccurrence_terms:
+            - reported
+            - published
+            - broadcast
+            - journalism
+            - news
+            - media
+          max_distance: 30
+          distance_unit: word
+
+entity_relationship_rules:
+  - name: person_works_at_organization
+    source_entity_type: person
+    target_entity_type: organization
+    relationship_type: part_of
+    description: Person employed by or affiliated with organization
+    confidence: 0.70
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - works at
+          - employed by
+          - employee of
+          - works for
+          - member of
+        max_distance: 50
+        direction: forward
+
+  - name: person_located_in_location
+    source_entity_type: person
+    target_entity_type: location
+    relationship_type: located_in
+    description: Person resides in or is from location
+    confidence: 0.65
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - lives in
+          - from
+          - resides in
+          - based in
+          - citizen of
+          - resident of
+        max_distance: 50
+        direction: forward
+
+  - name: organization_located_in_location
+    source_entity_type: organization
+    target_entity_type: location
+    relationship_type: located_in
+    description: Organization headquartered in or operates in location
+    confidence: 0.70
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - headquartered in
+          - based in
+          - located in
+          - operates in
+          - offices in
+        max_distance: 50
+        direction: forward

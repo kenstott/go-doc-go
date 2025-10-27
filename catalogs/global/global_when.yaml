@@ -1,0 +1,119 @@
+domain: global
+description: WHEN category - Global entity types for temporal references, dates, and events
+w_category: when
+
+entity_types:
+  # Top-level: date
+  - entity_type: date
+    parent_type: ""
+    w_category: when
+    domain: global
+    description: Calendar date or temporal reference
+    aliases:
+      - calendar date
+      - temporal reference
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>\d{1,2}/\d{1,2}/\d{2,4})'
+      - instance_name: '(?P<name>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})'
+      - instance_name: '(?P<name>\d{4}-\d{2}-\d{2})'
+
+  # Subtype: time
+  - entity_type: time
+    parent_type: global.date
+    w_category: when
+    domain: global
+    description: Time of day
+    aliases:
+      - time of day
+      - clock time
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)'
+
+  # Subtype: duration
+  - entity_type: duration
+    parent_type: global.date
+    w_category: when
+    domain: global
+    description: Time duration or period
+    aliases:
+      - time period
+      - time span
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>\d+\s*(?:hours?|minutes?|seconds?|days?|weeks?|months?|years?))'
+
+  # Top-level: event
+  - entity_type: event
+    parent_type: ""
+    w_category: when
+    domain: global
+    description: Occurrence with start/end times, significant happening
+    aliases:
+      - occurrence
+      - happening
+      - incident
+    element_types:
+      - paragraph
+      - heading
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+        proximity:
+          cooccurrence_terms:
+            - occurred
+            - happened
+            - took place
+            - started
+            - ended
+            - event
+          max_distance: 50
+          distance_unit: word
+        semantic:
+          reference_concepts:
+            - occurrence with temporal boundaries
+            - significant happening with start and end
+            - event with participants
+          similarity_threshold: 0.65
+
+entity_relationship_rules:
+  - name: event_occurred_at_date
+    source_entity_type: event
+    target_entity_type: date
+    relationship_type: occurred_at
+    description: Event occurred on or at date
+    confidence: 0.75
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - on
+          - at
+          - during
+          - in
+        max_distance: 20
+        direction: forward
+
+  - name: event_located_in_location
+    source_entity_type: event
+    target_entity_type: location
+    relationship_type: located_in
+    description: Event took place at location
+    confidence: 0.70
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - at
+          - in
+          - took place at
+          - held in
+        max_distance: 30
+        direction: forward
