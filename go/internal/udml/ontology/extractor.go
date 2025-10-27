@@ -206,14 +206,13 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 // Returns the entity if matched, or nil if no match
 func (e *RuleBasedExtractor) tryExtractWithRule(ctx context.Context, mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
 	switch rule.Type {
+	case RuleTypeContent:
+		// Content extraction should use DuckDB/SQL for efficiency
+		// This in-memory fallback is not implemented for content_extraction
+		log.Printf("WARNING: content_extraction not supported in in-memory extractor - use DuckDB extraction instead")
+		return nil
 	case RuleTypeMetadata:
 		return e.tryExtractWithMetadata(mapping, rule, elem)
-	case RuleTypeRegex:
-		return e.tryExtractWithRegex(mapping, rule, elem)
-	case RuleTypeKeyword:
-		return e.tryExtractWithKeywords(mapping, rule, elem)
-	case RuleTypeSimilarity:
-		return e.tryExtractWithSimilarity(mapping, rule, elem)
 	case RuleTypeJSONPath:
 		return e.tryExtractWithJSONPath(mapping, rule, elem)
 	default:
@@ -258,184 +257,6 @@ func (e *RuleBasedExtractor) tryExtractWithMetadata(mapping ElementEntityMapping
 	}
 
 	return &entity
-}
-
-// tryExtractWithRegex attempts to extract an entity from a single element using a regex rule
-// Returns the first matching entity, or nil if no match
-func (e *RuleBasedExtractor) tryExtractWithRegex(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	// Apply semantic filter at element level (early exit if element doesn't match context)
-	if rule.SemanticFilter != nil {
-		if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
-			return nil // Element doesn't match semantic context
-		}
-	}
-
-	// Resolve content
-	content := e.resolveContent(&elem)
-	if content == "" {
-		return nil
-	}
-
-	// Compile and apply regex
-	re, err := regexp.Compile(rule.Pattern)
-	if err != nil {
-		return nil // Skip invalid regex
-	}
-
-	matches := re.FindAllStringIndex(content, -1)
-	if len(matches) == 0 {
-		return nil // No match
-	}
-
-	// Extract FIRST match only (early stopping)
-	match := matches[0]
-	entityName := content[match[0]:match[1]]
-
-	// Apply Dictionary filter if configured
-	if rule.DictionaryFilter != nil {
-		if !e.checkDictionaryFilter(entityName, rule.DictionaryFilter) {
-			log.Printf("DEBUG: Entity '%s' rejected by Dictionary filter", entityName)
-			return nil // Rejected by filter
-		}
-	}
-
-	// Create entity
-	entity := Entity{
-		ID:         e.generateID("ent"),
-		Name:       e.extractInstanceName(content, rule, entityName),
-		Type:       EntityType(mapping.EntityType),
-		Domain:     mapping.Domain,
-		Confidence: mapping.Confidence,
-		Attributes: map[string]interface{}{
-			"source":  "regex",
-			"pattern": rule.Pattern,
-		},
-		ElementID: elem.ElementID,
-		Mentions: []Mention{
-			{
-				ElementID: elem.ElementID,
-				Text:      entityName,
-				StartPos:  match[0],
-				EndPos:    match[1],
-			},
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	return &entity
-}
-
-// tryExtractWithKeywords attempts to extract an entity from a single element using keyword matching
-// Returns the first matching entity, or nil if no match
-func (e *RuleBasedExtractor) tryExtractWithKeywords(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	// Apply semantic filter at element level
-	if rule.SemanticFilter != nil {
-		if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
-			return nil
-		}
-	}
-
-	// Resolve content
-	content := e.resolveContent(&elem)
-	if content == "" {
-		return nil
-	}
-
-	// Try each keyword in order
-	for _, keyword := range rule.Keywords {
-		// Use regex with word boundaries for exact word matching
-		pattern := fmt.Sprintf(`\b%s\b`, regexp.QuoteMeta(keyword))
-		re, err := regexp.Compile("(?i)" + pattern) // Case-insensitive
-		if err != nil {
-			continue
-		}
-
-		// Find matches
-		matches := re.FindAllStringIndex(content, -1)
-		if len(matches) > 0 {
-			// Found match - extract FIRST occurrence and return
-			match := matches[0]
-			actualText := content[match[0]:match[1]]
-
-			entity := Entity{
-				ID:         e.generateID("ent"),
-				Name:       e.extractInstanceName(content, rule, actualText),
-				Type:       EntityType(mapping.EntityType),
-				Domain:     mapping.Domain,
-				Confidence: mapping.Confidence,
-				Attributes: map[string]interface{}{
-					"source":  "keyword",
-					"keyword": keyword,
-				},
-				ElementID: elem.ElementID,
-				Mentions: []Mention{
-					{
-						ElementID: elem.ElementID,
-						Text:      actualText,
-						StartPos:  match[0],
-						EndPos:    match[1],
-					},
-				},
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
-
-			return &entity
-		}
-	}
-
-	return nil // No keywords matched
-}
-
-// tryExtractWithSimilarity attempts to extract an entity from a single element using text similarity
-// Returns an entity if similarity threshold is met, or nil if no match
-func (e *RuleBasedExtractor) tryExtractWithSimilarity(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	if rule.ReferenceText == "" {
-		return nil // No reference text provided
-	}
-
-	// Resolve content
-	content := e.resolveContent(&elem)
-	if content == "" {
-		return nil
-	}
-
-	// Calculate similarity between element content and reference text
-	similarity := e.calculateTextSimilarity(content, rule.ReferenceText)
-
-	// Check if similarity meets threshold
-	if similarity >= rule.SimilarityThreshold {
-		// Extract the whole content as entity when similar
-		entity := Entity{
-			ID:         e.generateID("ent"),
-			Name:       e.extractInstanceName(content, rule, elem.ContentPreview),
-			Type:       EntityType(mapping.EntityType),
-			Domain:     mapping.Domain,
-			Confidence: mapping.Confidence,
-			Attributes: map[string]interface{}{
-				"source":               "similarity",
-				"reference_text":       rule.ReferenceText,
-				"similarity_score":     similarity,
-				"similarity_threshold": rule.SimilarityThreshold,
-			},
-			ElementID: elem.ElementID,
-			Mentions: []Mention{
-				{
-					ElementID: elem.ElementID,
-					Text:      content,
-					StartPos:  0,
-					EndPos:    len(content),
-				},
-			},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		return &entity
-	}
-
-	return nil // Similarity threshold not met
 }
 
 // tryExtractWithJSONPath attempts to extract an entity from a single element using JSONPath

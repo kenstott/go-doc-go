@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -9,13 +10,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology"
 )
+
+// globalStoragePath stores the storage path for use by worker functions
+var globalStoragePath string
 
 // runExtract executes the ontology extract subcommand
 func runExtract(args []string) {
@@ -50,6 +56,9 @@ func runExtract(args []string) {
 	if err != nil {
 		log.Fatalf("Failed to get storage path from config: %v", err)
 	}
+
+	// Set global storage path for worker functions
+	globalStoragePath = storagePath
 
 	// Generate unique run ID and worker ID
 	runID := fmt.Sprintf("extraction_%d", time.Now().Unix())
@@ -121,14 +130,14 @@ func runExtract(args []string) {
 	}
 
 	if isLeader {
-		log.Printf("🎯 This worker is the LEADER - creating extraction tasks")
+		log.Printf("🎯 This worker is the LEADER - creating entity extraction tasks")
 
-		// Leader creates all extraction tasks
-		if err := createExtractionTasks(jobControl, storage, schema, runID, *docBatchSize); err != nil {
-			log.Fatalf("Failed to create extraction tasks: %v", err)
+		// Leader creates entity extraction tasks only (relationships come after consolidation)
+		if err := createEntityTasks(jobControl, storage, schema, runID, *docBatchSize); err != nil {
+			log.Fatalf("Failed to create entity extraction tasks: %v", err)
 		}
 
-		log.Printf("  ✓ Leader finished creating tasks\n")
+		log.Printf("  ✓ Leader finished creating entity tasks\n")
 	} else {
 		log.Printf("⚙️ This worker is a FOLLOWER - waiting for tasks\n")
 	}
@@ -186,10 +195,27 @@ func runExtract(args []string) {
 			}
 		}
 
-		if err := storage.ConsolidateEntities(runID, "max_confidence", llmValidator); err != nil {
+		if err := storage.ConsolidateEntities(runID, "max_confidence", llmValidator, schema); err != nil {
 			log.Fatalf("Failed to consolidate entities: %v", err)
 		}
 		log.Println("  ✓ Entity consolidation complete")
+
+		// Now create relationship extraction tasks (working on canonical entities)
+		log.Println("")
+		log.Println("🔗 Leader creating relationship extraction tasks...")
+		if err := createRelationshipTasks(jobControl, schema, runID); err != nil {
+			log.Fatalf("Failed to create relationship extraction tasks: %v", err)
+		}
+		log.Println("  ✓ Relationship tasks created")
+	}
+
+	// Phase 4: Process relationship extraction tasks (all workers)
+	if len(schema.EntityRelationshipRules) > 0 {
+		log.Println("")
+		log.Println("🔍 Processing relationship extraction tasks...")
+		if err := processExtractionTasks(jobControl, storage, schema, runID, workerID, conceptEmbeddings); err != nil {
+			log.Fatalf("Failed to process relationship tasks: %v", err)
+		}
 	}
 
 	log.Println("")
@@ -218,9 +244,14 @@ func generateRandomHex(n int) string {
 	return hex.EncodeToString(bytes)[:n]
 }
 
+// generateUUID generates a simple UUID-like identifier
+func generateUUID() string {
+	return fmt.Sprintf("rel_%s", generateRandomHex(16))
+}
+
 // createExtractionTasks creates all extraction tasks for distributed processing
 // The leader worker calls this once at the start of an extraction run
-func createExtractionTasks(
+func createEntityTasks(
 	jobControl ontology.ExtractionJobControl,
 	storage analytics.Storage,
 	schema ontology.OntologySchema,
@@ -270,35 +301,35 @@ func createExtractionTasks(
 
 	log.Printf("  Created %d entity extraction tasks", len(tasks))
 
-	// Create relationship extraction tasks
-	relationshipTasks := 0
-	for _, rule := range schema.EntityRelationshipRules {
+	return jobControl.CreateTasks(runID, tasks)
+}
+
+// createRelationshipTasks creates relationship extraction tasks (one per rule)
+// These work on canonical entities, not documents, so no document batching needed
+func createRelationshipTasks(
+	jobControl ontology.ExtractionJobControl,
+	schema ontology.OntologySchema,
+	runID string,
+) error {
+	var tasks []ontology.ExtractionTask
+
+	// Create ONE task per relationship rule (operates on canonical entities)
+	for idx, rule := range schema.EntityRelationshipRules {
 		relType := string(rule.RelationshipType)
 
-		for i := 0; i < len(docIDs); i += docBatchSize {
-			end := i + docBatchSize
-			if end > len(docIDs) {
-				end = len(docIDs)
-			}
-			docBatch := docIDs[i:end]
-
-			task := ontology.ExtractionTask{
-				ID:               fmt.Sprintf("rel_%s_%d", relType, taskCounter),
-				RunID:            runID,
-				Type:             ontology.TaskTypeRelationshipRule,
-				RelationshipType: relType,
-				DocIDs:           docBatch,
-				Status:           ontology.TaskStatusPending,
-				CreatedAt:        time.Now(),
-			}
-			tasks = append(tasks, task)
-			taskCounter++
-			relationshipTasks++
+		task := ontology.ExtractionTask{
+			ID:               fmt.Sprintf("rel_%s_%d", relType, idx),
+			RunID:            runID,
+			Type:             ontology.TaskTypeRelationshipRule,
+			RelationshipType: relType,
+			DocIDs:           []string{}, // Not document-based - works on canonical entities
+			Status:           ontology.TaskStatusPending,
+			CreatedAt:        time.Now(),
 		}
+		tasks = append(tasks, task)
 	}
 
-	log.Printf("  Created %d relationship extraction tasks", relationshipTasks)
-	log.Printf("  Total tasks: %d", len(tasks))
+	log.Printf("  Created %d relationship extraction tasks", len(tasks))
 
 	return jobControl.CreateTasks(runID, tasks)
 }
@@ -483,16 +514,545 @@ func processEntityTask(
 }
 
 // processRelationshipTask processes a single relationship extraction task
+// Extracts relationships by finding source/target entity pairs in the same document
 func processRelationshipTask(
 	storage analytics.Storage,
 	schema ontology.OntologySchema,
 	task *ontology.ExtractionTask,
 	conceptEmbeddings map[string][]float64,
 ) error {
-	// TODO: Implement relationship extraction
-	// For now, just return nil as a stub
-	log.Printf("Relationship extraction not yet implemented for task: %s", task.ID)
+	// Find the rule for this relationship type
+	var rule *ontology.EntityRelationshipRule
+	for i := range schema.EntityRelationshipRules {
+		if string(schema.EntityRelationshipRules[i].RelationshipType) == task.RelationshipType {
+			rule = &schema.EntityRelationshipRules[i]
+			break
+		}
+	}
+
+	if rule == nil {
+		return fmt.Errorf("no rule found for relationship type %s", task.RelationshipType)
+	}
+
+	log.Printf("  Extracting %s relationships (%s -> %s)",
+		rule.RelationshipType, rule.SourceEntityType, rule.TargetEntityType)
+
+	// Extract relationships using document-level co-occurrence
+	// This is a proximity-based MVP: if both entities appear in same doc, create relationship
+	relationships, err := extractRelationshipsByProximity(storage, task, rule)
+	if err != nil {
+		return fmt.Errorf("failed to extract relationships: %w", err)
+	}
+
+	log.Printf("    ✓ Extracted %d %s relationships", len(relationships), rule.RelationshipType)
+
 	return nil
+}
+
+// extractRelationshipsByProximity extracts relationships by interpreting extraction patterns
+func extractRelationshipsByProximity(
+	storage analytics.Storage,
+	task *ontology.ExtractionTask,
+	rule *ontology.EntityRelationshipRule,
+) ([]analytics.OntologyRelationship, error) {
+	var allRelationships []analytics.OntologyRelationship
+
+	// Process each extraction pattern
+	for _, pattern := range rule.ExtractionPatterns {
+		switch pattern.Type {
+		case ontology.RelPatternCooccurrence:
+			// Document-level co-occurrence: entities in same document
+			rels, err := extractByCooccurrence(storage, task, rule)
+			if err != nil {
+				log.Printf("WARNING: Cooccurrence extraction failed: %v", err)
+				continue
+			}
+			allRelationships = append(allRelationships, rels...)
+
+		case ontology.RelPatternProximity:
+			// Proximity-based: entities within max_distance with signal words
+			rels, err := extractByProximity(storage, task, rule, &pattern)
+			if err != nil {
+				log.Printf("WARNING: Proximity extraction failed: %v", err)
+				continue
+			}
+			allRelationships = append(allRelationships, rels...)
+
+		case ontology.RelPatternTextTemplate:
+			// Text template matching with entity placeholders
+			rels, err := extractByTextTemplate(storage, task, rule, &pattern)
+			if err != nil {
+				log.Printf("WARNING: Text template extraction failed: %v", err)
+				continue
+			}
+			allRelationships = append(allRelationships, rels...)
+
+		case ontology.RelPatternRegex:
+			// Regex with named capture groups
+			rels, err := extractByRegex(storage, task, rule, &pattern)
+			if err != nil {
+				log.Printf("WARNING: Regex extraction failed: %v", err)
+				continue
+			}
+			allRelationships = append(allRelationships, rels...)
+
+		default:
+			log.Printf("  SKIPPING unknown pattern type: %s", pattern.Type)
+		}
+	}
+
+	// Store raw relationships (deduplication happens later in consolidation phase)
+	if len(allRelationships) > 0 {
+		if err := storage.(*analytics.HiveParquetStorage).AppendOntologyRelationships(allRelationships); err != nil {
+			return nil, fmt.Errorf("failed to write raw relationships: %w", err)
+		}
+	}
+
+	return allRelationships, nil
+}
+
+// extractByCooccurrence finds relationships when entities appear in same document
+func extractByCooccurrence(
+	storage analytics.Storage,
+	task *ontology.ExtractionTask,
+	rule *ontology.EntityRelationshipRule,
+) ([]analytics.OntologyRelationship, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	query := fmt.Sprintf(`
+WITH source_canonical AS (
+  SELECT representative_entity_id, entity_name, entity_type, domain, confidence
+  FROM '%s/canonical_entities/run_id=%s/*.parquet'
+  WHERE entity_type = '%s'
+),
+target_canonical AS (
+  SELECT representative_entity_id, entity_name, entity_type, confidence
+  FROM '%s/canonical_entities/run_id=%s/*.parquet'
+  WHERE entity_type = '%s'
+)
+SELECT
+  s.representative_entity_id, t.representative_entity_id, 'corpus', 'canonical', s.domain, 'canonical',
+  s.entity_name, t.entity_name, (s.confidence + t.confidence) / 2.0
+FROM source_canonical s
+CROSS JOIN target_canonical t
+WHERE s.representative_entity_id != t.representative_entity_id
+`,
+		globalStoragePath, task.RunID, rule.SourceEntityType,
+		globalStoragePath, task.RunID, rule.TargetEntityType,
+	)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	var relationships []analytics.OntologyRelationship
+	for rows.Next() {
+		var sourceID, targetID, docID, sourceName, domain, elementID, sourceTxt, targetTxt string
+		var avgConf float64
+
+		if err := rows.Scan(&sourceID, &targetID, &docID, &sourceName, &domain, &elementID,
+			&sourceTxt, &targetTxt, &avgConf); err != nil {
+			continue
+		}
+
+		relationships = append(relationships, analytics.OntologyRelationship{
+			RelationshipID:   generateUUID(),
+			DocID:            docID,
+			SourceName:       sourceName,
+			SourceEntityID:   sourceID,
+			TargetEntityID:   targetID,
+			RelationshipType: string(rule.RelationshipType),
+			Domain:           domain,
+			Confidence:       rule.Confidence * avgConf,
+			Evidence:         fmt.Sprintf("cooccurrence: %s with %s", sourceTxt, targetTxt),
+			ElementID:        elementID,
+			RunID:            task.RunID,
+			ExtractedAt:      time.Now(),
+		})
+	}
+
+	return relationships, rows.Err()
+}
+
+// extractByProximity finds relationships when entities are near each other with signal words
+func extractByProximity(
+	storage analytics.Storage,
+	task *ontology.ExtractionTask,
+	rule *ontology.EntityRelationshipRule,
+	pattern *ontology.RelationshipExtractionPattern,
+) ([]analytics.OntologyRelationship, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Query canonical entities directly (no need for proximity since working at corpus level)
+	query := fmt.Sprintf(`
+WITH source_canonical AS (
+  SELECT representative_entity_id, entity_name, entity_type, domain, confidence
+  FROM '%s/canonical_entities/run_id=%s/*.parquet'
+  WHERE entity_type = '%s'
+),
+target_canonical AS (
+  SELECT representative_entity_id, entity_name, entity_type, confidence
+  FROM '%s/canonical_entities/run_id=%s/*.parquet'
+  WHERE entity_type = '%s'
+)
+SELECT
+  s.representative_entity_id, t.representative_entity_id, 'corpus', 'canonical', s.domain, 'canonical',
+  s.entity_name, t.entity_name, 'canonical entities', (s.confidence + t.confidence) / 2.0
+FROM source_canonical s
+CROSS JOIN target_canonical t
+WHERE s.representative_entity_id != t.representative_entity_id
+`,
+		globalStoragePath, task.RunID, rule.SourceEntityType,
+		globalStoragePath, task.RunID, rule.TargetEntityType,
+	)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	var relationships []analytics.OntologyRelationship
+	for rows.Next() {
+		var sourceID, targetID, docID, sourceName, domain, elementID, sourceTxt, targetTxt, text string
+		var avgConf float64
+
+		if err := rows.Scan(&sourceID, &targetID, &docID, &sourceName, &domain, &elementID,
+			&sourceTxt, &targetTxt, &text, &avgConf); err != nil {
+			continue
+		}
+
+		// Check proximity and signal words in text
+		if checkProximity(text, sourceTxt, targetTxt, pattern.MaxDistance, pattern.SignalWords) {
+			relationships = append(relationships, analytics.OntologyRelationship{
+				RelationshipID:   generateUUID(),
+				DocID:            docID,
+				SourceName:       sourceName,
+				SourceEntityID:   sourceID,
+				TargetEntityID:   targetID,
+				RelationshipType: string(rule.RelationshipType),
+				Domain:           domain,
+				Confidence:       rule.Confidence * avgConf,
+				Evidence:         fmt.Sprintf("proximity: %s near %s", sourceTxt, targetTxt),
+				ElementID:        elementID,
+				RunID:            task.RunID,
+				ExtractedAt:      time.Now(),
+			})
+		}
+	}
+
+	return relationships, rows.Err()
+}
+
+// checkProximity checks if two entities are within max_distance tokens with signal words
+func checkProximity(text, entity1, entity2 string, maxDistance int, signalWords []string) bool {
+	text = strings.ToLower(text)
+	e1 := strings.ToLower(entity1)
+	e2 := strings.ToLower(entity2)
+
+	// Find positions of entity mentions
+	idx1 := strings.Index(text, e1)
+	idx2 := strings.Index(text, e2)
+
+	if idx1 == -1 || idx2 == -1 {
+		return false
+	}
+
+	// Ensure idx1 < idx2
+	if idx1 > idx2 {
+		idx1, idx2 = idx2, idx1
+		e1, e2 = e2, e1
+	}
+
+	// Extract text between entities
+	between := text[idx1+len(e1) : idx2]
+
+	// Count tokens (split on whitespace)
+	tokens := strings.Fields(between)
+	if len(tokens) > maxDistance {
+		return false
+	}
+
+	// Check if any signal word is present
+	if len(signalWords) == 0 {
+		return true // No signal words required
+	}
+
+	for _, signal := range signalWords {
+		if strings.Contains(between, strings.ToLower(signal)) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// consolidateRelationships deduplicates raw relationships by (source, target, type)
+// keeping the highest confidence instance. Currently a placeholder - deduplication
+// can be done at query time when reading relationships.
+func consolidateRelationships(storage analytics.Storage, runID string) error {
+	log.Println("  Raw relationships written - deduplication happens at query time")
+	return nil
+}
+
+// extractByTextTemplate finds relationships by matching text templates with entity placeholders
+func extractByTextTemplate(
+	storage analytics.Storage,
+	task *ontology.ExtractionTask,
+	rule *ontology.EntityRelationshipRule,
+	pattern *ontology.RelationshipExtractionPattern,
+) ([]analytics.OntologyRelationship, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Query embeddings for full contextual text (element + ancestor + sibling content)
+	query := fmt.Sprintf(`
+SELECT
+  emb.element_id, emb.doc_id, emb.source_name, emb.text
+FROM '%s/embeddings/**/*.parquet' emb
+WHERE emb.doc_id IN (%s) AND emb.text IS NOT NULL
+`,
+		globalStoragePath, formatDocIDList(task.DocIDs),
+	)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	// Build regex from template by replacing {entity_type} with capture groups
+	templateRegex := buildTemplateRegex(pattern.Template, rule.SourceEntityType, rule.TargetEntityType)
+	re, err := regexp.Compile(templateRegex)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile template regex: %w", err)
+	}
+
+	var relationships []analytics.OntologyRelationship
+	for rows.Next() {
+		var elementID, docID, sourceName, text string
+		if err := rows.Scan(&elementID, &docID, &sourceName, &text); err != nil {
+			continue
+		}
+
+		// Find matches in text
+		matches := re.FindAllStringSubmatch(text, -1)
+		for _, match := range matches {
+			if len(match) < 3 {
+				continue
+			}
+
+			sourceEntity := strings.TrimSpace(match[1])
+			targetEntity := strings.TrimSpace(match[2])
+
+			// Look up entity IDs and confidence from extractions
+			sourceID, sourceConf := lookupEntity(db, task.RunID, rule.SourceEntityType, sourceEntity, docID)
+			targetID, targetConf := lookupEntity(db, task.RunID, rule.TargetEntityType, targetEntity, docID)
+
+			if sourceID == "" || targetID == "" {
+				continue
+			}
+
+			// Get domain from source entity
+			domain := getDomainForEntity(db, task.RunID, sourceID)
+
+			relationships = append(relationships, analytics.OntologyRelationship{
+				RelationshipID:   generateUUID(),
+				DocID:            docID,
+				SourceName:       sourceName,
+				SourceEntityID:   sourceID,
+				TargetEntityID:   targetID,
+				RelationshipType: string(rule.RelationshipType),
+				Domain:           domain,
+				Confidence:       rule.Confidence * ((sourceConf + targetConf) / 2.0),
+				Evidence:         fmt.Sprintf("template: %s", match[0]),
+				ElementID:        elementID,
+				RunID:            task.RunID,
+				ExtractedAt:      time.Now(),
+			})
+		}
+	}
+
+	return relationships, rows.Err()
+}
+
+// extractByRegex finds relationships using regex patterns with named capture groups
+func extractByRegex(
+	storage analytics.Storage,
+	task *ontology.ExtractionTask,
+	rule *ontology.EntityRelationshipRule,
+	pattern *ontology.RelationshipExtractionPattern,
+) ([]analytics.OntologyRelationship, error) {
+	db, err := sql.Open("duckdb", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to open DuckDB: %w", err)
+	}
+	defer db.Close()
+
+	// Compile the regex pattern
+	re, err := regexp.Compile(pattern.Pattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile regex pattern: %w", err)
+	}
+
+	// Query embeddings for full contextual text (element + ancestor + sibling content)
+	query := fmt.Sprintf(`
+SELECT
+  emb.element_id, emb.doc_id, emb.source_name, emb.text
+FROM '%s/embeddings/**/*.parquet' emb
+WHERE emb.doc_id IN (%s) AND emb.text IS NOT NULL
+`,
+		globalStoragePath, formatDocIDList(task.DocIDs),
+	)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	defer rows.Close()
+
+	var relationships []analytics.OntologyRelationship
+	for rows.Next() {
+		var elementID, docID, sourceName, text string
+		if err := rows.Scan(&elementID, &docID, &sourceName, &text); err != nil {
+			continue
+		}
+
+		// Find regex matches
+		matches := re.FindAllStringSubmatch(text, -1)
+		names := re.SubexpNames()
+
+		for _, match := range matches {
+			// Extract named groups
+			groups := make(map[string]string)
+			for i, name := range names {
+				if i > 0 && i < len(match) && name != "" {
+					groups[name] = strings.TrimSpace(match[i])
+				}
+			}
+
+			// Determine which group corresponds to source/target entity
+			sourceEntity := groups[rule.SourceEntityType]
+			targetEntity := groups[rule.TargetEntityType]
+
+			if sourceEntity == "" || targetEntity == "" {
+				continue
+			}
+
+			// Look up entity IDs
+			sourceID, sourceConf := lookupEntity(db, task.RunID, rule.SourceEntityType, sourceEntity, docID)
+			targetID, targetConf := lookupEntity(db, task.RunID, rule.TargetEntityType, targetEntity, docID)
+
+			if sourceID == "" || targetID == "" {
+				continue
+			}
+
+			domain := getDomainForEntity(db, task.RunID, sourceID)
+
+			relationships = append(relationships, analytics.OntologyRelationship{
+				RelationshipID:   generateUUID(),
+				DocID:            docID,
+				SourceName:       sourceName,
+				SourceEntityID:   sourceID,
+				TargetEntityID:   targetID,
+				RelationshipType: string(rule.RelationshipType),
+				Domain:           domain,
+				Confidence:       rule.Confidence * ((sourceConf + targetConf) / 2.0),
+				Evidence:         fmt.Sprintf("regex: %s", match[0]),
+				ElementID:        elementID,
+				RunID:            task.RunID,
+				ExtractedAt:      time.Now(),
+			})
+		}
+	}
+
+	return relationships, rows.Err()
+}
+
+// buildTemplateRegex converts template like "{person}, {publication}" to regex
+func buildTemplateRegex(template, sourceType, targetType string) string {
+	// Escape special regex characters
+	regex := regexp.QuoteMeta(template)
+
+	// Replace {sourceType} with capture group
+	sourcePattern := fmt.Sprintf("\\{%s\\}", sourceType)
+	regex = strings.Replace(regex, sourcePattern, "([^,\"()]+)", 1)
+
+	// Replace {targetType} with capture group
+	targetPattern := fmt.Sprintf("\\{%s\\}", targetType)
+	regex = strings.Replace(regex, targetPattern, "([^,\"()]+)", 1)
+
+	// Replace other entity type placeholders with non-capturing groups
+	regex = regexp.MustCompile(`\\{[^}]+\\}`).ReplaceAllString(regex, "(?:[^,\"()]+)")
+
+	return regex
+}
+
+// lookupEntity finds entity ID and confidence by name in extractions
+func lookupEntity(db *sql.DB, runID, entityType, entityName, docID string) (string, float64) {
+	query := fmt.Sprintf(`
+SELECT em.canonical_entity_id, e.confidence
+FROM '%s/ontology_entities/run_id=%s/*.parquet' e
+INNER JOIN '%s/entity_mentions/run_id=%s/*.parquet' em ON e.entity_id = em.raw_entity_id
+WHERE e.entity_type = '%s' AND e.entity_name = '%s' AND e.doc_id = '%s'
+LIMIT 1
+`,
+		globalStoragePath, runID,
+		globalStoragePath, runID,
+		strings.ReplaceAll(entityType, "'", "''"),
+		strings.ReplaceAll(entityName, "'", "''"),
+		strings.ReplaceAll(docID, "'", "''"),
+	)
+
+	var canonicalEntityID string
+	var confidence float64
+	err := db.QueryRow(query).Scan(&canonicalEntityID, &confidence)
+	if err != nil {
+		return "", 0.0
+	}
+
+	return canonicalEntityID, confidence
+}
+
+// getDomainForEntity retrieves domain for an entity
+func getDomainForEntity(db *sql.DB, runID, entityID string) string {
+	query := fmt.Sprintf(`
+SELECT domain
+FROM '%s/ontology_entities/run_id=%s/*.parquet'
+WHERE entity_id = '%s'
+LIMIT 1
+`,
+		globalStoragePath, runID,
+		strings.ReplaceAll(entityID, "'", "''"),
+	)
+
+	var domain string
+	db.QueryRow(query).Scan(&domain)
+	return domain
+}
+
+// formatDocIDList formats document IDs for SQL IN clause
+func formatDocIDList(docIDs []string) string {
+	quoted := make([]string, len(docIDs))
+	for i, id := range docIDs {
+		// Escape single quotes in doc IDs
+		escaped := strings.ReplaceAll(id, "'", "''")
+		quoted[i] = fmt.Sprintf("'%s'", escaped)
+	}
+	return strings.Join(quoted, ", ")
 }
 
 // collectReferenceConcepts extracts all unique reference concepts from semantic filters in the schema

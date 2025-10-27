@@ -18,6 +18,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// min returns the smaller of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 // OntologyBuilder orchestrates the automatic ontology schema creation process
 type OntologyBuilder struct {
 	sampler          *sampler.Sampler
@@ -145,7 +153,7 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 	// Determine diversity threshold - use config value or default
 	diversityThreshold := config.DiversityThreshold
 	if diversityThreshold == 0.0 {
-		diversityThreshold = 0.85 // Default: filter out samples with >85% similarity (keep diverse samples)
+		diversityThreshold = 0.70 // Default: filter out samples with >70% similarity (moderate diversity, better coverage)
 	}
 	fmt.Printf("DEBUG: BuilderConfig.DiversityThreshold = %.6f, using = %.6f\n", config.DiversityThreshold, diversityThreshold)
 
@@ -316,8 +324,8 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 	llmCalls += calls1
 	totalTokens += tokens1
 
-	// Step 2: Define entity types and extraction rules (with domain assignment)
-	entityMappings, calls2, tokens2, err := b.defineEntityTypes(ctx, samples, topEntities, domains)
+	// Step 2: Define entity types and extraction rules (multi-step: universal + domain-specific)
+	entityMappings, calls2, tokens2, err := b.defineEntityTypesMultiStep(ctx, samples, topEntities, domains)
 	if err != nil {
 		return nil, llmCalls, totalTokens, err
 	}
@@ -642,6 +650,22 @@ Before returning your response, verify EVERY element_types array contains ONLY e
 
 ================================================================================
 
+## MANDATORY UNIVERSAL ENTITY TYPES
+
+**YOU MUST INCLUDE THESE ENTITY TYPES IN YOUR RESPONSE:**
+
+The following universal entity types are REQUIRED in every ontology schema. You MUST include at least ONE mapping for EACH of these entity types (assigned to the most relevant domain):
+%s
+
+**IMPORTANT REQUIREMENTS:**
+- You MUST include at least one mapping for person, organization, location, and date
+- Assign each universal type to the most relevant domain from your domain list
+- You can create multiple mappings per universal type (different domains or confidence levels)
+- Use the suggested element types and adapt extraction rules to your corpus
+- These templates are proven patterns - you may refine them but MUST include the entity types
+
+================================================================================
+
 ## ENTITY TYPE DESIGN - PREFER UNIVERSAL TYPES
 
 **IMPORTANT**: When defining entity types, strongly prefer these UNIVERSAL entity types:
@@ -770,52 +794,51 @@ Sample texts:
 
 All extraction patterns are BINARY (TRUE/FALSE match). Confidence is assigned at the mapping level based on WHERE entities are found, not HOW they match.
 
-## EXTRACTION PATTERNS
+## EXTRACTION RULE TYPES
 
-For each entity type, analyze the samples to discover MULTIPLE extraction patterns:
+There are THREE extraction rule types:
 
-1. **KEYWORD PATTERNS** - For named entities:
-   - Automatically include aliases for top entities
-   - Example: Microsoft → ["Microsoft", "MSFT", "MS", "Microsoft Corporation"]
-   - Use for: Company names, person names, product names
-   - Pattern returns: TRUE if keyword found, FALSE otherwise
+1. **content_extraction** - Extract entities from document content using regex with optional filters
+2. **metadata_field** - Extract from document metadata fields
+3. **jsonpath_query** - Extract from JSON documents using JSONPath
 
-2. **REGEX PATTERNS** - For structured/formatted entities:
-   - Look for repeating formats in samples
-   - Examples:
-     * Email: \b[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b
-     * Phone: \b\d{3}[-.]?\d{3}[-.]?\d{4}\b
-     * Stock ticker: \b[A-Z]{2,5}\b
-     * Product code: \b[A-Z]{2,3}-\d{4,6}\b
-     * Date: \b\d{1,2}/\d{1,2}/\d{4}\b
-   - Use for: IDs, codes, contact info, dates, measurements
-   - Pattern returns: TRUE if regex matches, FALSE otherwise
+---
 
-3. **TEXT SIMILARITY PATTERNS** - For context-based entities:
-   - Find typical phrases/contexts where entities appear
-   - Example reference texts:
-     * "the CEO stated that" → executive mentions
-     * "quarterly revenue of" → financial metrics
-     * "located in the city of" → geographic locations
-   - Include reference_text and similarity_threshold (0.6-0.8)
-   - Use for: Contextual entity recognition
-   - Pattern returns: TRUE if similarity >= threshold, FALSE otherwise
+### RULE TYPE 1: content_extraction
 
-4. **METADATA FIELD PATTERNS** - For structured metadata:
-   - Extract from document metadata fields
-   - Example: "author.name", "company_info.ticker"
-   - Use for: Structured document properties
-   - Pattern returns: TRUE if field exists, FALSE otherwise
+Extracts entities from document content using a **required instance_name regex** with optional pre-filters.
 
-5. **JSONPATH PATTERNS** - For JSON/structured data extraction:
-   - Use JSONPath expressions to query JSON content or metadata
-   - Examples:
-     * $.author.name - Extract author name from JSON
-     * $.items[*].price - Extract all item prices
-     * $.metadata.company_info.ticker - Extract stock ticker from metadata
-   - Include jsonpath_expr field with the JSONPath expression
-   - Use for: JSON documents, structured metadata, API responses
-   - Pattern returns: TRUE if JSONPath matches and returns result(s), FALSE otherwise
+**REQUIRED FIELD:**
+- instance_name (string, REQUIRED): Regex with named capture group (?P<name>...) that extracts entity text
+  - Keywords → Use regex OR: (?P<name>Microsoft|MSFT|MS|Google|GOOG)
+  - Patterns → Use regex: (?P<name>\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b) (email)
+
+**OPTIONAL FILTERS** (applied BEFORE instance_name for performance):
+- pattern (string): Cheap pre-filter regex - only run instance_name if this matches
+- proximity_filter (object): Co-occurrence filter - require nearby keywords
+- semantic_filter (object): Embedding similarity - validate entity context
+
+**FILTER EXECUTION ORDER** (cheap to expensive):
+1. pattern (if specified) - Fast regex pre-filter
+2. proximity_filter (if specified) - Co-occurrence check
+3. instance_name (REQUIRED) - Extract entity with named capture
+4. semantic_filter (if specified) - Embedding similarity validation
+
+**WHEN TO USE EACH FILTER:**
+
+Use pattern when:
+- instance_name is complex/expensive
+- You want to pre-filter elements before extraction
+- Example: pattern="\\b[A-Z]" before instance_name="(?P<name>[A-Z][a-z]+ (?:Inc|Corp|LLC))"
+
+Use proximity_filter when:
+- Entity needs contextual keywords nearby
+- Example: Extract "aspirin" only when "medication", "drug", or "pharmaceutical" appear within 100 characters
+
+Use semantic_filter when:
+- instance_name regex is ambiguous (matches non-entities)
+- Need to distinguish entity types semantically
+- Example: Disambiguate person names from organization names (both match capitalized words)
 
 ## SEMANTIC FILTERING - VALIDATE ENTITY CONTEXT
 
@@ -835,8 +858,8 @@ For each entity type, analyze the samples to discover MULTIPLE extraction patter
 
 **STRUCTURE EXAMPLE:**
 {
-  "type": "regex_pattern",
-  "pattern": "\\b[A-Z][a-z]+(?:\\s+[A-Z]\\.)?\\s+[A-Z][a-z]+\\b",
+  "type": "content_extraction",
+  "instance_name": "(?P<name>\\b[A-Z][a-z]+(?:\\s+[A-Z]\\.)?\\s+[A-Z][a-z]+\\b)",
   "semantic_filter": {
     "reference_concepts": [
       "individual person with biography or credentials",
@@ -896,11 +919,140 @@ MAPPING 2 (Lower confidence - ambiguous two-word pattern):
 - similarity_threshold: 0.70 (higher because very ambiguous)
 
 **NOTES:**
-- Semantic filter applies to ANY rule type (regex, keyword, jsonpath, etc.)
-- Element must match BOTH pattern AND semantic context
+- Semantic filter applies to content_extraction rules
+- Element must match BOTH instance_name AND semantic context
 - Only use semantic filtering when necessary - adds computational cost
 - Exclude "header" from element_types to prevent title-case heading false positives
 - Test with actual corpus data to tune similarity thresholds
+
+## ENTITY NAME EXTRACTION - INSTANCE VS CATEGORY
+
+**CRITICAL PRINCIPLE**: The extracted entity name must be a specific INSTANCE name, not a category descriptor or fragment.
+
+**What to extract:**
+- ✓ Complete instance names that uniquely identify a particular occurrence
+- ✓ Proper nouns, identifiers, or distinctive names
+- ✓ Full values that distinguish this entity from others of the same type
+
+**What NOT to extract:**
+- ✗ Category labels or type descriptors (e.g., "Dr.", "Hospital", "ISBN")
+- ✗ Partial fragments of names (e.g., just a first name without last name)
+- ✗ Generic descriptors (e.g., "syndrome", "disease", "city" by themselves)
+
+**EXAMPLES ACROSS ENTITY TYPES:**
+
+**Identifiers:**
+- ✓ GOOD: "978-1-4939-8933-1" (the actual ISBN value)
+- ✗ BAD: "ISBN" (category label, not instance)
+
+**Person:**
+- ✓ GOOD: "Jane Smith", "Dr. Robert Johnson"
+- ✗ BAD: "Dr." or "Professor" (title fragment only)
+
+**Organization:**
+- ✓ GOOD: "Johns Hopkins Hospital", "Microsoft Corporation"
+- ✗ BAD: "Hospital" or "University" (type descriptor only)
+
+**Location:**
+- ✓ GOOD: "London", "123 Main Street"
+- ✗ BAD: "City" or "in" (category/preposition fragment)
+
+**Medical Condition:**
+- ✓ GOOD: "Type 1 Diabetes", "Parkinson's Disease"
+- ✗ BAD: "syndrome" or "disease" (category fragment only)
+
+**WHY THIS MATTERS:**
+Your extraction rules should capture the COMPLETE identifying information, not just parts or labels.
+If your regex pattern \\b(?:PMID|DOI|ISBN)\\s*:?\\s*[0-9\\-\\.]+\\b matches "ISBN 978-1-4939-8933-1",
+the entity name should be "978-1-4939-8933-1" (the identifier value), NOT "ISBN" (the label).
+
+**instance_name IS REQUIRED:**
+All content_extraction rules MUST include an instance_name field with a (?P<name>...) capture group.
+
+**REGEX PATTERNS FOR DIFFERENT NEEDS:**
+
+1. **Keyword OR patterns** (for named entities with aliases):
+   - Use regex OR with (?P<name>...) capture
+   - Example: (?P<name>Microsoft|MSFT|MS|Google|GOOG|Alphabet)
+   - Extracts: "Microsoft", "MSFT", etc.
+
+2. **Structured patterns** (for formatted entities):
+   - Use regex with named capture
+   - Example: (?P<name>\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b) (email)
+   - Example: (?P<name>\\b[A-Z][a-z]+ (?:Inc|Corp|LLC|Ltd)\\.?\\b) (company)
+   - Extracts: "john@example.com", "Microsoft Corp", etc.
+
+3. **Identifier extraction** (extract value, not label):
+   - Use regex to extract specific part
+   - Example: (?:PMID|DOI|ISBN)\\s*:?\\s*(?P<name>[0-9\\-\\.]+)
+   - From text "ISBN: 978-1-4939-8933-1", extracts: "978-1-4939-8933-1" (NOT "ISBN")
+
+4. **Full content capture** (for broad concepts):
+   - Use (?P<name>.+) to capture entire matched text
+   - Example: (?P<name>.+) with semantic_filter to validate element context
+   - Extracts: Entire element content as entity name
+
+5. **Bounded content** (prevent overly long names):
+   - Use (?P<name>.{1,100}) to limit length
+   - Prevents excessively long entity names
+   - Try specific pattern first, fall back to truncated content
+
+**EXAMPLES:**
+
+Specific entity extraction:
+{
+  "type": "text_similarity",
+  "reference_text": "medical specialty classification",
+  "similarity_threshold": 0.7,
+  "instance_name": "\\b(?P<name>\\w+(?:\\s+\\w+){0,2}(?:ology|iatry|medicine))\\b"
+}
+✓ Extracts specialty names like "cardiology", "internal medicine"
+
+Full content capture:
+{
+  "type": "text_similarity",
+  "reference_text": "therapeutic management strategy and treatment approach",
+  "similarity_threshold": 0.7,
+  "instance_name": "(?P<name>.+)"
+}
+✓ Uses entire matched text as entity name
+
+Truncated content:
+{
+  "type": "text_similarity",
+  "reference_text": "person with professional credentials",
+  "similarity_threshold": 0.7,
+  "instance_name": "\\b(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+){0,3})\\b|(?P<name>.{1,100})"
+}
+✓ Tries to extract person name, falls back to first 100 characters
+
+### RULE TYPE 2: metadata_field
+
+Extracts entities from document metadata fields (e.g., author, title, company).
+
+**REQUIRED FIELD:**
+- field_path (string): Dot-notation path to metadata field (e.g., "author.name", "company_info.ticker")
+
+**EXAMPLE:**
+{
+  "type": "metadata_field",
+  "field_path": "author.name"
+}
+
+### RULE TYPE 3: jsonpath_query
+
+Extracts entities from JSON documents using JSONPath expressions.
+
+**REQUIRED FIELD:**
+- jsonpath_expr (string): JSONPath query (e.g., "$.items[*].price", "$.author.name")
+
+**EXAMPLE:**
+{
+  "type": "jsonpath_query",
+  "jsonpath_expr": "$.metadata.company_info.ticker"
+}
+
+---
 
 ## MULTIPLE MAPPINGS FOR SAME ENTITY TYPE
 
@@ -920,12 +1072,12 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.95,
     "extraction_rules": [
       {
-        "type": "keyword_match",
-        "keywords": ["Microsoft", "MSFT", "MS", "Microsoft Corporation"]
+        "type": "content_extraction",
+        "instance_name": "(?P<name>Microsoft|MSFT|MS|Microsoft Corporation|Google|GOOG|Alphabet)"
       },
       {
-        "type": "regex_pattern",
-        "pattern": "\\b[A-Z][a-z]+ (Inc|Corp|LLC|Ltd)\\.?\\b"
+        "type": "content_extraction",
+        "instance_name": "(?P<name>\\b[A-Z][a-z]+ (?:Inc|Corp|LLC|Ltd)\\.?\\b)"
       }
     ]
   },
@@ -937,8 +1089,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.75,
     "extraction_rules": [
       {
-        "type": "keyword_match",
-        "keywords": ["Microsoft", "MSFT", "MS", "Microsoft Corporation"]
+        "type": "content_extraction",
+        "instance_name": "(?P<name>Microsoft|MSFT|MS|Microsoft Corporation|Google|GOOG|Alphabet)"
       }
     ]
   },
@@ -950,8 +1102,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.95,
     "extraction_rules": [
       {
-        "type": "regex_pattern",
-        "pattern": "\\b[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"
+        "type": "content_extraction",
+        "instance_name": "(?P<name>\\b[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b)"
       }
     ]
   },
@@ -963,22 +1115,25 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.95,
     "extraction_rules": [
       {
-        "type": "keyword_match",
-        "keywords": ["revenue", "profit", "EBITDA", "earnings"]
+        "type": "content_extraction",
+        "instance_name": "(?P<name>revenue|profit|EBITDA|earnings|sales)"
       }
     ]
   },
   {
     "entity_type": "financial_metric",
     "domain": "financial",
-    "description": "Financial metrics from narrative contexts",
+    "description": "Financial metrics from narrative contexts with validation",
     "element_types": ["paragraph"],
     "confidence": 0.75,
     "extraction_rules": [
       {
-        "type": "text_similarity",
-        "reference_text": "quarterly revenue of $500 million",
-        "similarity_threshold": 0.7
+        "type": "content_extraction",
+        "instance_name": "(?P<name>revenue|profit|EBITDA|earnings|sales)",
+        "semantic_filter": {
+          "reference_concepts": ["quarterly revenue reporting", "financial performance metrics", "earnings statements"],
+          "similarity_threshold": 0.7
+        }
       }
     ]
   },
@@ -1033,6 +1188,288 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
 	return mappings, 1, len(response), nil
 }
 
+// defineEntityTypesMultiStep generates entity mappings using a multi-step approach:
+// Step 1: Generate universal entities (person, org, location, date) per domain
+// Step 2: Generate domain-specific custom entities
+// Step 3: Merge and return
+func (b *OntologyBuilder) defineEntityTypesMultiStep(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domains []Domain) ([]ElementEntityMapping, int, int, error) {
+	var allMappings []ElementEntityMapping
+	var totalLLMCalls int
+	var totalTokens int
+
+	// Step 1: Generate universal entities for each domain
+	fmt.Println("\n🔹 Step 1: Generating universal entity types (person, org, location, date) per domain...")
+	for _, domain := range domains {
+		mappings, calls, tokens, err := b.generateUniversalEntitiesForDomain(ctx, samples, topEntities, domain)
+		if err != nil {
+			return nil, totalLLMCalls + calls, totalTokens + tokens, fmt.Errorf("failed to generate universal entities for domain %s: %w", domain.Name, err)
+		}
+		allMappings = append(allMappings, mappings...)
+		totalLLMCalls += calls
+		totalTokens += tokens
+		fmt.Printf("  ✓ Generated %d universal entity mappings for domain '%s'\n", len(mappings), domain.Name)
+	}
+
+	// Step 2: Generate domain-specific custom entities for each domain
+	fmt.Println("\n🔹 Step 2: Generating domain-specific custom entity types...")
+	for _, domain := range domains {
+		mappings, calls, tokens, err := b.generateDomainSpecificEntities(ctx, samples, topEntities, domain)
+		if err != nil {
+			return nil, totalLLMCalls + calls, totalTokens + tokens, fmt.Errorf("failed to generate domain-specific entities for domain %s: %w", domain.Name, err)
+		}
+		allMappings = append(allMappings, mappings...)
+		totalLLMCalls += calls
+		totalTokens += tokens
+		fmt.Printf("  ✓ Generated %d domain-specific entity mappings for domain '%s'\n", len(mappings), domain.Name)
+	}
+
+	fmt.Printf("\n  ✅ Total entity mappings generated: %d (from %d LLM calls)\n", len(allMappings), totalLLMCalls)
+	return allMappings, totalLLMCalls, totalTokens, nil
+}
+
+// generateUniversalEntitiesForDomain generates universal entity types (person, org, location, date)
+// adapted for a specific domain's context
+func (b *OntologyBuilder) generateUniversalEntitiesForDomain(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMapping, int, int, error) {
+	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
+
+	// Define universal entity template descriptions (inline to avoid import cycle)
+	templatesDesc := `
+### PERSON
+- Description: Individual people including names, roles, identities
+- Suggested element types: paragraph, list_item, div, table_cell
+- Example patterns:
+  - Regex: \b([A-Z][a-z]+(?:\s+[A-Z]\\.)?(?:\s+[A-Z][a-z]+)+)\b (capitalized names)
+  - Keywords: Dr., Prof., CEO, President, Director
+  - Proximity filter: Match person names only when near biographical keywords (born, died, founded, created)
+
+### ORGANIZATION
+- Description: Companies, institutions, groups, agencies, foundations
+- Suggested element types: paragraph, list_item, div, table_cell
+- Example patterns:
+  - Regex: \b([A-Z][A-Za-z&\s]+(?:Inc|Corp|LLC|Ltd|Company|Foundation|Institute|University|Hospital|Bank|Group))\b
+  - Keywords: company, corporation, organization, institution, foundation
+  - Proximity filter: Match org names near keywords like founded, headquartered, acquired
+
+### LOCATION
+- Description: Geographic locations including cities, countries, addresses, regions
+- Suggested element types: paragraph, list_item, div, table_cell
+- Example patterns:
+  - Regex: \b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?\s*(?:USA|UK|Canada|France|Germany|China|Japan)?)\b
+  - Keywords: city, country, region, state, province, located in
+  - Named entity recognition patterns for place names
+
+### DATE
+- Description: Temporal references including dates, times, periods, durations
+- Suggested element types: paragraph, list_item, div, table_cell
+- Example patterns:
+  - Regex: \b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})\b
+  - Regex: \b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b
+  - Keywords: date, time, year, month, period
+`
+
+	// Format element types CLOSED LIST
+	elementTypeList := make([]string, len(b.substantiveTypes))
+	for i, et := range b.substantiveTypes {
+		elementTypeList[i] = fmt.Sprintf("  • **%s**", et)
+	}
+
+	prompt := fmt.Sprintf(`You MUST use element types from this CLOSED LIST ONLY:
+
+## ALLOWED ELEMENT TYPES
+%s
+
+## TASK: Generate Universal Entity Mappings for Domain "%s"
+
+**Domain Context:**
+- Name: %s
+- Description: %s
+- Owner: %s
+
+**Your Task:**
+Adapt the following UNIVERSAL entity types to this domain's specific context. For each universal type, create extraction rules that are tailored to how these entities appear in %s domain content.
+
+**Universal Entity Types to Generate:**
+%s
+
+**Domain Samples:**
+%s
+
+## OUTPUT REQUIREMENTS
+
+Generate a JSON array of entity mappings. For EACH of the 4 universal types (person, organization, location, date), you MUST create AT LEAST ONE mapping adapted to this domain.
+
+**JSON Format:**
+[
+  {
+    "entity_type": "person",
+    "domain": "%s",
+    "description": "People entities in %s domain (adapt to domain context)",
+    "element_types": ["paragraph", "div", "list_item"],
+    "confidence": 0.85,
+    "extraction_rules": [
+      {
+        "type": "content_extraction",
+        "instance_name": "(?P<name>...pattern for %s domain...)"
+      }
+    ]
+  }
+]
+
+**CRITICAL REQUIREMENTS:**
+- You MUST generate mappings for ALL 4 universal types: person, organization, location, date
+- Each mapping MUST be assigned to domain "%s"
+- Adapt extraction rules to %s domain context (keywords, patterns specific to this domain)
+- Use ONLY element types from the closed list above
+- Include domain-relevant examples in descriptions`,
+		strings.Join(elementTypeList, "\n"),
+		domain.Name,
+		domain.Name, domain.Description, domain.Owner,
+		domain.Name,
+		templatesDesc,
+		sampleTexts,
+		domain.Name, domain.Name, domain.Name,
+		domain.Name, domain.Name)
+
+	llmOptions := LLMOptions{
+		MaxTokens:    4000,
+		Temperature:  0.2, // Lower temperature for consistency
+		SystemPrompt: "You are an expert at adapting universal entity templates to domain-specific contexts.",
+	}
+
+	response, err := b.llmClient.Complete(ctx, prompt, llmOptions)
+	if err != nil {
+		return nil, 1, 0, err
+	}
+
+	var mappings []ElementEntityMapping
+	if err := b.extractJSON(response, &mappings); err != nil {
+		return nil, 1, len(response), err
+	}
+
+	// Validate: ensure all universal types are present
+	universalTypes := []string{"person", "organization", "location", "date"}
+	foundTypes := make(map[string]bool)
+	for _, m := range mappings {
+		foundTypes[m.EntityType] = true
+	}
+	for _, requiredType := range universalTypes {
+		if !foundTypes[requiredType] {
+			fmt.Printf("  ⚠ Warning: Universal type '%s' missing for domain '%s'\n", requiredType, domain.Name)
+		}
+	}
+
+	return mappings, 1, len(response), nil
+}
+
+// generateDomainSpecificEntities generates custom entity types specific to a domain
+// (beyond the universal person/org/location/date types)
+func (b *OntologyBuilder) generateDomainSpecificEntities(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMapping, int, int, error) {
+	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
+
+	// Format element types CLOSED LIST
+	elementTypeList := make([]string, len(b.substantiveTypes))
+	for i, et := range b.substantiveTypes {
+		elementTypeList[i] = fmt.Sprintf("  • **%s**", et)
+	}
+
+	// Format top entities relevant to this domain (filter by looking for domain keywords in entity text)
+	domainEntities := []string{}
+	for i, e := range topEntities {
+		if i >= 15 {
+			break
+		}
+		// Simple heuristic: include all for now, LLM will filter
+		domainEntities = append(domainEntities, fmt.Sprintf("%s (%d occurrences)", e.Entity, e.Count))
+	}
+
+	prompt := fmt.Sprintf(`You MUST use element types from this CLOSED LIST ONLY:
+
+## ALLOWED ELEMENT TYPES
+%s
+
+## TASK: Generate Domain-Specific Entity Types for "%s" Domain
+
+**Domain Context:**
+- Name: %s
+- Description: %s
+- Owner: %s
+
+**Your Task:**
+Identify and create DOMAIN-SPECIFIC entity types that are unique to the %s domain. These should be specialized entity types that go BEYOND the universal types (person, organization, location, date) which have already been generated.
+
+**Examples of Good Domain-Specific Types:**
+- medical domain: "medical_procedure", "diagnosis", "medication", "symptom"
+- banking domain: "financial_metric", "account_type", "transaction_type", "compliance_term"
+- government domain: "legislation", "policy", "government_program", "regulation"
+- technology domain: "programming_language", "framework", "protocol", "api_endpoint"
+
+**Top Entities Found in Corpus:**
+%s
+
+**Domain Samples:**
+%s
+
+## OUTPUT REQUIREMENTS
+
+Generate a JSON array of domain-specific entity mappings. Create 2-5 specialized entity types that are specific to %s domain.
+
+**DO NOT** generate person, organization, location, or date (those are already handled).
+
+**JSON Format:**
+[
+  {
+    "entity_type": "medical_procedure",
+    "domain": "%s",
+    "description": "Medical procedures and interventions specific to clinical practice",
+    "element_types": ["paragraph", "list_item"],
+    "confidence": 0.80,
+    "extraction_rules": [
+      {
+        "type": "content_extraction",
+        "instance_name": "(?P<name>...domain-specific pattern...)",
+        "proximity_filter": {
+          "keywords": ["procedure", "treatment", "surgery"],
+          "max_distance": 100
+        }
+      }
+    ]
+  }
+]
+
+**CRITICAL REQUIREMENTS:**
+- All mappings MUST be assigned to domain "%s"
+- Use ONLY element types from the closed list above
+- Focus on domain-SPECIFIC entity types (not universal types)
+- If no good domain-specific types exist, return an empty array []`,
+		strings.Join(elementTypeList, "\n"),
+		domain.Name,
+		domain.Name, domain.Description, domain.Owner,
+		domain.Name,
+		strings.Join(domainEntities, "\n"),
+		sampleTexts,
+		domain.Name,
+		domain.Name,
+		domain.Name)
+
+	llmOptions := LLMOptions{
+		MaxTokens:    4000,
+		Temperature:  0.3,
+		SystemPrompt: "You are an expert at identifying domain-specific entity types that capture specialized concepts beyond universal types.",
+	}
+
+	response, err := b.llmClient.Complete(ctx, prompt, llmOptions)
+	if err != nil {
+		return nil, 1, 0, err
+	}
+
+	var mappings []ElementEntityMapping
+	if err := b.extractJSON(response, &mappings); err != nil {
+		return nil, 1, len(response), err
+	}
+
+	return mappings, 1, len(response), nil
+}
+
 // defineRelationshipTypes asks LLM to define relationship types
 func (b *OntologyBuilder) defineRelationshipTypes(ctx context.Context, samples *sampler.SamplingResult, entityMappings []ElementEntityMapping) ([]EntityRelationshipRule, int, int, error) {
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
@@ -1062,7 +1499,7 @@ All extraction patterns are BINARY (TRUE/FALSE match). Confidence is assigned at
 
 ## EXTRACTION PATTERNS
 
-For each relationship type, discover MULTIPLE extraction patterns:
+For each relationship type, discover MULTIPLE extraction patterns (aim for 3-6 patterns per rule to maximize coverage):
 
 1. **TEXT TEMPLATE PATTERNS** - Textual patterns with entity placeholders:
    - Example: "{person} is CEO of {organization}"
@@ -1070,6 +1507,7 @@ For each relationship type, discover MULTIPLE extraction patterns:
    - Example: "{person} works at {organization} as {role}"
    - Use {entity_type} placeholders for entities
    - Pattern returns: TRUE if template matches, FALSE otherwise
+   - **IMPORTANT**: Create MULTIPLE templates for different phrasings of the same relationship
 
 2. **PROXIMITY PATTERNS** - Entities near each other with signal words:
    - Signal words indicating relationship (e.g., ["CEO", "president", "director"] for leadership)
@@ -1077,41 +1515,100 @@ For each relationship type, discover MULTIPLE extraction patterns:
    - Direction: "forward", "backward", "bidirectional"
    - Example: person within 10 tokens of organization with signals ["CEO", "president"]
    - Pattern returns: TRUE if entities + signals found within distance, FALSE otherwise
+   - **IMPORTANT**: Include comprehensive lists of signal words (10-20 words per pattern)
 
 3. **REGEX PATTERNS** - Complex patterns with named entity groups:
    - Use named groups: (?P<person>...) and (?P<organization>...)
    - Example: "(?P<person>[A-Z][a-z]+ [A-Z][a-z]+),\\s+CEO\\s+of\\s+(?P<org>[A-Z][^,]+)"
    - Use for highly structured text
    - Pattern returns: TRUE if regex matches, FALSE otherwise
+   - **IMPORTANT**: Create multiple regex variants to handle formatting variations
 
 4. **COOCCURRENCE PATTERNS** - Statistical co-occurrence:
    - Entities appear together in same context
    - Context window: "paragraph", "sentence", "element"
    - Required keywords to strengthen confidence
    - Pattern returns: TRUE if entities cooccur in context, FALSE otherwise
+   - **IMPORTANT**: Include extensive keyword lists (15-30 keywords per pattern)
+
+## MAXIMIZE RELATIONSHIP DISCOVERY
+
+**CRITICAL INSTRUCTIONS**:
+1. Generate AT LEAST 3-6 extraction patterns per relationship rule (more patterns = more matches)
+2. For each entity type pair (e.g., person-organization), create 2-4 relationship rules with different confidence levels
+3. Use COMPREHENSIVE signal word/keyword lists (aim for 10-30 words per proximity/cooccurrence pattern)
+4. Consider synonyms, variations, and domain-specific terminology in all patterns
+5. Use entity constraints (source_constraints/target_constraints) when relationships only apply to specific entity subtypes
 
 ## MULTIPLE RULES FOR SAME RELATIONSHIP
 
-You can create MULTIPLE rules for the same relationship name with different confidence levels:
-- Explicit template pattern (confidence: 0.95)
-- Proximity pattern (confidence: 0.75)
+You SHOULD create MULTIPLE rules for the same relationship type with different confidence levels and pattern types:
+- High confidence: Explicit template patterns (confidence: 0.95)
+- Medium confidence: Regex and proximity patterns (confidence: 0.80-0.85)
+- Lower confidence: Cooccurrence patterns with keywords (confidence: 0.70-0.75)
 
 When multiple rules detect same relationship → HIGHEST confidence wins.
+
+## ENTITY CONSTRAINTS (USE FREQUENTLY)
+
+You should use entity constraints to create specialized relationship rules that only apply to specific entity subtypes:
+
+- source_constraints (object, optional): Filters that source entities must satisfy
+- target_constraints (object, optional): Filters that target entities must satisfy
+
+**Constraint Fields** (all optional, applied in order):
+1. pattern (string): Pre-filter regex - entity name must match (e.g., "\\b(Dr|Professor)\\b.*" for academics)
+2. proximity_filter (object): Co-occurrence filter on entity context
+   - required_keywords: Keywords that must appear in entity's context
+   - window_size: Context window in tokens
+3. instance_name (string): Named capture regex - entity name must match
+4. semantic_filter (object): Embedding similarity on entity context
+   - query: Semantic query describing the entity subtype
+   - similarity_threshold: Minimum similarity (0.0-1.0)
+
+**Example Use Cases**:
+- Only link people with academic titles (Dr, Professor) to universities
+- Only link Fortune 500 companies to specific business relationships
+- Only link capital cities to geopolitical relationships
+- Only link medical specialties with specific anatomical structures
+
+**Example with Constraints**:
+{
+  "name": "academic_affiliated_with_university",
+  "source_entity_type": "person",
+  "target_entity_type": "organization",
+  "relationship_type": "part_of",
+  "description": "Academic personnel affiliated with university",
+  "confidence": 0.90,
+  "source_constraints": {
+    "proximity_filter": {
+      "required_keywords": ["Dr", "Professor", "PhD", "researcher", "faculty", "academic"],
+      "window_size": 50
+    }
+  },
+  "target_constraints": {
+    "proximity_filter": {
+      "required_keywords": ["University", "College", "Institute", "School"],
+      "window_size": 30
+    }
+  },
+  "extraction_patterns": [...]
+}
 
 Return JSON array (NO confidence in extraction_patterns, confidence at RULE level):
 [
   {
-    "name": "person_leads_organization",
+    "name": "person_leads_organization_explicit",
     "source_entity_type": "person",
     "target_entity_type": "organization",
     "relationship_type": "part_of",
-    "description": "Person in leadership role at organization",
+    "description": "Person in explicit leadership role at organization (high confidence)",
     "confidence": 0.95,
     "extraction_patterns": [
       {
         "type": "text_template",
         "template": "{person} is CEO of {organization}",
-        "examples": ["John Smith is CEO of Acme Corp", "Jane Doe is CEO of TechCo"]
+        "examples": ["John Smith is CEO of Acme Corp"]
       },
       {
         "type": "text_template",
@@ -1119,33 +1616,68 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
         "examples": ["John Smith, CEO of Acme Corp, announced..."]
       },
       {
+        "type": "text_template",
+        "template": "{person} serves as {role} at {organization}"
+      },
+      {
         "type": "regex",
-        "pattern": "(?P<person>[A-Z][a-z]+ [A-Z][a-z]+),\\s+(?:CEO|President)\\s+of\\s+(?P<organization>[A-Z][^,]+)"
+        "pattern": "(?P<person>[A-Z][a-z]+ [A-Z][a-z]+),\\s+(?:CEO|President|Director)\\s+of\\s+(?P<organization>[A-Z][^,]+)"
+      },
+      {
+        "type": "regex",
+        "pattern": "(?P<organization>[A-Z][^,]+)'s\\s+(?:CEO|President|Director),?\\s+(?P<person>[A-Z][a-z]+ [A-Z][a-z]+)"
       }
     ]
   },
   {
-    "name": "person_near_organization",
+    "name": "person_leads_organization_proximity",
     "source_entity_type": "person",
     "target_entity_type": "organization",
-    "relationship_type": "related_to",
-    "description": "Person associated with organization (lower confidence)",
-    "confidence": 0.75,
+    "relationship_type": "part_of",
+    "description": "Person in leadership role detected via proximity (medium confidence)",
+    "confidence": 0.80,
     "extraction_patterns": [
       {
         "type": "proximity",
-        "signal_words": ["CEO", "president", "director", "chief executive", "works at", "employed by"],
+        "signal_words": ["CEO", "president", "director", "chief executive", "chief operating officer", "COO", "CFO", "chief financial officer", "CTO", "chief technology officer", "chairman", "chairwoman", "managing director", "executive director", "vice president", "VP"],
         "max_distance": 10,
         "direction": "bidirectional"
+      },
+      {
+        "type": "proximity",
+        "signal_words": ["leads", "manages", "heads", "oversees", "runs", "founded", "established", "created"],
+        "max_distance": 8,
+        "direction": "forward"
       }
     ]
   },
   {
-    "name": "company_acquired_company",
+    "name": "person_works_at_organization",
+    "source_entity_type": "person",
+    "target_entity_type": "organization",
+    "relationship_type": "part_of",
+    "description": "Person employed by organization (medium-low confidence)",
+    "confidence": 0.70,
+    "extraction_patterns": [
+      {
+        "type": "proximity",
+        "signal_words": ["works at", "employed by", "employee of", "staff member", "team member", "works for", "hired by", "joined", "position at", "role at"],
+        "max_distance": 12,
+        "direction": "bidirectional"
+      },
+      {
+        "type": "cooccurrence",
+        "context_window": "paragraph",
+        "required_keywords": ["works", "employed", "employee", "staff", "team", "position", "role", "job", "career", "hired", "joined", "working"]
+      }
+    ]
+  },
+  {
+    "name": "organization_acquired_organization_explicit",
     "source_entity_type": "organization",
     "target_entity_type": "organization",
     "relationship_type": "related_to",
-    "description": "Organization acquired another organization",
+    "description": "Organization acquired another (high confidence)",
     "confidence": 0.95,
     "extraction_patterns": [
       {
@@ -1155,26 +1687,45 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
       {
         "type": "text_template",
         "template": "{organization} purchased {organization}"
+      },
+      {
+        "type": "text_template",
+        "template": "{organization} bought {organization}"
+      },
+      {
+        "type": "regex",
+        "pattern": "(?P<organization1>[A-Z][A-Za-z0-9 ]+)\\s+(?:acquired|purchased|bought)\\s+(?P<organization2>[A-Z][A-Za-z0-9 ]+)"
       }
     ]
   },
   {
-    "name": "company_near_company_acquisition",
+    "name": "organization_acquired_organization_proximity",
     "source_entity_type": "organization",
     "target_entity_type": "organization",
     "relationship_type": "related_to",
-    "description": "Potential acquisition relationship (lower confidence)",
+    "description": "Potential acquisition detected via proximity (medium confidence)",
     "confidence": 0.80,
     "extraction_patterns": [
       {
         "type": "proximity",
-        "signal_words": ["acquired", "purchased", "bought", "acquisition"],
+        "signal_words": ["acquired", "purchased", "bought", "acquisition", "purchase", "takeover", "merger", "merged with", "acquired by", "buyout", "deal", "transaction"],
         "max_distance": 15,
-        "direction": "forward"
+        "direction": "bidirectional"
+      },
+      {
+        "type": "cooccurrence",
+        "context_window": "sentence",
+        "required_keywords": ["acquired", "acquisition", "purchased", "purchase", "bought", "merger", "takeover", "deal", "buyout", "transaction", "agreement", "announced"]
       }
     ]
   }
-]`, strings.Join(entityTypes, ", "), sampleTexts)
+]
+
+**REMEMBER**:
+- Generate 3-6 extraction patterns per rule for maximum coverage
+- Create 2-4 relationship rules per entity type pair at different confidence levels
+- Use comprehensive signal word lists (10-30 words)
+- Use entity constraints when relationships apply only to specific subtypes`, strings.Join(entityTypes, ", "), sampleTexts)
 
 	// Call LLM with or without MCP tools
 	var response string
@@ -1342,13 +1893,6 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 	}
 
 	return nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (b *OntologyBuilder) log(result *BuildResult, message string) {
