@@ -139,10 +139,12 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 	var entities []Entity
 	entityMap := make(map[string]*Entity) // Deduplicate by <type>.<name> (case-insensitive)
 
-	log.Printf("DEBUG: Starting entity extraction with %d entity mappings", len(e.schema.ElementEntityMappings))
+	// Use computed mappings (runtime representation with inherited/computed fields)
+	computedMappings := e.schema.GetComputedMappings()
+	log.Printf("DEBUG: Starting entity extraction with %d entity mappings", len(computedMappings))
 
 	// Process each entity mapping in the schema
-	for _, mapping := range e.schema.ElementEntityMappings {
+	for _, mapping := range computedMappings {
 		// Filter elements by type
 		relevantElements := e.filterElementsByType(elements, mapping.ElementTypes)
 		log.Printf("DEBUG: Entity type %s: processing %d relevant elements with %d rules",

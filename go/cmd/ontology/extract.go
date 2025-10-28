@@ -445,11 +445,12 @@ func processEntityTask(
 	task *ontology.ExtractionTask,
 	conceptEmbeddings map[string][]float64,
 ) error {
-	// Find all mappings for this entity type
+	// Find all mappings for this entity type (use computed runtime mappings)
+	computedMappings := schema.GetComputedMappings()
 	var mappings []*ontology.ElementEntityMapping
-	for i := range schema.ElementEntityMappings {
-		if string(schema.ElementEntityMappings[i].EntityType) == task.EntityType {
-			mappings = append(mappings, &schema.ElementEntityMappings[i])
+	for i := range computedMappings {
+		if string(computedMappings[i].EntityType) == task.EntityType {
+			mappings = append(mappings, &computedMappings[i])
 		}
 	}
 
@@ -1059,8 +1060,9 @@ func formatDocIDList(docIDs []string) string {
 func collectReferenceConcepts(schema ontology.OntologySchema) []string {
 	conceptsMap := make(map[string]bool)
 
-	// Iterate through all entity mappings
-	for _, mapping := range schema.ElementEntityMappings {
+	// Iterate through all entity mappings (use computed runtime mappings)
+	computedMappings := schema.GetComputedMappings()
+	for _, mapping := range computedMappings {
 		// Check each extraction rule for semantic_filter
 		for _, rule := range mapping.ExtractionRules {
 			if rule.SemanticFilter != nil {
