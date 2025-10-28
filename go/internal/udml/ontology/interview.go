@@ -593,7 +593,7 @@ Apply changes and return updated domain list as JSON array.`, strings.TrimSpace(
 		Version:                 ib.builder.config.SchemaVersion,
 		LLMModel:                ib.builder.config.LLMModel, // Preserve LLM model configuration
 		Domains:                 domains,
-		ElementEntityMappings:   []ElementEntityMapping{},
+		ElementEntityMappings:   []ElementEntityMappingConfig{},
 		EntityRelationshipRules: []EntityRelationshipRule{},
 		CreatedAt:               time.Now(),
 	}
@@ -662,7 +662,7 @@ func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx context.Context) (b
 	fmt.Printf("\nENTITY TYPES (%d):\n", len(ib.schema.ElementEntityMappings))
 	fmt.Println(strings.Repeat("-", 80))
 	// Group by domain
-	byDomain := make(map[string][]ElementEntityMapping)
+	byDomain := make(map[string][]ElementEntityMappingConfig)
 	for _, m := range ib.schema.ElementEntityMappings {
 		byDomain[m.Domain] = append(byDomain[m.Domain], m)
 	}
