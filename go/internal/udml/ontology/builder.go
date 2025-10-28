@@ -365,7 +365,142 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 		CreatedAt:               time.Now(),
 	}
 
+	// Merge global catalog into schema (adds 37 global entity types + relationships)
+	if err := b.mergeGlobalCatalog(schema); err != nil {
+		return nil, llmCalls, totalTokens, fmt.Errorf("failed to merge global catalog: %w", err)
+	}
+
 	return schema, llmCalls, totalTokens, nil
+}
+
+// GlobalCatalogSchema represents the structure of a global catalog YAML file
+type GlobalCatalogSchema struct {
+	Domain       string                          `yaml:"domain"`
+	Description  string                          `yaml:"description"`
+	Subdomains   []string                        `yaml:"subdomains,omitempty"`
+	EntityTypes  []GlobalEntityTypeTemplate      `yaml:"entity_types"`
+	Relationships []GlobalRelationshipTemplate   `yaml:"relationships,omitempty"`
+}
+
+// GlobalEntityTypeTemplate represents an entity type in the global catalog
+type GlobalEntityTypeTemplate struct {
+	EntityType   string           `yaml:"entity_type"`
+	ParentType   string           `yaml:"parent_type,omitempty"`
+	WCategory    string           `yaml:"w_category,omitempty"`
+	Domain       string           `yaml:"domain,omitempty"`
+	Description  string           `yaml:"description"`
+	ElementTypes []string         `yaml:"element_types,omitempty"`
+	SampleRules  []ExtractionRule `yaml:"sample_rules,omitempty"`
+}
+
+// GlobalRelationshipTemplate represents a relationship template in the global catalog
+type GlobalRelationshipTemplate struct {
+	Name             string           `yaml:"name"`
+	SourceType       string           `yaml:"source_type"`
+	TargetType       string           `yaml:"target_type"`
+	RelationshipType RelationshipType `yaml:"relationship_type"`
+	Description      string           `yaml:"description,omitempty"`
+}
+
+// mergeGlobalCatalog merges global domain catalog into generated schema
+// Adds 37 global entity types and global relationships to every schema
+func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
+	// Try multiple paths for global catalog directory
+	catalogPaths := []string{
+		"./catalogs/global",       // From project root
+		"../catalogs/global",      // From go/ directory
+		"../../catalogs/global",   // From subdirectory
+	}
+
+	var globalCatalogPath string
+	for _, path := range catalogPaths {
+		if _, err := os.Stat(path); err == nil {
+			globalCatalogPath = path
+			break
+		}
+	}
+
+	if globalCatalogPath == "" {
+		return fmt.Errorf("global catalog directory not found (tried: %v)", catalogPaths)
+	}
+
+	// Find all YAML files in global catalog directory
+	yamlFiles, err := filepath.Glob(filepath.Join(globalCatalogPath, "*.yaml"))
+	if err != nil {
+		return fmt.Errorf("failed to glob YAML files: %w", err)
+	}
+
+	// Also check for .yml extension
+	ymlFiles, err := filepath.Glob(filepath.Join(globalCatalogPath, "*.yml"))
+	if err != nil {
+		return fmt.Errorf("failed to glob YML files: %w", err)
+	}
+	yamlFiles = append(yamlFiles, ymlFiles...)
+
+	if len(yamlFiles) == 0 {
+		return fmt.Errorf("no global catalog YAML files found in %s", globalCatalogPath)
+	}
+
+	// Load and parse each catalog file
+	var globalEntities []ElementEntityMappingConfig
+	var globalRels []EntityRelationshipRule
+
+	for _, filePath := range yamlFiles {
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", filePath, err)
+		}
+
+		var catalog GlobalCatalogSchema
+		if err := yaml.Unmarshal(data, &catalog); err != nil {
+			return fmt.Errorf("failed to parse %s: %w", filePath, err)
+		}
+
+		// Collect entity types from this catalog
+		for _, entityTemplate := range catalog.EntityTypes {
+			globalEntities = append(globalEntities, ElementEntityMappingConfig{
+				EntityType:      entityTemplate.EntityType,
+				ParentType:      entityTemplate.ParentType,
+				Domain:          entityTemplate.Domain,
+				WCategory:       entityTemplate.WCategory,
+				Description:     entityTemplate.Description,
+				ElementTypes:    entityTemplate.ElementTypes,
+				Confidence:      0.75, // Default confidence for global types
+				ExtractionRules: entityTemplate.SampleRules,
+			})
+		}
+
+		// Collect relationship rules from this catalog
+		for _, relTemplate := range catalog.Relationships {
+			globalRels = append(globalRels, EntityRelationshipRule{
+				Name:             relTemplate.Name,
+				SourceEntityType: relTemplate.SourceType,
+				TargetEntityType: relTemplate.TargetType,
+				RelationshipType: relTemplate.RelationshipType,
+				Description:      relTemplate.Description,
+				Confidence:       0.70, // Default confidence for global relationship patterns
+			})
+		}
+	}
+
+	// Prepend global entities to schema (global entities come BEFORE domain-specific)
+	schema.ElementEntityMappings = append(globalEntities, schema.ElementEntityMappings...)
+
+	// Append global relationships to schema (after domain-specific relationships)
+	schema.EntityRelationshipRules = append(schema.EntityRelationshipRules, globalRels...)
+
+	// Add global domain to domains list (prepend so it appears first)
+	globalDomain := Domain{
+		Name:        "global",
+		Description: "Universal entity types and baseline patterns (37 types across 6 W's)",
+		Owner:       "System",
+	}
+	schema.Domains = append([]Domain{globalDomain}, schema.Domains...)
+
+	fmt.Printf("DEBUG: Merged %d global entities and %d global relationships from %d catalog files\n",
+		len(globalEntities), len(globalRels), len(yamlFiles))
+
+	return nil
 }
 
 // loadPredefinedDomains loads domain names and descriptions from catalog YAML files
