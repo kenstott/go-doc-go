@@ -101,19 +101,36 @@ func (e *RuleBasedExtractor) ExtractFromElements(ctx context.Context, docID stri
 		UpdatedAt:     time.Now(),
 	}
 
-	// Extract entities using schema rules
-	entities, err := e.extractEntities(ctx, elements)
+	// STEP 1: Extract entities (with duplicates from multiple definitions)
+	extractedEntities, err := e.extractEntities(ctx, elements)
 	if err != nil {
 		return nil, fmt.Errorf("entity extraction failed: %w", err)
 	}
-	ontology.Entities = entities
 
-	// Extract relationships using schema rules
-	relationships, err := e.extractRelationships(ctx, elements, entities)
+	// STEP 2: Canonicalize (deduplicate, merge mentions, keep highest confidence)
+	canonicalLeaves, err := e.canonicalizeEntities(extractedEntities)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalization failed: %w", err)
+	}
+
+	// STEP 3: Materialize missing ancestors (walk up, create composites as needed)
+	compositeAncestors, isaRelationships, err := e.MaterializeMissingAncestors(canonicalLeaves, e.schema)
+	if err != nil {
+		return nil, fmt.Errorf("hierarchy materialization failed: %w", err)
+	}
+
+	// STEP 4: Combine canonical leaves + canonical composites
+	allCanonicalEntities := append(canonicalLeaves, compositeAncestors...)
+	ontology.Entities = allCanonicalEntities
+
+	// STEP 5: Extract domain relationships (between canonical entities only)
+	domainRelationships, err := e.extractRelationships(ctx, elements, allCanonicalEntities)
 	if err != nil {
 		return nil, fmt.Errorf("relationship extraction failed: %w", err)
 	}
-	ontology.Relationships = relationships
+
+	// STEP 6: Combine IS-A + domain relationships
+	ontology.Relationships = append(isaRelationships, domainRelationships...)
 
 	// Set metadata
 	ontology.Metadata = OntologyMeta{
@@ -336,12 +353,148 @@ func (e *RuleBasedExtractor) checkProximityFilter(content string, entityName str
 	return false
 }
 
+// canonicalizeEntities deduplicates entities by merging duplicates
+// Key: name|type|element_id
+// Strategy: Keep highest confidence, merge mentions
+func (e *RuleBasedExtractor) canonicalizeEntities(extractedEntities []Entity) ([]Entity, error) {
+	// Canonical index: key -> entity
+	canonicalIndex := make(map[string]*Entity)
+
+	for _, entity := range extractedEntities {
+		// Canonical key: name + type + element_id
+		key := entity.Name + "|" + string(entity.Type) + "|" + entity.ElementID
+
+		if canonical, exists := canonicalIndex[key]; exists {
+			// Merge: Keep highest confidence, combine mentions
+			if entity.Confidence > canonical.Confidence {
+				canonical.Confidence = entity.Confidence
+			}
+			// Merge mentions from both entities
+			canonical.Mentions = append(canonical.Mentions, entity.Mentions...)
+		} else {
+			// First occurrence - make canonical
+			entityCopy := entity
+			canonicalIndex[key] = &entityCopy
+		}
+	}
+
+	// Convert map to slice
+	var canonicalEntities []Entity
+	for _, entity := range canonicalIndex {
+		canonicalEntities = append(canonicalEntities, *entity)
+	}
+
+	return canonicalEntities, nil
+}
+
+// MaterializeMissingAncestors creates composite parent entities and IS-A relationships
+// Called AFTER canonicalization
+// Only works with canonical entities (no duplicates)
+func (e *RuleBasedExtractor) MaterializeMissingAncestors(canonicalLeaves []Entity, schema *OntologySchema) ([]Entity, []Relationship, error) {
+	var compositeEntities []Entity
+	var isaRelationships []Relationship
+
+	// Build entity type map for lookup (computed mappings after ComputeHierarchies)
+	entityTypeMap := make(map[string]*ElementEntityMapping)
+
+	// First pass: populate map with computed mappings
+	for i := range e.schema.computedMappings {
+		mapping := &e.schema.computedMappings[i]
+		key := mapping.Domain + "." + mapping.EntityType
+		if _, exists := entityTypeMap[key]; !exists {
+			entityTypeMap[key] = mapping
+		}
+	}
+
+	// Canonical index for composites (prevent duplicates during materialization)
+	// Key: name|type|element_id
+	canonicalIndex := make(map[string]*Entity)
+
+	// For each canonical leaf entity, walk up parent chain
+	for _, leafEntity := range canonicalLeaves {
+		currentEntity := leafEntity
+		currentKey := leafEntity.Domain + "." + string(leafEntity.Type)
+
+		// Walk up hierarchy
+		for {
+			mapping := entityTypeMap[currentKey]
+			if mapping == nil || mapping.ParentType == "" {
+				break // Reached top or orphan
+			}
+
+			parentMapping := entityTypeMap[mapping.ParentType]
+			if parentMapping == nil {
+				break // Invalid parent
+			}
+
+			// Check if parent already exists in canonical index
+			canonicalKey := currentEntity.Name + "|" + parentMapping.EntityType + "|" + currentEntity.ElementID
+
+			var parentEntity *Entity
+			if cached, exists := canonicalIndex[canonicalKey]; exists {
+				// Reuse existing canonical composite
+				parentEntity = cached
+			} else {
+				// Materialize new canonical composite (synthesized entity)
+				parentEntity = &Entity{
+					ID:      e.generateID("ent"),
+					Name:    currentEntity.Name, // Inherit name from child
+					Type:    EntityType(parentMapping.EntityType),
+					Domain:  parentMapping.Domain,
+					Attributes: map[string]interface{}{
+						"synthesized": true, // Created during materialization (not extracted)
+						"w_category":  parentMapping.WCategory,
+					},
+					ElementID: currentEntity.ElementID,
+					Mentions:  currentEntity.Mentions, // Inherit mentions
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}
+				compositeEntities = append(compositeEntities, *parentEntity)
+				canonicalIndex[canonicalKey] = parentEntity
+			}
+
+			// Create IS-A relationship: child IS-A parent (only between canonical entities)
+			isaRelationships = append(isaRelationships, Relationship{
+				ID:       e.generateID("rel"),
+				Type:     RelationshipIsA,
+				Domain:   currentEntity.Domain,
+				SourceID: currentEntity.ID,
+				TargetID: parentEntity.ID,
+				Confidence: 1.0,
+				Attributes: map[string]interface{}{
+					"hierarchy_level": "direct_parent",
+				},
+				ElementID: currentEntity.ElementID,
+				Evidence:  fmt.Sprintf("%s is a %s", currentEntity.Type, parentEntity.Type),
+				CreatedAt: time.Now(),
+			})
+
+			// Move up hierarchy
+			currentEntity = *parentEntity
+			currentKey = mapping.ParentType
+		}
+	}
+
+	return compositeEntities, isaRelationships, nil
+}
+
 // extractRelationships extracts relationships based on schema rules and extracted entities
+// Only creates relationships between extracted entities (synthesized=false)
 func (e *RuleBasedExtractor) extractRelationships(ctx context.Context, elements []Element, entities []Entity) ([]Relationship, error) {
 	var relationships []Relationship
 
-	// Build entity index by type and element
-	entityIndex := e.buildEntityIndex(entities)
+	// Build index of extracted entities only (synthesized=false)
+	extractedEntities := make([]Entity, 0, len(entities))
+	for _, entity := range entities {
+		// Only include entities that were extracted (not synthesized)
+		if synthesized, ok := entity.Attributes["synthesized"].(bool); !ok || !synthesized {
+			extractedEntities = append(extractedEntities, entity)
+		}
+	}
+
+	// Build entity index by type and element (extracted entities only)
+	entityIndex := e.buildEntityIndex(extractedEntities)
 
 	// Apply each relationship rule
 	for _, rule := range e.schema.EntityRelationshipRules {
