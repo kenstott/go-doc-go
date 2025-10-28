@@ -3,6 +3,7 @@ package ontology
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -146,14 +147,6 @@ func (s *OntologySchema) GetComputedMappings() []ElementEntityMapping {
 	return s.computedMappings
 }
 
-// ExtractionRuleType defines the type of extraction rule
-type ExtractionRuleType string
-
-const (
-	RuleTypeContent  ExtractionRuleType = "content_extraction" // Extract from element content using regex with optional filters
-	RuleTypeMetadata ExtractionRuleType = "metadata_field"     // Extract from element metadata
-	RuleTypeJSONPath ExtractionRuleType = "jsonpath_query"     // Extract using JSONPath expressions
-)
 
 // SemanticFilter validates entity matches using element-level semantic similarity
 type SemanticFilter struct {
@@ -190,27 +183,33 @@ type LLMValidationPrompt struct {
 
 // ExtractionRule defines a rule for extracting entities
 //
-// UNIFIED CONTENT EXTRACTION:
-//   - instance_name: REQUIRED - regex with (?P<name>...) capture group to extract entity name
-//     - Can include keywords as OR patterns: (?P<name>keyword1|keyword2|keyword3)
-//   - Optional pre-filters (applied before instance_name extraction, in order of cost):
-//     1. pattern: regex pattern match (cheap - pre-filter on content before extraction)
-//     2. proximity_filter: entity must appear near certain terms (moderate cost)
-//     3. semantic_filter: embedding similarity (expensive - applied last)
+// EXTRACTION METHODS (choose ONE):
+//   - phrase_list: List of exact phrases to match (simple keyword extraction)
+//   - instance_name: Regex with (?P<name>...) capture group to extract entity name
 //
-// METADATA EXTRACTION:
-//   - field_path: metadata JSON path
-//   - jsonpath_expr: JSONPath query
+// UNIVERSAL ADDRESSING (optional):
+//   - jsonpath: JSONPath expression to narrow scope before extraction
+//
+// PRE-FILTERS (all optional, applied in order, AND logic, fail-fast):
+//   1. pattern: Regex pattern match (cheap - pre-filter on content before extraction)
+//   2. proximity: Entity must appear near certain terms (moderate cost)
+//   3. dictionary: Linguistic/dictionary validation (moderate cost)
+//   4. semantic: Embedding similarity (expensive - applied last)
+//   5. llm_validation: LLM-based validation (most expensive - applied during canonicalization)
 type ExtractionRule struct {
-	Type                 ExtractionRuleType   `json:"type" yaml:"type"`                                                       // Rule type (content_extraction, metadata_field, jsonpath_query)
-	InstanceName         string               `json:"instance_name,omitempty" yaml:"instance_name,omitempty"`                 // REQUIRED for content_extraction: regex with (?P<name>...) to extract entity name
-	Pattern              string               `json:"pattern,omitempty" yaml:"pattern,omitempty"`                             // Optional pre-filter: regex pattern (applied first - cheapest)
-	ProximityFilter      *ProximityFilter     `json:"proximity_filter,omitempty" yaml:"proximity_filter,omitempty"`           // Optional pre-filter: entity must appear near certain terms (applied second - moderate cost)
-	SemanticFilter       *SemanticFilter      `json:"semantic_filter,omitempty" yaml:"semantic_filter,omitempty"`             // Optional pre-filter: embedding similarity (applied last - most expensive)
-	FieldPath            string               `json:"field_path,omitempty" yaml:"field_path,omitempty"`                       // Metadata field path (for metadata_field)
-	JSONPathExpr         string               `json:"jsonpath_expr,omitempty" yaml:"jsonpath_expr,omitempty"`                 // JSONPath expression (for jsonpath_query)
-	DictionaryFilter     *DictionaryFilter    `json:"dictionary_filter,omitempty" yaml:"dictionary_filter,omitempty"`         // Optional linguistic/dictionary validation (AND condition)
-	LLMFalsePositiveTest *LLMValidationPrompt `json:"llm_false_positive_test,omitempty" yaml:"llm_false_positive_test,omitempty"` // Optional LLM-based false positive filtering (applied during canonicalization)
+	// Universal addressing (OPTIONAL)
+	JSONPath string `json:"jsonpath,omitempty" yaml:"jsonpath,omitempty"` // JSONPath to narrow scope before extraction
+
+	// Extraction methods (choose ONE)
+	PhraseList   []string `json:"phrase_list,omitempty" yaml:"phrase_list,omitempty"`     // List of exact phrases to match
+	InstanceName string   `json:"instance_name,omitempty" yaml:"instance_name,omitempty"` // Regex with (?P<name>...) capture group
+
+	// Pre-filters (all OPTIONAL, AND logic, fail-fast)
+	Pattern       string            `json:"pattern,omitempty" yaml:"pattern,omitempty"`               // Regex pattern pre-filter
+	Proximity     *ProximityFilter  `json:"proximity,omitempty" yaml:"proximity,omitempty"`           // Co-occurrence filter
+	Dictionary    *DictionaryFilter `json:"dictionary,omitempty" yaml:"dictionary,omitempty"`         // Linguistic validation
+	Semantic      *SemanticFilter   `json:"semantic,omitempty" yaml:"semantic,omitempty"`             // Embedding similarity
+	LLMValidation *LLMValidationPrompt `json:"llm_validation,omitempty" yaml:"llm_validation,omitempty"` // LLM-based validation
 }
 
 // RelationshipExtractionPatternType defines types of relationship extraction patterns
@@ -578,62 +577,51 @@ func (s *OntologySchema) Validate() error {
 
 		// Validate extraction rules
 		for j, rule := range mapping.ExtractionRules {
-			switch rule.Type {
-			// Modern unified content extraction
-			case RuleTypeContent:
-				// instance_name is REQUIRED
-				if rule.InstanceName == "" {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: content_extraction requires instance_name with regex pattern (e.g., (?P<name>.+))", i, mapping.EntityType, j))
-				}
-				// At least one filter is recommended (pattern, proximity_filter, or semantic_filter)
-				hasFilter := rule.Pattern != "" || rule.ProximityFilter != nil || rule.SemanticFilter != nil
-				if !hasFilter {
-					fmt.Printf("Warning: entity mapping %d (%s), rule %d: content_extraction has no filters (pattern/proximity_filter/semantic_filter) - will match all elements\n", i, mapping.EntityType, j)
-				}
-				// Validate proximity_filter if present
-				if rule.ProximityFilter != nil {
-					if len(rule.ProximityFilter.CooccurrenceTerms) == 0 {
-						return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: proximity_filter requires cooccurrence_terms", i, mapping.EntityType, j))
-					}
-					// Validate distance_unit if specified
-					if rule.ProximityFilter.DistanceUnit != "" {
-						validUnits := map[string]bool{"element": true, "word": true, "character": true}
-						if !validUnits[rule.ProximityFilter.DistanceUnit] {
-							return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid proximity_filter.distance_unit: %s (must be 'element', 'word', or 'character')", i, mapping.EntityType, j, rule.ProximityFilter.DistanceUnit))
-						}
-					}
-				}
-				// Validate semantic_filter if present
-				if rule.SemanticFilter != nil {
-					if rule.SemanticFilter.ReferenceText == "" && len(rule.SemanticFilter.ReferenceConcepts) == 0 {
-						return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: semantic_filter requires reference_text or reference_concepts", i, mapping.EntityType, j))
-					}
-					if rule.SemanticFilter.SimilarityThreshold < 0.0 || rule.SemanticFilter.SimilarityThreshold > 1.0 {
-						return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid semantic_filter.similarity_threshold: %.2f (must be 0.0-1.0)", i, mapping.EntityType, j, rule.SemanticFilter.SimilarityThreshold))
-					}
-				}
+			// At least one extraction method required
+			hasExtractionMethod := len(rule.PhraseList) > 0 || rule.InstanceName != ""
+			if !hasExtractionMethod {
+				return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: must have phrase_list or instance_name", i, mapping.EntityType, j))
+			}
 
-			// Metadata extraction
-			case RuleTypeMetadata:
-				if rule.FieldPath == "" {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: metadata_field requires field_path", i, mapping.EntityType, j))
+			// If instance_name used, must have (?P<name>...) capture group
+			if rule.InstanceName != "" {
+				if !strings.Contains(rule.InstanceName, "(?P<name>") {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: instance_name must contain (?P<name>...) capture group", i, mapping.EntityType, j))
 				}
-			case RuleTypeJSONPath:
-				if rule.JSONPathExpr == "" {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: jsonpath_query requires jsonpath_expr", i, mapping.EntityType, j))
-				}
+			}
 
-			default:
-				return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: unknown rule type: %s", i, mapping.EntityType, j, rule.Type))
+			// Validate proximity filter if present
+			if rule.Proximity != nil {
+				if len(rule.Proximity.CooccurrenceTerms) == 0 {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: proximity filter requires cooccurrence_terms", i, mapping.EntityType, j))
+				}
+				if rule.Proximity.DistanceUnit != "" {
+					validUnits := map[string]bool{"element": true, "word": true, "character": true}
+					if !validUnits[rule.Proximity.DistanceUnit] {
+						return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid proximity.distance_unit: %s (must be 'element', 'word', or 'character')", i, mapping.EntityType, j, rule.Proximity.DistanceUnit))
+					}
+				}
 			}
 
 			// Validate semantic filter if present
-			if rule.SemanticFilter != nil {
-				if len(rule.SemanticFilter.ReferenceConcepts) == 0 {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: semantic_filter requires reference_concepts", i, mapping.EntityType, j))
+			if rule.Semantic != nil {
+				if rule.Semantic.ReferenceText == "" && len(rule.Semantic.ReferenceConcepts) == 0 {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: semantic filter requires reference_text or reference_concepts", i, mapping.EntityType, j))
 				}
-				if rule.SemanticFilter.SimilarityThreshold < 0.0 || rule.SemanticFilter.SimilarityThreshold > 1.0 {
-					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid similarity_threshold: %.2f (must be 0.0-1.0)", i, mapping.EntityType, j, rule.SemanticFilter.SimilarityThreshold))
+				if rule.Semantic.SimilarityThreshold < 0.0 || rule.Semantic.SimilarityThreshold > 1.0 {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: invalid semantic.similarity_threshold: %.2f (must be 0.0-1.0)", i, mapping.EntityType, j, rule.Semantic.SimilarityThreshold))
+				}
+			}
+
+			// Validate dictionary filter if present
+			if rule.Dictionary != nil {
+				// Dictionary filter validation (structure is self-validating)
+			}
+
+			// Validate LLM validation if present
+			if rule.LLMValidation != nil {
+				if rule.LLMValidation.Prompt == "" {
+					return NewValidationError(fmt.Sprintf("entity mapping %d (%s), rule %d: llm_validation requires prompt", i, mapping.EntityType, j))
 				}
 			}
 		}
