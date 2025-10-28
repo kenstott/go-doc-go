@@ -1,0 +1,158 @@
+domain: aerospace_defense
+description: Aircraft, spacecraft, defense systems, maintenance, contracts, and aerospace operations
+subdomains:
+- aircraft_operations
+- maintenance_repair_overhaul
+- defense_contracts
+- flight_operations
+- aerospace_manufacturing
+entity_types:
+- entity_type: aircraft
+  description: Aircraft or aerospace vehicle
+  aliases:
+  - plane
+  - helicopter
+  - spacecraft
+  - vehicle
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - aircraft
+    - plane
+    - helicopter
+    - spacecraft
+    - tail number
+    - registration
+  parent_type: ''
+  w_category: what
+  domain: aerospace_defense
+- entity_type: maintenance_event
+  description: Maintenance or repair event
+  aliases:
+  - service
+  - repair
+  - inspection
+  - overhaul
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - maintenance
+    - repair
+    - inspection
+    - service
+    - overhaul
+    - MRO
+  parent_type: ''
+  w_category: what
+  domain: aerospace_defense
+- entity_type: defense_contract
+  description: Defense or aerospace contract
+  aliases:
+  - contract
+  - agreement
+  - procurement
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - contract
+    - procurement
+    - award
+    - solicitation
+    - RFP
+  parent_type: ''
+  w_category: what
+  domain: aerospace_defense
+- entity_type: flight
+  description: Flight or mission
+  aliases:
+  - mission
+  - sortie
+  - flight operation
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - flight
+    - mission
+    - sortie
+    - flight plan
+    - departure
+    - arrival
+  parent_type: ''
+  w_category: what
+  domain: aerospace_defense
+- entity_type: component
+  description: Aircraft component or part
+  aliases:
+  - part
+  - assembly
+  - system
+  - subsystem
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - component
+    - part
+    - assembly
+    - system
+    - subsystem
+    - engine
+    - avionics
+  parent_type: global.product
+  w_category: what
+  domain: aerospace_defense
+relationship_types:
+- relationship_type: maintained_by
+  description: Aircraft maintained by event
+  sample_rules:
+  - keywords:
+    - maintained
+    - serviced
+    - repaired
+    - inspected
+  source_type: aircraft
+  target_type: maintenance_event
+- relationship_type: requires_component
+  description: Maintenance requires component
+  sample_rules:
+  - keywords:
+    - requires
+    - needs
+    - replacement
+    - part
+  source_type: maintenance_event
+  target_type: component
+- relationship_type: contracted_for
+  description: Aircraft contracted for
+  sample_rules:
+  - keywords:
+    - for
+    - procurement of
+    - purchase of
+  source_type: defense_contract
+  target_type: aircraft
+- relationship_type: operated_as
+  description: Aircraft operated as flight
+  sample_rules:
+  - keywords:
+    - operated as
+    - flight
+    - mission
+  source_type: aircraft
+  target_type: flight

@@ -1,0 +1,180 @@
+domain: real_estate
+description: Property management, leases, facilities, space management, property valuation, and commercial real estate
+subdomains:
+- property_management
+- lease_administration
+- facilities_management
+- commercial_real_estate
+- property_valuation
+entity_types:
+- entity_type: property
+  description: Real estate property or building
+  aliases:
+  - building
+  - real estate
+  - asset
+  - facility
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - property
+    - building
+    - facility
+    - real estate
+    - asset
+    - premises
+  parent_type: ''
+  w_category: what
+  domain: real_estate
+- entity_type: lease
+  description: Lease agreement or rental contract
+  aliases:
+  - rental agreement
+  - tenancy agreement
+  - lease contract
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - lease
+    - rental
+    - tenancy
+    - lease agreement
+    - rental agreement
+  parent_type: ''
+  w_category: what
+  domain: real_estate
+- entity_type: tenant
+  description: Tenant or lessee
+  aliases:
+  - lessee
+  - renter
+  - occupant
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - tenant
+    - lessee
+    - renter
+    - occupant
+  parent_type: ''
+  w_category: what
+  domain: real_estate
+- entity_type: landlord
+  description: Property owner or lessor
+  aliases:
+  - lessor
+  - property owner
+  - owner
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - landlord
+    - lessor
+    - property owner
+    - owner
+  parent_type: ''
+  w_category: what
+  domain: real_estate
+- entity_type: rental_rate
+  description: Rental rate or lease rate
+  aliases:
+  - rent
+  - lease rate
+  - rental price
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - rent
+    - rental rate
+    - lease rate
+    - per square foot
+    - PSF
+    - rental price
+  parent_type: ''
+  w_category: what
+  domain: real_estate
+- entity_type: square_footage
+  description: Property size or area
+  aliases:
+  - area
+  - size
+  - square feet
+  - SF
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - square feet
+    - SF
+    - square footage
+    - area
+    - size
+  parent_type: ''
+  w_category: what
+  domain: real_estate
+relationship_types:
+- relationship_type: leased_by
+  description: Property leased by tenant
+  sample_rules:
+  - keywords:
+    - leased by
+    - tenant
+    - renter
+    - occupied by
+  source_type: property
+  target_type: tenant
+- relationship_type: owned_by
+  description: Property owned by landlord
+  sample_rules:
+  - keywords:
+    - owned by
+    - owner
+    - landlord
+  source_type: property
+  target_type: landlord
+- relationship_type: has_lease
+  description: Property has lease agreement
+  sample_rules:
+  - keywords:
+    - lease
+    - rental agreement
+    - tenancy
+  source_type: property
+  target_type: lease
+- relationship_type: priced_at
+  description: Property priced at rental rate
+  sample_rules:
+  - keywords:
+    - priced at
+    - rent
+    - rental rate
+  source_type: property
+  target_type: rental_rate
+- relationship_type: has_size
+  description: Property has square footage
+  sample_rules:
+  - keywords:
+    - square feet
+    - SF
+    - area
+    - size
+  source_type: property
+  target_type: square_footage

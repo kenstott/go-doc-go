@@ -1,0 +1,124 @@
+domain: telecommunications
+description: Networks, subscribers, services, billing, infrastructure, and telecommunications operations
+subdomains:
+- network_infrastructure
+- subscriber_management
+- service_provisioning
+- billing
+- network_operations
+entity_types:
+- entity_type: subscriber
+  description: Telecommunications subscriber or customer
+  aliases:
+  - customer
+  - account
+  - user
+  - line
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - subscriber
+    - customer
+    - account
+    - phone number
+    - mobile number
+  parent_type: ''
+  w_category: what
+  domain: telecommunications
+- entity_type: service_plan
+  description: Service plan or subscription package
+  aliases:
+  - plan
+  - package
+  - subscription
+  - tariff
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - plan
+    - package
+    - subscription
+    - unlimited
+    - data plan
+    - voice plan
+  parent_type: ''
+  w_category: what
+  domain: telecommunications
+- entity_type: network_element
+  description: Network infrastructure element
+  aliases:
+  - tower
+  - cell site
+  - base station
+  - switch
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - tower
+    - cell site
+    - base station
+    - switch
+    - router
+    - gateway
+  parent_type: ''
+  w_category: what
+  domain: telecommunications
+- entity_type: service
+  description: Telecommunications service
+  aliases:
+  - feature
+  - offering
+  - add-on
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - voice
+    - data
+    - SMS
+    - MMS
+    - roaming
+    - voicemail
+    - call forwarding
+  parent_type: global.product
+  w_category: what
+  domain: telecommunications
+relationship_types:
+- relationship_type: subscribed_to
+  description: Subscriber subscribed to plan
+  sample_rules:
+  - keywords:
+    - subscribed
+    - plan
+    - on plan
+    - has plan
+  source_type: subscriber
+  target_type: service_plan
+- relationship_type: uses_service
+  description: Subscriber uses service
+  sample_rules:
+  - keywords:
+    - uses
+    - enabled
+    - activated
+    - has service
+  source_type: subscriber
+  target_type: service
+- relationship_type: served_by
+  description: Subscriber served by network element
+  sample_rules:
+  - keywords:
+    - served by
+    - connected to
+    - on network
+  source_type: subscriber
+  target_type: network_element

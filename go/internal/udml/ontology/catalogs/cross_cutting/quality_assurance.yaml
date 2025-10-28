@@ -1,0 +1,183 @@
+domain: quality_assurance
+description: Testing, defects, quality metrics, test automation, and quality standards
+subdomains:
+- test_management
+- defect_tracking
+- test_automation
+- quality_metrics
+- compliance_testing
+entity_types:
+- entity_type: test_case
+  description: Test case or test scenario
+  aliases:
+  - test
+  - test scenario
+  - test script
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - test case
+    - test
+    - test scenario
+    - test script
+    - test step
+  parent_type: ''
+  w_category: what
+  domain: quality_assurance
+- entity_type: test_suite
+  description: Test suite or test collection
+  aliases:
+  - test collection
+  - test set
+  - test group
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - test suite
+    - test collection
+    - test set
+    - regression suite
+  parent_type: ''
+  w_category: what
+  domain: quality_assurance
+- entity_type: defect
+  description: Bug or defect
+  aliases:
+  - bug
+  - issue
+  - problem
+  - fault
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - defect
+    - bug
+    - issue
+    - problem
+    - fault
+    - error
+  parent_type: ''
+  w_category: what
+  domain: quality_assurance
+- entity_type: test_execution
+  description: Test execution or test run
+  aliases:
+  - test run
+  - test session
+  - test execution
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - test execution
+    - test run
+    - test session
+    - execution
+    - passed
+    - failed
+  parent_type: ''
+  w_category: what
+  domain: quality_assurance
+- entity_type: requirement
+  description: Requirement or specification
+  aliases:
+  - specification
+  - requirement
+  - user story
+  - acceptance criteria
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - requirement
+    - specification
+    - user story
+    - acceptance criteria
+  parent_type: global.identifier
+  w_category: what
+  domain: quality_assurance
+- entity_type: quality_metric
+  description: Quality metric or KPI
+  aliases:
+  - KPI
+  - metric
+  - quality indicator
+  - measure
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - metric
+    - KPI
+    - quality metric
+    - coverage
+    - defect density
+  parent_type: ''
+  w_category: what
+  domain: quality_assurance
+relationship_types:
+- relationship_type: part_of_suite
+  description: Test case part of suite
+  sample_rules:
+  - keywords:
+    - part of
+    - in
+    - belongs to
+    - suite
+  source_type: test_case
+  target_type: test_suite
+- relationship_type: tests_requirement
+  description: Test case tests requirement
+  sample_rules:
+  - keywords:
+    - tests
+    - verifies
+    - validates
+    - covers
+  source_type: test_case
+  target_type: requirement
+- relationship_type: found_defect
+  description: Test execution found defect
+  sample_rules:
+  - keywords:
+    - found
+    - detected
+    - discovered
+    - identified
+  source_type: test_execution
+  target_type: defect
+- relationship_type: executed_test
+  description: Execution ran test case
+  sample_rules:
+  - keywords:
+    - executed
+    - ran
+    - performed
+    - test
+  source_type: test_execution
+  target_type: test_case
+- relationship_type: measures
+  description: Metric measures quality aspect
+  sample_rules:
+  - keywords:
+    - measures
+    - tracks
+    - monitors
+    - assesses
+  source_type: quality_metric
+  target_type: test_suite

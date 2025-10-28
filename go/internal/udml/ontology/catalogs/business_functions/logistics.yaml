@@ -1,0 +1,260 @@
+domain: logistics
+description: Transportation, warehousing operations, fleet management, route optimization, freight forwarding, and last-mile
+  delivery
+subdomains:
+- transportation_management
+- warehouse_operations
+- fleet_management
+- freight_forwarding
+- last_mile_delivery
+- route_optimization
+entity_types:
+- entity_type: shipment
+  description: Individual shipment or freight consignment
+  aliases:
+  - freight
+  - consignment
+  - cargo
+  - load
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - shipment
+    - freight
+    - consignment
+    - cargo
+    - load
+    - tracking number
+    - BOL
+    - bill of lading
+  parent_type: ''
+  w_category: what
+  domain: logistics
+- entity_type: carrier
+  description: Transportation carrier or freight provider
+  aliases:
+  - transporter
+  - shipper
+  - freight company
+  - haulier
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - carrier
+    - transporter
+    - freight company
+    - trucking company
+    - shipping line
+    - airline
+  parent_type: ''
+  w_category: what
+  domain: logistics
+- entity_type: vehicle
+  description: Transportation vehicle or fleet asset
+  aliases:
+  - truck
+  - trailer
+  - vessel
+  - aircraft
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - truck
+    - trailer
+    - vehicle
+    - vessel
+    - container
+    - aircraft
+    - fleet
+  parent_type: ''
+  w_category: what
+  domain: logistics
+- entity_type: route
+  description: Transportation route or lane
+  aliases:
+  - lane
+  - shipping lane
+  - delivery route
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - route
+    - lane
+    - origin
+    - destination
+    - from
+    - to
+    - via
+  parent_type: ''
+  w_category: what
+  domain: logistics
+- entity_type: warehouse_location
+  description: Warehouse, distribution center, or fulfillment center
+  aliases:
+  - DC
+  - distribution center
+  - fulfillment center
+  - depot
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - warehouse
+    - distribution center
+    - DC
+    - fulfillment center
+    - depot
+    - facility
+  parent_type: ''
+  w_category: what
+  domain: logistics
+- entity_type: driver
+  description: Vehicle driver or operator
+  aliases:
+  - operator
+  - trucker
+  - delivery driver
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - driver
+    - operator
+    - trucker
+    - CDL
+    - commercial driver
+  parent_type: ''
+  w_category: what
+  domain: logistics
+- entity_type: delivery
+  description: Final delivery or drop-off
+  aliases:
+  - drop-off
+  - delivery stop
+  - consignee delivery
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - delivery
+    - drop-off
+    - delivered
+    - received
+    - signed
+    - POD
+    - proof of delivery
+  parent_type: ''
+  w_category: what
+  domain: logistics
+- entity_type: freight_rate
+  description: Shipping rate or transportation cost
+  aliases:
+  - shipping cost
+  - freight charge
+  - transportation rate
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - freight rate
+    - shipping cost
+    - transportation cost
+    - per mile
+    - per kg
+    - rate card
+  parent_type: ''
+  w_category: what
+  domain: logistics
+relationship_types:
+- relationship_type: transported_by
+  description: Shipment transported by carrier
+  sample_rules:
+  - keywords:
+    - transported by
+    - shipped via
+    - carrier
+    - hauled by
+  source_type: shipment
+  target_type: carrier
+- relationship_type: assigned_to_vehicle
+  description: Shipment assigned to vehicle
+  sample_rules:
+  - keywords:
+    - loaded on
+    - assigned to
+    - vehicle
+    - truck
+    - trailer
+  source_type: shipment
+  target_type: vehicle
+- relationship_type: follows_route
+  description: Shipment follows route
+  sample_rules:
+  - keywords:
+    - route
+    - from
+    - to
+    - via
+    - lane
+  source_type: shipment
+  target_type: route
+- relationship_type: stored_at
+  description: Shipment stored at warehouse
+  sample_rules:
+  - keywords:
+    - stored at
+    - held at
+    - warehouse
+    - DC
+    - facility
+  source_type: shipment
+  target_type: warehouse_location
+- relationship_type: driven_by
+  description: Vehicle driven by driver
+  sample_rules:
+  - keywords:
+    - driven by
+    - operator
+    - assigned driver
+  source_type: vehicle
+  target_type: driver
+- relationship_type: delivered_to
+  description: Shipment delivered to location
+  sample_rules:
+  - keywords:
+    - delivered to
+    - received at
+    - destination
+    - consignee
+  source_type: shipment
+  target_type: delivery
+- relationship_type: priced_at
+  description: Shipment priced at freight rate
+  sample_rules:
+  - keywords:
+    - rate
+    - cost
+    - freight charge
+    - priced at
+  source_type: shipment
+  target_type: freight_rate

@@ -1,0 +1,293 @@
+domain: leisure
+description: Travel, hospitality, tourism, entertainment, recreation, and leisure industry services
+subdomains:
+- travel
+- hospitality
+- tourism
+- entertainment
+- recreation
+- events
+terms:
+- name: travel
+  synonyms:
+  - journey
+  - trip
+  - voyage
+  - tour
+  description: Movement from one place to another for leisure
+- name: hospitality
+  synonyms:
+  - accommodation
+  - lodging
+  - hotel service
+  description: Services providing food, drink, and accommodation
+- name: tourism
+  synonyms:
+  - sightseeing
+  - travel industry
+  - visitor services
+  description: Commercial organization and operation of vacations and visits
+- name: entertainment
+  synonyms:
+  - amusement
+  - recreation
+  - leisure activity
+  description: Activities providing enjoyment and recreation
+- name: recreation
+  synonyms:
+  - leisure activity
+  - pastime
+  - hobby
+  description: Activities done for enjoyment during free time
+- name: destination
+  synonyms:
+  - location
+  - place
+  - venue
+  - site
+  description: Place to which someone is going or traveling
+entity_types:
+- entity_type: destination
+  description: Travel destination or tourist location
+  aliases:
+  - location
+  - place
+  - tourist site
+  - attraction
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - destination
+    - resort
+    - beach
+    - mountain
+    - city
+    - attraction
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: hotel
+  description: Accommodation establishment
+  aliases:
+  - resort
+  - inn
+  - lodge
+  - accommodation
+  - hostel
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Hotel|Resort|Inn|Lodge)\b'
+  - keywords:
+    - hotel
+    - resort
+    - inn
+    - lodge
+    - accommodation
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: airline
+  description: Air transport carrier
+  aliases:
+  - carrier
+  - airline company
+  - aviation company
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Airlines?\b'
+  - keywords:
+    - airline
+    - airways
+    - air
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: flight
+  description: Air travel service
+  aliases:
+  - air travel
+  - flight service
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - pattern: \b[A-Z]{2}\d{1,4}\b
+  - keywords:
+    - flight
+    - departure
+    - arrival
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: booking
+  description: Reservation or booking
+  aliases:
+  - reservation
+  - appointment
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - keywords:
+    - booking
+    - reservation
+    - confirmation number
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: tourist_attraction
+  description: Place of interest for tourists
+  aliases:
+  - attraction
+  - landmark
+  - site
+  - monument
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - museum
+    - monument
+    - park
+    - beach
+    - attraction
+    - landmark
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: restaurant
+  description: Food service establishment
+  aliases:
+  - eatery
+  - dining
+  - cafe
+  - bistro
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - restaurant
+    - cafe
+    - bistro
+    - eatery
+    - dining
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: event
+  description: Leisure or entertainment event
+  aliases:
+  - show
+  - performance
+  - concert
+  - festival
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - concert
+    - show
+    - festival
+    - event
+    - performance
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: tour
+  description: Guided travel experience
+  aliases:
+  - excursion
+  - trip
+  - guided tour
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - tour
+    - excursion
+    - guided tour
+    - day trip
+  parent_type: ''
+  w_category: what
+  domain: leisure
+- entity_type: traveler
+  description: Person traveling for leisure
+  aliases:
+  - tourist
+  - visitor
+  - guest
+  - vacationer
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - keywords:
+    - traveler
+    - tourist
+    - visitor
+    - guest
+  parent_type: ''
+  w_category: what
+  domain: leisure
+common_entity_refs:
+- person
+- email
+- phone
+- address
+- date
+- time
+- city
+- country
+- region
+- postal_code
+relationships:
+- name: traveler_visits
+  source_type: traveler
+  target_type: destination
+  relationship_type: related_to
+  description: Traveler visits destination
+  sample_patterns:
+  - '{traveler} visited {destination}'
+  - '{traveler} traveled to {destination}'
+- name: booking_for
+  source_type: booking
+  target_type: hotel
+  relationship_type: related_to
+  description: Booking made for hotel
+  sample_patterns:
+  - '{booking} for {hotel}'
+  - reservation at {hotel}
+- name: flight_operated_by
+  source_type: flight
+  target_type: airline
+  relationship_type: related_to
+  description: Flight operated by airline
+  sample_patterns:
+  - '{flight} operated by {airline}'
+  - '{airline} flight {flight}'
+- name: attraction_located_in
+  source_type: tourist_attraction
+  target_type: destination
+  relationship_type: part_of
+  description: Tourist attraction located in destination
+  sample_patterns:
+  - '{tourist_attraction} in {destination}'
+  - '{tourist_attraction} located in {destination}'
+- name: tour_includes
+  source_type: tour
+  target_type: tourist_attraction
+  relationship_type: related_to
+  description: Tour includes visit to attraction
+  sample_patterns:
+  - '{tour} includes {tourist_attraction}'
+  - '{tour} visits {tourist_attraction}'

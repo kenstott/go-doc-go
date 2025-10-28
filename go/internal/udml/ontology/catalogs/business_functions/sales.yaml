@@ -1,0 +1,250 @@
+domain: sales
+description: Sales opportunities, pipelines, quotations, customer relationships, forecasting, and revenue management
+subdomains:
+- lead_management
+- opportunity_management
+- quote_to_cash
+- territory_management
+- sales_analytics
+- customer_relationship
+entity_types:
+- entity_type: opportunity
+  description: Sales opportunity or potential deal
+  aliases:
+  - deal
+  - sales opportunity
+  - potential sale
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - opportunity
+    - deal
+    - potential sale
+    - sales opportunity
+    - prospect
+  parent_type: ''
+  w_category: what
+  domain: sales
+- entity_type: quote
+  description: Price quotation or proposal
+  aliases:
+  - quotation
+  - proposal
+  - price quote
+  - estimate
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - quote
+    - quotation
+    - proposal
+    - estimate
+    - pricing
+    - price quote
+  parent_type: ''
+  w_category: what
+  domain: sales
+- entity_type: customer
+  description: Customer or client organization
+  aliases:
+  - client
+  - account
+  - customer account
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - customer
+    - client
+    - account
+    - buyer
+    - purchaser
+  parent_type: global.organization
+  w_category: who
+  domain: sales
+- entity_type: product
+  description: Product or service being sold
+  aliases:
+  - service
+  - offering
+  - solution
+  - product line
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - product
+    - service
+    - solution
+    - offering
+    - SKU
+  parent_type: ''
+  w_category: what
+  domain: sales
+- entity_type: sales_stage
+  description: Stage in the sales pipeline
+  aliases:
+  - pipeline stage
+  - sales phase
+  - deal stage
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - qualification
+    - proposal
+    - negotiation
+    - closed won
+    - closed lost
+    - discovery
+  parent_type: ''
+  w_category: what
+  domain: sales
+- entity_type: territory
+  description: Sales territory or region
+  aliases:
+  - region
+  - sales region
+  - geographic area
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - territory
+    - region
+    - area
+    - geographic
+    - EMEA
+    - APAC
+    - Americas
+    - North America
+  parent_type: ''
+  w_category: what
+  domain: sales
+- entity_type: sales_rep
+  description: Sales representative or account executive
+  aliases:
+  - account executive
+  - sales person
+  - AE
+  - sales manager
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - sales rep
+    - account executive
+    - AE
+    - sales manager
+    - sales person
+  parent_type: ''
+  w_category: what
+  domain: sales
+- entity_type: forecast
+  description: Sales forecast or revenue projection
+  aliases:
+  - revenue forecast
+  - sales projection
+  - pipeline forecast
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - forecast
+    - projection
+    - pipeline
+    - quota
+    - target
+    - revenue prediction
+  parent_type: ''
+  w_category: what
+  domain: sales
+relationship_types:
+- relationship_type: assigned_to_rep
+  description: Opportunity assigned to sales rep
+  sample_rules:
+  - keywords:
+    - assigned to
+    - owned by
+    - managed by
+    - responsible
+  source_type: opportunity
+  target_type: sales_rep
+- relationship_type: associated_with_customer
+  description: Opportunity associated with customer
+  sample_rules:
+  - keywords:
+    - customer
+    - account
+    - client
+    - for
+  source_type: opportunity
+  target_type: customer
+- relationship_type: includes_product
+  description: Opportunity includes product
+  sample_rules:
+  - keywords:
+    - includes
+    - for
+    - selling
+    - offering
+  source_type: opportunity
+  target_type: product
+- relationship_type: at_stage
+  description: Opportunity at sales stage
+  sample_rules:
+  - keywords:
+    - stage
+    - phase
+    - status
+    - at
+  source_type: opportunity
+  target_type: sales_stage
+- relationship_type: in_territory
+  description: Opportunity in sales territory
+  sample_rules:
+  - keywords:
+    - in
+    - territory
+    - region
+    - area
+  source_type: opportunity
+  target_type: territory
+- relationship_type: generated_quote
+  description: Opportunity generated quote
+  sample_rules:
+  - keywords:
+    - quote
+    - proposal
+    - quotation
+    - pricing
+  source_type: opportunity
+  target_type: quote
+- relationship_type: contributes_to_forecast
+  description: Opportunity contributes to forecast
+  sample_rules:
+  - keywords:
+    - forecast
+    - projected
+    - pipeline
+    - included in
+  source_type: opportunity
+  target_type: forecast

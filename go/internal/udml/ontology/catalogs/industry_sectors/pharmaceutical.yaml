@@ -1,0 +1,597 @@
+domain: pharmaceutical
+description: Drug development, clinical trials, regulatory affairs, pharmaceutical manufacturing, pharmacovigilance, and commercialization
+subdomains:
+- drug_discovery
+- clinical_trials
+- regulatory_affairs
+- manufacturing
+- pharmacovigilance
+- commercial_operations
+- medical_affairs
+entity_types:
+- entity_type: drug_compound
+  description: Chemical compound or active pharmaceutical ingredient (API)
+  aliases:
+  - compound
+  - API
+  - active ingredient
+  - molecule
+  - substance
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - compound
+    - API
+    - active ingredient
+    - molecule
+    - substance
+    - chemical entity
+    - drug substance
+  parent_type: global.product
+  w_category: what
+  domain: pharmaceutical
+- entity_type: drug_product
+  description: Branded or generic pharmaceutical product
+  aliases:
+  - medication
+  - drug
+  - pharmaceutical
+  - medicine
+  - product
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - drug product
+    - medication
+    - pharmaceutical product
+    - brand name
+    - generic name
+    - trade name
+  parent_type: global.product
+  w_category: what
+  domain: pharmaceutical
+- entity_type: clinical_trial
+  description: Clinical study or trial for drug development
+  aliases:
+  - study
+  - trial
+  - clinical study
+  - research study
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - clinical trial
+    - study
+    - phase I
+    - phase II
+    - phase III
+    - phase IV
+    - NCT number
+    - protocol
+  parent_type: global.document
+  w_category: what
+  domain: pharmaceutical
+- entity_type: indication
+  description: Disease or condition that drug treats
+  aliases:
+  - disease
+  - condition
+  - disorder
+  - therapeutic area
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - indication
+    - disease
+    - condition
+    - disorder
+    - therapeutic area
+    - treatment for
+  parent_type: global.concept
+  w_category: what
+  domain: pharmaceutical
+- entity_type: adverse_event
+  description: Adverse reaction or side effect
+  aliases:
+  - side effect
+  - adverse reaction
+  - AE
+  - SAE
+  - toxicity
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - adverse event
+    - AE
+    - SAE
+    - side effect
+    - adverse reaction
+    - toxicity
+    - safety signal
+  parent_type: global.concept
+  w_category: what
+  domain: pharmaceutical
+- entity_type: regulatory_agency
+  description: Government regulatory body
+  aliases:
+  - FDA
+  - EMA
+  - PMDA
+  - health authority
+  - regulator
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - FDA
+    - EMA
+    - PMDA
+    - Health Canada
+    - regulatory agency
+    - health authority
+    - regulator
+  parent_type: global.organization
+  w_category: who
+  domain: pharmaceutical
+- entity_type: regulatory_submission
+  description: Regulatory filing or submission
+  aliases:
+  - NDA
+  - BLA
+  - IND
+  - ANDA
+  - MAA
+  - filing
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - NDA
+    - BLA
+    - IND
+    - ANDA
+    - MAA
+    - regulatory submission
+    - filing
+    - application
+  parent_type: global.document
+  w_category: what
+  domain: pharmaceutical
+- entity_type: patent
+  description: Intellectual property patent
+  aliases:
+  - IP
+  - intellectual property
+  - patent number
+  - exclusivity
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - patent
+    - IP
+    - intellectual property
+    - patent number
+    - exclusivity
+    - patent expiry
+  parent_type: global.document
+  w_category: what
+  domain: pharmaceutical
+- entity_type: manufacturer
+  description: Drug manufacturing facility or company
+  aliases:
+  - CMO
+  - CDMO
+  - manufacturing site
+  - facility
+  - plant
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - manufacturer
+    - CMO
+    - CDMO
+    - manufacturing site
+    - production facility
+    - plant
+  parent_type: global.organization
+  w_category: who
+  domain: pharmaceutical
+- entity_type: formulation
+  description: Drug formulation or dosage form
+  aliases:
+  - dosage form
+  - formulation
+  - tablet
+  - capsule
+  - injection
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - formulation
+    - dosage form
+    - tablet
+    - capsule
+    - injection
+    - oral
+    - IV
+    - topical
+  parent_type: global.process
+  w_category: how
+  domain: pharmaceutical
+- entity_type: biomarker
+  description: Biological marker or endpoint
+  aliases:
+  - endpoint
+  - marker
+  - biological marker
+  - surrogate endpoint
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - biomarker
+    - endpoint
+    - marker
+    - biological marker
+    - surrogate endpoint
+    - target
+  parent_type: global.concept
+  w_category: what
+  domain: pharmaceutical
+- entity_type: investigator
+  description: Principal investigator or research lead
+  aliases:
+  - PI
+  - principal investigator
+  - researcher
+  - study lead
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - principal investigator
+    - PI
+    - investigator
+    - researcher
+    - study lead
+    - site investigator
+  parent_type: global.person
+  w_category: who
+  domain: pharmaceutical
+- entity_type: sponsor
+  description: Clinical trial or study sponsor
+  aliases:
+  - study sponsor
+  - pharmaceutical company
+  - CRO
+  - sponsor organization
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - sponsor
+    - study sponsor
+    - pharmaceutical company
+    - CRO
+    - contract research organization
+  parent_type: global.organization
+  w_category: who
+  domain: pharmaceutical
+- entity_type: pharmacokinetics
+  description: Drug absorption, distribution, metabolism, excretion (ADME)
+  aliases:
+  - PK
+  - ADME
+  - pharmacokinetic
+  - drug metabolism
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - pharmacokinetics
+    - PK
+    - ADME
+    - absorption
+    - distribution
+    - metabolism
+    - excretion
+    - half-life
+  parent_type: global.process
+  w_category: how
+  domain: pharmaceutical
+- entity_type: pharmacodynamics
+  description: Drug mechanism of action and effects
+  aliases:
+  - PD
+  - mechanism of action
+  - MOA
+  - drug effect
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - pharmacodynamics
+    - PD
+    - mechanism of action
+    - MOA
+    - drug effect
+    - mode of action
+  parent_type: global.process
+  w_category: how
+  domain: pharmaceutical
+- entity_type: quality_specification
+  description: Quality control or quality assurance specification
+  aliases:
+  - QC
+  - QA
+  - specification
+  - quality standard
+  - release criteria
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - quality specification
+    - QC
+    - QA
+    - release criteria
+    - specification
+    - quality standard
+  parent_type: global.identifier
+  w_category: what
+  domain: pharmaceutical
+- entity_type: batch_lot
+  description: Manufacturing batch or lot
+  aliases:
+  - batch
+  - lot
+  - lot number
+  - batch number
+  - production batch
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - batch
+    - lot
+    - lot number
+    - batch number
+    - production batch
+    - manufacturing batch
+  parent_type: global.identifier
+  w_category: what
+  domain: pharmaceutical
+- entity_type: clinical_endpoint
+  description: Primary or secondary clinical trial endpoint
+  aliases:
+  - endpoint
+  - outcome
+  - efficacy measure
+  - clinical outcome
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - primary endpoint
+    - secondary endpoint
+    - outcome
+    - efficacy measure
+    - clinical outcome
+  parent_type: global.identifier
+  w_category: what
+  domain: pharmaceutical
+relationship_types:
+- relationship_type: treats_indication
+  description: Drug treats indication
+  sample_rules:
+  - keywords:
+    - treats
+    - indicated for
+    - approved for
+    - treatment of
+    - therapy for
+  source_type: drug_product
+  target_type: indication
+- relationship_type: contains_compound
+  description: Drug product contains active compound
+  sample_rules:
+  - keywords:
+    - contains
+    - active ingredient
+    - comprised of
+    - formulated with
+  source_type: drug_product
+  target_type: drug_compound
+- relationship_type: tested_in_trial
+  description: Drug tested in clinical trial
+  sample_rules:
+  - keywords:
+    - tested in
+    - evaluated in
+    - clinical trial
+    - study protocol
+  source_type: drug_product
+  target_type: clinical_trial
+- relationship_type: causes_adverse_event
+  description: Drug causes adverse event
+  sample_rules:
+  - keywords:
+    - causes
+    - associated with
+    - adverse event
+    - side effect
+    - reported
+  source_type: drug_product
+  target_type: adverse_event
+- relationship_type: approved_by_agency
+  description: Drug approved by regulatory agency
+  sample_rules:
+  - keywords:
+    - approved by
+    - authorized by
+    - cleared by
+    - regulatory approval from
+  source_type: drug_product
+  target_type: regulatory_agency
+- relationship_type: filed_with_agency
+  description: Regulatory submission filed with agency
+  sample_rules:
+  - keywords:
+    - filed with
+    - submitted to
+    - application to
+    - submission to
+  source_type: regulatory_submission
+  target_type: regulatory_agency
+- relationship_type: manufactured_by
+  description: Drug manufactured by facility
+  sample_rules:
+  - keywords:
+    - manufactured by
+    - produced by
+    - made by
+    - manufacturing site
+  source_type: drug_product
+  target_type: manufacturer
+- relationship_type: protected_by_patent
+  description: Drug protected by patent
+  sample_rules:
+  - keywords:
+    - protected by
+    - patent
+    - covered by
+    - intellectual property
+  source_type: drug_product
+  target_type: patent
+- relationship_type: uses_formulation
+  description: Drug uses specific formulation
+  sample_rules:
+  - keywords:
+    - formulated as
+    - dosage form
+    - available as
+    - formulation
+  source_type: drug_product
+  target_type: formulation
+- relationship_type: targets_biomarker
+  description: Drug targets biomarker
+  sample_rules:
+  - keywords:
+    - targets
+    - acts on
+    - binds to
+    - inhibits
+    - agonist
+    - antagonist
+  source_type: drug_compound
+  target_type: biomarker
+- relationship_type: led_by_investigator
+  description: Trial led by investigator
+  sample_rules:
+  - keywords:
+    - led by
+    - principal investigator
+    - conducted by
+    - investigator
+  source_type: clinical_trial
+  target_type: investigator
+- relationship_type: sponsored_by
+  description: Trial sponsored by organization
+  sample_rules:
+  - keywords:
+    - sponsored by
+    - funded by
+    - supported by
+    - sponsor
+  source_type: clinical_trial
+  target_type: sponsor
+- relationship_type: measures_endpoint
+  description: Trial measures clinical endpoint
+  sample_rules:
+  - keywords:
+    - measures
+    - primary endpoint
+    - secondary endpoint
+    - outcome measure
+  source_type: clinical_trial
+  target_type: clinical_endpoint
+- relationship_type: exhibits_pk_profile
+  description: Drug exhibits pharmacokinetic profile
+  sample_rules:
+  - keywords:
+    - pharmacokinetics
+    - PK profile
+    - ADME
+    - absorption
+    - metabolism
+  source_type: drug_product
+  target_type: pharmacokinetics
+- relationship_type: exhibits_pd_profile
+  description: Drug exhibits pharmacodynamic profile
+  sample_rules:
+  - keywords:
+    - mechanism of action
+    - MOA
+    - pharmacodynamics
+    - PD profile
+  source_type: drug_product
+  target_type: pharmacodynamics
+- relationship_type: meets_specification
+  description: Batch meets quality specification
+  sample_rules:
+  - keywords:
+    - meets specification
+    - complies with
+    - passes
+    - conforms to
+  source_type: batch_lot
+  target_type: quality_specification
+- relationship_type: part_of_batch
+  description: Product part of manufacturing batch
+  sample_rules:
+  - keywords:
+    - batch
+    - lot number
+    - manufactured in
+    - production batch
+  source_type: drug_product
+  target_type: batch_lot

@@ -1,0 +1,184 @@
+domain: science_research
+description: Scientific research, experiments, publications, grants, datasets, and research methodology
+subdomains:
+- experimental_research
+- publications
+- grant_management
+- data_management
+- peer_review
+entity_types:
+- entity_type: research_project
+  description: Scientific research project or study
+  aliases:
+  - study
+  - project
+  - investigation
+  - research
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - research
+    - study
+    - project
+    - investigation
+    - experiment
+  parent_type: ''
+  w_category: what
+  domain: science_research
+- entity_type: experiment
+  description: Scientific experiment or trial
+  aliases:
+  - trial
+  - test
+  - assay
+  - procedure
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - experiment
+    - trial
+    - test
+    - assay
+    - procedure
+    - methodology
+  parent_type: ''
+  w_category: what
+  domain: science_research
+- entity_type: publication
+  description: Scientific publication or paper
+  aliases:
+  - paper
+  - article
+  - journal article
+  - manuscript
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - publication
+    - paper
+    - article
+    - journal
+    - manuscript
+    - published
+  parent_type: ''
+  w_category: what
+  domain: science_research
+- entity_type: researcher
+  description: Researcher or scientist
+  aliases:
+  - scientist
+  - investigator
+  - principal investigator
+  - PI
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - researcher
+    - scientist
+    - investigator
+    - PI
+    - principal investigator
+  parent_type: global.person
+  w_category: who
+  domain: science_research
+- entity_type: grant
+  description: Research grant or funding
+  aliases:
+  - funding
+  - award
+  - grant funding
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - grant
+    - funding
+    - award
+    - NIH
+    - NSF
+    - funding agency
+  parent_type: ''
+  w_category: what
+  domain: science_research
+- entity_type: dataset
+  description: Research dataset or data collection
+  aliases:
+  - data
+  - data collection
+  - research data
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - dataset
+    - data
+    - data collection
+    - research data
+    - measurements
+  parent_type: ''
+  w_category: what
+  domain: science_research
+relationship_types:
+- relationship_type: conducted_by
+  description: Research conducted by researcher
+  sample_rules:
+  - keywords:
+    - conducted by
+    - led by
+    - principal investigator
+  source_type: research_project
+  target_type: researcher
+- relationship_type: part_of
+  description: Experiment part of project
+  sample_rules:
+  - keywords:
+    - part of
+    - within
+    - under
+    - related to
+  source_type: experiment
+  target_type: research_project
+- relationship_type: published_as
+  description: Research published as publication
+  sample_rules:
+  - keywords:
+    - published
+    - resulted in
+    - reported in
+  source_type: research_project
+  target_type: publication
+- relationship_type: funded_by
+  description: Research funded by grant
+  sample_rules:
+  - keywords:
+    - funded by
+    - supported by
+    - grant
+  source_type: research_project
+  target_type: grant
+- relationship_type: generated_dataset
+  description: Experiment generated dataset
+  sample_rules:
+  - keywords:
+    - generated
+    - produced
+    - collected
+    - resulted in
+  source_type: experiment
+  target_type: dataset

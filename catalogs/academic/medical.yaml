@@ -1,0 +1,457 @@
+domain: medical
+description: Medical records, clinical notes, prescriptions, lab reports, patient documents, and healthcare documentation
+subdomains:
+- clinical_care
+- diagnostics
+- pharmaceuticals
+- surgery
+- radiology
+- pathology
+terms:
+- name: diagnosis
+  synonyms:
+  - condition
+  - disease
+  - disorder
+  - ailment
+  - illness
+  description: Medical condition identified in a patient
+- name: symptom
+  synonyms:
+  - sign
+  - manifestation
+  - presentation
+  - complaint
+  description: Observable indication of disease or condition
+- name: treatment
+  synonyms:
+  - therapy
+  - intervention
+  - procedure
+  - care
+  - management
+  description: Medical intervention for a condition
+- name: medication
+  synonyms:
+  - drug
+  - pharmaceutical
+  - medicine
+  - prescription
+  - rx
+  description: Substance used to treat or prevent disease
+- name: dosage
+  synonyms:
+  - dose
+  - strength
+  - amount
+  - quantity
+  description: Amount of medication to be administered
+- name: vital signs
+  synonyms:
+  - vitals
+  - clinical parameters
+  - physiological measurements
+  description: Measurements of body's basic functions
+- name: prognosis
+  synonyms:
+  - outlook
+  - forecast
+  - expected outcome
+  - recovery expectation
+  description: Expected course and outcome of disease
+- name: contraindication
+  synonyms:
+  - warning
+  - precaution
+  - restriction
+  description: Condition that makes treatment inadvisable
+- name: adverse reaction
+  synonyms:
+  - side effect
+  - adverse event
+  - complication
+  - reaction
+  description: Unintended harmful reaction to treatment
+- name: comorbidity
+  synonyms:
+  - concurrent condition
+  - coexisting disease
+  - additional diagnosis
+  description: Simultaneous presence of multiple conditions
+entity_types:
+- entity_type: patient
+  description: Person receiving medical care
+  aliases:
+  - individual
+  - subject
+  - case
+  element_types:
+  - paragraph
+  - heading
+  - table_cell
+  sample_rules:
+  - keywords:
+    - patient
+    - subject
+    - individual
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: condition
+  description: Disease, disorder, or medical condition
+  aliases:
+  - diagnosis
+  - disease
+  - disorder
+  - illness
+  - ailment
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - keywords:
+    - diabetes
+    - hypertension
+    - cancer
+    - infection
+    - pneumonia
+    - asthma
+    - arthritis
+    - heart disease
+    - stroke
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: medication
+  description: Drug or pharmaceutical product
+  aliases:
+  - drug
+  - medicine
+  - pharmaceutical
+  - prescription
+  - therapy
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - pattern: \b[A-Z][a-z]+(?:in|ol|azole|mycin|cillin|oxacin)\b
+  - keywords:
+    - mg
+    - mcg
+    - tablet
+    - capsule
+    - injection
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: dosage
+  description: Medication dose and frequency
+  aliases:
+  - dose
+  - strength
+  - administration
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - pattern: \b\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|units)
+  - keywords:
+    - daily
+    - twice daily
+    - BID
+    - TID
+    - QID
+    - PRN
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: procedure
+  description: Medical procedure or surgery
+  aliases:
+  - surgery
+  - operation
+  - intervention
+  - treatment
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - surgery
+    - biopsy
+    - catheterization
+    - endoscopy
+    - resection
+    - transplant
+    - implantation
+  parent_type: global.process
+  w_category: how
+  domain: medical
+- entity_type: lab_test
+  description: Laboratory test or diagnostic exam
+  aliases:
+  - test
+  - lab
+  - study
+  - examination
+  - diagnostic
+  element_types:
+  - paragraph
+  - table_cell
+  - list_item
+  sample_rules:
+  - keywords:
+    - CBC
+    - blood test
+    - urinalysis
+    - X-ray
+    - MRI
+    - CT scan
+    - ultrasound
+    - EKG
+    - ECG
+    - biopsy
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: lab_result
+  description: Laboratory test result value
+  aliases:
+  - finding
+  - measurement
+  - value
+  - level
+  element_types:
+  - table_cell
+  - paragraph
+  sample_rules:
+  - pattern: \b\d+(?:\.\d+)?\s*(?:mg/dL|mmol/L|%|units/L|mEq/L)
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: symptom
+  description: Clinical symptom or sign
+  aliases:
+  - sign
+  - complaint
+  - presentation
+  - manifestation
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - pain
+    - fever
+    - cough
+    - fatigue
+    - nausea
+    - vomiting
+    - dizziness
+    - weakness
+    - shortness of breath
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: body_part
+  description: Anatomical structure or body part
+  aliases:
+  - anatomy
+  - organ
+  - structure
+  - region
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - keywords:
+    - heart
+    - lung
+    - liver
+    - kidney
+    - brain
+    - stomach
+    - chest
+    - abdomen
+    - head
+    - neck
+    - extremity
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: healthcare_provider
+  description: Medical professional or healthcare facility
+  aliases:
+  - physician
+  - doctor
+  - provider
+  - hospital
+  - clinic
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - Dr.
+    - MD
+    - physician
+    - doctor
+    - nurse
+    - hospital
+    - clinic
+    - medical center
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: medical_specialty
+  description: Medical specialty or department
+  aliases:
+  - specialty
+  - department
+  - service
+  - field
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - cardiology
+    - oncology
+    - neurology
+    - orthopedics
+    - pediatrics
+    - radiology
+    - surgery
+    - internal medicine
+  parent_type: ''
+  w_category: what
+  domain: medical
+- entity_type: allergy
+  description: Patient allergy or adverse reaction
+  aliases:
+  - hypersensitivity
+  - adverse reaction
+  - intolerance
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - keywords:
+    - allergy
+    - allergic
+    - adverse reaction
+    - intolerance
+  parent_type: ''
+  w_category: what
+  domain: medical
+common_entity_refs:
+- person
+- executive
+- employee
+- date
+- time
+- duration
+- address
+- city
+- region
+- country
+- postal_code
+- email
+- phone
+- url
+- percentage
+- number
+- id_number
+- weight
+- dimension
+relationships:
+- name: patient_has_condition
+  source_type: patient
+  target_type: condition
+  relationship_type: related_to
+  description: Patient has medical condition or diagnosis
+  sample_patterns:
+  - '{patient} diagnosed with {condition}'
+  - '{patient} presents with {condition}'
+  - '{condition} in {patient}'
+- name: patient_prescribed_medication
+  source_type: patient
+  target_type: medication
+  relationship_type: related_to
+  description: Patient prescribed medication
+  sample_patterns:
+  - '{patient} prescribed {medication}'
+  - '{medication} for {patient}'
+  - start {patient} on {medication}
+- name: condition_treated_with_medication
+  source_type: condition
+  target_type: medication
+  relationship_type: related_to
+  description: Condition treated with medication
+  sample_patterns:
+  - '{condition} treated with {medication}'
+  - '{medication} for {condition}'
+  - '{medication} to manage {condition}'
+- name: medication_has_dosage
+  source_type: medication
+  target_type: dosage
+  relationship_type: related_to
+  description: Medication prescribed at specific dosage
+  sample_patterns:
+  - '{medication} {dosage}'
+  - '{dosage} of {medication}'
+- name: patient_underwent_procedure
+  source_type: patient
+  target_type: procedure
+  relationship_type: related_to
+  description: Patient underwent medical procedure
+  sample_patterns:
+  - '{patient} underwent {procedure}'
+  - '{procedure} performed on {patient}'
+  - '{patient} scheduled for {procedure}'
+- name: test_performed_on_patient
+  source_type: lab_test
+  target_type: patient
+  relationship_type: related_to
+  description: Lab test performed on patient
+  sample_patterns:
+  - '{test} for {patient}'
+  - '{patient} {test} results'
+  - order {test} on {patient}
+- name: test_has_result
+  source_type: lab_test
+  target_type: lab_result
+  relationship_type: related_to
+  description: Lab test has result value
+  sample_patterns:
+  - '{test} result: {result}'
+  - '{test} shows {result}'
+- name: symptom_indicates_condition
+  source_type: symptom
+  target_type: condition
+  relationship_type: related_to
+  description: Symptom indicates possible condition
+  sample_patterns:
+  - '{symptom} suggestive of {condition}'
+  - '{symptom} consistent with {condition}'
+- name: procedure_on_body_part
+  source_type: procedure
+  target_type: body_part
+  relationship_type: related_to
+  description: Procedure performed on anatomical structure
+  sample_patterns:
+  - '{procedure} on {body_part}'
+  - '{body_part} {procedure}'
+- name: patient_allergic_to
+  source_type: patient
+  target_type: allergy
+  relationship_type: related_to
+  description: Patient has allergy
+  sample_patterns:
+  - '{patient} allergic to {allergy}'
+  - '{allergy} allergy in {patient}'
+  - '{patient} has {allergy} allergy'

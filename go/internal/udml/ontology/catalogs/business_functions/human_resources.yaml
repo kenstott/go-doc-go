@@ -1,0 +1,243 @@
+domain: human_resources
+description: Employee management, recruitment, compensation, benefits, performance management, training, and workforce planning
+subdomains:
+- recruitment
+- onboarding
+- compensation
+- benefits
+- performance_management
+- training_development
+- employee_relations
+entity_types:
+- entity_type: employee
+  description: Individual working for the organization
+  aliases:
+  - staff member
+  - worker
+  - team member
+  - personnel
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - employee
+    - staff
+    - personnel
+    - worker
+    - team member
+    - full-time
+    - part-time
+    - contractor
+  parent_type: global.person
+  w_category: who
+  domain: human_resources
+- entity_type: position
+  description: Job role or position within the organization
+  aliases:
+  - job
+  - role
+  - job title
+  - position title
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - position
+    - job title
+    - role
+    - manager
+    - director
+    - analyst
+    - engineer
+    - coordinator
+  parent_type: ''
+  w_category: what
+  domain: human_resources
+- entity_type: department
+  description: Organizational unit or division
+  aliases:
+  - division
+  - unit
+  - team
+  - group
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - department
+    - division
+    - unit
+    - team
+    - HR
+    - IT
+    - finance
+    - marketing
+    - sales
+    - operations
+  parent_type: global.organization
+  w_category: who
+  domain: human_resources
+- entity_type: compensation
+  description: Salary, wages, or payment structure
+  aliases:
+  - salary
+  - wage
+  - pay
+  - remuneration
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - salary
+    - wage
+    - compensation
+    - pay
+    - bonus
+    - commission
+    - hourly rate
+    - annual salary
+  parent_type: ''
+  w_category: what
+  domain: human_resources
+- entity_type: benefit
+  description: Employee benefit or perk
+  aliases:
+  - perk
+  - employee benefit
+  - fringe benefit
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - health insurance
+    - 401k
+    - retirement plan
+    - PTO
+    - vacation
+    - sick leave
+    - dental
+    - vision
+  parent_type: ''
+  w_category: what
+  domain: human_resources
+- entity_type: performance_review
+  description: Employee performance evaluation or assessment
+  aliases:
+  - appraisal
+  - evaluation
+  - assessment
+  - review
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - performance review
+    - appraisal
+    - evaluation
+    - assessment
+    - feedback
+    - rating
+    - goals
+  parent_type: ''
+  w_category: what
+  domain: human_resources
+- entity_type: training_program
+  description: Educational or skill development program
+  aliases:
+  - course
+  - workshop
+  - training
+  - development program
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - training
+    - workshop
+    - course
+    - certification
+    - learning
+    - development
+    - seminar
+  parent_type: ''
+  w_category: what
+  domain: human_resources
+relationship_types:
+- relationship_type: reports_to
+  description: Employee reporting relationship
+  sample_rules:
+  - keywords:
+    - reports to
+    - manager
+    - supervisor
+    - direct report
+  source_type: employee
+  target_type: employee
+- relationship_type: holds_position
+  description: Employee holds a specific position
+  sample_rules:
+  - keywords:
+    - position
+    - job title
+    - role
+    - works as
+  source_type: employee
+  target_type: position
+- relationship_type: assigned_to_department
+  description: Employee assigned to department
+  sample_rules:
+  - keywords:
+    - assigned to
+    - works in
+    - department
+    - division
+  source_type: employee
+  target_type: department
+- relationship_type: receives_compensation
+  description: Employee receives compensation
+  sample_rules:
+  - keywords:
+    - salary
+    - wage
+    - paid
+    - compensation
+  source_type: employee
+  target_type: compensation
+- relationship_type: enrolled_in_benefit
+  description: Employee enrolled in benefit plan
+  sample_rules:
+  - keywords:
+    - enrolled
+    - participates
+    - receives
+    - benefit
+    - coverage
+  source_type: employee
+  target_type: benefit
+- relationship_type: completed_training
+  description: Employee completed training program
+  sample_rules:
+  - keywords:
+    - completed
+    - finished
+    - attended
+    - training
+    - course
+  source_type: employee
+  target_type: training_program

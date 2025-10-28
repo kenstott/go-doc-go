@@ -1,0 +1,196 @@
+domain: blockchain_crypto
+description: Blockchain transactions, wallets, smart contracts, tokens, and cryptocurrency operations
+subdomains:
+- blockchain_operations
+- cryptocurrency
+- smart_contracts
+- token_management
+- defi
+entity_types:
+- entity_type: blockchain_transaction
+  description: Blockchain transaction or transfer
+  aliases:
+  - transaction
+  - transfer
+  - payment
+  - tx
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - transaction
+    - transfer
+    - payment
+    - tx
+    - blockchain transaction
+    - hash
+  parent_type: ''
+  w_category: what
+  domain: blockchain_crypto
+- entity_type: wallet
+  description: Cryptocurrency wallet or address
+  aliases:
+  - address
+  - account
+  - wallet address
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - wallet
+    - address
+    - account
+    - wallet address
+    - public key
+  parent_type: ''
+  w_category: what
+  domain: blockchain_crypto
+- entity_type: smart_contract
+  description: Smart contract or DApp
+  aliases:
+  - contract
+  - DApp
+  - decentralized app
+  - protocol
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - smart contract
+    - contract
+    - DApp
+    - protocol
+    - deployed contract
+  parent_type: ''
+  w_category: what
+  domain: blockchain_crypto
+- entity_type: token
+  description: Cryptocurrency token or coin
+  aliases:
+  - coin
+  - cryptocurrency
+  - digital asset
+  - crypto
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - token
+    - coin
+    - cryptocurrency
+    - digital asset
+    - ERC-20
+    - NFT
+  parent_type: ''
+  w_category: what
+  domain: blockchain_crypto
+- entity_type: block
+  description: Blockchain block
+  aliases:
+  - block
+  - blockchain block
+  - ledger entry
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - block
+    - blockchain block
+    - block height
+    - block number
+  parent_type: ''
+  w_category: what
+  domain: blockchain_crypto
+- entity_type: defi_protocol
+  description: DeFi protocol or service
+  aliases:
+  - protocol
+  - DeFi service
+  - decentralized protocol
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - DeFi
+    - protocol
+    - decentralized finance
+    - lending
+    - staking
+    - yield
+  parent_type: ''
+  w_category: what
+  domain: blockchain_crypto
+relationship_types:
+- relationship_type: sent_from
+  description: Transaction sent from wallet
+  sample_rules:
+  - keywords:
+    - from
+    - sent from
+    - sender
+    - source address
+  source_type: blockchain_transaction
+  target_type: wallet
+- relationship_type: sent_to
+  description: Transaction sent to wallet
+  sample_rules:
+  - keywords:
+    - to
+    - sent to
+    - recipient
+    - destination address
+  source_type: blockchain_transaction
+  target_type: wallet
+- relationship_type: transfers_token
+  description: Transaction transfers token
+  sample_rules:
+  - keywords:
+    - transfers
+    - sends
+    - token
+    - coin
+    - amount
+  source_type: blockchain_transaction
+  target_type: token
+- relationship_type: included_in
+  description: Transaction included in block
+  sample_rules:
+  - keywords:
+    - included in
+    - in block
+    - block
+    - confirmed in
+  source_type: blockchain_transaction
+  target_type: block
+- relationship_type: executed_by
+  description: Transaction executed by smart contract
+  sample_rules:
+  - keywords:
+    - executed by
+    - called
+    - contract
+    - smart contract
+  source_type: blockchain_transaction
+  target_type: smart_contract
+- relationship_type: uses_protocol
+  description: Smart contract uses DeFi protocol
+  sample_rules:
+  - keywords:
+    - uses
+    - integrates with
+    - protocol
+    - DeFi
+  source_type: smart_contract
+  target_type: defi_protocol

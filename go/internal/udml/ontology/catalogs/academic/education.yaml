@@ -1,0 +1,227 @@
+domain: education
+description: Educational institutions, curricula, student records, academic programs, and learning materials
+subdomains:
+- k12_education
+- higher_education
+- professional_development
+- online_learning
+terms:
+- name: curriculum
+  synonyms:
+  - syllabus
+  - course of study
+  - program
+  - coursework
+  description: Planned educational program or course content
+- name: assessment
+  synonyms:
+  - evaluation
+  - test
+  - exam
+  - quiz
+  - grading
+  description: Measurement of student learning
+- name: accreditation
+  synonyms:
+  - certification
+  - recognition
+  - approval
+  description: Official recognition of educational quality
+- name: enrollment
+  synonyms:
+  - registration
+  - admission
+  - matriculation
+  description: Student registration in courses or programs
+entity_types:
+- entity_type: student
+  description: Student or learner
+  aliases:
+  - learner
+  - pupil
+  - enrollee
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - keywords:
+    - student
+    - pupil
+    - learner
+  parent_type: global.person
+  w_category: who
+  domain: education
+- entity_type: instructor
+  description: Teacher, professor, or instructor
+  aliases:
+  - teacher
+  - professor
+  - educator
+  - faculty
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - professor
+    - teacher
+    - instructor
+    - Dr.
+  parent_type: ''
+  w_category: what
+  domain: education
+- entity_type: course
+  description: Academic course or class
+  aliases:
+  - class
+  - subject
+  - module
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - course
+    - class
+    - subject
+  - pattern: \b[A-Z]{2,4}\s*\d{3,4}\b
+  parent_type: ''
+  w_category: what
+  domain: education
+- entity_type: program
+  description: Degree program or academic program
+  aliases:
+  - degree
+  - major
+  - concentration
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - program
+    - degree
+    - major
+    - Bachelor
+    - Master
+    - PhD
+  parent_type: ''
+  w_category: what
+  domain: education
+- entity_type: institution
+  description: Educational institution
+  aliases:
+  - school
+  - college
+  - university
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - university
+    - college
+    - school
+    - institute
+  - pattern: \b[A-Z][a-z]+\s+(?:University|College|Institute)\b
+  parent_type: ''
+  w_category: what
+  domain: education
+- entity_type: grade
+  description: Student grade or mark
+  aliases:
+  - mark
+  - score
+  - result
+  element_types:
+  - table_cell
+  - paragraph
+  sample_rules:
+  - pattern: \b[A-F][+-]?\b
+  - pattern: \b\d{1,3}%\b
+  parent_type: ''
+  w_category: what
+  domain: education
+- entity_type: credit
+  description: Academic credit or credit hour
+  aliases:
+  - credit hour
+  - unit
+  element_types:
+  - table_cell
+  - paragraph
+  sample_rules:
+  - keywords:
+    - credit
+    - credits
+    - credit hour
+    - unit
+  parent_type: ''
+  w_category: what
+  domain: education
+common_entity_refs:
+- person
+- role
+- date
+- time
+- duration
+- address
+- city
+- region
+- email
+- phone
+- url
+- percentage
+- number
+relationships:
+- name: student_enrolled_in_course
+  source_type: student
+  target_type: course
+  relationship_type: related_to
+  description: Student enrolled in course
+  sample_patterns:
+  - '{student} enrolled in {course}'
+  - '{student} taking {course}'
+  - '{course} for {student}'
+- name: instructor_teaches_course
+  source_type: instructor
+  target_type: course
+  relationship_type: related_to
+  description: Instructor teaches course
+  sample_patterns:
+  - '{instructor} teaches {course}'
+  - '{course} taught by {instructor}'
+  - '{instructor}, instructor for {course}'
+- name: course_part_of_program
+  source_type: course
+  target_type: program
+  relationship_type: part_of
+  description: Course is part of academic program
+  sample_patterns:
+  - '{course} in {program}'
+  - '{program} includes {course}'
+- name: student_pursuing_program
+  source_type: student
+  target_type: program
+  relationship_type: related_to
+  description: Student pursuing degree program
+  sample_patterns:
+  - '{student} pursuing {program}'
+  - '{program} student: {student}'
+- name: institution_offers_program
+  source_type: institution
+  target_type: program
+  relationship_type: related_to
+  description: Institution offers program
+  sample_patterns:
+  - '{institution} offers {program}'
+  - '{program} at {institution}'
+- name: student_received_grade
+  source_type: student
+  target_type: grade
+  relationship_type: related_to
+  description: Student received grade
+  sample_patterns:
+  - '{student} received {grade}'
+  - '{grade} for {student}'

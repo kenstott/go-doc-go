@@ -1,0 +1,224 @@
+domain: supply_chain
+description: Procurement, inventory management, warehousing, distribution, logistics, and supplier management
+subdomains:
+- procurement
+- inventory_management
+- warehouse_management
+- transportation
+- supplier_management
+- demand_planning
+entity_types:
+- entity_type: supplier
+  description: Vendor or supplier organization
+  aliases:
+  - vendor
+  - supplier
+  - provider
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - supplier
+    - vendor
+    - provider
+    - manufacturer
+    - distributor
+  parent_type: global.organization
+  w_category: who
+  domain: supply_chain
+- entity_type: purchase_order
+  description: Purchase order or procurement request
+  aliases:
+  - PO
+  - procurement order
+  - buy order
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - purchase order
+    - PO
+    - procurement
+    - buy order
+    - requisition
+  parent_type: ''
+  w_category: what
+  domain: supply_chain
+- entity_type: inventory_item
+  description: Item in inventory or stock
+  aliases:
+  - SKU
+  - stock item
+  - product
+  - material
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - SKU
+    - inventory item
+    - stock
+    - part number
+    - material
+    - component
+  parent_type: ''
+  w_category: what
+  domain: supply_chain
+- entity_type: warehouse
+  description: Warehouse or storage facility
+  aliases:
+  - distribution center
+  - DC
+  - storage facility
+  - fulfillment center
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - warehouse
+    - distribution center
+    - DC
+    - storage facility
+    - fulfillment center
+  parent_type: ''
+  w_category: what
+  domain: supply_chain
+- entity_type: shipment
+  description: Shipment or delivery
+  aliases:
+  - delivery
+  - transportation
+  - freight
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - shipment
+    - delivery
+    - freight
+    - transportation
+    - cargo
+  parent_type: ''
+  w_category: what
+  domain: supply_chain
+- entity_type: carrier
+  description: Transportation carrier or logistics provider
+  aliases:
+  - shipper
+  - logistics provider
+  - freight forwarder
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - carrier
+    - shipper
+    - logistics provider
+    - freight forwarder
+    - courier
+  parent_type: ''
+  w_category: what
+  domain: supply_chain
+- entity_type: demand_forecast
+  description: Demand forecast or planning projection
+  aliases:
+  - demand plan
+  - forecast
+  - demand projection
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - demand forecast
+    - demand plan
+    - planning
+    - projection
+    - expected demand
+  parent_type: ''
+  w_category: what
+  domain: supply_chain
+relationship_types:
+- relationship_type: supplied_by
+  description: Item supplied by supplier
+  sample_rules:
+  - keywords:
+    - supplied by
+    - from
+    - vendor
+    - sourced from
+  source_type: inventory_item
+  target_type: supplier
+- relationship_type: ordered_from
+  description: Purchase order placed with supplier
+  sample_rules:
+  - keywords:
+    - ordered from
+    - placed with
+    - vendor
+  source_type: purchase_order
+  target_type: supplier
+- relationship_type: contains_item
+  description: Purchase order contains inventory item
+  sample_rules:
+  - keywords:
+    - includes
+    - contains
+    - for
+    - item
+  source_type: purchase_order
+  target_type: inventory_item
+- relationship_type: stored_in
+  description: Item stored in warehouse
+  sample_rules:
+  - keywords:
+    - stored in
+    - located at
+    - warehouse
+    - facility
+  source_type: inventory_item
+  target_type: warehouse
+- relationship_type: shipped_via
+  description: Shipment transported by carrier
+  sample_rules:
+  - keywords:
+    - shipped via
+    - carrier
+    - transported by
+    - using
+  source_type: shipment
+  target_type: carrier
+- relationship_type: fulfills_order
+  description: Shipment fulfills purchase order
+  sample_rules:
+  - keywords:
+    - fulfills
+    - delivers
+    - for order
+    - PO
+  source_type: shipment
+  target_type: purchase_order
+- relationship_type: based_on_forecast
+  description: Order based on demand forecast
+  sample_rules:
+  - keywords:
+    - based on
+    - forecast
+    - projected demand
+    - planning
+  source_type: purchase_order
+  target_type: demand_forecast

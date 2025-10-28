@@ -1,0 +1,89 @@
+domain: global
+description: WHY category - Global entity types for reasoning, claims, and explanations
+w_category: why
+
+entity_types:
+  # Top-level: assertion
+  - entity_type: assertion
+    parent_type: ""
+    w_category: why
+    domain: global
+    description: Claims, requirements, declarations, statements presented as fact
+    aliases:
+      - claim
+      - declaration
+      - requirement
+      - statement
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>.+(?:must|shall|requires).+)'
+        proximity:
+          cooccurrence_terms:
+            - must
+            - shall
+            - requires
+            - declares
+            - states
+            - asserts
+          max_distance: 100
+          distance_unit: word
+        semantic:
+          reference_concepts:
+            - normative statement requiring action
+            - declarative claim presented as fact
+            - requirement with obligation
+          similarity_threshold: 0.65
+
+  # Top-level: hypothesis
+  - entity_type: hypothesis
+    parent_type: ""
+    w_category: why
+    domain: global
+    description: Testable, provisional explanations, theories
+    aliases:
+      - theory
+      - proposition
+      - explanation
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>If\s+.+,?\s+then\s+.+)'
+      - instance_name: '(?P<name>[A-Z][^.!?]+(?:hypothesis|theory|proposes|suggests)[^.!?]+)'
+        proximity:
+          cooccurrence_terms:
+            - hypothesis
+            - theory
+            - proposes
+            - suggests
+            - if
+            - then
+          max_distance: 100
+          distance_unit: word
+        semantic:
+          reference_concepts:
+            - conditional statement with testable prediction
+            - provisional explanation requiring evidence
+            - scientific theory with hypothesis
+          similarity_threshold: 0.70
+
+entity_relationship_rules:
+  - name: assertion_supports_assertion
+    source_entity_type: assertion
+    target_entity_type: assertion
+    relationship_type: supports
+    description: One assertion supports or provides evidence for another assertion
+    confidence: 0.65
+    extraction_patterns:
+      - type: proximity
+        signal_words:
+          - supports
+          - evidence for
+          - because
+          - therefore
+          - thus
+          - consequently
+        max_distance: 100
+        direction: forward

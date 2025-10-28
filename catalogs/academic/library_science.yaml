@@ -1,0 +1,186 @@
+domain: library_science
+description: 'Library operations including cataloging workflows, circulation systems, collection development policies, archival
+  procedures, and reference services. NOTE: Mere presence of bibliographic identifiers (ISBN, DOI, PMID) or citation formats
+  does NOT indicate library science content - this domain requires discussion of library processes, operations, or professional
+  practices.'
+subdomains:
+- cataloging
+- circulation
+- collection_management
+- archives
+- reference_services
+entity_types:
+- entity_type: library_item
+  description: Library item or material
+  aliases:
+  - book
+  - resource
+  - material
+  - holding
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - book
+    - item
+    - resource
+    - material
+    - holding
+    - ISBN
+    - call number
+  parent_type: ''
+  w_category: what
+  domain: library_science
+- entity_type: patron
+  description: Library patron or user
+  aliases:
+  - user
+  - member
+  - borrower
+  - cardholder
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - patron
+    - user
+    - member
+    - borrower
+    - cardholder
+    - library card
+  parent_type: ''
+  w_category: what
+  domain: library_science
+- entity_type: circulation_transaction
+  description: Checkout or circulation transaction
+  aliases:
+  - checkout
+  - loan
+  - borrowing
+  - return
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - checkout
+    - loan
+    - borrowed
+    - returned
+    - due date
+    - circulation
+  parent_type: ''
+  w_category: what
+  domain: library_science
+- entity_type: collection
+  description: Library collection or section
+  aliases:
+  - section
+  - department
+  - special collection
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - collection
+    - section
+    - department
+    - special collection
+    - archive
+  parent_type: ''
+  w_category: what
+  domain: library_science
+- entity_type: catalog_record
+  description: Bibliographic catalog record
+  aliases:
+  - record
+  - bibliographic record
+  - metadata record
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - catalog record
+    - bibliographic record
+    - MARC record
+    - metadata
+  parent_type: ''
+  w_category: what
+  domain: library_science
+- entity_type: archive
+  description: Archival collection or materials
+  aliases:
+  - archival collection
+  - manuscript collection
+  - special materials
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - archive
+    - archival
+    - manuscript
+    - special materials
+    - rare books
+  parent_type: ''
+  w_category: what
+  domain: library_science
+relationship_types:
+- relationship_type: checked_out_by
+  description: Item checked out by patron
+  sample_rules:
+  - keywords:
+    - checked out by
+    - borrowed by
+    - on loan to
+  source_type: library_item
+  target_type: patron
+- relationship_type: in_transaction
+  description: Item in circulation transaction
+  sample_rules:
+  - keywords:
+    - checkout
+    - loan
+    - circulation
+    - transaction
+  source_type: library_item
+  target_type: circulation_transaction
+- relationship_type: part_of_collection
+  description: Item part of collection
+  sample_rules:
+  - keywords:
+    - part of
+    - in
+    - belongs to
+    - collection
+  source_type: library_item
+  target_type: collection
+- relationship_type: cataloged_as
+  description: Item cataloged as record
+  sample_rules:
+  - keywords:
+    - cataloged as
+    - catalog record
+    - bibliographic record
+  source_type: library_item
+  target_type: catalog_record
+- relationship_type: archived_in
+  description: Materials archived in archive
+  sample_rules:
+  - keywords:
+    - archived in
+    - part of archive
+    - in collection
+  source_type: library_item
+  target_type: archive

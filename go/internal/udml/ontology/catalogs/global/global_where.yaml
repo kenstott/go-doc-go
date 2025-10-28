@@ -1,0 +1,153 @@
+domain: global
+description: WHERE category - Global entity types for locations and geographic references
+w_category: where
+
+entity_types:
+  # Top-level: location
+  - entity_type: location
+    parent_type: ""
+    w_category: where
+    domain: global
+    description: Geographic place or position
+    aliases:
+      - place
+      - geographic location
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:,\s*[A-Z]{2})?)'
+        semantic:
+          reference_concepts:
+            - geographic location with coordinates
+            - spatial reference with boundaries
+            - place with geographic context
+          similarity_threshold: 0.65
+
+  # Subtype: city
+  - entity_type: city
+    parent_type: global.location
+    w_category: where
+    domain: global
+    description: Municipality, town, or urban area
+    aliases:
+      - town
+      - municipality
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})'
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+        proximity:
+          cooccurrence_terms:
+            - city
+            - town
+            - municipality
+          max_distance: 30
+          distance_unit: word
+
+  # Subtype: country
+  - entity_type: country
+    parent_type: global.location
+    w_category: where
+    domain: global
+    description: Country or nation
+    aliases:
+      - nation
+      - sovereign state
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - phrase_list:
+          - United States
+          - Canada
+          - Mexico
+          - United Kingdom
+          - Germany
+          - France
+          - Italy
+          - Spain
+          - Japan
+          - China
+          - India
+          - Australia
+          - Brazil
+          - Russia
+
+  # Subtype: region
+  - entity_type: region
+    parent_type: global.location
+    w_category: where
+    domain: global
+    description: State, province, or geographic region
+    aliases:
+      - state
+      - province
+      - territory
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - phrase_list:
+          - California
+          - Texas
+          - New York
+          - Florida
+          - Ontario
+          - Quebec
+          - Bavaria
+          - Tuscany
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+        proximity:
+          cooccurrence_terms:
+            - state
+            - province
+            - region
+          max_distance: 20
+          distance_unit: word
+
+  # Subtype: address
+  - entity_type: address
+    parent_type: global.location
+    w_category: where
+    domain: global
+    description: Full mailing or physical address
+    aliases:
+      - street address
+      - mailing address
+    element_types:
+      - paragraph
+      - list_item
+      - table_cell
+    sample_rules:
+      - instance_name: '(?P<name>\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:St|Ave|Rd|Dr|Blvd|Street|Avenue|Road|Drive|Boulevard))'
+
+  # Subtype: building
+  - entity_type: building
+    parent_type: global.location
+    w_category: where
+    domain: global
+    description: Building, structure, or facility
+    aliases:
+      - structure
+      - facility
+      - edifice
+    element_types:
+      - paragraph
+      - list_item
+    sample_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Building|Tower|Center|Hall|Complex))'
+        proximity:
+          cooccurrence_terms:
+            - located
+            - situated
+            - facility
+            - building
+          max_distance: 50
+          distance_unit: word

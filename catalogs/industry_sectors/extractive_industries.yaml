@@ -1,0 +1,590 @@
+domain: extractive_industries
+description: Mining, oil and gas extraction, quarrying, drilling operations, resource exploration, and commodity production
+subdomains:
+- mining
+- oil_gas
+- quarrying
+- exploration
+- processing
+- commodity_trading
+entity_types:
+- entity_type: mine_site
+  description: Mining site or operation location
+  aliases:
+  - mine
+  - pit
+  - quarry
+  - shaft
+  - operation
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - mine
+    - mine site
+    - pit
+    - quarry
+    - shaft
+    - mining operation
+    - extraction site
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: mineral_resource
+  description: Mineral, ore, or natural resource being extracted
+  aliases:
+  - ore
+  - mineral
+  - commodity
+  - resource
+  - deposit
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - ore
+    - mineral
+    - coal
+    - gold
+    - copper
+    - iron
+    - lithium
+    - uranium
+    - deposit
+    - reserve
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: oil_gas_field
+  description: Oil or gas field or reservoir
+  aliases:
+  - field
+  - reservoir
+  - basin
+  - well
+  - play
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - oil field
+    - gas field
+    - reservoir
+    - basin
+    - well
+    - play
+    - formation
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: exploration_project
+  description: Exploration or prospecting project
+  aliases:
+  - exploration
+  - prospect
+  - survey
+  - drilling program
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - exploration
+    - prospect
+    - survey
+    - drilling program
+    - seismic
+    - geophysical
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: drilling_operation
+  description: Drilling or extraction operation
+  aliases:
+  - drilling
+  - well
+  - borehole
+  - extraction
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - drilling
+    - well
+    - borehole
+    - extraction
+    - drill rig
+    - drilling operation
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: processing_facility
+  description: Processing plant or refinery
+  aliases:
+  - plant
+  - mill
+  - refinery
+  - processing facility
+  - concentrator
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - processing plant
+    - mill
+    - refinery
+    - concentrator
+    - smelter
+    - processing facility
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: reserve_estimate
+  description: Resource or reserve estimate
+  aliases:
+  - reserve
+  - resource
+  - proven reserve
+  - probable reserve
+  - measured resource
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - reserve
+    - resource
+    - proven
+    - probable
+    - measured
+    - indicated
+    - inferred
+    - tons
+    - barrels
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: production_volume
+  description: Production output or volume
+  aliases:
+  - production
+  - output
+  - yield
+  - extraction rate
+  element_types:
+  - paragraph
+  - table_row
+  - list_item
+  sample_rules:
+  - keywords:
+    - production
+    - output
+    - yield
+    - tons per day
+    - barrels per day
+    - extraction rate
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: mining_equipment
+  description: Mining or extraction equipment
+  aliases:
+  - equipment
+  - machinery
+  - excavator
+  - drill rig
+  - haul truck
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - equipment
+    - excavator
+    - haul truck
+    - drill rig
+    - loader
+    - crusher
+    - conveyor
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: geologic_formation
+  description: Geological formation or stratum
+  aliases:
+  - formation
+  - stratum
+  - seam
+  - layer
+  - horizon
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - formation
+    - stratum
+    - seam
+    - geological layer
+    - horizon
+    - rock unit
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: permit_license
+  description: Mining or extraction permit or license
+  aliases:
+  - permit
+  - license
+  - concession
+  - lease
+  - claim
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - permit
+    - license
+    - concession
+    - mining lease
+    - claim
+    - exploration license
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: environmental_impact
+  description: Environmental impact or remediation
+  aliases:
+  - environmental impact
+  - remediation
+  - reclamation
+  - rehabilitation
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - environmental impact
+    - EIA
+    - remediation
+    - reclamation
+    - rehabilitation
+    - mine closure
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: commodity_price
+  description: Commodity market price
+  aliases:
+  - price
+  - spot price
+  - futures price
+  - commodity price
+  element_types:
+  - paragraph
+  - table_row
+  - list_item
+  sample_rules:
+  - keywords:
+    - price
+    - commodity price
+    - spot price
+    - futures
+    - per ton
+    - per barrel
+    - per ounce
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: operator
+  description: Mining or extraction company operator
+  aliases:
+  - operator
+  - mining company
+  - producer
+  - E&P company
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - operator
+    - mining company
+    - producer
+    - E&P company
+    - exploration company
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: contractor
+  description: Mining contractor or service provider
+  aliases:
+  - contractor
+  - service provider
+  - drilling contractor
+  - mining contractor
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - contractor
+    - service provider
+    - drilling contractor
+    - mining contractor
+    - EPCM
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: safety_incident
+  description: Safety incident or accident
+  aliases:
+  - incident
+  - accident
+  - injury
+  - fatality
+  - safety event
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - safety incident
+    - accident
+    - injury
+    - fatality
+    - lost time injury
+    - TRIFR
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: grade_assay
+  description: Ore grade or assay result
+  aliases:
+  - grade
+  - assay
+  - concentration
+  - purity
+  - quality
+  element_types:
+  - paragraph
+  - table_row
+  - list_item
+  sample_rules:
+  - keywords:
+    - grade
+    - assay
+    - g/t
+    - percent
+    - ppm
+    - concentration
+    - ore quality
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+- entity_type: royalty_agreement
+  description: Royalty or revenue sharing agreement
+  aliases:
+  - royalty
+  - revenue share
+  - net smelter return
+  - NSR
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - royalty
+    - revenue share
+    - NSR
+    - net smelter return
+    - production payment
+  parent_type: ''
+  w_category: what
+  domain: extractive_industries
+relationship_types:
+- relationship_type: extracts_resource
+  description: Mine site extracts mineral resource
+  sample_rules:
+  - keywords:
+    - extracts
+    - produces
+    - mines
+    - recovers
+    - yields
+  source_type: mine_site
+  target_type: mineral_resource
+- relationship_type: produces_from_field
+  description: Operator produces from oil/gas field
+  sample_rules:
+  - keywords:
+    - produces from
+    - operates
+    - extracts from
+    - field operator
+  source_type: operator
+  target_type: oil_gas_field
+- relationship_type: explores_for_resource
+  description: Exploration project targets resource
+  sample_rules:
+  - keywords:
+    - explores for
+    - targets
+    - searching for
+    - prospecting for
+  source_type: exploration_project
+  target_type: mineral_resource
+- relationship_type: drills_at_site
+  description: Drilling operation at mine site or field
+  sample_rules:
+  - keywords:
+    - drilling at
+    - located at
+    - operating at
+  source_type: drilling_operation
+  target_type: mine_site
+- relationship_type: processes_ore
+  description: Processing facility processes ore
+  sample_rules:
+  - keywords:
+    - processes
+    - treats
+    - refines
+    - concentrates
+    - smelts
+  source_type: processing_facility
+  target_type: mineral_resource
+- relationship_type: has_reserve_estimate
+  description: Mine site has reserve estimate
+  sample_rules:
+  - keywords:
+    - has reserves
+    - reserves of
+    - estimated reserves
+    - resource estimate
+  source_type: mine_site
+  target_type: reserve_estimate
+- relationship_type: achieves_production
+  description: Mine site achieves production volume
+  sample_rules:
+  - keywords:
+    - produces
+    - production of
+    - output of
+    - yields
+    - achieves
+  source_type: mine_site
+  target_type: production_volume
+- relationship_type: uses_equipment
+  description: Mine site uses equipment
+  sample_rules:
+  - keywords:
+    - uses
+    - operates
+    - deploys
+    - equipped with
+  source_type: mine_site
+  target_type: mining_equipment
+- relationship_type: located_in_formation
+  description: Resource located in geological formation
+  sample_rules:
+  - keywords:
+    - located in
+    - found in
+    - hosted in
+    - within formation
+  source_type: mineral_resource
+  target_type: geologic_formation
+- relationship_type: authorized_by_permit
+  description: Operation authorized by permit
+  sample_rules:
+  - keywords:
+    - authorized by
+    - permitted by
+    - licensed under
+    - covered by
+  source_type: mine_site
+  target_type: permit_license
+- relationship_type: causes_impact
+  description: Operation causes environmental impact
+  sample_rules:
+  - keywords:
+    - causes
+    - results in
+    - environmental impact
+    - affects
+  source_type: mine_site
+  target_type: environmental_impact
+- relationship_type: traded_at_price
+  description: Commodity traded at price
+  sample_rules:
+  - keywords:
+    - traded at
+    - priced at
+    - selling for
+    - market price
+  source_type: mineral_resource
+  target_type: commodity_price
+- relationship_type: operated_by
+  description: Site operated by company
+  sample_rules:
+  - keywords:
+    - operated by
+    - owned by
+    - managed by
+    - operator
+  source_type: mine_site
+  target_type: operator
+- relationship_type: contracted_to
+  description: Contractor provides services to operator
+  sample_rules:
+  - keywords:
+    - contracted to
+    - provides services to
+    - working for
+    - engaged by
+  source_type: contractor
+  target_type: operator
+- relationship_type: reported_incident
+  description: Site reported safety incident
+  sample_rules:
+  - keywords:
+    - reported
+    - incident at
+    - accident at
+    - occurred at
+  source_type: mine_site
+  target_type: safety_incident
+- relationship_type: has_grade
+  description: Resource has grade/assay
+  sample_rules:
+  - keywords:
+    - grade of
+    - assay of
+    - concentration of
+    - grading
+  source_type: mineral_resource
+  target_type: grade_assay
+- relationship_type: subject_to_royalty
+  description: Production subject to royalty
+  sample_rules:
+  - keywords:
+    - subject to royalty
+    - royalty on
+    - NSR applies
+    - revenue share
+  source_type: mine_site
+  target_type: royalty_agreement

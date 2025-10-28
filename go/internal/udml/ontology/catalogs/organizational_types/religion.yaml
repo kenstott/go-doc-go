@@ -1,0 +1,295 @@
+domain: religion
+description: Religious organizations, faith communities, worship, religious texts, spiritual practices, and faith-based services
+subdomains:
+- worship
+- religious_education
+- community_services
+- faith_administration
+- spiritual_care
+terms:
+- name: congregation
+  synonyms:
+  - parish
+  - assembly
+  - flock
+  - community
+  - fellowship
+  description: Group of people who worship together
+- name: clergy
+  synonyms:
+  - minister
+  - priest
+  - rabbi
+  - imam
+  - pastor
+  - spiritual leader
+  description: Religious leader ordained to perform religious ceremonies
+- name: worship
+  synonyms:
+  - service
+  - mass
+  - prayer
+  - devotion
+  - liturgy
+  description: Acts of religious devotion and ceremony
+- name: scripture
+  synonyms:
+  - holy text
+  - sacred text
+  - religious text
+  - bible
+  description: Religious texts considered sacred
+- name: sacrament
+  synonyms:
+  - ritual
+  - rite
+  - ceremony
+  - ordinance
+  description: Religious ceremony or ritual
+- name: ministry
+  synonyms:
+  - service
+  - outreach
+  - mission
+  - pastoral care
+  description: Religious service or outreach activity
+entity_types:
+- entity_type: religious_organization
+  description: Church, synagogue, mosque, temple, or faith-based organization
+  aliases:
+  - church
+  - synagogue
+  - mosque
+  - temple
+  - parish
+  - congregation
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Church|Temple|Synagogue|Mosque|Cathedral|Chapel)\b'
+  - keywords:
+    - church
+    - temple
+    - synagogue
+    - mosque
+    - parish
+    - congregation
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: clergy
+  description: Religious leader or ordained minister
+  aliases:
+  - minister
+  - priest
+  - rabbi
+  - imam
+  - pastor
+  - reverend
+  - father
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - keywords:
+    - reverend
+    - pastor
+    - priest
+    - rabbi
+    - imam
+    - minister
+    - deacon
+    - bishop
+  - pattern: '\b(?:Rev\.|Reverend|Pastor|Fr\.|Father|Rabbi|Imam)\s+[A-Z][a-z]+(?: [A-Z][a-z]+)+\b'
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: worship_service
+  description: Religious service or ceremony
+  aliases:
+  - mass
+  - service
+  - prayer service
+  - liturgy
+  - worship
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - worship service
+    - mass
+    - prayer service
+    - liturgy
+    - vespers
+    - matins
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: religious_text
+  description: Sacred or religious scripture
+  aliases:
+  - scripture
+  - holy book
+  - bible
+  - torah
+  - quran
+  - gospel
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - Bible
+    - Torah
+    - Quran
+    - Gospel
+    - Scripture
+    - Testament
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: sacrament
+  description: Religious rite or ceremony
+  aliases:
+  - ritual
+  - rite
+  - ceremony
+  - ordinance
+  element_types:
+  - paragraph
+  sample_rules:
+  - keywords:
+    - baptism
+    - communion
+    - eucharist
+    - confirmation
+    - marriage
+    - ordination
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: congregation_member
+  description: Member of religious community
+  aliases:
+  - parishioner
+  - member
+  - congregant
+  - follower
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - keywords:
+    - member
+    - parishioner
+    - congregant
+    - follower
+    - believer
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: ministry_program
+  description: Religious service or outreach program
+  aliases:
+  - ministry
+  - mission
+  - outreach
+  - program
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - ministry
+    - mission
+    - outreach
+    - youth group
+    - Bible study
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: denomination
+  description: Branch or sect of a religion
+  aliases:
+  - faith tradition
+  - religious tradition
+  - sect
+  element_types:
+  - paragraph
+  sample_rules:
+  - keywords:
+    - Catholic
+    - Protestant
+    - Baptist
+    - Methodist
+    - Presbyterian
+    - Lutheran
+    - Orthodox
+    - Reformed
+  parent_type: ''
+  w_category: what
+  domain: religion
+- entity_type: religious_holiday
+  description: Religious observance or holy day
+  aliases:
+  - holy day
+  - feast day
+  - observance
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - keywords:
+    - Christmas
+    - Easter
+    - Passover
+    - Hanukkah
+    - Ramadan
+    - Yom Kippur
+    - Pentecost
+  parent_type: ''
+  w_category: what
+  domain: religion
+common_entity_refs:
+- person
+- email
+- phone
+- address
+- date
+- time
+- building
+relationships:
+- name: clergy_leads
+  source_type: clergy
+  target_type: religious_organization
+  relationship_type: part_of
+  description: Clergy member leads or serves at religious organization
+  sample_patterns:
+  - '{clergy} serves at {religious_organization}'
+  - '{clergy} is pastor of {religious_organization}'
+- name: member_belongs_to
+  source_type: congregation_member
+  target_type: religious_organization
+  relationship_type: part_of
+  description: Member belongs to religious organization
+  sample_patterns:
+  - '{congregation_member} attends {religious_organization}'
+  - '{congregation_member} is member of {religious_organization}'
+- name: service_held_at
+  source_type: worship_service
+  target_type: religious_organization
+  relationship_type: related_to
+  description: Worship service held at religious organization
+  sample_patterns:
+  - '{worship_service} held at {religious_organization}'
+  - '{religious_organization} offers {worship_service}'
+- name: ministry_operated_by
+  source_type: ministry_program
+  target_type: religious_organization
+  relationship_type: part_of
+  description: Ministry program operated by religious organization
+  sample_patterns:
+  - '{ministry_program} operated by {religious_organization}'
+  - '{religious_organization} runs {ministry_program}'

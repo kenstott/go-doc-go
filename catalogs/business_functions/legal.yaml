@@ -1,0 +1,402 @@
+domain: legal
+description: Legal contracts, agreements, court documents, regulations, and legal correspondence
+subdomains:
+- contract_law
+- corporate_law
+- intellectual_property
+- litigation
+- regulatory_compliance
+- real_estate_law
+terms:
+- name: plaintiff
+  synonyms:
+  - claimant
+  - complainant
+  - petitioner
+  - appellant
+  description: Party bringing a legal action
+- name: defendant
+  synonyms:
+  - respondent
+  - appellee
+  - accused
+  description: Party defending against a legal action
+- name: jurisdiction
+  synonyms:
+  - venue
+  - court authority
+  - legal authority
+  description: Legal authority of a court or governing body
+- name: liability
+  synonyms:
+  - responsibility
+  - obligation
+  - legal duty
+  - accountability
+  description: Legal responsibility or obligation
+- name: indemnification
+  synonyms:
+  - indemnity
+  - protection
+  - reimbursement
+  - compensation
+  description: Protection against loss or legal liability
+- name: statute
+  synonyms:
+  - law
+  - act
+  - legislation
+  - code
+  - regulation
+  description: Written law passed by legislative body
+- name: precedent
+  synonyms:
+  - case law
+  - judicial precedent
+  - prior ruling
+  description: Legal principle established in previous case
+- name: covenant
+  synonyms:
+  - agreement
+  - promise
+  - undertaking
+  - contractual term
+  description: Formal agreement or promise in a contract
+- name: consideration
+  synonyms:
+  - payment
+  - exchange
+  - quid pro quo
+  - compensation
+  description: Something of value exchanged in a contract
+- name: breach
+  synonyms:
+  - violation
+  - default
+  - non-performance
+  - infringement
+  description: Failure to fulfill contractual obligation
+entity_types:
+- entity_type: party
+  description: Legal party to contract or case
+  aliases:
+  - contracting party
+  - litigant
+  - signatory
+  - legal entity
+  element_types:
+  - paragraph
+  - heading
+  - table_cell
+  sample_rules:
+  - keywords:
+    - plaintiff
+    - defendant
+    - party
+    - signatory
+    - lessor
+    - lessee
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: legal_entity
+  description: Business or organization in legal context
+  aliases:
+  - corporation
+  - LLC
+  - partnership
+  - legal person
+  - entity
+  element_types:
+  - paragraph
+  - heading
+  - table_cell
+  sample_rules:
+  - pattern: \b[A-Z][A-Za-z\s]+(?:Inc|Corp|LLC|Ltd|LP|LLP|Company)\b
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: statute_reference
+  description: Reference to law, statute, or regulation
+  aliases:
+  - law citation
+  - code reference
+  - regulation
+  - statute
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - pattern: "\\b\\d+\\s+U\\.?S\\.?C\\.?\\s+\xA7\\s*\\d+"
+  - pattern: \bSection\s+\d+(?:\.\d+)*\b
+  - keywords:
+    - USC
+    - CFR
+    - statute
+    - section
+    - article
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: case_citation
+  description: Legal case citation
+  aliases:
+  - case reference
+  - precedent citation
+  - court decision
+  element_types:
+  - paragraph
+  sample_rules:
+  - pattern: \b[A-Z][a-z]+\s+v\.\s+[A-Z][a-z]+(?:,\s*\d+\s+[A-Z][a-z\.]+\s+\d+)?
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: contract_term
+  description: Duration or term of contract
+  aliases:
+  - term
+  - contract period
+  - duration
+  - effective period
+  element_types:
+  - paragraph
+  - table_cell
+  sample_rules:
+  - pattern: \b(?:term|duration|period)\s+of\s+\d+\s+(?:years?|months?|days?)
+  - keywords:
+    - effective date
+    - expiration
+    - term
+    - renewal
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: obligation
+  description: Legal obligation or duty
+  aliases:
+  - duty
+  - requirement
+  - covenant
+  - undertaking
+  - promise
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - shall
+    - must
+    - required to
+    - obligated to
+    - covenant
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: right
+  description: Legal right or entitlement
+  aliases:
+  - entitlement
+  - privilege
+  - license
+  - permission
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - right to
+    - entitled to
+    - may
+    - permitted to
+    - license
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: remedy
+  description: Legal remedy or relief
+  aliases:
+  - relief
+  - damages
+  - compensation
+  - cure
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - damages
+    - injunction
+    - specific performance
+    - rescission
+    - restitution
+    - remedy
+    - relief
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: jurisdiction_clause
+  description: Jurisdiction or governing law clause
+  aliases:
+  - governing law
+  - choice of law
+  - venue
+  - forum
+  element_types:
+  - paragraph
+  sample_rules:
+  - keywords:
+    - governing law
+    - jurisdiction
+    - venue
+    - forum
+    - laws of
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: confidentiality_clause
+  description: Confidentiality or non-disclosure provision
+  aliases:
+  - NDA
+  - non-disclosure
+  - confidential information
+  - trade secret
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - confidential
+    - non-disclosure
+    - proprietary
+    - trade secret
+    - confidentiality
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: liability_limitation
+  description: Limitation of liability clause
+  aliases:
+  - liability cap
+  - limitation
+  - disclaimer
+  - exclusion
+  element_types:
+  - paragraph
+  sample_rules:
+  - keywords:
+    - limited to
+    - not liable
+    - disclaims
+    - in no event
+  parent_type: ''
+  w_category: what
+  domain: legal
+- entity_type: termination_clause
+  description: Contract termination provision
+  aliases:
+  - termination
+  - cancellation
+  - expiration
+  - end
+  element_types:
+  - paragraph
+  - heading
+  sample_rules:
+  - keywords:
+    - terminate
+    - termination
+    - cancel
+    - end
+    - expire
+  parent_type: ''
+  w_category: what
+  domain: legal
+common_entity_refs:
+- person
+- executive
+- role
+- date
+- time
+- duration
+- address
+- city
+- region
+- country
+- postal_code
+- email
+- phone
+- url
+- percentage
+- number
+- id_number
+relationships:
+- name: party_has_obligation
+  source_type: party
+  target_type: obligation
+  relationship_type: related_to
+  description: Legal party has an obligation
+  sample_patterns:
+  - '{party} shall {obligation}'
+  - '{party} is obligated to {obligation}'
+  - '{obligation} by {party}'
+- name: party_has_right
+  source_type: party
+  target_type: right
+  relationship_type: related_to
+  description: Legal party has a right
+  sample_patterns:
+  - '{party} has the right to {right}'
+  - '{party} may {right}'
+  - '{right} granted to {party}'
+- name: breach_triggers_remedy
+  source_type: obligation
+  target_type: remedy
+  relationship_type: related_to
+  description: Breach of obligation triggers remedy
+  sample_patterns:
+  - breach of {obligation} results in {remedy}
+  - '{remedy} for failure to {obligation}'
+- name: contract_references_statute
+  source_type: party
+  target_type: statute_reference
+  relationship_type: mentions
+  description: Contract mentions/references statute or law
+  sample_patterns:
+  - pursuant to {statute}
+  - in accordance with {statute}
+  - as required by {statute}
+- name: jurisdiction_governs_contract
+  source_type: jurisdiction_clause
+  target_type: legal_entity
+  relationship_type: related_to
+  description: Jurisdiction governs contract
+  sample_patterns:
+  - governed by the laws of {jurisdiction}
+  - '{jurisdiction} shall have jurisdiction'
+  - venue in {jurisdiction}
+- name: case_cites_precedent
+  source_type: case_citation
+  target_type: statute_reference
+  relationship_type: mentions
+  description: Case cites precedent or statute
+  sample_patterns:
+  - '{case} citing {statute}'
+  - see {case}
+  - as held in {case}
+- name: party_located_at
+  source_type: party
+  target_type: address
+  relationship_type: located_in
+  description: Party located at address
+  sample_patterns:
+  - '{party} at {address}'
+  - '{party}, located at {address}'
+- name: contract_effective_on_date
+  source_type: contract_term
+  target_type: date
+  relationship_type: occurred_at
+  description: Contract term effective on date
+  sample_patterns:
+  - effective as of {date}
+  - commencing on {date}
+  - '{term} beginning {date}'

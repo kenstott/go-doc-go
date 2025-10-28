@@ -1,0 +1,180 @@
+domain: security_access_control
+description: Authentication, authorization, permissions, roles, identity management, and access control
+subdomains:
+- authentication
+- authorization
+- identity_management
+- access_control
+- audit_logging
+entity_types:
+- entity_type: user
+  description: User or identity
+  aliases:
+  - identity
+  - account
+  - principal
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - user
+    - identity
+    - account
+    - principal
+    - username
+  parent_type: ''
+  w_category: what
+  domain: security_access_control
+- entity_type: role
+  description: Security role or group
+  aliases:
+  - group
+  - security group
+  - permission group
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - role
+    - group
+    - security group
+    - permission group
+  parent_type: ''
+  w_category: what
+  domain: security_access_control
+- entity_type: permission
+  description: Permission or privilege
+  aliases:
+  - privilege
+  - access right
+  - entitlement
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - permission
+    - privilege
+    - access right
+    - entitlement
+    - grant
+  parent_type: ''
+  w_category: what
+  domain: security_access_control
+- entity_type: resource
+  description: Protected resource or object
+  aliases:
+  - object
+  - asset
+  - protected resource
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - resource
+    - object
+    - asset
+    - protected resource
+    - system
+  parent_type: ''
+  w_category: what
+  domain: security_access_control
+- entity_type: authentication_method
+  description: Authentication method or mechanism
+  aliases:
+  - auth method
+  - authentication mechanism
+  - credential type
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - authentication
+    - auth method
+    - password
+    - MFA
+    - SSO
+    - OAuth
+    - SAML
+  parent_type: ''
+  w_category: what
+  domain: security_access_control
+- entity_type: audit_event
+  description: Security audit or access event
+  aliases:
+  - access event
+  - security event
+  - audit log
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - audit
+    - access event
+    - security event
+    - log entry
+    - access attempt
+  parent_type: ''
+  w_category: what
+  domain: security_access_control
+relationship_types:
+- relationship_type: has_role
+  description: User has role
+  sample_rules:
+  - keywords:
+    - has role
+    - member of
+    - assigned to
+    - in group
+  source_type: user
+  target_type: role
+- relationship_type: has_permission
+  description: Role has permission
+  sample_rules:
+  - keywords:
+    - has permission
+    - grants
+    - includes
+    - allows
+  source_type: role
+  target_type: permission
+- relationship_type: protects
+  description: Permission protects resource
+  sample_rules:
+  - keywords:
+    - protects
+    - controls access to
+    - guards
+    - secures
+  source_type: permission
+  target_type: resource
+- relationship_type: authenticated_via
+  description: User authenticated via method
+  sample_rules:
+  - keywords:
+    - authenticated via
+    - logged in with
+    - uses
+    - auth method
+  source_type: user
+  target_type: authentication_method
+- relationship_type: logged_as
+  description: Access logged as audit event
+  sample_rules:
+  - keywords:
+    - logged
+    - audit
+    - access event
+    - recorded
+  source_type: user
+  target_type: audit_event

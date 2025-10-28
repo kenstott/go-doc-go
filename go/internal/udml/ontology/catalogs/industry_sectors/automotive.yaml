@@ -1,0 +1,154 @@
+domain: automotive
+description: Vehicles, parts, service, sales, dealerships, and automotive manufacturing
+subdomains:
+- vehicle_sales
+- parts_inventory
+- service_management
+- manufacturing
+- dealership_management
+entity_types:
+- entity_type: vehicle
+  description: Motor vehicle or automobile
+  aliases:
+  - car
+  - automobile
+  - truck
+  - SUV
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - vehicle
+    - car
+    - automobile
+    - truck
+    - SUV
+    - VIN
+    - model
+    - make
+  parent_type: ''
+  w_category: what
+  domain: automotive
+- entity_type: part
+  description: Vehicle part or component
+  aliases:
+  - component
+  - spare part
+  - auto part
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - part
+    - component
+    - spare part
+    - OEM
+    - part number
+    - SKU
+  parent_type: ''
+  w_category: what
+  domain: automotive
+- entity_type: service_appointment
+  description: Vehicle service or maintenance appointment
+  aliases:
+  - service
+  - maintenance
+  - repair
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - service
+    - maintenance
+    - repair
+    - oil change
+    - inspection
+    - tune-up
+  parent_type: ''
+  w_category: what
+  domain: automotive
+- entity_type: dealership
+  description: Vehicle dealership or sales location
+  aliases:
+  - dealer
+  - showroom
+  - sales center
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - dealership
+    - dealer
+    - showroom
+    - sales center
+    - service center
+  parent_type: ''
+  w_category: what
+  domain: automotive
+- entity_type: customer
+  description: Vehicle customer or owner
+  aliases:
+  - owner
+  - buyer
+  - client
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - customer
+    - owner
+    - buyer
+    - client
+    - driver
+  parent_type: global.organization
+  w_category: who
+  domain: automotive
+relationship_types:
+- relationship_type: owned_by
+  description: Vehicle owned by customer
+  sample_rules:
+  - keywords:
+    - owned by
+    - belongs to
+    - registered to
+  source_type: vehicle
+  target_type: customer
+- relationship_type: requires_part
+  description: Service requires part
+  sample_rules:
+  - keywords:
+    - requires
+    - needs
+    - part
+    - component
+  source_type: service_appointment
+  target_type: part
+- relationship_type: serviced_at
+  description: Vehicle serviced at dealership
+  sample_rules:
+  - keywords:
+    - serviced at
+    - service location
+    - dealer
+  source_type: vehicle
+  target_type: dealership
+- relationship_type: sold_by
+  description: Vehicle sold by dealership
+  sample_rules:
+  - keywords:
+    - sold by
+    - purchased from
+    - dealer
+  source_type: vehicle
+  target_type: dealership

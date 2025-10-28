@@ -1,0 +1,216 @@
+domain: artificial_intelligence
+description: ML models, training data, inference, model governance, and AI/ML operations
+subdomains:
+- model_development
+- training_data
+- model_deployment
+- model_monitoring
+- ai_governance
+entity_types:
+- entity_type: ml_model
+  description: Machine learning model
+  aliases:
+  - model
+  - AI model
+  - neural network
+  - algorithm
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - model
+    - ML model
+    - neural network
+    - AI model
+    - algorithm
+    - classifier
+  parent_type: ''
+  w_category: what
+  domain: artificial_intelligence
+- entity_type: training_dataset
+  description: Training dataset or data collection
+  aliases:
+  - dataset
+  - training data
+  - data collection
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - training data
+    - dataset
+    - data collection
+    - training set
+    - labeled data
+  parent_type: ''
+  w_category: what
+  domain: artificial_intelligence
+- entity_type: model_version
+  description: Model version or iteration
+  aliases:
+  - version
+  - iteration
+  - checkpoint
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - version
+    - iteration
+    - checkpoint
+    - model version
+    - release
+  parent_type: ''
+  w_category: what
+  domain: artificial_intelligence
+- entity_type: inference_request
+  description: Model inference or prediction request
+  aliases:
+  - prediction
+  - inference
+  - scoring
+  - model call
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - inference
+    - prediction
+    - scoring
+    - model call
+    - endpoint
+  parent_type: ''
+  w_category: what
+  domain: artificial_intelligence
+- entity_type: feature
+  description: Model feature or input variable
+  aliases:
+  - input
+  - variable
+  - feature vector
+  - attribute
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - feature
+    - input
+    - variable
+    - attribute
+    - feature engineering
+  parent_type: ''
+  w_category: what
+  domain: artificial_intelligence
+- entity_type: model_metric
+  description: Model performance metric
+  aliases:
+  - performance metric
+  - accuracy
+  - precision
+  - recall
+  - F1
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - accuracy
+    - precision
+    - recall
+    - F1
+    - AUC
+    - performance metric
+  parent_type: ''
+  w_category: what
+  domain: artificial_intelligence
+- entity_type: ai_policy
+  description: AI governance policy or guideline
+  aliases:
+  - governance policy
+  - AI guideline
+  - ethical policy
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - AI policy
+    - governance
+    - ethical AI
+    - responsible AI
+    - fairness
+  parent_type: ''
+  w_category: what
+  domain: artificial_intelligence
+relationship_types:
+- relationship_type: trained_on
+  description: Model trained on dataset
+  sample_rules:
+  - keywords:
+    - trained on
+    - trained with
+    - using data
+    - dataset
+  source_type: ml_model
+  target_type: training_dataset
+- relationship_type: version_of
+  description: Version of model
+  sample_rules:
+  - keywords:
+    - version of
+    - iteration of
+    - checkpoint of
+  source_type: model_version
+  target_type: ml_model
+- relationship_type: uses_feature
+  description: Model uses feature
+  sample_rules:
+  - keywords:
+    - uses
+    - inputs
+    - feature
+    - variable
+  source_type: ml_model
+  target_type: feature
+- relationship_type: evaluated_with
+  description: Model evaluated with metric
+  sample_rules:
+  - keywords:
+    - evaluated
+    - measured
+    - metric
+    - performance
+  source_type: ml_model
+  target_type: model_metric
+- relationship_type: governed_by
+  description: Model governed by policy
+  sample_rules:
+  - keywords:
+    - governed by
+    - complies with
+    - follows
+    - adheres to
+  source_type: ml_model
+  target_type: ai_policy
+- relationship_type: inference_from
+  description: Inference from model
+  sample_rules:
+  - keywords:
+    - from
+    - using
+    - model
+    - prediction from
+  source_type: inference_request
+  target_type: ml_model

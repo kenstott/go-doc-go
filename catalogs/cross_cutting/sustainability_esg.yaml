@@ -1,0 +1,181 @@
+domain: sustainability_esg
+description: Environmental metrics, social responsibility, governance, carbon tracking, and ESG reporting
+subdomains:
+- environmental_metrics
+- social_responsibility
+- governance
+- carbon_accounting
+- esg_reporting
+entity_types:
+- entity_type: esg_initiative
+  description: ESG initiative or program
+  aliases:
+  - initiative
+  - program
+  - sustainability initiative
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - initiative
+    - program
+    - sustainability
+    - ESG initiative
+    - green initiative
+  parent_type: ''
+  w_category: what
+  domain: sustainability_esg
+- entity_type: emission
+  description: Carbon emission or greenhouse gas
+  aliases:
+  - carbon emission
+  - GHG
+  - greenhouse gas
+  - CO2
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - emission
+    - carbon
+    - CO2
+    - greenhouse gas
+    - GHG
+    - tons CO2e
+  parent_type: ''
+  w_category: what
+  domain: sustainability_esg
+- entity_type: environmental_metric
+  description: Environmental performance metric
+  aliases:
+  - environmental KPI
+  - sustainability metric
+  - green metric
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - environmental metric
+    - sustainability metric
+    - carbon footprint
+    - energy consumption
+  parent_type: ''
+  w_category: what
+  domain: sustainability_esg
+- entity_type: social_metric
+  description: Social responsibility metric
+  aliases:
+  - social KPI
+  - diversity metric
+  - community impact
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - social metric
+    - diversity
+    - inclusion
+    - community impact
+    - employee wellbeing
+  parent_type: ''
+  w_category: what
+  domain: sustainability_esg
+- entity_type: governance_policy
+  description: Governance policy or framework
+  aliases:
+  - policy
+  - framework
+  - governance framework
+  - compliance policy
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - governance
+    - policy
+    - framework
+    - compliance
+    - board oversight
+  parent_type: ''
+  w_category: what
+  domain: sustainability_esg
+- entity_type: esg_report
+  description: ESG report or disclosure
+  aliases:
+  - sustainability report
+  - ESG disclosure
+  - CSR report
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - ESG report
+    - sustainability report
+    - disclosure
+    - CSR report
+  parent_type: ''
+  w_category: what
+  domain: sustainability_esg
+relationship_types:
+- relationship_type: reduces_emission
+  description: Initiative reduces emission
+  sample_rules:
+  - keywords:
+    - reduces
+    - cuts
+    - lowers
+    - decreases
+    - mitigates
+  source_type: esg_initiative
+  target_type: emission
+- relationship_type: tracks_metric
+  description: Initiative tracks environmental metric
+  sample_rules:
+  - keywords:
+    - tracks
+    - measures
+    - monitors
+    - reports
+  source_type: esg_initiative
+  target_type: environmental_metric
+- relationship_type: governed_by
+  description: Initiative governed by policy
+  sample_rules:
+  - keywords:
+    - governed by
+    - complies with
+    - follows
+    - adheres to
+  source_type: esg_initiative
+  target_type: governance_policy
+- relationship_type: reported_in
+  description: Metric reported in ESG report
+  sample_rules:
+  - keywords:
+    - reported in
+    - disclosed in
+    - published in
+  source_type: environmental_metric
+  target_type: esg_report
+- relationship_type: measures_social
+  description: Social metric measures impact
+  sample_rules:
+  - keywords:
+    - measures
+    - tracks
+    - assesses
+    - evaluates
+  source_type: social_metric
+  target_type: esg_initiative

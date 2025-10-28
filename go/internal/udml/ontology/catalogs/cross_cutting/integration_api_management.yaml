@@ -1,0 +1,189 @@
+domain: integration_api_management
+description: APIs, integrations, data exchange, service orchestration, and API lifecycle management
+subdomains:
+- api_development
+- api_security
+- service_integration
+- data_exchange
+- api_monitoring
+entity_types:
+- entity_type: api
+  description: API or web service
+  aliases:
+  - web service
+  - REST API
+  - API endpoint
+  - service
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - keywords:
+    - API
+    - web service
+    - REST
+    - endpoint
+    - service
+    - interface
+  parent_type: ''
+  w_category: what
+  domain: integration_api_management
+- entity_type: api_endpoint
+  description: API endpoint or route
+  aliases:
+  - route
+  - path
+  - operation
+  - method
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - endpoint
+    - route
+    - path
+    - operation
+    - GET
+    - POST
+    - PUT
+    - DELETE
+  parent_type: ''
+  w_category: what
+  domain: integration_api_management
+- entity_type: integration
+  description: System integration or connector
+  aliases:
+  - connector
+  - integration point
+  - connection
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - integration
+    - connector
+    - connection
+    - integration point
+    - interface
+  parent_type: ''
+  w_category: what
+  domain: integration_api_management
+- entity_type: data_format
+  description: Data format or schema
+  aliases:
+  - schema
+  - format
+  - data structure
+  - message format
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - keywords:
+    - format
+    - schema
+    - JSON
+    - XML
+    - data structure
+    - message format
+  parent_type: ''
+  w_category: what
+  domain: integration_api_management
+- entity_type: api_consumer
+  description: API consumer or client
+  aliases:
+  - client
+  - application
+  - consumer
+  - subscriber
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - consumer
+    - client
+    - application
+    - subscriber
+    - API key
+  parent_type: ''
+  w_category: what
+  domain: integration_api_management
+- entity_type: api_key
+  description: API key or credential
+  aliases:
+  - credential
+  - access token
+  - API token
+  element_types:
+  - paragraph
+  - list_item
+  - table_row
+  sample_rules:
+  - keywords:
+    - API key
+    - credential
+    - access token
+    - API token
+    - secret
+  parent_type: ''
+  w_category: what
+  domain: integration_api_management
+relationship_types:
+- relationship_type: exposes_endpoint
+  description: API exposes endpoint
+  sample_rules:
+  - keywords:
+    - exposes
+    - provides
+    - offers
+    - endpoint
+    - route
+  source_type: api
+  target_type: api_endpoint
+- relationship_type: uses_format
+  description: Endpoint uses data format
+  sample_rules:
+  - keywords:
+    - uses
+    - accepts
+    - returns
+    - format
+    - schema
+  source_type: api_endpoint
+  target_type: data_format
+- relationship_type: integrates_with
+  description: Integration connects APIs
+  sample_rules:
+  - keywords:
+    - integrates with
+    - connects to
+    - calls
+    - consumes
+  source_type: integration
+  target_type: api
+- relationship_type: consumed_by
+  description: API consumed by consumer
+  sample_rules:
+  - keywords:
+    - consumed by
+    - used by
+    - client
+    - consumer
+  source_type: api
+  target_type: api_consumer
+- relationship_type: authenticated_with
+  description: Consumer authenticated with API key
+  sample_rules:
+  - keywords:
+    - authenticated with
+    - uses key
+    - API key
+    - credential
+  source_type: api_consumer
+  target_type: api_key

@@ -2,8 +2,10 @@ package ontology
 
 import (
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +19,9 @@ import (
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/sampler"
 	"gopkg.in/yaml.v3"
 )
+
+//go:embed catalogs/**/*.yaml
+var embeddedCatalogs embed.FS
 
 // min returns the smaller of two integers
 func min(a, b int) int {
@@ -62,6 +67,9 @@ type BuilderConfig struct {
 	SchemaName    string // Name for the generated schema
 	SchemaVersion string // Version
 	Domain        string // Domain name
+
+	// Catalog Configuration
+	ExternalCatalogPath string // Optional: path to external catalog directory to extend embedded catalogs
 }
 
 // LLMClient defines the interface for LLM providers
@@ -370,6 +378,14 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 		return nil, llmCalls, totalTokens, fmt.Errorf("failed to merge global catalog: %w", err)
 	}
 
+	// Merge domain-specific catalogs for selected domains
+	for _, domain := range domains {
+		if err := b.mergeDomainCatalog(schema, domain.Name); err != nil {
+			fmt.Printf("Warning: Failed to merge catalog for domain '%s': %v\n", domain.Name, err)
+			// Don't fail - just warn and continue
+		}
+	}
+
 	return schema, llmCalls, totalTokens, nil
 }
 
@@ -405,58 +421,31 @@ type GlobalRelationshipTemplate struct {
 // mergeGlobalCatalog merges global domain catalog into generated schema
 // Adds 37 global entity types and global relationships to every schema
 func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
-	// Try multiple paths for global catalog directory
-	catalogPaths := []string{
-		"./catalogs/global",       // From project root
-		"../catalogs/global",      // From go/ directory
-		"../../catalogs/global",   // From subdirectory
-	}
-
-	var globalCatalogPath string
-	for _, path := range catalogPaths {
-		if _, err := os.Stat(path); err == nil {
-			globalCatalogPath = path
-			break
-		}
-	}
-
-	if globalCatalogPath == "" {
-		return fmt.Errorf("global catalog directory not found (tried: %v)", catalogPaths)
-	}
-
-	// Find all YAML files in global catalog directory
-	yamlFiles, err := filepath.Glob(filepath.Join(globalCatalogPath, "*.yaml"))
-	if err != nil {
-		return fmt.Errorf("failed to glob YAML files: %w", err)
-	}
-
-	// Also check for .yml extension
-	ymlFiles, err := filepath.Glob(filepath.Join(globalCatalogPath, "*.yml"))
-	if err != nil {
-		return fmt.Errorf("failed to glob YML files: %w", err)
-	}
-	yamlFiles = append(yamlFiles, ymlFiles...)
-
-	if len(yamlFiles) == 0 {
-		return fmt.Errorf("no global catalog YAML files found in %s", globalCatalogPath)
-	}
-
-	// Load and parse each catalog file
 	var globalEntities []ElementEntityMappingConfig
 	var globalRels []EntityRelationshipRule
 
-	for _, filePath := range yamlFiles {
-		data, err := os.ReadFile(filePath)
+	// Load from embedded catalogs
+	fmt.Println("✓ Loading global catalog from embedded files...")
+	err := fs.WalkDir(embeddedCatalogs, "catalogs/global", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", filePath, err)
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return nil
+		}
+
+		// Read embedded file
+		data, err := embeddedCatalogs.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read embedded global catalog %s: %w", path, err)
 		}
 
 		var catalog GlobalCatalogSchema
 		if err := yaml.Unmarshal(data, &catalog); err != nil {
-			return fmt.Errorf("failed to parse %s: %w", filePath, err)
+			return fmt.Errorf("failed to parse embedded global catalog %s: %w", path, err)
 		}
 
-		// Collect entity types from this catalog
+		// Collect entity types
 		for _, entityTemplate := range catalog.EntityTypes {
 			globalEntities = append(globalEntities, ElementEntityMappingConfig{
 				EntityType:      entityTemplate.EntityType,
@@ -470,7 +459,7 @@ func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
 			})
 		}
 
-		// Collect relationship rules from this catalog
+		// Collect relationship rules
 		for _, relTemplate := range catalog.Relationships {
 			globalRels = append(globalRels, EntityRelationshipRule{
 				Name:             relTemplate.Name,
@@ -481,6 +470,13 @@ func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
 				Confidence:       0.70, // Default confidence for global relationship patterns
 			})
 		}
+
+		fmt.Printf("  • Loaded global catalog: %s\n", path)
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to load embedded global catalogs: %w", err)
 	}
 
 	// Prepend global entities to schema (global entities come BEFORE domain-specific)
@@ -492,71 +488,221 @@ func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
 	// Add global domain to domains list (prepend so it appears first)
 	globalDomain := Domain{
 		Name:        "global",
-		Description: "Universal entity types and baseline patterns (37 types across 6 W's)",
+		Description:  "Universal entity types and baseline patterns (37 types across 6 W's)",
 		Owner:       "System",
 	}
 	schema.Domains = append([]Domain{globalDomain}, schema.Domains...)
 
-	fmt.Printf("DEBUG: Merged %d global entities and %d global relationships from %d catalog files\n",
-		len(globalEntities), len(globalRels), len(yamlFiles))
+	fmt.Printf("✓ Merged %d global entities and %d global relationships from embedded catalogs\n",
+		len(globalEntities), len(globalRels))
 
 	return nil
+}
+
+// mergeDomainCatalog merges a domain-specific catalog into the schema
+func (b *OntologyBuilder) mergeDomainCatalog(schema *OntologySchema, domainName string) error {
+	fmt.Printf("DEBUG: Attempting to merge catalog for domain '%s'\n", domainName)
+
+	// Try to load from embedded catalogs first
+	domainCatalog, err := b.loadDomainCatalogFromEmbedded(domainName)
+	if err != nil {
+		// Try external catalog path if specified
+		if b.config.ExternalCatalogPath != "" {
+			domainCatalog, err = b.loadDomainCatalogFromExternal(domainName, b.config.ExternalCatalogPath)
+			if err != nil {
+				return fmt.Errorf("domain catalog not found in embedded or external locations: %w", err)
+			}
+		} else {
+			return fmt.Errorf("domain catalog not found in embedded catalogs: %w", err)
+		}
+	}
+
+	// Merge entities from domain catalog
+	var domainEntities []ElementEntityMappingConfig
+	for _, entityTemplate := range domainCatalog.EntityTypes {
+		domainEntities = append(domainEntities, ElementEntityMappingConfig{
+			EntityType:      entityTemplate.EntityType,
+			ParentType:      entityTemplate.ParentType,
+			Domain:          entityTemplate.Domain,
+			WCategory:       entityTemplate.WCategory,
+			Description:     entityTemplate.Description,
+			ElementTypes:    entityTemplate.ElementTypes,
+			Confidence:      0.80, // Domain-specific entities get higher confidence than global (0.75)
+			ExtractionRules: entityTemplate.SampleRules,
+		})
+	}
+
+	// Merge relationships from domain catalog
+	var domainRels []EntityRelationshipRule
+	for _, relTemplate := range domainCatalog.Relationships {
+		domainRels = append(domainRels, EntityRelationshipRule{
+			Name:             relTemplate.Name,
+			SourceEntityType: relTemplate.SourceType,
+			TargetEntityType: relTemplate.TargetType,
+			RelationshipType: relTemplate.RelationshipType,
+			Description:      relTemplate.Description,
+			Confidence:       0.75, // Domain-specific relationships
+		})
+	}
+
+	// Append domain entities after LLM-generated but before they go through ComputeHierarchies
+	schema.ElementEntityMappings = append(schema.ElementEntityMappings, domainEntities...)
+
+	// Append domain relationships
+	schema.EntityRelationshipRules = append(schema.EntityRelationshipRules, domainRels...)
+
+	fmt.Printf("✓ Merged %d entities and %d relationships from '%s' domain catalog\n",
+		len(domainEntities), len(domainRels), domainName)
+
+	return nil
+}
+
+// loadDomainCatalogFromEmbedded loads a domain catalog from embedded files
+func (b *OntologyBuilder) loadDomainCatalogFromEmbedded(domainName string) (*GlobalCatalogSchema, error) {
+	// Search for domain catalog file in embedded filesystem
+	var catalogPath string
+	err := fs.WalkDir(embeddedCatalogs, "catalogs", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return nil
+		}
+		// Skip global catalogs
+		if strings.Contains(path, "global/") {
+			return nil
+		}
+
+		// Read and check domain name
+		data, err := embeddedCatalogs.ReadFile(path)
+		if err != nil {
+			return nil // Skip on error
+		}
+
+		var catalog GlobalCatalogSchema
+		if err := yaml.Unmarshal(data, &catalog); err != nil {
+			return nil // Skip on parse error
+		}
+
+		if catalog.Domain == domainName {
+			catalogPath = path
+			return fs.SkipAll // Found it, stop walking
+		}
+
+		return nil
+	})
+
+	if err != nil && err != fs.SkipAll {
+		return nil, err
+	}
+
+	if catalogPath == "" {
+		return nil, fmt.Errorf("domain '%s' not found in embedded catalogs", domainName)
+	}
+
+	// Load the catalog
+	data, err := embeddedCatalogs.ReadFile(catalogPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read embedded catalog %s: %w", catalogPath, err)
+	}
+
+	var catalog GlobalCatalogSchema
+	if err := yaml.Unmarshal(data, &catalog); err != nil {
+		return nil, fmt.Errorf("failed to parse embedded catalog %s: %w", catalogPath, err)
+	}
+
+	fmt.Printf("  • Loaded embedded domain catalog: %s\n", catalogPath)
+	return &catalog, nil
+}
+
+// loadDomainCatalogFromExternal loads a domain catalog from external filesystem
+func (b *OntologyBuilder) loadDomainCatalogFromExternal(domainName string, externalPath string) (*GlobalCatalogSchema, error) {
+	// Search for domain catalog file in external directory
+	var catalogPath string
+	err := filepath.Walk(externalPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Continue on error
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".yaml") {
+			return nil
+		}
+		// Skip global catalogs
+		if strings.Contains(path, "global/") {
+			return nil
+		}
+
+		// Read and check domain name
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil // Skip on error
+		}
+
+		var catalog GlobalCatalogSchema
+		if err := yaml.Unmarshal(data, &catalog); err != nil {
+			return nil // Skip on parse error
+		}
+
+		if catalog.Domain == domainName {
+			catalogPath = path
+			return filepath.SkipAll // Found it, stop walking
+		}
+
+		return nil
+	})
+
+	if err != nil && err != filepath.SkipAll {
+		return nil, err
+	}
+
+	if catalogPath == "" {
+		return nil, fmt.Errorf("domain '%s' not found in external catalogs at %s", domainName, externalPath)
+	}
+
+	// Load the catalog
+	data, err := os.ReadFile(catalogPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read external catalog %s: %w", catalogPath, err)
+	}
+
+	var catalog GlobalCatalogSchema
+	if err := yaml.Unmarshal(data, &catalog); err != nil {
+		return nil, fmt.Errorf("failed to parse external catalog %s: %w", catalogPath, err)
+	}
+
+	fmt.Printf("  • Loaded external domain catalog: %s\n", catalogPath)
+	return &catalog, nil
 }
 
 // loadPredefinedDomains loads domain names and descriptions from catalog YAML files
 // Returns error if catalog not found - no fallbacks
 func loadPredefinedDomains() (map[string]string, error) {
-	fmt.Println("DEBUG: loadPredefinedDomains() called")
-	catalogPaths := []string{}
+	return loadPredefinedDomainsWithExternal("")
+}
 
-	// Check environment variable first - allows user to specify catalog location
-	if envPath := os.Getenv("ONTOLOGY_CATALOG_PATH"); envPath != "" {
-		catalogPaths = append(catalogPaths, envPath)
-		fmt.Printf("DEBUG: Found ONTOLOGY_CATALOG_PATH env var: %s\n", envPath)
-	}
-
-	// Try relative paths for local development
-	catalogPaths = append(catalogPaths,
-		"./examples/ontologies",
-		"../examples/ontologies",
-		"../../examples/ontologies",
-	)
-	fmt.Printf("DEBUG: Catalog paths to check: %v\n", catalogPaths)
-
-	var catalogPath string
-	for _, path := range catalogPaths {
-		fmt.Printf("DEBUG: Checking path: %s\n", path)
-		if _, err := os.Stat(path); err == nil {
-			catalogPath = path
-			fmt.Printf("DEBUG: Found catalog at: %s\n", path)
-			break
-		} else {
-			fmt.Printf("DEBUG: Path not found (err: %v)\n", err)
-		}
-	}
-
-	if catalogPath == "" {
-		// No fallback - error out loudly
-		fmt.Println("DEBUG: No catalog path found - returning error")
-		return nil, fmt.Errorf("domain catalog not found - checked paths: %v\nSet ONTOLOGY_CATALOG_PATH environment variable or run from project root", catalogPaths)
-	}
-
-	fmt.Printf("✓ Loading domain catalogs from: %s\n", catalogPath)
+// loadPredefinedDomainsWithExternal loads domain catalogs from embedded files and optional external directory
+func loadPredefinedDomainsWithExternal(externalCatalogPath string) (map[string]string, error) {
+	fmt.Println("DEBUG: loadPredefinedDomainsWithExternal() called")
 	domains := make(map[string]string) // map[domain_name]description
 
-	// Walk through all subdirectories and find YAML files
-	err := filepath.Walk(catalogPath, func(path string, info os.FileInfo, err error) error {
+	// Load embedded catalogs (shipped with binary)
+	fmt.Println("✓ Loading embedded domain catalogs...")
+	err := fs.WalkDir(embeddedCatalogs, "catalogs", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() || !strings.HasSuffix(path, ".yaml") {
+		if d.IsDir() || !strings.HasSuffix(path, ".yaml") {
 			return nil
 		}
 
-		// Read YAML file to extract domain name and description
-		data, err := os.ReadFile(path)
+		// Skip global catalog (handled separately)
+		if strings.Contains(path, "global/") {
+			return nil
+		}
+
+		// Read embedded file
+		data, err := embeddedCatalogs.ReadFile(path)
 		if err != nil {
-			return fmt.Errorf("failed to read domain catalog %s: %w", path, err)
+			return fmt.Errorf("failed to read embedded catalog %s: %w", path, err)
 		}
 
 		var catalog struct {
@@ -565,25 +711,83 @@ func loadPredefinedDomains() (map[string]string, error) {
 		}
 
 		if err := yaml.Unmarshal(data, &catalog); err != nil {
-			return fmt.Errorf("failed to parse domain catalog %s: %w", path, err)
+			return fmt.Errorf("failed to parse embedded catalog %s: %w", path, err)
 		}
 
 		if catalog.Domain != "" {
 			domains[catalog.Domain] = catalog.Description
+			fmt.Printf("  • Loaded embedded domain: %s\n", catalog.Domain)
 		}
 
 		return nil
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load embedded catalogs: %w", err)
+	}
+
+	embeddedCount := len(domains)
+	fmt.Printf("✓ Loaded %d embedded domains\n", embeddedCount)
+
+	// Load external catalogs (if specified)
+	if externalCatalogPath != "" {
+		fmt.Printf("✓ Loading external domain catalogs from: %s\n", externalCatalogPath)
+
+		if _, err := os.Stat(externalCatalogPath); os.IsNotExist(err) {
+			fmt.Printf("Warning: External catalog path does not exist: %s\n", externalCatalogPath)
+		} else {
+			err := filepath.Walk(externalCatalogPath, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() || !strings.HasSuffix(path, ".yaml") {
+					return nil
+				}
+
+				// Skip global catalog
+				if strings.Contains(path, "global/") {
+					return nil
+				}
+
+				// Read YAML file
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return fmt.Errorf("failed to read external catalog %s: %w", path, err)
+				}
+
+				var catalog struct {
+					Domain      string `yaml:"domain"`
+					Description string `yaml:"description"`
+				}
+
+				if err := yaml.Unmarshal(data, &catalog); err != nil {
+					return fmt.Errorf("failed to parse external catalog %s: %w", path, err)
+				}
+
+				if catalog.Domain != "" {
+					domains[catalog.Domain] = catalog.Description
+					fmt.Printf("  • Loaded external domain: %s (overrides embedded if duplicate)\n", catalog.Domain)
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				return nil, fmt.Errorf("failed to load external catalogs: %w", err)
+			}
+
+			externalCount := len(domains) - embeddedCount
+			if externalCount > 0 {
+				fmt.Printf("✓ Loaded %d additional external domains\n", externalCount)
+			}
+		}
 	}
 
 	if len(domains) == 0 {
-		return nil, fmt.Errorf("no domain catalogs found in %s", catalogPath)
+		return nil, fmt.Errorf("no domain catalogs found (embedded or external)")
 	}
 
-	fmt.Printf("✓ Loaded %d predefined domains from catalog\n", len(domains))
+	fmt.Printf("✓ Total domains available: %d\n", len(domains))
 	return domains, nil
 }
 
@@ -594,9 +798,9 @@ func (b *OntologyBuilder) identifyDomains(ctx context.Context, samples *sampler.
 	// Prepare sample text
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 20)
 
-	// Load predefined domains from catalog (fail loudly if not found)
-	fmt.Println("DEBUG: About to call loadPredefinedDomains()")
-	predefinedDomains, err := loadPredefinedDomains()
+	// Load predefined domains from catalog (embedded + optional external)
+	fmt.Println("DEBUG: About to call loadPredefinedDomainsWithExternal()")
+	predefinedDomains, err := loadPredefinedDomainsWithExternal(b.config.ExternalCatalogPath)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("failed to load domain catalog: %w", err)
 	}
