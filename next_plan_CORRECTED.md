@@ -558,31 +558,24 @@ catalogs/
 
 ## Implementation Checklist
 
-### Step 0: Create Global Domain Catalogs (NEW)
+### Step 0: Create Global Domain Catalogs (NEW) ✅ COMPLETE
 
-**Files to create**:
-- `go/internal/udml/ontology/catalogs/global_who.go`
-- `go/internal/udml/ontology/catalogs/global_what.go`
-- `go/internal/udml/ontology/catalogs/global_where.go`
-- `go/internal/udml/ontology/catalogs/global_when.go`
-- `go/internal/udml/ontology/catalogs/global_why.go`
+**Status**: ✅ COMPLETE - Implemented as YAML catalogs instead of Go files
+- Created `catalogs/global/*.yaml` (6 files: who, what, where, when, why, how)
+- Embedded catalogs using `//go:embed catalogs/**/*.yaml`
+- 37 global entity types defined across 6 W's
+- All rules use unified structure (no `Type` field)
+- All entities have `w_category` and `parent_type` fields
+- Auto-loaded and merged into every generated schema
 
-**File to delete**:
-- `go/internal/udml/ontology/catalogs/common.go`
-
-**Actions**:
-1. Define 10 top-level types with baseline extraction rules
-2. Define 23 subtypes with `parent_type` references to top-level types
-3. Convert all rules to unified structure (no `Type` field)
-4. Add `w_category` to all entities
-5. Set `parent_type` for subtypes, leave `children` empty (auto-computed)
-6. Use new filter names: `proximity`, `semantic`, `dictionary`, `llm_validation`
-
-**Estimated Changes**: Delete 730 lines (common.go), add 800 lines (5 new files) = +70 net
+**Implementation Notes**:
+- Used YAML format instead of Go code for better maintainability
+- Catalogs embedded in binary for zero external dependencies
+- ExternalCatalogPath config allows custom extensions
 
 ---
 
-### Step 1: Update ElementEntityMapping and Entity Schemas
+### Step 1: Update ElementEntityMapping and Entity Schemas ✅ COMPLETE
 
 **File**: `go/internal/udml/ontology/types.go`
 
@@ -622,11 +615,16 @@ type Entity struct {
 }
 ```
 
+**Status**: ✅ COMPLETE
+- Added `ParentType`, `Children`, `WCategory` fields to ElementEntityMapping
+- Separated config (ElementEntityMappingConfig) from runtime (ElementEntityMapping)
+- Runtime version has computed Children array populated by ComputeHierarchies()
+
 **Estimated Changes**: +4 lines
 
 ---
 
-### Step 2: Remove Type Field from ExtractionRule
+### Step 2: Remove Type Field from ExtractionRule ✅ COMPLETE
 
 **File**: `go/internal/udml/ontology/types.go` (lines 101-166)
 
@@ -654,11 +652,17 @@ type ExtractionRule struct {
 - Add validation: `instance_name` OR `phrase_list` required
 - No Type field to validate
 
+**Status**: ✅ COMPLETE
+- Removed `Type` field and `ExtractionRuleType` enum
+- Unified structure with JSONPath, PhraseList, InstanceName
+- Renamed filter fields: ProximityFilter → Proximity, etc.
+- Validation updated to require instance_name OR phrase_list
+
 **Estimated Changes**: -50 deleted, +10 added = -40 net
 
 ---
 
-### Step 3: Add Hierarchy Computation & Validation
+### Step 3: Add Hierarchy Computation & Validation ✅ COMPLETE
 
 **File**: `go/internal/udml/ontology/types.go`
 
@@ -690,11 +694,17 @@ func (s *OntologySchema) hasCycle(entityName string, visited map[string]bool) bo
 func contains(slice []string, value string) bool { ... }
 ```
 
+**Status**: ✅ COMPLETE
+- Implemented ComputeHierarchies() to auto-fill parent_type and children
+- Implemented ValidateHierarchies() to detect broken references and cycles
+- Added hasCycle() for circular dependency detection
+- Integrated into schema Validate() method
+
 **Estimated Changes**: +150 lines
 
 ---
 
-### Step 4: Unify Extraction Logic
+### Step 4: Unify Extraction Logic ✅ COMPLETE
 
 **File**: `go/internal/udml/ontology/extractor.go`
 
@@ -713,11 +723,18 @@ func (e *RuleBasedExtractor) findPhraseMatch(content string, phrases []string) s
 func (e *RuleBasedExtractor) checkProximityFilter(...) bool { ... }
 ```
 
+**Status**: ✅ COMPLETE
+- Unified extraction pipeline with fail-fast logic
+- Single tryExtractWithRule() handles all extraction types
+- JSONPath optional for content/metadata addressing
+- PhraseList for fast exact matching
+- Performance-ordered filters (cheap → expensive)
+
 **Estimated Changes**: -220 deleted, +180 added = -40 net
 
 ---
 
-### Step 5: Add Canonicalization and Hierarchy Materialization
+### Step 5: Add Canonicalization and Hierarchy Materialization ✅ COMPLETE
 
 **File**: `go/internal/udml/ontology/extractor.go`
 
@@ -791,11 +808,21 @@ allRelationships := append(isaRelationships, domainRelationships...)
 
 **Key architecture**: Canonical-only graph (all entities are canonical, no duplicates)
 
+**Status**: ✅ COMPLETE
+- Implemented canonicalizeEntities() with name|type|element_id key
+- Merges mentions, keeps highest confidence
+- Implemented MaterializeMissingAncestors()
+- Walks up parent_type chain from each canonical leaf
+- Creates synthesized parent entities with `synthesized: true` attribute
+- Generates IS-A relationships between canonical entities
+- Updated ExtractFromElements() with 6-step canonical flow
+- Domain relationships only between extracted (non-synthesized) entities
+
 **Estimated Changes**: +180 lines (canonicalization + updated materialization)
 
 ---
 
-### Step 6: Update Domain Catalogs
+### Step 6: Update Domain Catalogs ✅ COMPLETE
 
 **Files**: All YAML files in `examples/ontologies/` (36 files)
 
@@ -807,11 +834,27 @@ allRelationships := append(isaRelationships, domainRelationships...)
 5. Add `parent_type` to entities extending global types
 6. Add `w_category` to all entities
 
+**Status**: ✅ COMPLETE (Step 6 Part A)
+- Migrated 36 domain catalog files from examples/ontologies/ to catalogs/
+- Removed `type` field from all extraction rules
+- Added `parent_type` field (e.g., `global.product`, `global.person`)
+- Added `w_category` field (who/what/where/when/why/how)
+- Renamed filter fields (proximity_filter → proximity, etc.)
+- Python migration script created: migrate_catalogs.py
+- Organized by category: academic, business_functions, cross_cutting, industry_sectors, organizational_types
+
+**Additional Implementation (Step 6 Part B)**:
+- ✅ Implemented mergeGlobalCatalog() using embedded files
+- ✅ Implemented mergeDomainCatalog() to load domain-specific catalogs
+- ✅ Embedded 42 catalogs (6 global + 36 domain) using go:embed
+- ✅ Added ExternalCatalogPath config for custom catalog extensions
+- ✅ LLM domain selection automatically merges selected domain catalogs
+
 **Estimated Changes**: ~200 lines across 36 files
 
 ---
 
-### Step 7: Update Catalog Loader
+### Step 7: Update Catalog Loader ⚠️ NOT APPLICABLE
 
 **File**: `go/internal/udml/ontology/catalogs/loader.go`
 
@@ -834,11 +877,16 @@ type ExtractionRuleConfig struct {
 - `convertToOntologyRule()` - map config → ontology types
 - `convertFromOntologyRule()` - map ontology → config types
 
-**Estimated Changes**: ~40 lines modified
+**Status**: ⚠️ NOT APPLICABLE - Catalogs implemented as embedded YAML files instead of Go code with loader
+- No catalogs/loader.go file exists
+- Catalogs loaded directly from YAML using yaml.Unmarshal
+- Types defined in types.go use same structure as YAML
+
+**Estimated Changes**: ~40 lines modified (not needed)
 
 ---
 
-### Step 8: Add Unit Tests
+### Step 8: Add Unit Tests ⏳ PENDING
 
 **New file**: `go/internal/udml/ontology/types_test.go`
 
@@ -863,11 +911,17 @@ type ExtractionRuleConfig struct {
 - `TestFindPhraseMatch_ExactMatching`
 - `TestFindPhraseMatch_LongestMatch`
 
+**Status**: ⏳ PENDING - Tests need updates for Steps 1-6 changes
+- Existing tests in extractor_test.go, builder_test.go need updates
+- Tests currently disabled/failing due to structural changes
+- Need to update for canonical architecture
+- Need to update for config/runtime separation
+
 **Estimated Changes**: +400 lines (new tests)
 
 ---
 
-### Step 9: Update Builder LLM Prompts
+### Step 9: Update Builder LLM Prompts ⏳ PARTIAL
 
 **File**: `go/internal/udml/ontology/builder.go`
 
@@ -878,6 +932,16 @@ type ExtractionRuleConfig struct {
 4. Instruct LLM to set `parent_type` when extending global types
 5. Remove references to old `Type` field in prompts
 6. Add instructions for unified extraction rule structure
+
+**Status**: ⏳ PARTIAL - Some updates done, more needed
+- ✅ loadPredefinedDomains() loads from embedded + external catalogs
+- ✅ identifyDomains() presents 36 domains to LLM for selection
+- ✅ mergeDomainCatalog() merges selected domain catalogs into schema
+- ⏳ LLM prompts need updates to:
+  - Guide LLM to use parent_type when extending global types
+  - Remove references to old Type field
+  - Add instructions for unified extraction rule structure
+  - Emphasize that domain catalogs provide templates
 
 **Estimated Changes**: +150 lines (prompt updates)
 
@@ -977,11 +1041,57 @@ cat tests/test_output/ontology_results/refactored_schema.json | jq '
 
 ---
 
+## Implementation Status Summary
+
+### ✅ Completed Steps (Steps 0-6)
+
+**Steps 0-5**: Core architecture changes
+- ✅ Step 0: Global domain catalogs (37 types, embedded YAML)
+- ✅ Step 1: ParentType, Children, WCategory fields
+- ✅ Step 2: Remove Type field from ExtractionRule
+- ✅ Step 3: Hierarchy computation & validation
+- ✅ Step 4: Unified extraction logic
+- ✅ Step 5: Canonicalization & hierarchy materialization
+
+**Step 6**: Domain catalog ecosystem
+- ✅ Step 6 Part A: Migrated 36 domain catalogs
+- ✅ Step 6 Part B: Global catalog auto-merge
+- ✅ Domain-specific catalog loading and merging
+- ✅ Embedded catalogs with external extension support
+
+**Commits**:
+- `04b70e64` - Step 5: Canonicalization and hierarchy materialization
+- `ec6d19c4` - Step 6 Part B: Global catalog auto-merge
+- `46b79260` - Step 6 Part A: Domain catalog migration and embedding
+
+### ⏳ Remaining Steps
+
+**Step 7**: Not applicable (YAML-based catalogs, no loader.go)
+
+**Step 8**: Update tests ⏳
+- Tests need updates for Steps 1-6 changes
+- Canonical architecture updates required
+- Config/runtime separation updates required
+
+**Step 9**: Builder LLM prompts ⏳ PARTIAL
+- Domain loading complete
+- Prompts need refinement for parent_type guidance
+- Need to remove old Type field references
+
+### 🎯 Next Actions
+
+1. ✅ **Complete Step 8**: Update all tests for new architecture
+2. ✅ **Complete Step 9**: Refine LLM prompts for unified extraction
+3. 🔄 **Strengthen catalogs**: Enhance extraction rules and relationships in domain catalogs
+4. 🧪 **Integration testing**: End-to-end test with real corpus
+5. 📝 **Documentation**: Update user documentation
+
+---
+
 ## Next Steps
 
-1. Review this corrected plan
-2. Confirm architectural decisions
-3. Begin implementation with Step 0 (Global Domain Catalogs)
-4. Proceed sequentially through Steps 1-9
-5. Run tests after each step
-6. Validate final schema structure
+1. ✅ Steps 0-6 complete - Core implementation finished
+2. ⏳ Step 8 pending - Update tests for new architecture
+3. ⏳ Step 9 partial - Refine LLM prompts
+4. 🔄 Enhancement needed - Strengthen domain catalogs with robust rules
+5. 🧪 Integration test - Validate with real corpus
