@@ -646,6 +646,16 @@ func (s *OntologySchema) Validate() error {
 		}
 	}
 
+	// Compute bidirectional hierarchies on runtime mappings
+	if err := s.ComputeHierarchies(); err != nil {
+		return fmt.Errorf("hierarchy computation failed: %w", err)
+	}
+
+	// Validate hierarchies
+	if err := s.ValidateHierarchies(); err != nil {
+		return fmt.Errorf("hierarchy validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -706,4 +716,135 @@ type ExtractionTaskResult struct {
 	EntitiesExtracted      int // Number of entities extracted
 	RelationshipsExtracted int // Number of relationships extracted
 	ElementsProcessed      int // Number of elements processed
+}
+
+// ComputeHierarchies fills missing parent_type and children relationships bidirectionally
+// This operates on the computed runtime mappings (s.computedMappings), not the config mappings
+func (s *OntologySchema) ComputeHierarchies() error {
+	// Build entity map (first occurrence per qualified name) from runtime mappings
+	entityMap := make(map[string]*ElementEntityMapping)
+	for i := range s.computedMappings {
+		mapping := &s.computedMappings[i]
+		key := mapping.Domain + "." + mapping.EntityType
+
+		if _, exists := entityMap[key]; !exists {
+			entityMap[key] = mapping
+		}
+	}
+
+	// Phase 1: Fill parent's children from child's parent_type
+	for i := range s.computedMappings {
+		mapping := &s.computedMappings[i]
+
+		if mapping.ParentType != "" {
+			parent := entityMap[mapping.ParentType]
+			if parent != nil {
+				childRef := mapping.Domain + "." + mapping.EntityType
+				if !contains(parent.Children, childRef) {
+					parent.Children = append(parent.Children, childRef)
+				}
+			}
+		}
+	}
+
+	// Phase 2: Fill child's parent_type from parent's children
+	for i := range s.computedMappings {
+		mapping := &s.computedMappings[i]
+
+		for _, childRef := range mapping.Children {
+			child := entityMap[childRef]
+			if child != nil && child.ParentType == "" {
+				child.ParentType = mapping.Domain + "." + mapping.EntityType
+			}
+		}
+	}
+
+	// Phase 3: Inherit WCategory from parent if not set
+	for i := range s.computedMappings {
+		mapping := &s.computedMappings[i]
+
+		if mapping.WCategory == "" && mapping.ParentType != "" {
+			parent := entityMap[mapping.ParentType]
+			if parent != nil && parent.WCategory != "" {
+				mapping.WCategory = parent.WCategory
+			}
+		}
+	}
+
+	return nil
+}
+
+// ValidateHierarchies checks for broken references and circular hierarchies
+func (s *OntologySchema) ValidateHierarchies() error {
+	// Build entity existence map from runtime mappings
+	entityMap := make(map[string]bool)
+	for _, mapping := range s.computedMappings {
+		key := mapping.Domain + "." + mapping.EntityType
+		entityMap[key] = true
+	}
+
+	// Check for broken references
+	for _, mapping := range s.computedMappings {
+		qualifiedName := mapping.Domain + "." + mapping.EntityType
+
+		// Check parent exists
+		if mapping.ParentType != "" && !entityMap[mapping.ParentType] {
+			return fmt.Errorf("entity %s references non-existent parent: %s",
+				qualifiedName, mapping.ParentType)
+		}
+
+		// Check children exist
+		for _, childRef := range mapping.Children {
+			if !entityMap[childRef] {
+				return fmt.Errorf("entity %s references non-existent child: %s",
+					qualifiedName, childRef)
+			}
+		}
+	}
+
+	// Check for circular hierarchies
+	for _, mapping := range s.computedMappings {
+		qualifiedName := mapping.Domain + "." + mapping.EntityType
+		if s.hasCycle(qualifiedName, make(map[string]bool)) {
+			return fmt.Errorf("circular hierarchy detected involving: %s", qualifiedName)
+		}
+	}
+
+	return nil
+}
+
+// hasCycle detects circular parent references using DFS
+func (s *OntologySchema) hasCycle(entityName string, visited map[string]bool) bool {
+	if visited[entityName] {
+		return true // Cycle detected
+	}
+
+	// Find entity mapping in runtime mappings
+	var parentType string
+	for _, mapping := range s.computedMappings {
+		if mapping.Domain+"."+mapping.EntityType == entityName {
+			parentType = mapping.ParentType
+			break
+		}
+	}
+
+	if parentType == "" {
+		return false // Reached top
+	}
+
+	visited[entityName] = true
+	result := s.hasCycle(parentType, visited)
+	delete(visited, entityName) // Backtrack
+
+	return result
+}
+
+// contains checks if string slice contains value
+func contains(slice []string, value string) bool {
+	for _, item := range slice {
+		if item == value {
+			return true
+		}
+	}
+	return false
 }
