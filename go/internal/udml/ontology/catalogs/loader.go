@@ -174,9 +174,9 @@ func convertRuleConfigs(configs []ExtractionRuleConfig) []ontology.ExtractionRul
 	rules := make([]ontology.ExtractionRule, len(configs))
 	for i, c := range configs {
 		rules[i] = ontology.ExtractionRule{
-			FieldPath:    c.FieldPath,
+			JSONPath:     c.JSONPathExpr, // Old JSONPathExpr → new JSONPath
 			Pattern:      c.Pattern,
-			JSONPathExpr: c.JSONPathExpr,
+			InstanceName: c.FieldPath, // Old FieldPath can map to InstanceName for now
 			// TODO: Map other fields from config to new ExtractionRule structure
 			// Keywords, ReferenceText, SimilarityThreshold moved to filter structures
 		}
@@ -254,9 +254,9 @@ func convertRulesToConfigs(rules []ontology.ExtractionRule) []ExtractionRuleConf
 	configs := make([]ExtractionRuleConfig, len(rules))
 	for i, r := range rules {
 		configs[i] = ExtractionRuleConfig{
-			FieldPath:    r.FieldPath,
+			FieldPath:    r.InstanceName, // New InstanceName → old FieldPath
 			Pattern:      r.Pattern,
-			JSONPathExpr: r.JSONPathExpr,
+			JSONPathExpr: r.JSONPath, // New JSONPath → old JSONPathExpr
 			// TODO: Extract from filter structures to config format
 		}
 	}

@@ -1063,16 +1063,16 @@ func collectReferenceConcepts(schema ontology.OntologySchema) []string {
 	// Iterate through all entity mappings (use computed runtime mappings)
 	computedMappings := schema.GetComputedMappings()
 	for _, mapping := range computedMappings {
-		// Check each extraction rule for semantic_filter
+		// Check each extraction rule for semantic filter
 		for _, rule := range mapping.ExtractionRules {
-			if rule.SemanticFilter != nil {
+			if rule.Semantic != nil {
 				// Handle reference_text (single string)
-				if rule.SemanticFilter.ReferenceText != "" {
-					conceptsMap[rule.SemanticFilter.ReferenceText] = true
+				if rule.Semantic.ReferenceText != "" {
+					conceptsMap[rule.Semantic.ReferenceText] = true
 				}
 
 				// Handle reference_concepts (array)
-				for _, concept := range rule.SemanticFilter.ReferenceConcepts {
+				for _, concept := range rule.Semantic.ReferenceConcepts {
 					conceptsMap[concept] = true
 				}
 			}
