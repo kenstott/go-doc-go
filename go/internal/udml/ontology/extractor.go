@@ -207,70 +207,38 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 // tryExtractWithRule attempts to extract an entity from a single element using a single rule
 // Returns the entity if matched, or nil if no match
 func (e *RuleBasedExtractor) tryExtractWithRule(ctx context.Context, mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	switch rule.Type {
-	case RuleTypeContent:
-		// Content extraction should use DuckDB/SQL for efficiency
-		// This in-memory fallback is not implemented for content_extraction
-		log.Printf("WARNING: content_extraction not supported in in-memory extractor - use DuckDB extraction instead")
-		return nil
-	case RuleTypeMetadata:
-		return e.tryExtractWithMetadata(mapping, rule, elem)
-	case RuleTypeJSONPath:
+	// Determine extraction method based on what fields are set
+	if rule.JSONPath != "" {
+		// JSONPath extraction (universal addressing)
 		return e.tryExtractWithJSONPath(mapping, rule, elem)
-	default:
-		log.Printf("WARNING: Unknown rule type: %s", rule.Type)
+	} else if rule.InstanceName != "" || len(rule.PhraseList) > 0 {
+		// Content extraction should use DuckDB/SQL for efficiency
+		// This in-memory fallback is not implemented
+		log.Printf("WARNING: content extraction not supported in in-memory extractor - use DuckDB extraction instead")
+		return nil
+	} else {
+		log.Printf("WARNING: No extraction method specified in rule")
 		return nil
 	}
 }
 
-// tryExtractWithMetadata attempts to extract an entity from a single element using metadata
-// Returns an entity if metadata field exists, or nil if no match
+// tryExtractWithMetadata - DEPRECATED: metadata extraction removed in Step 2
+// This method is kept for backward compatibility but will always return nil
 func (e *RuleBasedExtractor) tryExtractWithMetadata(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	// Navigate metadata path (e.g., "metadata.speaker")
-	value := e.getMetadataValue(elem.Metadata, rule.FieldPath)
-	if value == "" {
-		return nil
-	}
-
-	// Resolve content for instance_name extraction
-	content := e.resolveContent(&elem)
-
-	entity := Entity{
-		ID:         e.generateID("ent"),
-		Name:       e.extractInstanceName(content, rule, value),
-		Type:       EntityType(mapping.EntityType),
-		Domain:     mapping.Domain,
-		Confidence: mapping.Confidence,
-		Attributes: map[string]interface{}{
-			"source":     "metadata",
-			"field_path": rule.FieldPath,
-		},
-		ElementID: elem.ElementID,
-		Mentions: []Mention{
-			{
-				ElementID: elem.ElementID,
-				Text:      value,
-				StartPos:  0,
-				EndPos:    len(value),
-			},
-		},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-
-	return &entity
+	log.Printf("WARNING: tryExtractWithMetadata is deprecated - metadata extraction removed")
+	return nil
 }
 
 // tryExtractWithJSONPath attempts to extract an entity from a single element using JSONPath
 // Returns the first matching entity, or nil if no match
 func (e *RuleBasedExtractor) tryExtractWithJSONPath(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	if rule.JSONPathExpr == "" {
+	if rule.JSONPath == "" {
 		return nil // No JSONPath expression provided
 	}
 
 	// Apply semantic filter at element level
-	if rule.SemanticFilter != nil {
-		if !e.checkSemanticFilter(&elem, rule.SemanticFilter) {
+	if rule.Semantic != nil {
+		if !e.checkSemanticFilter(&elem, rule.Semantic) {
 			return nil
 		}
 	}
@@ -290,7 +258,7 @@ func (e *RuleBasedExtractor) tryExtractWithJSONPath(mapping ElementEntityMapping
 	}
 
 	// Evaluate JSONPath expression
-	results := e.evaluateJSONPath(jsonData, rule.JSONPathExpr)
+	results := e.evaluateJSONPath(jsonData, rule.JSONPath)
 
 	// Return FIRST result only
 	if len(results) > 0 {
@@ -315,8 +283,8 @@ func (e *RuleBasedExtractor) tryExtractWithJSONPath(mapping ElementEntityMapping
 			Domain:     mapping.Domain,
 			Confidence: mapping.Confidence,
 			Attributes: map[string]interface{}{
-				"source":        "jsonpath",
-				"jsonpath_expr": rule.JSONPathExpr,
+				"source":   "jsonpath",
+				"jsonpath": rule.JSONPath,
 			},
 			ElementID: elem.ElementID,
 			Mentions: []Mention{
