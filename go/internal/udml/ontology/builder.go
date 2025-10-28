@@ -650,24 +650,21 @@ Before returning your response, verify EVERY element_types array contains ONLY e
 
 ================================================================================
 
-## GLOBAL ENTITY TYPES FROM DOMAIN CATALOGS
+## GLOBAL ENTITY TYPES
 
 **IMPORTANT:**
 
-Global entity types are defined in domain catalog YAML files. When using global entity types in your schema, reference them using the format: "global.{entity_type}"
+Global entity types (person, organization, location, date, event, etc.) are automatically added to all generated schemas from the global domain catalog. You do NOT need to include them in your response.
 
-Example global entity type references:
-- global.person
-- global.organization
-- global.location
-- global.date
-- global.event
+**YOUR FOCUS:**
+- Create domain-specific entity types relevant to the corpus content
+- You can reference global types using parent_type field (e.g., parent_type: "global.person")
+- Domain-specific types should extend or specialize global types when appropriate
 
-**USAGE REQUIREMENTS:**
-- You can reference global entity types directly using "global.{entity_type}" format
-- Global types provide standard entity definitions across domains
-- You can also create domain-specific entity types that inherit from global types using parent_type field
-- Assign entity types to the most relevant domain from your domain list
+**EXAMPLES:**
+- Create "physician" with parent_type: "global.person" for medical domain
+- Create "pharmaceutical_company" with parent_type: "global.organization" for medical domain
+- Create "hospital" with parent_type: "global.location" for medical domain
 
 ================================================================================
 
