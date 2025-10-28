@@ -650,19 +650,24 @@ Before returning your response, verify EVERY element_types array contains ONLY e
 
 ================================================================================
 
-## MANDATORY UNIVERSAL ENTITY TYPES
+## GLOBAL ENTITY TYPES FROM DOMAIN CATALOGS
 
-**YOU MUST INCLUDE THESE ENTITY TYPES IN YOUR RESPONSE:**
+**IMPORTANT:**
 
-The following universal entity types are REQUIRED in every ontology schema. You MUST include at least ONE mapping for EACH of these entity types (assigned to the most relevant domain):
-%s
+Global entity types are defined in domain catalog YAML files. When using global entity types in your schema, reference them using the format: "global.{entity_type}"
 
-**IMPORTANT REQUIREMENTS:**
-- You MUST include at least one mapping for person, organization, location, and date
-- Assign each universal type to the most relevant domain from your domain list
-- You can create multiple mappings per universal type (different domains or confidence levels)
-- Use the suggested element types and adapt extraction rules to your corpus
-- These templates are proven patterns - you may refine them but MUST include the entity types
+Example global entity type references:
+- global.person
+- global.organization
+- global.location
+- global.date
+- global.event
+
+**USAGE REQUIREMENTS:**
+- You can reference global entity types directly using "global.{entity_type}" format
+- Global types provide standard entity definitions across domains
+- You can also create domain-specific entity types that inherit from global types using parent_type field
+- Assign entity types to the most relevant domain from your domain list
 
 ================================================================================
 

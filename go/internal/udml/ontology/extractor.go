@@ -2,7 +2,6 @@ package ontology
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -205,104 +204,136 @@ func (e *RuleBasedExtractor) extractEntities(ctx context.Context, elements []Ele
 }
 
 // tryExtractWithRule attempts to extract an entity from a single element using a single rule
+// Implements unified extraction pipeline with fail-fast filtering
 // Returns the entity if matched, or nil if no match
 func (e *RuleBasedExtractor) tryExtractWithRule(ctx context.Context, mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	// Determine extraction method based on what fields are set
+	// STEP 1: JSONPath validation (OPTIONAL - instant if omitted)
+	var sourceData string
 	if rule.JSONPath != "" {
-		// JSONPath extraction (universal addressing)
-		return e.tryExtractWithJSONPath(mapping, rule, elem)
-	} else if rule.InstanceName != "" || len(rule.PhraseList) > 0 {
-		// Content extraction should use DuckDB/SQL for efficiency
-		// This in-memory fallback is not implemented
-		log.Printf("WARNING: content extraction not supported in in-memory extractor - use DuckDB extraction instead")
-		return nil
+		elemJSON := e.elementToJSON(&elem)
+		results := e.evaluateJSONPath(elemJSON, rule.JSONPath)
+		if len(results) == 0 {
+			return nil // FAIL FAST
+		}
+		sourceData = fmt.Sprint(results[0])
 	} else {
-		log.Printf("WARNING: No extraction method specified in rule")
-		return nil
-	}
-}
-
-// tryExtractWithMetadata - DEPRECATED: metadata extraction removed in Step 2
-// This method is kept for backward compatibility but will always return nil
-func (e *RuleBasedExtractor) tryExtractWithMetadata(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	log.Printf("WARNING: tryExtractWithMetadata is deprecated - metadata extraction removed")
-	return nil
-}
-
-// tryExtractWithJSONPath attempts to extract an entity from a single element using JSONPath
-// Returns the first matching entity, or nil if no match
-func (e *RuleBasedExtractor) tryExtractWithJSONPath(mapping ElementEntityMapping, rule ExtractionRule, elem Element) *Entity {
-	if rule.JSONPath == "" {
-		return nil // No JSONPath expression provided
+		// Fast path: extract from content directly
+		sourceData = e.resolveContent(&elem)
 	}
 
-	// Apply semantic filter at element level
+	if sourceData == "" {
+		return nil // FAIL FAST
+	}
+
+	// STEP 2: Phrase list matching (OPTIONAL - 10-100x faster than regex)
+	var entityName string
+	if len(rule.PhraseList) > 0 {
+		entityName = e.findPhraseMatch(sourceData, rule.PhraseList)
+		if entityName == "" {
+			return nil // FAIL FAST
+		}
+	} else if rule.InstanceName != "" {
+		// STEP 3: Instance name extraction (regex fallback)
+		entityName = e.extractInstanceName(sourceData, rule, sourceData)
+		if entityName == "" {
+			return nil // FAIL FAST
+		}
+	} else {
+		return nil // No extraction method
+	}
+
+	// STEP 4: Pattern filter (OPTIONAL - cheap regex)
+	if rule.Pattern != "" {
+		matched, _ := regexp.MatchString(rule.Pattern, sourceData)
+		if !matched {
+			return nil // FAIL FAST
+		}
+	}
+
+	// STEP 5: Proximity filter (OPTIONAL - moderate cost)
+	if rule.Proximity != nil {
+		if !e.checkProximityFilter(sourceData, entityName, rule.Proximity) {
+			return nil // FAIL FAST
+		}
+	}
+
+	// STEP 6: Dictionary filter (OPTIONAL - moderate cost)
+	if rule.Dictionary != nil {
+		if !e.checkDictionaryFilter(entityName, rule.Dictionary) {
+			return nil // FAIL FAST
+		}
+	}
+
+	// STEP 7: Semantic filter (OPTIONAL - expensive)
 	if rule.Semantic != nil {
 		if !e.checkSemanticFilter(&elem, rule.Semantic) {
-			return nil
+			return nil // FAIL FAST
 		}
 	}
 
-	// Resolve content and try to parse as JSON
-	content := e.resolveContent(&elem)
+	// All filters passed - create entity
+	return &Entity{
+		ID:         e.generateID("ent"),
+		Name:       entityName,
+		Type:       EntityType(mapping.EntityType),
+		Domain:     mapping.Domain,
+		Confidence: mapping.Confidence,
+		Attributes: map[string]interface{}{
+			"w_category": mapping.WCategory,
+			"jsonpath":   rule.JSONPath,
+		},
+		ElementID: elem.ElementID,
+		Mentions: []Mention{
+			{ElementID: elem.ElementID, Text: entityName, StartPos: 0, EndPos: len(entityName)},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+}
 
-	var jsonData interface{}
-	if content != "" {
-		if err := json.Unmarshal([]byte(content), &jsonData); err != nil {
-			// If content is not JSON, try metadata
-			jsonData = elem.Metadata
+// elementToJSON converts Element to JSON structure for JSONPath queries
+func (e *RuleBasedExtractor) elementToJSON(elem *Element) map[string]interface{} {
+	return map[string]interface{}{
+		"element_id":       elem.ElementID,
+		"element_type":     elem.ElementType,
+		"content":          e.resolveContent(elem),
+		"content_preview":  elem.ContentPreview,
+		"content_location": elem.ContentLocation,
+		"parent_id":        elem.ParentID,
+		"element_order":    elem.ElementOrder,
+		"metadata":         elem.Metadata,
+	}
+}
+
+// findPhraseMatch performs exact string matching (10-100x faster than regex)
+// Returns the longest matching phrase, or empty string if no match
+func (e *RuleBasedExtractor) findPhraseMatch(content string, phrases []string) string {
+	contentLower := strings.ToLower(content)
+
+	var longestMatch string
+	for _, phrase := range phrases {
+		phraseLower := strings.ToLower(phrase)
+		if strings.Contains(contentLower, phraseLower) {
+			if len(phrase) > len(longestMatch) {
+				longestMatch = phrase
+			}
 		}
-	} else {
-		// No content, try metadata
-		jsonData = elem.Metadata
 	}
 
-	// Evaluate JSONPath expression
-	results := e.evaluateJSONPath(jsonData, rule.JSONPath)
+	return longestMatch
+}
 
-	// Return FIRST result only
-	if len(results) > 0 {
-		result := results[0]
-
-		// Convert result to string
-		var resultStr string
-		if str, ok := result.(string); ok {
-			resultStr = str
-		} else {
-			resultStr = fmt.Sprintf("%v", result)
+// checkProximityFilter validates entity appears near keywords
+func (e *RuleBasedExtractor) checkProximityFilter(content string, entityName string, filter *ProximityFilter) bool {
+	// Check if any cooccurrence term appears in content
+	// This is a simple implementation - full implementation would check distance
+	contentLower := strings.ToLower(content)
+	for _, term := range filter.CooccurrenceTerms {
+		if strings.Contains(contentLower, strings.ToLower(term)) {
+			return true
 		}
-
-		if resultStr == "" {
-			return nil
-		}
-
-		entity := Entity{
-			ID:         e.generateID("ent"),
-			Name:       e.extractInstanceName(content, rule, resultStr),
-			Type:       EntityType(mapping.EntityType),
-			Domain:     mapping.Domain,
-			Confidence: mapping.Confidence,
-			Attributes: map[string]interface{}{
-				"source":   "jsonpath",
-				"jsonpath": rule.JSONPath,
-			},
-			ElementID: elem.ElementID,
-			Mentions: []Mention{
-				{
-					ElementID: elem.ElementID,
-					Text:      resultStr,
-					StartPos:  0,
-					EndPos:    len(resultStr),
-				},
-			},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		return &entity
 	}
-
-	return nil // No JSONPath results
+	return false
 }
 
 // extractRelationships extracts relationships based on schema rules and extracted entities

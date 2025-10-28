@@ -7,7 +7,7 @@ import (
 )
 
 func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
-	// Create schema with metadata extraction rule
+	// Create schema with JSONPath extraction rule for metadata
 	schema := &OntologySchema{
 		Name:    "test_schema",
 		Version: "1.0.0",
@@ -21,8 +21,8 @@ func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:      RuleTypeMetadata,
-						FieldPath: "speaker",
+						JSONPath:     "$.metadata.speaker",
+						InstanceName: "$[0]",
 					},
 				},
 			},

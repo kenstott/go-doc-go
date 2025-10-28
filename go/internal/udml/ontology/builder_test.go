@@ -42,7 +42,6 @@ func (m *MockLLMClient) GetModel() string {
 
 func TestBuilderConfig_Defaults(t *testing.T) {
 	config := BuilderConfig{
-		ParquetPath: "/test/path",
 		LLMProvider: "anthropic",
 		LLMAPIKey:   "test-key",
 	}
@@ -196,8 +195,7 @@ func TestElementEntityMapping_Structure(t *testing.T) {
 		ElementTypes: []string{"paragraph"},
 		ExtractionRules: []ExtractionRule{
 			{
-				Type:     RuleTypeKeyword,
-				Keywords: []string{"Microsoft", "MSFT"},
+				PhraseList: []string{"Microsoft", "MSFT"},
 			},
 		},
 	}
@@ -219,12 +217,8 @@ func TestElementEntityMapping_Structure(t *testing.T) {
 	}
 
 	rule := mapping.ExtractionRules[0]
-	if rule.Type != RuleTypeKeyword {
-		t.Errorf("Expected rule type 'keyword_match', got '%s'", rule.Type)
-	}
-
-	if len(rule.Keywords) != 2 {
-		t.Errorf("Expected 2 keywords, got %d", len(rule.Keywords))
+	if len(rule.PhraseList) != 2 {
+		t.Errorf("Expected 2 phrases, got %d", len(rule.PhraseList))
 	}
 }
 
