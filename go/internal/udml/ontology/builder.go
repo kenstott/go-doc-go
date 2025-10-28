@@ -658,13 +658,41 @@ Global entity types (person, organization, location, date, event, etc.) are auto
 
 **YOUR FOCUS:**
 - Create domain-specific entity types relevant to the corpus content
-- You can reference global types using parent_type field (e.g., parent_type: "global.person")
-- Domain-specific types should extend or specialize global types when appropriate
+- **LIBERALLY USE parent_type** to inherit from global types - this is STRONGLY ENCOURAGED
+- Almost every entity type you create should extend a global type
+- Use parent_type: "global.{type}" whenever a global type exists that relates to your entity
+
+**WHEN TO USE parent_type (USE THIS LIBERALLY):**
+
+✓ **Person-like entities** → parent_type: "global.person"
+  - physician, patient, scientist, author, executive, employee, customer, etc.
+
+✓ **Organization-like entities** → parent_type: "global.organization"
+  - hospital, university, pharmaceutical_company, clinic, research_lab, etc.
+
+✓ **Location-like entities** → parent_type: "global.location"
+  - clinic, warehouse, datacenter, facility, office, branch, etc.
+
+✓ **Time-like entities** → parent_type: "global.date" or "global.event"
+  - deadline, milestone, appointment, transaction, incident, etc.
+
+✓ **Document-like entities** → parent_type: "global.document"
+  - report, patent, article, specification, contract, etc.
+
+✓ **Product-like entities** → parent_type: "global.product"
+  - medication, device, software, equipment, chemical, etc.
 
 **EXAMPLES:**
 - Create "physician" with parent_type: "global.person" for medical domain
 - Create "pharmaceutical_company" with parent_type: "global.organization" for medical domain
 - Create "hospital" with parent_type: "global.location" for medical domain
+- Create "clinical_trial" with parent_type: "global.event" for medical domain
+- Create "medication" with parent_type: "global.product" for medical domain
+
+**WHY THIS MATTERS:**
+- Inheritance allows specialized extraction rules while maintaining baseline patterns
+- Enables cross-domain entity matching and relationship extraction
+- Provides semantic hierarchy for better entity resolution
 
 ================================================================================
 
