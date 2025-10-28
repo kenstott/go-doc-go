@@ -591,7 +591,7 @@ Before returning your response, verify EVERY domain name appears EXACTLY in the 
 }
 
 // defineEntityTypes asks LLM to define entity types and extraction rules
-func (b *OntologyBuilder) defineEntityTypes(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domains []Domain) ([]ElementEntityMapping, int, int, error) {
+func (b *OntologyBuilder) defineEntityTypes(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domains []Domain) ([]ElementEntityMappingConfig, int, int, error) {
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 15)
 
 	// Format top entities
@@ -1180,7 +1180,7 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
 		return nil, 1, 0, err
 	}
 
-	var mappings []ElementEntityMapping
+	var mappings []ElementEntityMappingConfig
 	if err := b.extractJSON(response, &mappings); err != nil {
 		return nil, 1, len(response), err
 	}
@@ -1192,8 +1192,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
 // Step 1: Generate universal entities (person, org, location, date) per domain
 // Step 2: Generate domain-specific custom entities
 // Step 3: Merge and return
-func (b *OntologyBuilder) defineEntityTypesMultiStep(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domains []Domain) ([]ElementEntityMapping, int, int, error) {
-	var allMappings []ElementEntityMapping
+func (b *OntologyBuilder) defineEntityTypesMultiStep(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domains []Domain) ([]ElementEntityMappingConfig, int, int, error) {
+	var allMappings []ElementEntityMappingConfig
 	var totalLLMCalls int
 	var totalTokens int
 
@@ -1229,7 +1229,7 @@ func (b *OntologyBuilder) defineEntityTypesMultiStep(ctx context.Context, sample
 
 // generateUniversalEntitiesForDomain generates universal entity types (person, org, location, date)
 // adapted for a specific domain's context
-func (b *OntologyBuilder) generateUniversalEntitiesForDomain(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMapping, int, int, error) {
+func (b *OntologyBuilder) generateUniversalEntitiesForDomain(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMappingConfig, int, int, error) {
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
 
 	// Define universal entity template descriptions (inline to avoid import cycle)
@@ -1341,7 +1341,7 @@ Generate a JSON array of entity mappings. For EACH of the 4 universal types (per
 		return nil, 1, 0, err
 	}
 
-	var mappings []ElementEntityMapping
+	var mappings []ElementEntityMappingConfig
 	if err := b.extractJSON(response, &mappings); err != nil {
 		return nil, 1, len(response), err
 	}
@@ -1363,7 +1363,7 @@ Generate a JSON array of entity mappings. For EACH of the 4 universal types (per
 
 // generateDomainSpecificEntities generates custom entity types specific to a domain
 // (beyond the universal person/org/location/date types)
-func (b *OntologyBuilder) generateDomainSpecificEntities(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMapping, int, int, error) {
+func (b *OntologyBuilder) generateDomainSpecificEntities(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMappingConfig, int, int, error) {
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
 
 	// Format element types CLOSED LIST
@@ -1462,7 +1462,7 @@ Generate a JSON array of domain-specific entity mappings. Create 2-5 specialized
 		return nil, 1, 0, err
 	}
 
-	var mappings []ElementEntityMapping
+	var mappings []ElementEntityMappingConfig
 	if err := b.extractJSON(response, &mappings); err != nil {
 		return nil, 1, len(response), err
 	}
@@ -1471,7 +1471,7 @@ Generate a JSON array of domain-specific entity mappings. Create 2-5 specialized
 }
 
 // defineRelationshipTypes asks LLM to define relationship types
-func (b *OntologyBuilder) defineRelationshipTypes(ctx context.Context, samples *sampler.SamplingResult, entityMappings []ElementEntityMapping) ([]EntityRelationshipRule, int, int, error) {
+func (b *OntologyBuilder) defineRelationshipTypes(ctx context.Context, samples *sampler.SamplingResult, entityMappings []ElementEntityMappingConfig) ([]EntityRelationshipRule, int, int, error) {
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
 
 	// Format entity types
