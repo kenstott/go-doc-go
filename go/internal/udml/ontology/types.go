@@ -72,12 +72,15 @@ type OntologySchema struct {
 	DocumentTypes           []string                  `json:"document_types,omitempty" yaml:"document_types,omitempty"`             // Applicable document types
 	KeyConcepts             []string                  `json:"key_concepts,omitempty" yaml:"key_concepts,omitempty"`                 // Key concepts in domain
 	Terms                   []Term                    `json:"terms,omitempty" yaml:"terms,omitempty"`                               // Domain terms and synonyms
-	ElementEntityMappings   []ElementEntityMapping    `json:"element_entity_mappings" yaml:"element_entity_mappings"`               // Entity extraction rules
+	ElementEntityMappings   []ElementEntityMappingConfig `json:"element_entity_mappings" yaml:"element_entity_mappings"`               // Entity extraction rules (as-written, from YAML)
 	EntityRelationshipRules []EntityRelationshipRule  `json:"entity_relationship_rules,omitempty" yaml:"entity_relationship_rules,omitempty"` // Relationship extraction rules
 	DerivedEntities         []DerivedEntity           `json:"derived_entities,omitempty" yaml:"derived_entities,omitempty"`         // Derived entity definitions
 	CrossDomainMerging      *CrossDomainMerging       `json:"cross_domain_merging,omitempty" yaml:"cross_domain_merging,omitempty"` // Cross-domain entity merging configuration
 	Metadata                map[string]interface{}    `json:"metadata,omitempty" yaml:"metadata,omitempty"`                         // Additional metadata
 	CreatedAt               time.Time                 `json:"created_at" yaml:"created_at"`                                         // Creation timestamp
+
+	// Computed fields (populated by Validate(), not serialized)
+	computedMappings        []ElementEntityMapping    `json:"-" yaml:"-"`                                                           // Runtime entity mappings (as-computed, with inherited/computed fields)
 }
 
 // Term defines a domain term and its synonyms
@@ -87,15 +90,60 @@ type Term struct {
 	Description string   `json:"description,omitempty"` // Term description
 }
 
-// ElementEntityMapping defines how to extract an entity type from element types
-type ElementEntityMapping struct {
-	EntityType      string           `json:"entity_type" yaml:"entity_type"`             // Entity type to extract
-	Domain          string           `json:"domain" yaml:"domain"`                       // Domain this entity belongs to (required)
-	Description     string           `json:"description" yaml:"description"`             // Description of entity type
+// ElementEntityMappingConfig is the YAML representation (as-written)
+// This struct is used for loading from YAML files where some fields may be omitted
+// and computed later (e.g., WCategory inherited from parent, Children computed from parent_type)
+type ElementEntityMappingConfig struct {
+	EntityType      string           `json:"entity_type" yaml:"entity_type"`                         // Entity type to extract
+	ParentType      string           `json:"parent_type,omitempty" yaml:"parent_type,omitempty"`     // Parent entity type (e.g., "global.person")
+	Children        []string         `json:"children,omitempty" yaml:"children,omitempty"`           // Child entity types (usually omitted, computed at runtime)
+	Domain          string           `json:"domain" yaml:"domain"`                                   // Domain this entity belongs to (required)
+	WCategory       string           `json:"w_category,omitempty" yaml:"w_category,omitempty"`       // 6 W's category (optional, inherited from parent if omitted)
+	Description     string           `json:"description" yaml:"description"`                         // Description of entity type
 	ElementTypes    []string         `json:"element_types,omitempty" yaml:"element_types,omitempty"` // Simple element type filter
 	ElementFilter   string           `json:"element_filter,omitempty" yaml:"element_filter,omitempty"` // JSONPath filter (advanced)
-	Confidence      float64          `json:"confidence" yaml:"confidence"`               // Context quality confidence (0.0-1.0)
-	ExtractionRules []ExtractionRule `json:"extraction_rules" yaml:"extraction_rules"`   // Rules for extraction (OR logic)
+	Confidence      float64          `json:"confidence" yaml:"confidence"`                           // Context quality confidence (0.0-1.0)
+	ExtractionRules []ExtractionRule `json:"extraction_rules" yaml:"extraction_rules"`               // Rules for extraction (OR logic)
+}
+
+// ElementEntityMapping is the runtime representation (as-computed)
+// This struct is used during execution where all computed fields are populated
+// (e.g., WCategory always set, Children always computed)
+type ElementEntityMapping struct {
+	EntityType      string           `json:"entity_type"`      // Entity type to extract
+	ParentType      string           `json:"parent_type"`      // Parent entity type (e.g., "global.person")
+	Children        []string         `json:"children"`         // Child entity types (always computed)
+	Domain          string           `json:"domain"`           // Domain this entity belongs to
+	WCategory       string           `json:"w_category"`       // 6 W's category (always populated, inherited if needed)
+	Description     string           `json:"description"`      // Description of entity type
+	ElementTypes    []string         `json:"element_types"`    // Simple element type filter
+	ElementFilter   string           `json:"element_filter"`   // JSONPath filter (advanced)
+	Confidence      float64          `json:"confidence"`       // Context quality confidence (0.0-1.0)
+	ExtractionRules []ExtractionRule `json:"extraction_rules"` // Rules for extraction (OR logic)
+}
+
+// ToElementEntityMapping converts the config representation to runtime representation
+// This performs the initial transformation - fields like WCategory and Children will be
+// fully populated by ComputeHierarchies() in Step 3
+func (c *ElementEntityMappingConfig) ToElementEntityMapping() ElementEntityMapping {
+	return ElementEntityMapping{
+		EntityType:      c.EntityType,
+		ParentType:      c.ParentType,
+		Children:        c.Children, // Will be populated by ComputeHierarchies
+		Domain:          c.Domain,
+		WCategory:       c.WCategory, // Will be inherited by ComputeHierarchies if empty
+		Description:     c.Description,
+		ElementTypes:    c.ElementTypes,
+		ElementFilter:   c.ElementFilter,
+		Confidence:      c.Confidence,
+		ExtractionRules: c.ExtractionRules,
+	}
+}
+
+// GetComputedMappings returns the runtime entity mappings (as-computed)
+// These are populated by Validate() and have all inherited/computed fields filled
+func (s *OntologySchema) GetComputedMappings() []ElementEntityMapping {
+	return s.computedMappings
 }
 
 // ExtractionRuleType defines the type of extraction rule
@@ -503,7 +551,13 @@ func (s *OntologySchema) Validate() error {
 		return NewValidationError("schema must have at least one entity mapping")
 	}
 
-	// Validate entity mappings
+	// Transform config mappings to runtime mappings
+	s.computedMappings = make([]ElementEntityMapping, len(s.ElementEntityMappings))
+	for i, configMapping := range s.ElementEntityMappings {
+		s.computedMappings[i] = configMapping.ToElementEntityMapping()
+	}
+
+	// Validate entity mappings (use config for now, will use computed after Step 3)
 	for i, mapping := range s.ElementEntityMappings {
 		if mapping.EntityType == "" {
 			return NewValidationError(fmt.Sprintf("entity mapping %d has empty entity_type", i))
