@@ -2063,6 +2063,20 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 		jsonStr = strings.ReplaceAll(response, "```json", "")
 		jsonStr = strings.ReplaceAll(jsonStr, "```", "")
 		fmt.Printf("DEBUG: Stripped all code block markers, length=%d\n", len(jsonStr))
+
+		// After stripping markers, there may still be preamble text before JSON
+		// Find the actual JSON start ({ or [)
+		jsonStart := -1
+		for i := 0; i < len(jsonStr); i++ {
+			if jsonStr[i] == '{' || jsonStr[i] == '[' {
+				jsonStart = i
+				break
+			}
+		}
+		if jsonStart > 0 {
+			jsonStr = jsonStr[jsonStart:]
+			fmt.Printf("DEBUG: Found JSON start at position %d, trimmed preamble\n", jsonStart)
+		}
 	} else {
 		// No code fence - try to find valid JSON by searching for { or [ and attempting to parse
 		// We may encounter false positives like [header] in text, so we try each candidate
