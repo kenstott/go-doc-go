@@ -2054,33 +2054,15 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 	jsonStr := response
 	fmt.Printf("DEBUG extractJSON: Input response length: %d, starts with: %q\n", len(response), response[:min(50, len(response))])
 
-	// Try to extract from ```json code block
-	if start := strings.Index(response, "```json"); start != -1 {
-		fmt.Printf("DEBUG: Found ```json at position %d\n", start)
-		start += 7 // Skip past "```json"
-		fmt.Printf("DEBUG: After skipping ```json, position=%d, char=%q\n", start, string(response[start]))
-		// Skip any whitespace/newlines after the opening fence
-		for start < len(response) && (response[start] == '\n' || response[start] == '\r' || response[start] == ' ' || response[start] == '\t') {
-			start++
-		}
-		fmt.Printf("DEBUG: After skipping whitespace, position=%d, char=%q\n", start, string(response[start]))
-		if end := strings.Index(response[start:], "```"); end != -1 {
-			jsonStr = response[start : start+end]
-			fmt.Printf("DEBUG: Extracted JSON from code block, length=%d\n", len(jsonStr))
-		} else {
-			// No closing fence - use rest of response after the opening fence
-			fmt.Printf("DEBUG: Could not find closing ``` fence, using rest of response\n")
-			jsonStr = response[start:]
-		}
-	} else if start := strings.Index(response, "```"); start != -1 {
-		start += 3 // Skip past "```"
-		// Skip any whitespace/newlines after the opening fence
-		for start < len(response) && (response[start] == '\n' || response[start] == '\r' || response[start] == ' ' || response[start] == '\t') {
-			start++
-		}
-		if end := strings.Index(response[start:], "```"); end != -1 {
-			jsonStr = response[start : start+end]
-		}
+	// Strip ALL code block markers (handles continuation responses)
+	// When responses are continued, we get: ```json\n[...json (no closing marker)
+	//                              then: ...more json... (no markers)
+	//                              then: ...json...]\n``` (closing marker only)
+	// So we need to strip ALL occurrences of markers, not just first pair
+	if strings.Contains(response, "```") {
+		jsonStr = strings.ReplaceAll(response, "```json", "")
+		jsonStr = strings.ReplaceAll(jsonStr, "```", "")
+		fmt.Printf("DEBUG: Stripped all code block markers, length=%d\n", len(jsonStr))
 	} else {
 		// No code fence - try to find valid JSON by searching for { or [ and attempting to parse
 		// We may encounter false positives like [header] in text, so we try each candidate
@@ -2163,11 +2145,69 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 	}
 	fmt.Printf("DEBUG extractJSON: extracted %d chars, first 200:\n%s\n", len(jsonStr), preview)
 
+	// Sanitize JSON to fix common LLM output issues
+	jsonStr = b.sanitizeJSON(jsonStr)
+
 	if err := json.Unmarshal([]byte(jsonStr), target); err != nil {
 		return fmt.Errorf("failed to parse LLM response as JSON: %w\nExtracted JSON (first 500 chars): %s", err, jsonStr[:min(500, len(jsonStr))])
 	}
 
 	return nil
+}
+
+// sanitizeJSON fixes common LLM JSON generation issues
+// - Unescaped newlines in string values
+// - Unescaped tabs and other control characters
+func (b *OntologyBuilder) sanitizeJSON(jsonStr string) string {
+	// This is a simple state machine that tracks whether we're inside a string
+	// If we find unescaped control characters inside strings, we escape them
+	var result strings.Builder
+	result.Grow(len(jsonStr))
+
+	inString := false
+	escaped := false
+
+	for i := 0; i < len(jsonStr); i++ {
+		ch := jsonStr[i]
+
+		if escaped {
+			// Previous char was backslash, this char is escaped
+			result.WriteByte(ch)
+			escaped = false
+			continue
+		}
+
+		if ch == '\\' {
+			result.WriteByte(ch)
+			escaped = true
+			continue
+		}
+
+		if ch == '"' {
+			result.WriteByte(ch)
+			inString = !inString
+			continue
+		}
+
+		// If we're inside a string and hit a control character, escape it
+		if inString {
+			switch ch {
+			case '\n':
+				result.WriteString("\\n")
+				continue
+			case '\r':
+				result.WriteString("\\r")
+				continue
+			case '\t':
+				result.WriteString("\\t")
+				continue
+			}
+		}
+
+		result.WriteByte(ch)
+	}
+
+	return result.String()
 }
 
 func (b *OntologyBuilder) log(result *BuildResult, message string) {
