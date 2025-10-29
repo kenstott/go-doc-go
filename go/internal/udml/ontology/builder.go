@@ -211,7 +211,7 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 		config.ConfidenceThreshold = 0.7
 	}
 	if config.LLMMaxTokens == 0 {
-		config.LLMMaxTokens = 4096
+		config.LLMMaxTokens = 32000
 	}
 	if config.SchemaVersion == "" {
 		config.SchemaVersion = "1.0.0"
@@ -892,7 +892,7 @@ Before returning your response, verify EVERY domain name appears EXACTLY in the 
 	// Call LLM with or without MCP tools
 	var response string
 	llmOptions := LLMOptions{
-		MaxTokens:   2000,
+		MaxTokens:   b.config.LLMMaxTokens,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at identifying BUSINESS domains using data mesh principles. A domain is a BUSINESS CAPABILITY owned by a business team, NOT a data type, technical concern, or infrastructure component. Focus on business value and organizational ownership. Examples: Financial Management, Legal & Compliance, Healthcare Services, Sales & Marketing.",
 	}
@@ -1525,7 +1525,7 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
 	var response string
 	var err error
 	llmOptions := LLMOptions{
-		MaxTokens:   8000,
+		MaxTokens:   b.config.LLMMaxTokens,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at entity extraction and ontology design.",
 	}
@@ -1557,57 +1557,54 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
 	return mappings, 1, len(response), nil
 }
 
-// defineEntityTypesMultiStep generates entity mappings using a multi-step approach:
-// Step 1: Generate universal entities (person, org, location, date) per domain
-// Step 2: Generate domain-specific custom entities
-// Step 3: Merge and return
+// defineEntityTypesMultiStep generates entity mappings for each domain in a single unified call
 func (b *OntologyBuilder) defineEntityTypesMultiStep(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domains []Domain) ([]ElementEntityMappingConfig, int, int, error) {
 	var allMappings []ElementEntityMappingConfig
 	var totalLLMCalls int
 	var totalTokens int
 
-	// Step 1: Generate universal entities for each domain
-	fmt.Println("\n🔹 Step 1: Generating universal entity types (person, org, location, date) per domain...")
+	fmt.Println("\n🔹 Generating entity types for each domain...")
 	for _, domain := range domains {
-		mappings, calls, tokens, err := b.generateUniversalEntitiesForDomain(ctx, samples, topEntities, domain)
+		mappings, calls, tokens, err := b.generateAllEntitiesForDomain(ctx, samples, topEntities, domain)
 		if err != nil {
-			return nil, totalLLMCalls + calls, totalTokens + tokens, fmt.Errorf("failed to generate universal entities for domain %s: %w", domain.Name, err)
+			return nil, totalLLMCalls + calls, totalTokens + tokens, fmt.Errorf("failed to generate entities for domain %s: %w", domain.Name, err)
 		}
 		allMappings = append(allMappings, mappings...)
 		totalLLMCalls += calls
 		totalTokens += tokens
-		fmt.Printf("  ✓ Generated %d universal entity mappings for domain '%s'\n", len(mappings), domain.Name)
-	}
-
-	// Step 2: Generate domain-specific custom entities for each domain
-	fmt.Println("\n🔹 Step 2: Generating domain-specific custom entity types...")
-	for _, domain := range domains {
-		mappings, calls, tokens, err := b.generateDomainSpecificEntities(ctx, samples, topEntities, domain)
-		if err != nil {
-			return nil, totalLLMCalls + calls, totalTokens + tokens, fmt.Errorf("failed to generate domain-specific entities for domain %s: %w", domain.Name, err)
-		}
-		allMappings = append(allMappings, mappings...)
-		totalLLMCalls += calls
-		totalTokens += tokens
-		fmt.Printf("  ✓ Generated %d domain-specific entity mappings for domain '%s'\n", len(mappings), domain.Name)
+		fmt.Printf("  ✓ Generated %d entity mappings for domain '%s'\n", len(mappings), domain.Name)
 	}
 
 	fmt.Printf("\n  ✅ Total entity mappings generated: %d (from %d LLM calls)\n", len(allMappings), totalLLMCalls)
 	return allMappings, totalLLMCalls, totalTokens, nil
 }
 
-// generateUniversalEntitiesForDomain generates universal entity types (person, org, location, date)
-// adapted for a specific domain's context
-func (b *OntologyBuilder) generateUniversalEntitiesForDomain(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMappingConfig, int, int, error) {
+// generateAllEntitiesForDomain generates all entity types for a domain in a single LLM call
+func (b *OntologyBuilder) generateAllEntitiesForDomain(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMappingConfig, int, int, error) {
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
 
-	// Define universal entity template descriptions (inline to avoid import cycle)
+	// Format element types CLOSED LIST
+	elementTypeList := make([]string, len(b.substantiveTypes))
+	for i, et := range b.substantiveTypes {
+		elementTypeList[i] = fmt.Sprintf("  • **%s**", et)
+	}
+
+	// Format top entities for context
+	domainEntities := []string{}
+	for i, e := range topEntities {
+		if i >= 15 {
+			break
+		}
+		domainEntities = append(domainEntities, fmt.Sprintf("%s (%d occurrences)", e.Entity, e.Count))
+	}
+
+	// Universal entity template descriptions
 	templatesDesc := `
 ### PERSON
 - Description: Individual people including names, roles, identities
 - Suggested element types: paragraph, list_item, div, table_cell
 - Example patterns:
-  - Regex: \b([A-Z][a-z]+(?:\s+[A-Z]\\.)?(?:\s+[A-Z][a-z]+)+)\b (capitalized names)
+  - Regex: \b([A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+)+)\b (capitalized names)
   - Keywords: Dr., Prof., CEO, President, Director
   - Proximity filter: Match person names only when near biographical keywords (born, died, founded, created)
 
@@ -1636,18 +1633,12 @@ func (b *OntologyBuilder) generateUniversalEntitiesForDomain(ctx context.Context
   - Keywords: date, time, year, month, period
 `
 
-	// Format element types CLOSED LIST
-	elementTypeList := make([]string, len(b.substantiveTypes))
-	for i, et := range b.substantiveTypes {
-		elementTypeList[i] = fmt.Sprintf("  • **%s**", et)
-	}
-
 	prompt := fmt.Sprintf(`You MUST use element types from this CLOSED LIST ONLY:
 
 ## ALLOWED ELEMENT TYPES
 %s
 
-## TASK: Generate Universal Entity Mappings for Domain "%s"
+## TASK: Discover All Entity Types for Domain "%s"
 
 **Domain Context:**
 - Name: %s
@@ -1655,116 +1646,13 @@ func (b *OntologyBuilder) generateUniversalEntitiesForDomain(ctx context.Context
 - Owner: %s
 
 **Your Task:**
-Adapt the following UNIVERSAL entity types to this domain's specific context. For each universal type, create extraction rules that are tailored to how these entities appear in %s domain content.
+Analyze corpus samples and identify ALL relevant entities for this domain. This includes:
 
-**Universal Entity Types to Generate:**
+1. **Common entity types** (person, organization, location, date) - Adapt extraction rules to %s domain context
+2. **Domain-specific entity types** - Specialized concepts unique to %s domain
+
+**Common Entity Type Templates:**
 %s
-
-**Domain Samples:**
-%s
-
-## OUTPUT REQUIREMENTS
-
-Generate a JSON array of entity mappings. For EACH of the 4 universal types (person, organization, location, date), you MUST create AT LEAST ONE mapping adapted to this domain.
-
-**JSON Format:**
-[
-  {
-    "entity_type": "person",
-    "domain": "%s",
-    "description": "People entities in %s domain (adapt to domain context)",
-    "element_types": ["paragraph", "div", "list_item"],
-    "confidence": 0.85,
-    "extraction_rules": [
-      {
-        "type": "content_extraction",
-        "instance_name": "(?P<name>...pattern for %s domain...)"
-      }
-    ]
-  }
-]
-
-**CRITICAL REQUIREMENTS:**
-- You MUST generate mappings for ALL 4 universal types: person, organization, location, date
-- Each mapping MUST be assigned to domain "%s"
-- Adapt extraction rules to %s domain context (keywords, patterns specific to this domain)
-- Use ONLY element types from the closed list above
-- Include domain-relevant examples in descriptions`,
-		strings.Join(elementTypeList, "\n"),
-		domain.Name,
-		domain.Name, domain.Description, domain.Owner,
-		domain.Name,
-		templatesDesc,
-		sampleTexts,
-		domain.Name, domain.Name, domain.Name,
-		domain.Name, domain.Name)
-
-	llmOptions := LLMOptions{
-		MaxTokens:    4000,
-		Temperature:  0.2, // Lower temperature for consistency
-		SystemPrompt: "You are an expert at adapting universal entity templates to domain-specific contexts.",
-	}
-
-	response, err := b.llmClient.Complete(ctx, prompt, llmOptions)
-	if err != nil {
-		return nil, 1, 0, err
-	}
-
-	var mappings []ElementEntityMappingConfig
-	if err := b.extractJSON(response, &mappings); err != nil {
-		return nil, 1, len(response), err
-	}
-
-	// Validate: ensure all universal types are present
-	universalTypes := []string{"person", "organization", "location", "date"}
-	foundTypes := make(map[string]bool)
-	for _, m := range mappings {
-		foundTypes[m.EntityType] = true
-	}
-	for _, requiredType := range universalTypes {
-		if !foundTypes[requiredType] {
-			fmt.Printf("  ⚠ Warning: Universal type '%s' missing for domain '%s'\n", requiredType, domain.Name)
-		}
-	}
-
-	return mappings, 1, len(response), nil
-}
-
-// generateDomainSpecificEntities generates custom entity types specific to a domain
-// (beyond the universal person/org/location/date types)
-func (b *OntologyBuilder) generateDomainSpecificEntities(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMappingConfig, int, int, error) {
-	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
-
-	// Format element types CLOSED LIST
-	elementTypeList := make([]string, len(b.substantiveTypes))
-	for i, et := range b.substantiveTypes {
-		elementTypeList[i] = fmt.Sprintf("  • **%s**", et)
-	}
-
-	// Format top entities relevant to this domain (filter by looking for domain keywords in entity text)
-	domainEntities := []string{}
-	for i, e := range topEntities {
-		if i >= 15 {
-			break
-		}
-		// Simple heuristic: include all for now, LLM will filter
-		domainEntities = append(domainEntities, fmt.Sprintf("%s (%d occurrences)", e.Entity, e.Count))
-	}
-
-	prompt := fmt.Sprintf(`You MUST use element types from this CLOSED LIST ONLY:
-
-## ALLOWED ELEMENT TYPES
-%s
-
-## TASK: Generate Domain-Specific Entity Types for "%s" Domain
-
-**Domain Context:**
-- Name: %s
-- Description: %s
-- Owner: %s
-
-**Your Task:**
-Identify and create DOMAIN-SPECIFIC entity types that are unique to the %s domain. These should be specialized entity types that go BEYOND the universal types (person, organization, location, date) which have already been generated.
 
 **Examples of Good Domain-Specific Types:**
 - medical domain: "medical_procedure", "diagnosis", "medication", "symptom"
@@ -1780,16 +1668,29 @@ Identify and create DOMAIN-SPECIFIC entity types that are unique to the %s domai
 
 ## OUTPUT REQUIREMENTS
 
-Generate a JSON array of domain-specific entity mappings. Create 2-5 specialized entity types that are specific to %s domain.
-
-**DO NOT** generate person, organization, location, or date (those are already handled).
+Generate a JSON array of entity mappings. You MUST include:
+- ALL 4 common types (person, organization, location, date) adapted to this domain
+- 2-5 domain-specific entity types unique to %s domain
 
 **JSON Format:**
 [
   {
+    "entity_type": "person",
+    "domain": "%s",
+    "description": "People entities in %s domain context",
+    "element_types": ["paragraph", "div", "list_item"],
+    "confidence": 0.85,
+    "extraction_rules": [
+      {
+        "type": "content_extraction",
+        "instance_name": "(?P<name>...pattern adapted for %s...)"
+      }
+    ]
+  },
+  {
     "entity_type": "medical_procedure",
     "domain": "%s",
-    "description": "Medical procedures and interventions specific to clinical practice",
+    "description": "Medical procedures and interventions",
     "element_types": ["paragraph", "list_item"],
     "confidence": 0.80,
     "extraction_rules": [
@@ -1797,7 +1698,7 @@ Generate a JSON array of domain-specific entity mappings. Create 2-5 specialized
         "type": "content_extraction",
         "instance_name": "(?P<name>...domain-specific pattern...)",
         "proximity_filter": {
-          "keywords": ["procedure", "treatment", "surgery"],
+          "keywords": ["procedure", "treatment"],
           "max_distance": 100
         }
       }
@@ -1808,22 +1709,25 @@ Generate a JSON array of domain-specific entity mappings. Create 2-5 specialized
 **CRITICAL REQUIREMENTS:**
 - All mappings MUST be assigned to domain "%s"
 - Use ONLY element types from the closed list above
-- Focus on domain-SPECIFIC entity types (not universal types)
-- If no good domain-specific types exist, return an empty array []`,
+- Include ALL 4 common types (person, organization, location, date)
+- Include 2-5 domain-specific types
+- Adapt all extraction rules to %s domain context`,
 		strings.Join(elementTypeList, "\n"),
 		domain.Name,
 		domain.Name, domain.Description, domain.Owner,
-		domain.Name,
+		domain.Name, domain.Name,
+		templatesDesc,
 		strings.Join(domainEntities, "\n"),
 		sampleTexts,
 		domain.Name,
+		domain.Name, domain.Name, domain.Name,
 		domain.Name,
-		domain.Name)
+		domain.Name, domain.Name)
 
 	llmOptions := LLMOptions{
-		MaxTokens:    4000,
-		Temperature:  0.3,
-		SystemPrompt: "You are an expert at identifying domain-specific entity types that capture specialized concepts beyond universal types.",
+		MaxTokens:   b.config.LLMMaxTokens,
+		Temperature:  0.2,
+		SystemPrompt: "You are an expert at discovering entity types and creating extraction rules adapted to domain-specific contexts.",
 	}
 
 	response, err := b.llmClient.Complete(ctx, prompt, llmOptions)
@@ -2100,7 +2004,7 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
 	var response string
 	var err error
 	llmOptions := LLMOptions{
-		MaxTokens:   8000,
+		MaxTokens:   b.config.LLMMaxTokens,
 		Temperature: 0.3,
 		SystemPrompt: "You are an expert at relationship extraction and pattern discovery. Analyze text samples to find patterns that signal relationships between entities.",
 	}
@@ -2164,7 +2068,9 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 			jsonStr = response[start : start+end]
 			fmt.Printf("DEBUG: Extracted JSON from code block, length=%d\n", len(jsonStr))
 		} else {
-			fmt.Printf("DEBUG: Could not find closing ``` fence\n")
+			// No closing fence - use rest of response after the opening fence
+			fmt.Printf("DEBUG: Could not find closing ``` fence, using rest of response\n")
+			jsonStr = response[start:]
 		}
 	} else if start := strings.Index(response, "```"); start != -1 {
 		start += 3 // Skip past "```"

@@ -126,7 +126,7 @@ exclude_patterns = [
 ]
 
 [content_sources.discovery.hyperlinks]
-enabled = false
+enabled = true
 
 [content_sources.discovery.code_dependencies]
 enabled = true

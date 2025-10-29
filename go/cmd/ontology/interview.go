@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology"
+	"gopkg.in/yaml.v3"
 )
 
 // runInterview executes the ontology interview subcommand
@@ -175,17 +177,35 @@ func runInterview(args []string) {
 		}
 	}
 
-	// Save schema to file
-	schemaJSON, err := json.MarshalIndent(schema, "", "  ")
-	if err != nil {
-		log.Fatalf("Failed to marshal schema: %v", err)
+	// Validate schema (computes hierarchies and fills parent_type/children/w_category fields)
+	fmt.Println("\n🔄 Validating and finalizing schema...")
+	if err := schema.Validate(); err != nil {
+		log.Fatalf("Schema validation failed: %v", err)
+	}
+	fmt.Println("✅ Schema validation passed (hierarchies computed)")
+
+	// Save schema to file (YAML or JSON based on extension)
+	ext := filepath.Ext(outputPath)
+	var schemaBytes []byte
+	var format string
+
+	if ext == ".yaml" || ext == ".yml" {
+		schemaBytes, err = yaml.Marshal(schema)
+		format = "YAML"
+	} else {
+		schemaBytes, err = json.MarshalIndent(schema, "", "  ")
+		format = "JSON"
 	}
 
-	if err := os.WriteFile(outputPath, schemaJSON, 0644); err != nil {
+	if err != nil {
+		log.Fatalf("Failed to marshal schema to %s: %v", format, err)
+	}
+
+	if err := os.WriteFile(outputPath, schemaBytes, 0644); err != nil {
 		log.Fatalf("Failed to write schema file: %v", err)
 	}
 
-	fmt.Printf("\n✓ Ontology schema saved to: %s\n", outputPath)
+	fmt.Printf("\n✓ Ontology schema saved to: %s (%s format)\n", outputPath, format)
 }
 
 func printInterviewUsage() {

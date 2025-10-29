@@ -624,10 +624,32 @@ func (ib *InterviewBuilderV2) phaseDraftGeneration(ctx context.Context) error {
 
 	ib.schema.ElementEntityMappings = entityMappings
 
-	fmt.Printf("  ✓ Generated %d entity mappings\n", len(entityMappings))
+	fmt.Printf("  ✓ Generated %d entity mappings from LLM\n", len(entityMappings))
 
-	// Generate relationships using builder's existing logic
-	relationshipRules, calls2, tokens2, err := ib.builder.defineRelationshipTypes(ctx, ib.samples, entityMappings)
+	// Merge global catalog (adds 37 global entities, immutable)
+	fmt.Println("\n🔄 Merging global catalog...")
+	if err := ib.builder.mergeGlobalCatalog(ib.schema); err != nil {
+		return fmt.Errorf("failed to merge global catalog: %w", err)
+	}
+
+	// Merge domain catalogs (for catalog domains only)
+	fmt.Println("\n🔄 Merging domain catalogs...")
+	for _, domain := range ib.schema.Domains {
+		// Skip global domain (already merged above)
+		if domain.Name == "global" {
+			continue
+		}
+
+		// Try to merge domain catalog (skip if not found - means it's a new domain)
+		if err := ib.builder.mergeDomainCatalog(ib.schema, domain.Name); err != nil {
+			fmt.Printf("  ℹ️  No catalog for domain '%s' (new domain, generated from scratch by LLM)\n", domain.Name)
+		}
+	}
+
+	fmt.Printf("\n  ✓ Total entity mappings after catalog merge: %d\n", len(ib.schema.ElementEntityMappings))
+
+	// Generate relationships using builder's existing logic (now includes global + domain catalog entities)
+	relationshipRules, calls2, tokens2, err := ib.builder.defineRelationshipTypes(ctx, ib.samples, ib.schema.ElementEntityMappings)
 	if err != nil {
 		return err
 	}
