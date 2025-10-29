@@ -1,5 +1,6 @@
 domain: aerospace_defense
-description: Aircraft, spacecraft, defense systems, maintenance, contracts, and aerospace operations
+description: Aircraft, spacecraft, defense systems, maintenance, contracts, and aerospace
+  operations
 subdomains:
 - aircraft_operations
 - maintenance_repair_overhaul
@@ -19,14 +20,13 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - aircraft
     - plane
     - helicopter
     - spacecraft
-    - tail number
-    - registration
+    - vehicle
   parent_type: ''
   w_category: what
   domain: aerospace_defense
@@ -41,14 +41,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - maintenance
+  extraction_rules:
+  - phrase_list:
+    - maintenance event
+    - service
     - repair
     - inspection
-    - service
     - overhaul
-    - MRO
   parent_type: ''
   w_category: what
   domain: aerospace_defense
@@ -63,13 +62,12 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - defense contract
     - contract
+    - agreement
     - procurement
-    - award
-    - solicitation
-    - RFP
   parent_type: ''
   w_category: what
   domain: aerospace_defense
@@ -83,14 +81,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - flight
     - mission
     - sortie
-    - flight plan
-    - departure
-    - arrival
+    - flight operation
   parent_type: ''
   w_category: what
   domain: aerospace_defense
@@ -105,22 +101,20 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - component
     - part
     - assembly
     - system
     - subsystem
-    - engine
-    - avionics
-  parent_type: global.product
+  parent_type: ''
   w_category: what
   domain: aerospace_defense
 relationship_types:
 - relationship_type: maintained_by
   description: Aircraft maintained by event
-  sample_rules:
+  extraction_rules:
   - keywords:
     - maintained
     - serviced
@@ -130,7 +124,7 @@ relationship_types:
   target_type: maintenance_event
 - relationship_type: requires_component
   description: Maintenance requires component
-  sample_rules:
+  extraction_rules:
   - keywords:
     - requires
     - needs
@@ -140,7 +134,7 @@ relationship_types:
   target_type: component
 - relationship_type: contracted_for
   description: Aircraft contracted for
-  sample_rules:
+  extraction_rules:
   - keywords:
     - for
     - procurement of
@@ -149,7 +143,7 @@ relationship_types:
   target_type: aircraft
 - relationship_type: operated_as
   description: Aircraft operated as flight
-  sample_rules:
+  extraction_rules:
   - keywords:
     - operated as
     - flight

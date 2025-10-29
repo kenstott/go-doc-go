@@ -1,5 +1,6 @@
 domain: sustainability_esg
-description: Environmental metrics, social responsibility, governance, carbon tracking, and ESG reporting
+description: Environmental metrics, social responsibility, governance, carbon tracking,
+  and ESG reporting
 subdomains:
 - environmental_metrics
 - social_responsibility
@@ -17,13 +18,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - esg initiative
     - initiative
     - program
-    - sustainability
-    - ESG initiative
-    - green initiative
+    - sustainability initiative
   parent_type: ''
   w_category: what
   domain: sustainability_esg
@@ -38,14 +38,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - emission
-    - carbon
-    - CO2
-    - greenhouse gas
+    - carbon emission
     - GHG
-    - tons CO2e
+    - greenhouse gas
+    - CO2
   parent_type: ''
   w_category: what
   domain: sustainability_esg
@@ -59,12 +58,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - environmental metric
+    - environmental KPI
     - sustainability metric
-    - carbon footprint
-    - energy consumption
+    - green metric
   parent_type: ''
   w_category: what
   domain: sustainability_esg
@@ -78,13 +77,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - social metric
-    - diversity
-    - inclusion
+    - social KPI
+    - diversity metric
     - community impact
-    - employee wellbeing
   parent_type: ''
   w_category: what
   domain: sustainability_esg
@@ -99,13 +97,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - governance
+  extraction_rules:
+  - phrase_list:
+    - governance policy
     - policy
     - framework
-    - compliance
-    - board oversight
+    - governance framework
+    - compliance policy
   parent_type: ''
   w_category: what
   domain: sustainability_esg
@@ -119,11 +117,11 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - ESG report
+  extraction_rules:
+  - phrase_list:
+    - esg report
     - sustainability report
-    - disclosure
+    - ESG disclosure
     - CSR report
   parent_type: ''
   w_category: what
@@ -131,7 +129,7 @@ entity_types:
 relationship_types:
 - relationship_type: reduces_emission
   description: Initiative reduces emission
-  sample_rules:
+  extraction_rules:
   - keywords:
     - reduces
     - cuts
@@ -142,7 +140,7 @@ relationship_types:
   target_type: emission
 - relationship_type: tracks_metric
   description: Initiative tracks environmental metric
-  sample_rules:
+  extraction_rules:
   - keywords:
     - tracks
     - measures
@@ -152,7 +150,7 @@ relationship_types:
   target_type: environmental_metric
 - relationship_type: governed_by
   description: Initiative governed by policy
-  sample_rules:
+  extraction_rules:
   - keywords:
     - governed by
     - complies with
@@ -162,7 +160,7 @@ relationship_types:
   target_type: governance_policy
 - relationship_type: reported_in
   description: Metric reported in ESG report
-  sample_rules:
+  extraction_rules:
   - keywords:
     - reported in
     - disclosed in
@@ -171,7 +169,7 @@ relationship_types:
   target_type: esg_report
 - relationship_type: measures_social
   description: Social metric measures impact
-  sample_rules:
+  extraction_rules:
   - keywords:
     - measures
     - tracks

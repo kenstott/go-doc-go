@@ -1,5 +1,6 @@
 domain: leisure
-description: Travel, hospitality, tourism, entertainment, recreation, and leisure industry services
+description: Travel, hospitality, tourism, entertainment, recreation, and leisure
+  industry services
 subdomains:
 - travel
 - hospitality
@@ -57,13 +58,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - destination
-    - resort
-    - beach
-    - mountain
-    - city
+    - location
+    - place
+    - tourist site
     - attraction
   parent_type: ''
   w_category: what
@@ -79,14 +79,8 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
+  extraction_rules:
   - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Hotel|Resort|Inn|Lodge)\b'
-  - keywords:
-    - hotel
-    - resort
-    - inn
-    - lodge
-    - accommodation
   parent_type: ''
   w_category: what
   domain: leisure
@@ -99,12 +93,8 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
+  extraction_rules:
   - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Airlines?\b'
-  - keywords:
-    - airline
-    - airways
-    - air
   parent_type: ''
   w_category: what
   domain: leisure
@@ -116,12 +106,8 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-Z]{2}\d{1,4}\b
-  - keywords:
-    - flight
-    - departure
-    - arrival
   parent_type: ''
   w_category: what
   domain: leisure
@@ -133,11 +119,11 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - booking
     - reservation
-    - confirmation number
+    - appointment
   parent_type: ''
   w_category: what
   domain: leisure
@@ -151,14 +137,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - museum
-    - monument
-    - park
-    - beach
+  extraction_rules:
+  - phrase_list:
+    - tourist attraction
     - attraction
     - landmark
+    - site
+    - monument
   parent_type: ''
   w_category: what
   domain: leisure
@@ -172,13 +157,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - restaurant
-    - cafe
-    - bistro
     - eatery
     - dining
+    - cafe
+    - bistro
   parent_type: ''
   w_category: what
   domain: leisure
@@ -192,13 +177,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - concert
-    - show
-    - festival
+  extraction_rules:
+  - phrase_list:
     - event
+    - show
     - performance
+    - concert
+    - festival
   parent_type: ''
   w_category: what
   domain: leisure
@@ -211,12 +196,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - tour
     - excursion
+    - trip
     - guided tour
-    - day trip
   parent_type: ''
   w_category: what
   domain: leisure
@@ -230,12 +215,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - traveler
     - tourist
     - visitor
     - guest
+    - vacationer
   parent_type: ''
   w_category: what
   domain: leisure

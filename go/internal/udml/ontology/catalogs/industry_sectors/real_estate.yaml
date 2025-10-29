@@ -1,5 +1,6 @@
 domain: real_estate
-description: Property management, leases, facilities, space management, property valuation, and commercial real estate
+description: Property management, leases, facilities, space management, property valuation,
+  and commercial real estate
 subdomains:
 - property_management
 - lease_administration
@@ -19,14 +20,13 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - property
     - building
-    - facility
     - real estate
     - asset
-    - premises
+    - facility
   parent_type: ''
   w_category: what
   domain: real_estate
@@ -40,13 +40,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - lease
-    - rental
-    - tenancy
-    - lease agreement
     - rental agreement
+    - tenancy agreement
+    - lease contract
   parent_type: ''
   w_category: what
   domain: real_estate
@@ -60,8 +59,8 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - tenant
     - lessee
     - renter
@@ -79,8 +78,8 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - landlord
     - lessor
     - property owner
@@ -98,13 +97,11 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - rent
+  extraction_rules:
+  - phrase_list:
     - rental rate
+    - rent
     - lease rate
-    - per square foot
-    - PSF
     - rental price
   parent_type: ''
   w_category: what
@@ -120,20 +117,20 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - square feet
-    - SF
+  extraction_rules:
+  - phrase_list:
     - square footage
     - area
     - size
+    - square feet
+    - SF
   parent_type: ''
   w_category: what
   domain: real_estate
 relationship_types:
 - relationship_type: leased_by
   description: Property leased by tenant
-  sample_rules:
+  extraction_rules:
   - keywords:
     - leased by
     - tenant
@@ -143,7 +140,7 @@ relationship_types:
   target_type: tenant
 - relationship_type: owned_by
   description: Property owned by landlord
-  sample_rules:
+  extraction_rules:
   - keywords:
     - owned by
     - owner
@@ -152,7 +149,7 @@ relationship_types:
   target_type: landlord
 - relationship_type: has_lease
   description: Property has lease agreement
-  sample_rules:
+  extraction_rules:
   - keywords:
     - lease
     - rental agreement
@@ -161,7 +158,7 @@ relationship_types:
   target_type: lease
 - relationship_type: priced_at
   description: Property priced at rental rate
-  sample_rules:
+  extraction_rules:
   - keywords:
     - priced at
     - rent
@@ -170,7 +167,7 @@ relationship_types:
   target_type: rental_rate
 - relationship_type: has_size
   description: Property has square footage
-  sample_rules:
+  extraction_rules:
   - keywords:
     - square feet
     - SF

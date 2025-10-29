@@ -16,7 +16,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:,\s*[A-Z]{2})?)'
         semantic:
           reference_concepts:
@@ -38,7 +38,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
         proximity:
@@ -62,7 +62,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - phrase_list:
           - United States
           - Canada
@@ -93,7 +93,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - phrase_list:
           - California
           - Texas
@@ -125,7 +125,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:St|Ave|Rd|Dr|Blvd|Street|Avenue|Road|Drive|Boulevard))'
 
   # Subtype: building
@@ -141,7 +141,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Building|Tower|Center|Hall|Complex))'
         proximity:
           cooccurrence_terms:

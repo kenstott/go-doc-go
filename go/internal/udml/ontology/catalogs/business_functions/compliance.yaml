@@ -1,6 +1,7 @@
 domain: compliance
-description: Regulatory compliance, risk management, audit, policy enforcement, and regulatory reporting across industries
-  including financial services, healthcare, and corporate governance
+description: Regulatory compliance, risk management, audit, policy enforcement, and
+  regulatory reporting across industries including financial services, healthcare,
+  and corporate governance
 subdomains:
 - financial_regulation
 - healthcare_regulation
@@ -68,24 +69,8 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - AML
-    - KYC
-    - GDPR
-    - HIPAA
-    - SOX
-    - Dodd-Frank
-    - Basel III
-    - MiFID
-    - FDA
-    - OSHA
-    - EPA
-    - SEC
-    - FINRA
+  extraction_rules:
   - pattern: \b(?:Regulation|Rule|Directive|Act)\s+[A-Z0-9-]+\b
-  - reference_text: compliance with Regulation XYZ requires implementation of controls
-    similarity_threshold: 0.7
   parent_type: ''
   w_category: what
   domain: compliance
@@ -100,17 +85,13 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
-    - must
-    - required
-    - shall
-    - mandatory
-    - obligated
-    - required to
-    - must comply
-  - reference_text: organizations must implement customer due diligence procedures
-    similarity_threshold: 0.7
+  extraction_rules:
+  - phrase_list:
+    - compliance requirement
+    - requirement
+    - obligation
+    - mandate
+    - control requirement
   parent_type: ''
   w_category: what
   domain: compliance
@@ -125,21 +106,9 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
-    - SEC
-    - FDA
-    - EPA
-    - OSHA
-    - FTC
-    - DOJ
-    - FINRA
-    - OCC
-    - Federal Reserve
-    - HHS
-    - CMS
-  - pattern: \b(?:Securities and Exchange Commission|Food and Drug Administration|Environmental Protection Agency|Occupational
-      Safety and Health Administration)\b
+  extraction_rules:
+  - pattern: \b(?:Securities and Exchange Commission|Food and Drug Administration|Environmental
+      Protection Agency|Occupational Safety and Health Administration)\b
   parent_type: ''
   w_category: what
   domain: compliance
@@ -153,13 +122,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - compliance officer
-    - CCO
-    - chief compliance officer
-    - compliance manager
-    - regulatory affairs
+  extraction_rules:
   - pattern: \b(?:Chief Compliance Officer|CCO|Compliance Manager|Director of Compliance)\b
   parent_type: ''
   w_category: what
@@ -177,18 +140,15 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - audit finding
     - finding
     - deficiency
     - gap
     - non-compliance
     - violation
-    - weakness
-    - observation
-    - issue identified
-  - reference_text: audit identified deficiencies in the control framework
-    similarity_threshold: 0.7
+    - audit observation
   parent_type: ''
   w_category: what
   domain: compliance
@@ -204,15 +164,14 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - control
+    - internal control
+    - compliance control
     - safeguard
-    - preventive measure
+    - preventive control
     - detective control
-    - monitoring mechanism
-  - reference_text: implemented transaction monitoring controls to detect suspicious activity
-    similarity_threshold: 0.7
   parent_type: ''
   w_category: what
   domain: compliance
@@ -227,14 +186,8 @@ entity_types:
   element_types:
   - heading
   - paragraph
-  sample_rules:
+  extraction_rules:
   - pattern: \b(?:Policy|Procedure|Manual|SOP|Guideline)\s+[A-Z0-9-]+\b
-  - keywords:
-    - policy document
-    - procedure manual
-    - compliance policy
-    - SOP
-    - operating procedure
   parent_type: ''
   w_category: what
   domain: compliance
@@ -249,14 +202,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - fine
-    - penalty
-    - sanction
-    - enforcement action
-    - monetary penalty
-    - disciplinary action
+  extraction_rules:
   - pattern: \$\d{1,3}(?:,\d{3})*(?:\s+(?:fine|penalty|sanction))
   parent_type: ''
   w_category: what
@@ -272,13 +218,13 @@ entity_types:
   - heading
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - risk assessment
     - risk analysis
+    - compliance risk assessment
     - risk evaluation
     - risk review
-    - compliance risk
   parent_type: ''
   w_category: what
   domain: compliance
@@ -293,19 +239,14 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - AML
-    - KYC
-    - anti-money laundering
-    - know your customer
+  extraction_rules:
+  - phrase_list:
+    - aml kyc entity
+    - AML entity
+    - KYC entity
     - customer due diligence
     - CDD
     - beneficial owner
-    - UBO
-    - suspicious activity
-  - reference_text: performed enhanced due diligence on high-risk customers
-    similarity_threshold: 0.7
   parent_type: ''
   w_category: what
   domain: compliance
@@ -320,14 +261,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - HIPAA
-    - PHI
-    - protected health information
-    - FDA approval
-    - medical device
-    - clinical trial
+  extraction_rules:
+  - phrase_list:
+    - healthcare compliance entity
+    - HIPAA entity
+    - FDA entity
+    - healthcare regulation
+    - medical device regulation
     - patient privacy
   parent_type: ''
   w_category: what
@@ -343,16 +283,14 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - GDPR
-    - CCPA
-    - data privacy
+  extraction_rules:
+  - phrase_list:
+    - data privacy entity
+    - GDPR entity
+    - privacy entity
+    - data protection
     - personal data
     - PII
-    - data protection
-    - consent
-    - data subject rights
   parent_type: ''
   w_category: what
   domain: compliance

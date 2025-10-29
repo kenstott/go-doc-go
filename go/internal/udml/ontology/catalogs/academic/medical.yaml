@@ -1,5 +1,6 @@
 domain: medical
-description: Medical records, clinical notes, prescriptions, lab reports, patient documents, and healthcare documentation
+description: Medical records, clinical notes, prescriptions, lab reports, patient
+  documents, and healthcare documentation
 subdomains:
 - clinical_care
 - diagnostics
@@ -89,11 +90,12 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - patient
-    - subject
     - individual
+    - subject
+    - case
   parent_type: ''
   w_category: what
   domain: medical
@@ -109,17 +111,14 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
-    - diabetes
-    - hypertension
-    - cancer
-    - infection
-    - pneumonia
-    - asthma
-    - arthritis
-    - heart disease
-    - stroke
+  extraction_rules:
+  - phrase_list:
+    - condition
+    - diagnosis
+    - disease
+    - disorder
+    - illness
+    - ailment
   parent_type: ''
   w_category: what
   domain: medical
@@ -135,14 +134,8 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-Z][a-z]+(?:in|ol|azole|mycin|cillin|oxacin)\b
-  - keywords:
-    - mg
-    - mcg
-    - tablet
-    - capsule
-    - injection
   parent_type: ''
   w_category: what
   domain: medical
@@ -155,15 +148,8 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|units)
-  - keywords:
-    - daily
-    - twice daily
-    - BID
-    - TID
-    - QID
-    - PRN
   parent_type: ''
   w_category: what
   domain: medical
@@ -178,15 +164,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - procedure
     - surgery
-    - biopsy
-    - catheterization
-    - endoscopy
-    - resection
-    - transplant
-    - implantation
+    - operation
+    - intervention
+    - treatment
   parent_type: global.process
   w_category: how
   domain: medical
@@ -202,18 +186,14 @@ entity_types:
   - paragraph
   - table_cell
   - list_item
-  sample_rules:
-  - keywords:
-    - CBC
-    - blood test
-    - urinalysis
-    - X-ray
-    - MRI
-    - CT scan
-    - ultrasound
-    - EKG
-    - ECG
-    - biopsy
+  extraction_rules:
+  - phrase_list:
+    - lab test
+    - test
+    - lab
+    - study
+    - examination
+    - diagnostic
   parent_type: ''
   w_category: what
   domain: medical
@@ -227,7 +207,7 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
+  extraction_rules:
   - pattern: \b\d+(?:\.\d+)?\s*(?:mg/dL|mmol/L|%|units/L|mEq/L)
   parent_type: ''
   w_category: what
@@ -242,17 +222,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - pain
-    - fever
-    - cough
-    - fatigue
-    - nausea
-    - vomiting
-    - dizziness
-    - weakness
-    - shortness of breath
+  extraction_rules:
+  - phrase_list:
+    - symptom
+    - sign
+    - complaint
+    - presentation
+    - manifestation
   parent_type: ''
   w_category: what
   domain: medical
@@ -266,19 +242,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - heart
-    - lung
-    - liver
-    - kidney
-    - brain
-    - stomach
-    - chest
-    - abdomen
-    - head
-    - neck
-    - extremity
+  extraction_rules:
+  - phrase_list:
+    - body part
+    - anatomy
+    - organ
+    - structure
+    - region
   parent_type: ''
   w_category: what
   domain: medical
@@ -293,16 +263,14 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - Dr.
-    - MD
+  extraction_rules:
+  - phrase_list:
+    - healthcare provider
     - physician
     - doctor
-    - nurse
+    - provider
     - hospital
     - clinic
-    - medical center
   parent_type: ''
   w_category: what
   domain: medical
@@ -316,16 +284,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - cardiology
-    - oncology
-    - neurology
-    - orthopedics
-    - pediatrics
-    - radiology
-    - surgery
-    - internal medicine
+  extraction_rules:
+  - phrase_list:
+    - medical specialty
+    - specialty
+    - department
+    - service
+    - field
   parent_type: ''
   w_category: what
   domain: medical
@@ -339,10 +304,10 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - allergy
-    - allergic
+    - hypersensitivity
     - adverse reaction
     - intolerance
   parent_type: ''

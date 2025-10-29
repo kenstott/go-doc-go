@@ -1,6 +1,6 @@
 domain: banking
-description: Banking operations including investment banking, retail banking, commercial banking, wealth management, and brokerage
-  services
+description: Banking operations including investment banking, retail banking, commercial
+  banking, wealth management, and brokerage services
 subdomains:
 - investment_banking
 - retail_banking
@@ -19,13 +19,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - account
-    - checking
-    - savings
-    - deposit
-    - account number
+    - bank account
+    - customer account
+    - deposit account
   parent_type: ''
   w_category: what
   domain: banking
@@ -40,15 +39,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - transaction
     - payment
     - transfer
     - withdrawal
     - deposit
-    - debit
-    - credit
   parent_type: ''
   w_category: what
   domain: banking
@@ -63,14 +60,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - loan
     - credit
-    - mortgage
-    - financing
     - lending
-    - line of credit
+    - financing
+    - mortgage
   parent_type: ''
   w_category: what
   domain: banking
@@ -83,15 +79,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - stock
-    - bond
-    - mutual fund
-    - ETF
+  extraction_rules:
+  - phrase_list:
+    - investment product
     - security
     - investment
-    - portfolio
+    - financial product
   parent_type: ''
   w_category: what
   domain: banking
@@ -104,13 +97,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - branch
     - location
     - office
-    - ATM
-    - banking center
+    - branch office
   parent_type: ''
   w_category: what
   domain: banking
@@ -124,21 +116,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - interest rate
     - APR
     - rate
     - yield
-    - basis points
-    - percentage
   parent_type: ''
   w_category: what
   domain: banking
 relationship_types:
 - relationship_type: holds_account
   description: Customer holds account
-  sample_rules:
+  extraction_rules:
   - keywords:
     - holds
     - owns
@@ -148,7 +138,7 @@ relationship_types:
   target_type: account
 - relationship_type: made_transaction
   description: Account made transaction
-  sample_rules:
+  extraction_rules:
   - keywords:
     - transaction
     - payment
@@ -158,7 +148,7 @@ relationship_types:
   target_type: transaction
 - relationship_type: has_loan
   description: Customer has loan
-  sample_rules:
+  extraction_rules:
   - keywords:
     - loan
     - borrower
@@ -168,7 +158,7 @@ relationship_types:
   target_type: loan
 - relationship_type: invests_in
   description: Customer invests in product
-  sample_rules:
+  extraction_rules:
   - keywords:
     - invests
     - holds
@@ -178,7 +168,7 @@ relationship_types:
   target_type: investment_product
 - relationship_type: located_at_branch
   description: Account serviced at branch
-  sample_rules:
+  extraction_rules:
   - keywords:
     - branch
     - location
@@ -188,7 +178,7 @@ relationship_types:
   target_type: branch
 - relationship_type: earns_rate
   description: Account earns interest rate
-  sample_rules:
+  extraction_rules:
   - keywords:
     - earns
     - interest rate

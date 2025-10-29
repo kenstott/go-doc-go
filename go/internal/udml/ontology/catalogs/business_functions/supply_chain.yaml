@@ -1,5 +1,6 @@
 domain: supply_chain
-description: Procurement, inventory management, warehousing, distribution, logistics, and supplier management
+description: Procurement, inventory management, warehousing, distribution, logistics,
+  and supplier management
 subdomains:
 - procurement
 - inventory_management
@@ -19,13 +20,12 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - supplier
     - vendor
+    - supplier
     - provider
-    - manufacturer
-    - distributor
   parent_type: global.organization
   w_category: who
   domain: supply_chain
@@ -40,13 +40,12 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - purchase order
     - PO
-    - procurement
+    - procurement order
     - buy order
-    - requisition
   parent_type: ''
   w_category: what
   domain: supply_chain
@@ -61,14 +60,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - SKU
+  extraction_rules:
+  - phrase_list:
     - inventory item
-    - stock
-    - part number
+    - SKU
+    - stock item
+    - product
     - material
-    - component
   parent_type: ''
   w_category: what
   domain: supply_chain
@@ -83,8 +81,8 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - warehouse
     - distribution center
     - DC
@@ -103,13 +101,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - shipment
     - delivery
-    - freight
     - transportation
-    - cargo
+    - freight
   parent_type: ''
   w_category: what
   domain: supply_chain
@@ -122,13 +119,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - carrier
     - shipper
     - logistics provider
     - freight forwarder
-    - courier
   parent_type: ''
   w_category: what
   domain: supply_chain
@@ -142,20 +138,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - demand forecast
     - demand plan
-    - planning
-    - projection
-    - expected demand
+    - forecast
+    - demand projection
   parent_type: ''
   w_category: what
   domain: supply_chain
 relationship_types:
 - relationship_type: supplied_by
   description: Item supplied by supplier
-  sample_rules:
+  extraction_rules:
   - keywords:
     - supplied by
     - from
@@ -165,7 +160,7 @@ relationship_types:
   target_type: supplier
 - relationship_type: ordered_from
   description: Purchase order placed with supplier
-  sample_rules:
+  extraction_rules:
   - keywords:
     - ordered from
     - placed with
@@ -174,7 +169,7 @@ relationship_types:
   target_type: supplier
 - relationship_type: contains_item
   description: Purchase order contains inventory item
-  sample_rules:
+  extraction_rules:
   - keywords:
     - includes
     - contains
@@ -184,7 +179,7 @@ relationship_types:
   target_type: inventory_item
 - relationship_type: stored_in
   description: Item stored in warehouse
-  sample_rules:
+  extraction_rules:
   - keywords:
     - stored in
     - located at
@@ -194,7 +189,7 @@ relationship_types:
   target_type: warehouse
 - relationship_type: shipped_via
   description: Shipment transported by carrier
-  sample_rules:
+  extraction_rules:
   - keywords:
     - shipped via
     - carrier
@@ -204,7 +199,7 @@ relationship_types:
   target_type: carrier
 - relationship_type: fulfills_order
   description: Shipment fulfills purchase order
-  sample_rules:
+  extraction_rules:
   - keywords:
     - fulfills
     - delivers
@@ -214,7 +209,7 @@ relationship_types:
   target_type: purchase_order
 - relationship_type: based_on_forecast
   description: Order based on demand forecast
-  sample_rules:
+  extraction_rules:
   - keywords:
     - based on
     - forecast

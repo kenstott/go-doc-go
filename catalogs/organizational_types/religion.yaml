@@ -1,5 +1,6 @@
 domain: religion
-description: Religious organizations, faith communities, worship, religious texts, spiritual practices, and faith-based services
+description: Religious organizations, faith communities, worship, religious texts,
+  spiritual practices, and faith-based services
 subdomains:
 - worship
 - religious_education
@@ -55,44 +56,32 @@ terms:
   description: Religious service or outreach activity
 entity_types:
 - entity_type: religious_organization
+  parent_type: ''
+  w_category: what
+  domain: religion
   description: Church, synagogue, mosque, temple, or faith-based organization
-  aliases:
-  - church
-  - synagogue
-  - mosque
-  - temple
-  - parish
-  - congregation
   element_types:
   - paragraph
   - heading
   sample_rules:
   - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Church|Temple|Synagogue|Mosque|Cathedral|Chapel)\b'
-  - keywords:
+  - phrase_list:
     - church
     - temple
     - synagogue
     - mosque
     - parish
     - congregation
+- entity_type: clergy
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: clergy
   description: Religious leader or ordained minister
-  aliases:
-  - minister
-  - priest
-  - rabbi
-  - imam
-  - pastor
-  - reverend
-  - father
   element_types:
   - paragraph
   - table_cell
   sample_rules:
-  - keywords:
+  - phrase_list:
     - reverend
     - pastor
     - priest
@@ -101,125 +90,94 @@ entity_types:
     - minister
     - deacon
     - bishop
-  - pattern: '\b(?:Rev\.|Reverend|Pastor|Fr\.|Father|Rabbi|Imam)\s+[A-Z][a-z]+(?: [A-Z][a-z]+)+\b'
+  - pattern: '\b(?:Rev\.|Reverend|Pastor|Fr\.|Father|Rabbi|Imam)\s+[A-Z][a-z]+(?:
+      [A-Z][a-z]+)+\b'
+- entity_type: worship_service
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: worship_service
   description: Religious service or ceremony
-  aliases:
-  - mass
-  - service
-  - prayer service
-  - liturgy
-  - worship
   element_types:
   - paragraph
   - heading
   sample_rules:
-  - keywords:
+  - phrase_list:
     - worship service
     - mass
     - prayer service
     - liturgy
     - vespers
     - matins
+- entity_type: religious_text
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: religious_text
   description: Sacred or religious scripture
-  aliases:
-  - scripture
-  - holy book
-  - bible
-  - torah
-  - quran
-  - gospel
   element_types:
   - paragraph
   - heading
   sample_rules:
-  - keywords:
+  - phrase_list:
     - Bible
     - Torah
     - Quran
     - Gospel
     - Scripture
     - Testament
+- entity_type: sacrament
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: sacrament
   description: Religious rite or ceremony
-  aliases:
-  - ritual
-  - rite
-  - ceremony
-  - ordinance
   element_types:
   - paragraph
   sample_rules:
-  - keywords:
+  - phrase_list:
     - baptism
     - communion
     - eucharist
     - confirmation
     - marriage
     - ordination
+- entity_type: congregation_member
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: congregation_member
   description: Member of religious community
-  aliases:
-  - parishioner
-  - member
-  - congregant
-  - follower
   element_types:
   - paragraph
   - table_cell
   sample_rules:
-  - keywords:
+  - phrase_list:
     - member
     - parishioner
     - congregant
     - follower
     - believer
+- entity_type: ministry_program
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: ministry_program
   description: Religious service or outreach program
-  aliases:
-  - ministry
-  - mission
-  - outreach
-  - program
   element_types:
   - paragraph
   - heading
   sample_rules:
-  - keywords:
+  - phrase_list:
     - ministry
     - mission
     - outreach
     - youth group
     - Bible study
+- entity_type: denomination
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: denomination
   description: Branch or sect of a religion
-  aliases:
-  - faith tradition
-  - religious tradition
-  - sect
   element_types:
   - paragraph
   sample_rules:
-  - keywords:
+  - phrase_list:
     - Catholic
     - Protestant
     - Baptist
@@ -228,20 +186,16 @@ entity_types:
     - Lutheran
     - Orthodox
     - Reformed
+- entity_type: religious_holiday
   parent_type: ''
   w_category: what
   domain: religion
-- entity_type: religious_holiday
   description: Religious observance or holy day
-  aliases:
-  - holy day
-  - feast day
-  - observance
   element_types:
   - paragraph
   - table_cell
   sample_rules:
-  - keywords:
+  - phrase_list:
     - Christmas
     - Easter
     - Passover
@@ -249,11 +203,8 @@ entity_types:
     - Ramadan
     - Yom Kippur
     - Pentecost
-  parent_type: ''
-  w_category: what
-  domain: religion
 common_entity_refs:
-- person
+- I
 - email
 - phone
 - address

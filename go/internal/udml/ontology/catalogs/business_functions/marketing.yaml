@@ -1,6 +1,6 @@
 domain: marketing
-description: Marketing campaigns, lead generation, customer engagement, brand management, content marketing, and marketing
-  analytics
+description: Marketing campaigns, lead generation, customer engagement, brand management,
+  content marketing, and marketing analytics
 subdomains:
 - digital_marketing
 - content_marketing
@@ -19,13 +19,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - campaign
     - promotion
-    - initiative
-    - marketing program
-    - advertising
+    - marketing initiative
+    - advertising campaign
   parent_type: ''
   w_category: what
   domain: marketing
@@ -39,13 +38,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - lead
     - prospect
     - potential customer
-    - inquiry
-    - interested party
+    - sales lead
   parent_type: ''
   w_category: what
   domain: marketing
@@ -58,17 +56,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - email
-    - social media
-    - website
-    - blog
-    - newsletter
-    - SEO
-    - SEM
-    - paid ads
-    - organic
+  extraction_rules:
+  - phrase_list:
+    - channel
+    - marketing channel
+    - distribution channel
+    - media channel
   parent_type: ''
   w_category: what
   domain: marketing
@@ -82,15 +75,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - blog post
-    - article
-    - whitepaper
-    - case study
-    - infographic
-    - video
-    - ebook
+  extraction_rules:
+  - phrase_list:
+    - content
+    - content piece
+    - marketing asset
+    - creative asset
   parent_type: ''
   w_category: what
   domain: marketing
@@ -103,14 +93,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - brand
-    - trademark
-    - logo
+    - product brand
     - brand identity
-    - brand values
-    - brand voice
+    - trademark
   parent_type: ''
   w_category: what
   domain: marketing
@@ -123,13 +111,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - audience segment
     - target audience
-    - segment
+    - customer segment
     - demographic
-    - persona
-    - customer profile
   parent_type: ''
   w_category: what
   domain: marketing
@@ -143,23 +130,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - CTR
-    - conversion rate
-    - ROI
-    - ROAS
-    - impressions
-    - clicks
-    - engagement rate
-    - bounce rate
-  parent_type: global.concept
+  extraction_rules:
+  - phrase_list:
+    - metric
+    - KPI
+    - performance indicator
+    - measurement
+  parent_type: ''
   w_category: what
   domain: marketing
 relationship_types:
 - relationship_type: targets_audience
   description: Campaign targets specific audience segment
-  sample_rules:
+  extraction_rules:
   - keywords:
     - targets
     - aimed at
@@ -169,7 +152,7 @@ relationship_types:
   target_type: audience_segment
 - relationship_type: uses_channel
   description: Campaign uses marketing channel
-  sample_rules:
+  extraction_rules:
   - keywords:
     - via
     - through
@@ -180,7 +163,7 @@ relationship_types:
   target_type: channel
 - relationship_type: generates_lead
   description: Campaign generates leads
-  sample_rules:
+  extraction_rules:
   - keywords:
     - generated
     - produced
@@ -190,7 +173,7 @@ relationship_types:
   target_type: lead
 - relationship_type: includes_content
   description: Campaign includes content piece
-  sample_rules:
+  extraction_rules:
   - keywords:
     - includes
     - contains
@@ -200,7 +183,7 @@ relationship_types:
   target_type: content
 - relationship_type: promotes_brand
   description: Campaign promotes brand
-  sample_rules:
+  extraction_rules:
   - keywords:
     - promotes
     - advertises
@@ -210,7 +193,7 @@ relationship_types:
   target_type: brand
 - relationship_type: measured_by
   description: Campaign measured by metric
-  sample_rules:
+  extraction_rules:
   - keywords:
     - measured by
     - tracked with

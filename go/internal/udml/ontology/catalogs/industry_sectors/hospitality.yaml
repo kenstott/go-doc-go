@@ -1,5 +1,6 @@
 domain: hospitality
-description: Hotels, reservations, guests, events, food & beverage, and hospitality operations
+description: Hotels, reservations, guests, events, food & beverage, and hospitality
+  operations
 subdomains:
 - reservations
 - guest_services
@@ -17,13 +18,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - guest
     - customer
     - visitor
     - patron
-    - traveler
   parent_type: ''
   w_category: what
   domain: hospitality
@@ -38,14 +38,12 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - reservation
     - booking
-    - check-in
-    - check-out
+    - reservation
     - stay
-    - confirmation
   parent_type: ''
   w_category: what
   domain: hospitality
@@ -59,15 +57,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - room
-    - suite
     - accommodation
-    - king
-    - queen
-    - double
-    - single
+    - suite
+    - unit
   parent_type: ''
   w_category: what
   domain: hospitality
@@ -82,13 +77,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - hotel property
     - hotel
     - property
-    - resort
     - location
-    - branch
+    - resort
   parent_type: ''
   w_category: what
   domain: hospitality
@@ -103,13 +98,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - event
     - function
     - meeting
     - conference
-    - wedding
     - banquet
   parent_type: ''
   w_category: what
@@ -117,7 +111,7 @@ entity_types:
 relationship_types:
 - relationship_type: booked_by
   description: Reservation booked by guest
-  sample_rules:
+  extraction_rules:
   - keywords:
     - booked by
     - reserved by
@@ -126,7 +120,7 @@ relationship_types:
   target_type: guest
 - relationship_type: for_room
   description: Reservation for room
-  sample_rules:
+  extraction_rules:
   - keywords:
     - room
     - suite
@@ -135,7 +129,7 @@ relationship_types:
   target_type: room
 - relationship_type: at_property
   description: Reservation at property
-  sample_rules:
+  extraction_rules:
   - keywords:
     - at
     - location
@@ -145,7 +139,7 @@ relationship_types:
   target_type: hotel_property
 - relationship_type: hosted_at
   description: Event hosted at property
-  sample_rules:
+  extraction_rules:
   - keywords:
     - hosted at
     - held at

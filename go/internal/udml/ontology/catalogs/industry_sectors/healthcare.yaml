@@ -1,5 +1,6 @@
 domain: healthcare
-description: Patient care, medical treatments, diagnoses, healthcare providers, medical records, and clinical operations
+description: Patient care, medical treatments, diagnoses, healthcare providers, medical
+  records, and clinical operations
 subdomains:
 - clinical_care
 - patient_records
@@ -20,13 +21,13 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - patient
-    - MRN
-    - medical record
     - individual
     - subject
+    - medical record number
+    - MRN
   parent_type: ''
   w_category: what
   domain: healthcare
@@ -42,17 +43,14 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - provider
     - physician
     - doctor
-    - MD
-    - DO
     - nurse
-    - NP
-    - PA
     - clinician
-    - provider
+    - practitioner
   parent_type: ''
   w_category: what
   domain: healthcare
@@ -66,15 +64,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - diagnosis
-    - ICD-10
     - condition
     - disease
     - disorder
     - illness
-    - syndrome
   parent_type: ''
   w_category: what
   domain: healthcare
@@ -88,15 +84,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - procedure
-    - CPT
     - treatment
-    - surgery
     - operation
+    - surgery
     - intervention
-    - therapy
   parent_type: global.process
   w_category: how
   domain: healthcare
@@ -111,16 +105,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - medication
     - drug
-    - prescription
     - pharmaceutical
+    - prescription
     - medicine
-    - dosage
-    - mg
-    - ml
   parent_type: ''
   w_category: what
   domain: healthcare
@@ -134,14 +125,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - lab test
-    - laboratory
-    - blood test
     - diagnostic test
-    - screening
-    - culture
+    - lab work
+    - laboratory test
   parent_type: ''
   w_category: what
   domain: healthcare
@@ -156,15 +145,14 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - imaging study
+    - scan
+    - x-ray
     - MRI
     - CT scan
-    - x-ray
     - ultrasound
-    - imaging
-    - radiology
-    - scan
   parent_type: ''
   w_category: what
   domain: healthcare
@@ -179,22 +167,20 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - visit
+  extraction_rules:
+  - phrase_list:
     - encounter
+    - visit
     - appointment
     - admission
     - consultation
-    - outpatient
-    - inpatient
   parent_type: ''
   w_category: what
   domain: healthcare
 relationship_types:
 - relationship_type: treated_by
   description: Patient treated by provider
-  sample_rules:
+  extraction_rules:
   - keywords:
     - treated by
     - under care of
@@ -205,7 +191,7 @@ relationship_types:
   target_type: provider
 - relationship_type: diagnosed_with
   description: Patient diagnosed with condition
-  sample_rules:
+  extraction_rules:
   - keywords:
     - diagnosed with
     - diagnosis
@@ -215,7 +201,7 @@ relationship_types:
   target_type: diagnosis
 - relationship_type: underwent_procedure
   description: Patient underwent procedure
-  sample_rules:
+  extraction_rules:
   - keywords:
     - underwent
     - received
@@ -227,7 +213,7 @@ relationship_types:
   target_type: procedure
 - relationship_type: prescribed_medication
   description: Provider prescribed medication
-  sample_rules:
+  extraction_rules:
   - keywords:
     - prescribed
     - medication
@@ -237,7 +223,7 @@ relationship_types:
   target_type: medication
 - relationship_type: ordered_test
   description: Provider ordered lab test
-  sample_rules:
+  extraction_rules:
   - keywords:
     - ordered
     - lab test
@@ -247,7 +233,7 @@ relationship_types:
   target_type: lab_test
 - relationship_type: ordered_imaging
   description: Provider ordered imaging study
-  sample_rules:
+  extraction_rules:
   - keywords:
     - ordered
     - imaging
@@ -259,7 +245,7 @@ relationship_types:
   target_type: imaging_study
 - relationship_type: part_of_encounter
   description: Procedure part of encounter
-  sample_rules:
+  extraction_rules:
   - keywords:
     - during
     - part of

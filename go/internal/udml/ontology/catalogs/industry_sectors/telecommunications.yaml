@@ -1,5 +1,6 @@
 domain: telecommunications
-description: Networks, subscribers, services, billing, infrastructure, and telecommunications operations
+description: Networks, subscribers, services, billing, infrastructure, and telecommunications
+  operations
 subdomains:
 - network_infrastructure
 - subscriber_management
@@ -18,13 +19,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - subscriber
     - customer
     - account
-    - phone number
-    - mobile number
+    - user
+    - line
   parent_type: ''
   w_category: what
   domain: telecommunications
@@ -39,14 +40,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - service plan
     - plan
     - package
     - subscription
-    - unlimited
-    - data plan
-    - voice plan
+    - tariff
   parent_type: ''
   w_category: what
   domain: telecommunications
@@ -60,14 +60,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - network element
     - tower
     - cell site
     - base station
     - switch
-    - router
-    - gateway
   parent_type: ''
   w_category: what
   domain: telecommunications
@@ -80,22 +79,19 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - voice
-    - data
-    - SMS
-    - MMS
-    - roaming
-    - voicemail
-    - call forwarding
-  parent_type: global.product
+  extraction_rules:
+  - phrase_list:
+    - service
+    - feature
+    - offering
+    - add-on
+  parent_type: ''
   w_category: what
   domain: telecommunications
 relationship_types:
 - relationship_type: subscribed_to
   description: Subscriber subscribed to plan
-  sample_rules:
+  extraction_rules:
   - keywords:
     - subscribed
     - plan
@@ -105,7 +101,7 @@ relationship_types:
   target_type: service_plan
 - relationship_type: uses_service
   description: Subscriber uses service
-  sample_rules:
+  extraction_rules:
   - keywords:
     - uses
     - enabled
@@ -115,7 +111,7 @@ relationship_types:
   target_type: service
 - relationship_type: served_by
   description: Subscriber served by network element
-  sample_rules:
+  extraction_rules:
   - keywords:
     - served by
     - connected to

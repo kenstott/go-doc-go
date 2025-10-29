@@ -1,5 +1,6 @@
 domain: government
-description: Government operations, regulations, permits, licenses, public records, and citizen services
+description: Government operations, regulations, permits, licenses, public records,
+  and citizen services
 subdomains:
 - licensing
 - permits
@@ -8,18 +9,16 @@ subdomains:
 - regulatory_compliance
 entity_types:
 - entity_type: regulation
+  parent_type: ''
+  w_category: what
+  domain: government
   description: Government regulation or law
-  aliases:
-  - law
-  - statute
-  - ordinance
-  - rule
   element_types:
   - paragraph
   - heading
   - list_item
   sample_rules:
-  - keywords:
+  - phrase_list:
     - regulation
     - law
     - statute
@@ -28,82 +27,65 @@ entity_types:
     - code
     - CFR
     - USC
+- entity_type: permit
   parent_type: ''
   w_category: what
   domain: government
-- entity_type: permit
   description: Government permit or authorization
-  aliases:
-  - authorization
-  - approval
-  - license
   element_types:
   - paragraph
   - heading
   - list_item
   - table_row
   sample_rules:
-  - keywords:
+  - phrase_list:
     - permit
     - authorization
     - approval
     - building permit
     - zoning permit
+- entity_type: license
   parent_type: ''
   w_category: what
   domain: government
-- entity_type: license
   description: Government license or certification
-  aliases:
-  - certification
-  - credential
-  - registration
   element_types:
   - paragraph
   - list_item
   - table_row
   sample_rules:
-  - keywords:
+  - phrase_list:
     - license
     - certification
     - credential
     - registration
     - business license
+- entity_type: citizen
   parent_type: ''
   w_category: what
   domain: government
-- entity_type: citizen
   description: Citizen or resident
-  aliases:
-  - resident
-  - constituent
-  - taxpayer
   element_types:
   - paragraph
   - list_item
   - table_row
   sample_rules:
-  - keywords:
+  - phrase_list:
     - citizen
     - resident
     - constituent
     - taxpayer
+- entity_type: government_agency
   parent_type: ''
   w_category: what
   domain: government
-- entity_type: government_agency
   description: Government agency or department
-  aliases:
-  - department
-  - bureau
-  - agency
-  - office
   element_types:
   - paragraph
   - heading
   - list_item
   sample_rules:
-  - keywords:
+  - phrase_list:
     - agency
     - department
     - bureau
@@ -112,28 +94,21 @@ entity_types:
     - DMV
     - EPA
     - IRS
+- entity_type: public_record
   parent_type: ''
   w_category: what
   domain: government
-- entity_type: public_record
   description: Public record or document
-  aliases:
-  - government document
-  - official record
-  - filing
   element_types:
   - paragraph
   - heading
   - list_item
   sample_rules:
-  - keywords:
+  - phrase_list:
     - public record
     - government document
     - official record
     - filing
-  parent_type: ''
-  w_category: what
-  domain: government
 relationship_types:
 - relationship_type: issued_by
   description: Permit issued by agency

@@ -1,5 +1,6 @@
 domain: insurance
-description: Insurance policies, claims, underwriting documents, actuarial reports, and insurance correspondence
+description: Insurance policies, claims, underwriting documents, actuarial reports,
+  and insurance correspondence
 subdomains:
 - life_insurance
 - property_insurance
@@ -96,12 +97,7 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - policy
-    - insurance policy
-    - policy number
-    - contract
+  extraction_rules:
   - pattern: \bpolicy\s+(?:number|#)?\s*[A-Z0-9\-]+
   parent_type: global.document
   w_category: what
@@ -116,12 +112,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - policyholder
     - insured
-    - named insured
+    - policy owner
     - subscriber
+    - member
   parent_type: ''
   w_category: what
   domain: insurance
@@ -134,11 +131,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - beneficiary
-    - primary beneficiary
-    - contingent beneficiary
+    - recipient
+    - payee
+    - designated beneficiary
   parent_type: ''
   w_category: what
   domain: insurance
@@ -152,11 +150,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - premium
-    - monthly premium
-    - annual premium
+  extraction_rules:
   - pattern: \$[\d,]+(?:\.\d{2})?\s+(?:premium|per month|annually)
   parent_type: ''
   w_category: what
@@ -171,12 +165,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - coverage
+  extraction_rules:
+  - phrase_list:
+    - coverage amount
+    - face amount
     - benefit amount
     - sum insured
-    - face amount
+    - coverage limit
   parent_type: ''
   w_category: what
   domain: insurance
@@ -189,11 +184,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - deductible
     - excess
     - out-of-pocket
+    - copay
   parent_type: ''
   w_category: what
   domain: insurance
@@ -207,11 +203,7 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
-    - claim
-    - claim number
-    - loss claim
+  extraction_rules:
   - pattern: \bclaim\s+(?:number|#)?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
@@ -226,16 +218,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - accident
+  extraction_rules:
+  - phrase_list:
+    - loss event
     - incident
+    - accident
     - loss
-    - damage
-    - injury
-    - theft
-    - fire
-    - collision
+    - event
   parent_type: ''
   w_category: what
   domain: insurance
@@ -249,14 +238,12 @@ entity_types:
   - paragraph
   - list_item
   - heading
-  sample_rules:
-  - keywords:
-    - liability coverage
-    - collision coverage
-    - comprehensive coverage
-    - medical coverage
-    - property damage
-    - bodily injury
+  extraction_rules:
+  - phrase_list:
+    - coverage type
+    - coverage
+    - benefit
+    - protection type
   parent_type: ''
   w_category: what
   domain: insurance
@@ -269,12 +256,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - exclusion
-    - not covered
-    - excluded
     - limitation
+    - exception
+    - excluded risk
   parent_type: ''
   w_category: what
   domain: insurance
@@ -288,12 +275,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - endorsement
     - rider
     - amendment
     - modification
+    - addendum
   parent_type: ''
   w_category: what
   domain: insurance
@@ -307,12 +295,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - insurer
     - insurance company
     - carrier
-    - insurer
     - underwriter
+    - provider
   parent_type: ''
   w_category: what
   domain: insurance
@@ -325,12 +314,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - agent
     - broker
-    - insurance agent
     - producer
+    - representative
   parent_type: ''
   w_category: what
   domain: insurance
@@ -343,14 +332,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - preferred
-    - standard
-    - substandard
-    - rated
+  extraction_rules:
+  - phrase_list:
+    - risk classification
     - risk class
     - rating class
+    - underwriting class
   parent_type: ''
   w_category: what
   domain: insurance
@@ -365,12 +352,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - vehicle
-    - car
-    - automobile
-    - VIN
+  extraction_rules:
   - pattern: \bVIN:\s*[A-Z0-9]{17}\b
   parent_type: ''
   w_category: what
@@ -386,12 +368,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - property
     - premises
-    - dwelling
+    - building
     - structure
+    - real estate
   parent_type: ''
   w_category: what
   domain: insurance
@@ -406,12 +389,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - diagnosis
+  extraction_rules:
+  - phrase_list:
     - medical condition
+    - diagnosis
     - illness
     - disease
+    - condition
   parent_type: ''
   w_category: what
   domain: insurance
@@ -425,12 +409,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - injury
     - workplace injury
+    - occupational injury
     - accident
-    - workers comp
   parent_type: ''
   w_category: what
   domain: insurance

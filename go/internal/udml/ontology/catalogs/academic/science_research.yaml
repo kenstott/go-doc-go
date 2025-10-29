@@ -1,5 +1,6 @@
 domain: science_research
-description: Scientific research, experiments, publications, grants, datasets, and research methodology
+description: Scientific research, experiments, publications, grants, datasets, and
+  research methodology
 subdomains:
 - experimental_research
 - publications
@@ -18,13 +19,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - research
+  extraction_rules:
+  - phrase_list:
+    - research project
     - study
     - project
     - investigation
-    - experiment
+    - research
   parent_type: ''
   w_category: what
   domain: science_research
@@ -39,14 +40,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - experiment
     - trial
     - test
     - assay
     - procedure
-    - methodology
   parent_type: ''
   w_category: what
   domain: science_research
@@ -61,14 +61,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - publication
     - paper
     - article
-    - journal
+    - journal article
     - manuscript
-    - published
   parent_type: ''
   w_category: what
   domain: science_research
@@ -83,13 +82,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - researcher
     - scientist
     - investigator
-    - PI
     - principal investigator
+    - PI
   parent_type: global.person
   w_category: who
   domain: science_research
@@ -103,14 +102,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - grant
     - funding
     - award
-    - NIH
-    - NSF
-    - funding agency
+    - grant funding
   parent_type: ''
   w_category: what
   domain: science_research
@@ -124,20 +121,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - dataset
     - data
     - data collection
     - research data
-    - measurements
   parent_type: ''
   w_category: what
   domain: science_research
 relationship_types:
 - relationship_type: conducted_by
   description: Research conducted by researcher
-  sample_rules:
+  extraction_rules:
   - keywords:
     - conducted by
     - led by
@@ -146,7 +142,7 @@ relationship_types:
   target_type: researcher
 - relationship_type: part_of
   description: Experiment part of project
-  sample_rules:
+  extraction_rules:
   - keywords:
     - part of
     - within
@@ -156,7 +152,7 @@ relationship_types:
   target_type: research_project
 - relationship_type: published_as
   description: Research published as publication
-  sample_rules:
+  extraction_rules:
   - keywords:
     - published
     - resulted in
@@ -165,7 +161,7 @@ relationship_types:
   target_type: publication
 - relationship_type: funded_by
   description: Research funded by grant
-  sample_rules:
+  extraction_rules:
   - keywords:
     - funded by
     - supported by
@@ -174,7 +170,7 @@ relationship_types:
   target_type: grant
 - relationship_type: generated_dataset
   description: Experiment generated dataset
-  sample_rules:
+  extraction_rules:
   - keywords:
     - generated
     - produced

@@ -1,8 +1,10 @@
 domain: technical
-description: "Technical documentation about software systems, API specifications, architecture documents, and IT infrastructure.\
-  \ NOTE: Mere presence of code files or technical syntax does NOT indicate \"technical\" domain - classify code by its business\
-  \ function (e.g., payment processing code \u2192 \"financial\" domain, not \"technical\"). This domain is for documentation\
-  \ ABOUT technical infrastructure, not code implementing business logic."
+description: 'Technical documentation about software systems, API specifications,
+  architecture documents, and IT infrastructure. NOTE: Mere presence of code files
+  or technical syntax does NOT indicate "technical" domain - classify code by its
+  business function (e.g., payment processing code → "financial" domain, not "technical").
+  This domain is for documentation ABOUT technical infrastructure, not code implementing
+  business logic.'
 subdomains:
 - software_development
 - api_documentation
@@ -93,13 +95,14 @@ entity_types:
   - paragraph
   - heading
   - code
-  sample_rules:
-  - keywords:
-    - service
-    - module
+  extraction_rules:
+  - phrase_list:
+    - software component
     - component
+    - module
+    - service
+    - microservice
     - library
-    - package
   parent_type: ''
   w_category: what
   domain: technical
@@ -115,7 +118,7 @@ entity_types:
   - paragraph
   - code
   - list_item
-  sample_rules:
+  extraction_rules:
   - pattern: \b(?:GET|POST|PUT|DELETE|PATCH)\s+/[a-zA-Z0-9/_\-{}]+
   - pattern: /api/v\d+/[a-zA-Z0-9/_\-]+
   parent_type: ''
@@ -131,15 +134,12 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - keywords:
-    - GET
-    - POST
-    - PUT
-    - DELETE
-    - PATCH
-    - HEAD
-    - OPTIONS
+  extraction_rules:
+  - phrase_list:
+    - http method
+    - method
+    - verb
+    - request type
   parent_type: ''
   w_category: what
   domain: technical
@@ -154,13 +154,13 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - parameter
-    - param
     - argument
-    - arg
+    - input
     - field
+    - variable
   parent_type: ''
   w_category: what
   domain: technical
@@ -174,19 +174,12 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - keywords:
-    - string
-    - int
-    - integer
-    - boolean
-    - bool
-    - float
-    - double
-    - array
-    - object
-    - map
-    - list
+  extraction_rules:
+  - phrase_list:
+    - data type
+    - type
+    - class
+    - structure
   parent_type: ''
   w_category: what
   domain: technical
@@ -199,12 +192,8 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b(?:200|201|204|400|401|403|404|500|502|503)\b
-  - keywords:
-    - 200 OK
-    - 404 Not Found
-    - 500 Internal Server Error
   parent_type: ''
   w_category: what
   domain: technical
@@ -217,15 +206,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - OAuth
-    - JWT
-    - API key
-    - bearer token
-    - basic auth
-    - authentication
-    - authorization
+  extraction_rules:
+  - phrase_list:
+    - authentication method
+    - auth
+    - security
+    - credentials
   parent_type: ''
   w_category: what
   domain: technical
@@ -238,15 +224,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - PostgreSQL
-    - MySQL
-    - MongoDB
-    - Redis
-    - Elasticsearch
-    - DynamoDB
-    - Cassandra
+  extraction_rules:
+  - phrase_list:
+    - database
+    - datastore
+    - database system
+    - DB
   parent_type: ''
   w_category: what
   domain: technical
@@ -258,18 +241,11 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - HTTP
-    - HTTPS
-    - WebSocket
-    - gRPC
-    - REST
-    - GraphQL
-    - MQTT
-    - AMQP
-    - TCP
-    - UDP
+  extraction_rules:
+  - phrase_list:
+    - protocol
+    - standard
+    - specification
   parent_type: ''
   w_category: what
   domain: technical
@@ -282,18 +258,11 @@ entity_types:
   - paragraph
   - heading
   - code
-  sample_rules:
-  - keywords:
-    - Python
-    - Java
-    - JavaScript
-    - Go
-    - Rust
-    - C++
-    - TypeScript
-    - Ruby
-    - PHP
-    - Swift
+  extraction_rules:
+  - phrase_list:
+    - programming language
+    - language
+    - platform
   parent_type: ''
   w_category: what
   domain: technical
@@ -306,18 +275,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - React
-    - Django
-    - Flask
-    - Spring
-    - Express
-    - FastAPI
-    - Angular
-    - Vue
-    - Rails
-  parent_type: global.concept
+  extraction_rules:
+  - phrase_list:
+    - framework
+    - library
+    - toolkit
+    - SDK
+  parent_type: ''
   w_category: what
   domain: technical
 - entity_type: infrastructure_component
@@ -329,17 +293,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - EC2
-    - S3
-    - Lambda
-    - RDS
-    - Kubernetes
-    - Docker
-    - load balancer
-    - container
-    - VM
+  extraction_rules:
+  - phrase_list:
+    - infrastructure component
+    - cloud service
+    - infrastructure
+    - resource
   parent_type: ''
   w_category: what
   domain: technical
@@ -354,13 +313,8 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-Z][A-Z0-9_]+\b
-  - keywords:
-    - config
-    - configuration
-    - environment variable
-    - setting
   parent_type: ''
   w_category: what
   domain: technical
@@ -373,13 +327,8 @@ entity_types:
   element_types:
   - paragraph
   - code
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-Z][a-zA-Z]*(?:Error|Exception)\b
-  - keywords:
-    - error
-    - exception
-    - failure
-    - timeout
   parent_type: ''
   w_category: what
   domain: technical

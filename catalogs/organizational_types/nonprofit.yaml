@@ -1,6 +1,6 @@
 domain: nonprofit
-description: Nonprofit organization management including fundraising, donor management, grants, programs, volunteers, and
-  impact measurement
+description: Nonprofit organization management including fundraising, donor management,
+  grants, programs, volunteers, and impact measurement
 subdomains:
 - fundraising
 - donor_management
@@ -55,166 +55,125 @@ terms:
   description: Measurable positive change created by the organization
 entity_types:
 - entity_type: donor
+  parent_type: ''
+  w_category: what
+  domain: nonprofit
   description: Individual or organization providing financial support
-  aliases:
-  - contributor
-  - benefactor
-  - sponsor
-  - supporter
   element_types:
   - paragraph
   - table_cell
   - heading
   sample_rules:
-  - keywords:
+  - phrase_list:
     - donor
     - contributor
     - sponsor
     - benefactor
+- entity_type: donation
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: donation
   description: Financial contribution or gift
-  aliases:
-  - contribution
-  - gift
-  - pledge
-  - grant
   element_types:
   - table_cell
   - paragraph
   sample_rules:
   - pattern: \$\d{1,3}(?:,\d{3})*(?:\.\d{2})?
+- entity_type: grant
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: grant
   description: Formal funding award from foundation or government
-  aliases:
-  - award
-  - funding
-  - endowment
   element_types:
   - paragraph
   - heading
   - table_cell
   sample_rules:
-  - keywords:
+  - phrase_list:
     - grant
     - award
     - funding
     - foundation grant
+- entity_type: program
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: program
   description: Organized service or activity delivered by nonprofit
-  aliases:
-  - initiative
-  - project
-  - service
-  - outreach program
   element_types:
   - paragraph
   - heading
   sample_rules:
-  - keywords:
+  - phrase_list:
     - program
     - initiative
     - project
     - outreach
+- entity_type: volunteer
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: volunteer
   description: Person donating time and skills
-  aliases:
-  - helper
-  - supporter
-  - community volunteer
   element_types:
   - paragraph
   - table_cell
   sample_rules:
-  - keywords:
+  - phrase_list:
     - volunteer
     - helper
     - supporter
+- entity_type: beneficiary
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: beneficiary
   description: Person or community served by the nonprofit
-  aliases:
-  - client
-  - participant
-  - recipient
-  - member
   element_types:
   - paragraph
   - table_cell
   sample_rules:
-  - keywords:
+  - phrase_list:
     - beneficiary
     - participant
     - client
     - recipient
+- entity_type: foundation
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: foundation
   description: Grant-making organization
-  aliases:
-  - philanthropic organization
-  - charitable foundation
   element_types:
   - paragraph
   - heading
   sample_rules:
   - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Foundation\b'
+- entity_type: nonprofit_organization
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: nonprofit_organization
   description: Tax-exempt charitable organization
-  aliases:
-  - charity
-  - NGO
-  - 501c3
-  - charitable organization
   element_types:
   - paragraph
   - heading
   sample_rules:
-  - keywords:
+  - phrase_list:
     - nonprofit
     - NGO
     - charity
     - 501(c)(3)
     - charitable organization
+- entity_type: impact_metric
   parent_type: ''
   w_category: what
   domain: nonprofit
-- entity_type: impact_metric
   description: Measure of social impact or outcomes
-  aliases:
-  - outcome
-  - result
-  - KPI
-  - metric
   element_types:
   - table_cell
   - paragraph
   sample_rules:
-  - keywords:
+  - phrase_list:
     - lives impacted
     - people served
     - outcomes achieved
     - impact
-  parent_type: ''
-  w_category: what
-  domain: nonprofit
 common_entity_refs:
 - person
 - email

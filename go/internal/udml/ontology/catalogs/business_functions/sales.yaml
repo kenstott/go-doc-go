@@ -1,5 +1,6 @@
 domain: sales
-description: Sales opportunities, pipelines, quotations, customer relationships, forecasting, and revenue management
+description: Sales opportunities, pipelines, quotations, customer relationships, forecasting,
+  and revenue management
 subdomains:
 - lead_management
 - opportunity_management
@@ -19,13 +20,12 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - opportunity
     - deal
-    - potential sale
     - sales opportunity
-    - prospect
+    - potential sale
   parent_type: ''
   w_category: what
   domain: sales
@@ -40,14 +40,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - quote
     - quotation
     - proposal
-    - estimate
-    - pricing
     - price quote
+    - estimate
   parent_type: ''
   w_category: what
   domain: sales
@@ -62,13 +61,12 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - customer
     - client
     - account
-    - buyer
-    - purchaser
+    - customer account
   parent_type: global.organization
   w_category: who
   domain: sales
@@ -83,13 +81,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - product
     - service
-    - solution
     - offering
-    - SKU
+    - solution
+    - product line
   parent_type: ''
   w_category: what
   domain: sales
@@ -102,14 +100,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - qualification
-    - proposal
-    - negotiation
-    - closed won
-    - closed lost
-    - discovery
+  extraction_rules:
+  - phrase_list:
+    - sales stage
+    - pipeline stage
+    - sales phase
+    - deal stage
   parent_type: ''
   w_category: what
   domain: sales
@@ -122,16 +118,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - territory
     - region
-    - area
-    - geographic
-    - EMEA
-    - APAC
-    - Americas
-    - North America
+    - sales region
+    - geographic area
   parent_type: ''
   w_category: what
   domain: sales
@@ -146,13 +138,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - sales rep
     - account executive
+    - sales person
     - AE
     - sales manager
-    - sales person
   parent_type: ''
   w_category: what
   domain: sales
@@ -166,21 +158,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - forecast
-    - projection
-    - pipeline
-    - quota
-    - target
-    - revenue prediction
+    - revenue forecast
+    - sales projection
+    - pipeline forecast
   parent_type: ''
   w_category: what
   domain: sales
 relationship_types:
 - relationship_type: assigned_to_rep
   description: Opportunity assigned to sales rep
-  sample_rules:
+  extraction_rules:
   - keywords:
     - assigned to
     - owned by
@@ -190,7 +180,7 @@ relationship_types:
   target_type: sales_rep
 - relationship_type: associated_with_customer
   description: Opportunity associated with customer
-  sample_rules:
+  extraction_rules:
   - keywords:
     - customer
     - account
@@ -200,7 +190,7 @@ relationship_types:
   target_type: customer
 - relationship_type: includes_product
   description: Opportunity includes product
-  sample_rules:
+  extraction_rules:
   - keywords:
     - includes
     - for
@@ -210,7 +200,7 @@ relationship_types:
   target_type: product
 - relationship_type: at_stage
   description: Opportunity at sales stage
-  sample_rules:
+  extraction_rules:
   - keywords:
     - stage
     - phase
@@ -220,7 +210,7 @@ relationship_types:
   target_type: sales_stage
 - relationship_type: in_territory
   description: Opportunity in sales territory
-  sample_rules:
+  extraction_rules:
   - keywords:
     - in
     - territory
@@ -230,7 +220,7 @@ relationship_types:
   target_type: territory
 - relationship_type: generated_quote
   description: Opportunity generated quote
-  sample_rules:
+  extraction_rules:
   - keywords:
     - quote
     - proposal
@@ -240,7 +230,7 @@ relationship_types:
   target_type: quote
 - relationship_type: contributes_to_forecast
   description: Opportunity contributes to forecast
-  sample_rules:
+  extraction_rules:
   - keywords:
     - forecast
     - projected

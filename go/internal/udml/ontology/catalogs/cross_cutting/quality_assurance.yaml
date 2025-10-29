@@ -17,13 +17,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - test case
     - test
     - test scenario
     - test script
-    - test step
   parent_type: ''
   w_category: what
   domain: quality_assurance
@@ -37,12 +36,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - test suite
     - test collection
     - test set
-    - regression suite
+    - test group
   parent_type: ''
   w_category: what
   domain: quality_assurance
@@ -57,14 +56,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - defect
     - bug
     - issue
     - problem
     - fault
-    - error
   parent_type: ''
   w_category: what
   domain: quality_assurance
@@ -78,14 +76,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - test execution
     - test run
     - test session
-    - execution
-    - passed
-    - failed
+    - test execution
   parent_type: ''
   w_category: what
   domain: quality_assurance
@@ -100,10 +96,11 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - requirement
     - specification
+    - requirement
     - user story
     - acceptance criteria
   parent_type: global.identifier
@@ -120,20 +117,20 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - metric
-    - KPI
+  extraction_rules:
+  - phrase_list:
     - quality metric
-    - coverage
-    - defect density
+    - KPI
+    - metric
+    - quality indicator
+    - measure
   parent_type: ''
   w_category: what
   domain: quality_assurance
 relationship_types:
 - relationship_type: part_of_suite
   description: Test case part of suite
-  sample_rules:
+  extraction_rules:
   - keywords:
     - part of
     - in
@@ -143,7 +140,7 @@ relationship_types:
   target_type: test_suite
 - relationship_type: tests_requirement
   description: Test case tests requirement
-  sample_rules:
+  extraction_rules:
   - keywords:
     - tests
     - verifies
@@ -153,7 +150,7 @@ relationship_types:
   target_type: requirement
 - relationship_type: found_defect
   description: Test execution found defect
-  sample_rules:
+  extraction_rules:
   - keywords:
     - found
     - detected
@@ -163,7 +160,7 @@ relationship_types:
   target_type: defect
 - relationship_type: executed_test
   description: Execution ran test case
-  sample_rules:
+  extraction_rules:
   - keywords:
     - executed
     - ran
@@ -173,7 +170,7 @@ relationship_types:
   target_type: test_case
 - relationship_type: measures
   description: Metric measures quality aspect
-  sample_rules:
+  extraction_rules:
   - keywords:
     - measures
     - tracks

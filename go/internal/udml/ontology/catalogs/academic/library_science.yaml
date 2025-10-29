@@ -1,8 +1,9 @@
 domain: library_science
-description: 'Library operations including cataloging workflows, circulation systems, collection development policies, archival
-  procedures, and reference services. NOTE: Mere presence of bibliographic identifiers (ISBN, DOI, PMID) or citation formats
-  does NOT indicate library science content - this domain requires discussion of library processes, operations, or professional
-  practices.'
+description: 'Library operations including cataloging workflows, circulation systems,
+  collection development policies, archival procedures, and reference services. NOTE:
+  Mere presence of bibliographic identifiers (ISBN, DOI, PMID) or citation formats
+  does NOT indicate library science content - this domain requires discussion of library
+  processes, operations, or professional practices.'
 subdomains:
 - cataloging
 - circulation
@@ -21,15 +22,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - library item
     - book
-    - item
     - resource
     - material
     - holding
-    - ISBN
-    - call number
   parent_type: ''
   w_category: what
   domain: library_science
@@ -44,14 +43,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - patron
     - user
     - member
     - borrower
     - cardholder
-    - library card
   parent_type: ''
   w_category: what
   domain: library_science
@@ -66,14 +64,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - circulation transaction
     - checkout
     - loan
-    - borrowed
-    - returned
-    - due date
-    - circulation
+    - borrowing
+    - return
   parent_type: ''
   w_category: what
   domain: library_science
@@ -87,13 +84,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - collection
     - section
     - department
     - special collection
-    - archive
   parent_type: ''
   w_category: what
   domain: library_science
@@ -107,12 +103,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - catalog record
+    - record
     - bibliographic record
-    - MARC record
-    - metadata
+    - metadata record
   parent_type: ''
   w_category: what
   domain: library_science
@@ -126,20 +122,19 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - archive
-    - archival
-    - manuscript
+    - archival collection
+    - manuscript collection
     - special materials
-    - rare books
   parent_type: ''
   w_category: what
   domain: library_science
 relationship_types:
 - relationship_type: checked_out_by
   description: Item checked out by patron
-  sample_rules:
+  extraction_rules:
   - keywords:
     - checked out by
     - borrowed by
@@ -148,7 +143,7 @@ relationship_types:
   target_type: patron
 - relationship_type: in_transaction
   description: Item in circulation transaction
-  sample_rules:
+  extraction_rules:
   - keywords:
     - checkout
     - loan
@@ -158,7 +153,7 @@ relationship_types:
   target_type: circulation_transaction
 - relationship_type: part_of_collection
   description: Item part of collection
-  sample_rules:
+  extraction_rules:
   - keywords:
     - part of
     - in
@@ -168,7 +163,7 @@ relationship_types:
   target_type: collection
 - relationship_type: cataloged_as
   description: Item cataloged as record
-  sample_rules:
+  extraction_rules:
   - keywords:
     - cataloged as
     - catalog record
@@ -177,7 +172,7 @@ relationship_types:
   target_type: catalog_record
 - relationship_type: archived_in
   description: Materials archived in archive
-  sample_rules:
+  extraction_rules:
   - keywords:
     - archived in
     - part of archive

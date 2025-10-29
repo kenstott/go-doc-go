@@ -18,7 +18,7 @@ entity_types:
       - paragraph
       - heading
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>"[^"]+")'
       - instance_name: '(?P<name>[A-Z][^.!?]+(?:Report|Paper|Study|Document))'
         proximity:
@@ -27,6 +27,35 @@ entity_types:
             - authored
             - cited
           max_distance: 50
+          distance_unit: word
+
+  # Top-level: product
+  - entity_type: product
+    parent_type: ""
+    w_category: what
+    domain: global
+    description: Products, goods, merchandise, or commercial offerings
+    aliases:
+      - good
+      - merchandise
+      - offering
+      - item
+    element_types:
+      - paragraph
+      - heading
+      - list_item
+      - table_cell
+    extraction_rules:
+      - instance_name: '(?P<name>[A-Z][a-zA-Z0-9\s\-]+)'
+        proximity:
+          cooccurrence_terms:
+            - product
+            - brand
+            - model
+            - version
+            - SKU
+            - item
+          max_distance: 30
           distance_unit: word
 
   # Top-level: identifier
@@ -43,7 +72,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z0-9-]+)'
 
   # Subtype: email
@@ -59,7 +88,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})'
 
   # Subtype: phone
@@ -75,7 +104,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>\d{3}[-.]?\d{3}[-.]?\d{4})'
       - instance_name: '(?P<name>\(\d{3}\)\s*\d{3}-\d{4})'
 
@@ -93,7 +122,7 @@ entity_types:
       - paragraph
       - list_item
       - hyperlink
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>https?://[^\s]+)'
       - instance_name: '(?P<name>www\.[^\s]+)'
 
@@ -110,7 +139,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z]{2,5}-\d{3,6})'
 
   # Subtype: id_number
@@ -126,7 +155,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>ID[:\s]*[A-Z0-9-]+)'
 
   # Top-level: role
@@ -143,7 +172,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - phrase_list:
           - CEO
           - CFO

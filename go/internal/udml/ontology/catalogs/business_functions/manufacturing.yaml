@@ -1,6 +1,6 @@
 domain: manufacturing
-description: Manufacturing specifications, production reports, quality control documents, supply chain documentation, and
-  industrial processes
+description: Manufacturing specifications, production reports, quality control documents,
+  supply chain documentation, and industrial processes
 subdomains:
 - production
 - quality_control
@@ -83,12 +83,7 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
-    - product
-    - item
-    - SKU
-    - part number
+  extraction_rules:
   - pattern: \b(?:SKU|Part|Item)\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
@@ -104,13 +99,14 @@ entity_types:
   - paragraph
   - table_cell
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - component
     - part
     - material
+    - raw material
     - subassembly
-  parent_type: global.product
+  parent_type: ''
   w_category: what
   domain: manufacturing
 - entity_type: batch
@@ -122,12 +118,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - batch
-    - lot
-    - lot number
-    - batch number
+  extraction_rules:
   - pattern: \b(?:Batch|Lot)\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
@@ -142,11 +133,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - specification
     - spec
     - requirement
+    - standard
     - tolerance
   parent_type: global.document
   w_category: what
@@ -161,8 +153,8 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - pattern: "\\b\\d+(?:\\.\\d+)?\\s*(?:mm|cm|m|kg|g|lbs|inches|\xB0C|\xB0F)"
+  extraction_rules:
+  - pattern: \b\d+(?:\.\d+)?\s*(?:mm|cm|m|kg|g|lbs|inches|°C|°F)
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -177,15 +169,13 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
-    - defect
-    - scratch
-    - crack
-    - dent
-    - misalignment
-    - dimensional error
-    - surface defect
+  extraction_rules:
+  - phrase_list:
+    - defect type
+    - nonconformance
+    - fault
+    - flaw
+    - rejection reason
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -199,12 +189,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - production line
-    - assembly line
     - line
     - facility
+    - plant
+    - assembly line
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -218,16 +209,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - machine
     - equipment
-    - CNC
-    - press
-    - lathe
-    - mill
-    - robot
-    - conveyor
+    - machinery
+    - tool
+    - apparatus
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -242,16 +230,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - process
     - operation
-    - welding
-    - machining
-    - assembly
-    - coating
-    - inspection
-    - testing
+    - procedure
+    - step
+    - stage
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -264,12 +249,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - supplier
     - vendor
-    - manufacturer
     - provider
+    - manufacturer
   parent_type: global.organization
   w_category: who
   domain: manufacturing
@@ -282,12 +267,12 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - keywords:
-    - inventory
+  extraction_rules:
+  - phrase_list:
+    - inventory item
     - stock
-    - on hand
-    - warehouse
+    - inventory
+    - warehouse item
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -301,14 +286,7 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - ISO
-    - ANSI
-    - ASTM
-    - standard
-    - certification
-    - quality standard
+  extraction_rules:
   - pattern: \bISO\s+\d+
   parent_type: ''
   w_category: what
@@ -323,12 +301,7 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
-    - work order
-    - production order
-    - job order
-    - WO
+  extraction_rules:
   - pattern: \bWO\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what

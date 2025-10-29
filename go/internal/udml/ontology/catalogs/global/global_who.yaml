@@ -19,7 +19,7 @@ entity_types:
       - list_item
       - table_cell
       - heading
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
         dictionary:
           require_unknown_words: true
@@ -46,7 +46,7 @@ entity_types:
       - paragraph
       - heading
       - div
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
         proximity:
           cooccurrence_terms:
@@ -72,7 +72,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
         proximity:
           cooccurrence_terms:
@@ -99,7 +99,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
         proximity:
           cooccurrence_terms:
@@ -127,7 +127,7 @@ entity_types:
       - heading
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Inc|Corp|LLC|Ltd|Limited|Corporation|Company))'
       - instance_name: '(?P<name>The\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Institute|Center|Association))'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
@@ -153,7 +153,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:
           cooccurrence_terms:
@@ -181,7 +181,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Charity|Fund))'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:
@@ -209,7 +209,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>(?:Department|Agency|Bureau|Office)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:
@@ -238,7 +238,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:University|College|School|Institute))'
       - instance_name: '(?P<name>(?:University|College)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
 
@@ -255,7 +255,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Hospital|Clinic|Medical Center|Health System))'
 
   # Subtype: religious
@@ -272,7 +272,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Church|Temple|Mosque|Synagogue|Cathedral))'
 
   # Subtype: media
@@ -289,7 +289,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>(?:The\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Times|Post|News|Journal|Tribune|Herald))'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:

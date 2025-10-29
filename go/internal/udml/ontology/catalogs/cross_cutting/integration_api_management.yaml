@@ -1,5 +1,6 @@
 domain: integration_api_management
-description: APIs, integrations, data exchange, service orchestration, and API lifecycle management
+description: APIs, integrations, data exchange, service orchestration, and API lifecycle
+  management
 subdomains:
 - api_development
 - api_security
@@ -18,14 +19,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - API
+  extraction_rules:
+  - phrase_list:
+    - api
     - web service
-    - REST
-    - endpoint
+    - REST API
+    - API endpoint
     - service
-    - interface
   parent_type: ''
   w_category: what
   domain: integration_api_management
@@ -40,16 +40,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - endpoint
+  extraction_rules:
+  - phrase_list:
+    - api endpoint
     - route
     - path
     - operation
-    - GET
-    - POST
-    - PUT
-    - DELETE
+    - method
   parent_type: ''
   w_category: what
   domain: integration_api_management
@@ -62,13 +59,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - integration
     - connector
-    - connection
     - integration point
-    - interface
+    - connection
   parent_type: ''
   w_category: what
   domain: integration_api_management
@@ -82,12 +78,11 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - format
+  extraction_rules:
+  - phrase_list:
+    - data format
     - schema
-    - JSON
-    - XML
+    - format
     - data structure
     - message format
   parent_type: ''
@@ -104,13 +99,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - consumer
+  extraction_rules:
+  - phrase_list:
+    - api consumer
     - client
     - application
+    - consumer
     - subscriber
-    - API key
   parent_type: ''
   w_category: what
   domain: integration_api_management
@@ -124,20 +119,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - API key
+  extraction_rules:
+  - phrase_list:
+    - api key
     - credential
     - access token
     - API token
-    - secret
   parent_type: ''
   w_category: what
   domain: integration_api_management
 relationship_types:
 - relationship_type: exposes_endpoint
   description: API exposes endpoint
-  sample_rules:
+  extraction_rules:
   - keywords:
     - exposes
     - provides
@@ -148,7 +142,7 @@ relationship_types:
   target_type: api_endpoint
 - relationship_type: uses_format
   description: Endpoint uses data format
-  sample_rules:
+  extraction_rules:
   - keywords:
     - uses
     - accepts
@@ -159,7 +153,7 @@ relationship_types:
   target_type: data_format
 - relationship_type: integrates_with
   description: Integration connects APIs
-  sample_rules:
+  extraction_rules:
   - keywords:
     - integrates with
     - connects to
@@ -169,7 +163,7 @@ relationship_types:
   target_type: api
 - relationship_type: consumed_by
   description: API consumed by consumer
-  sample_rules:
+  extraction_rules:
   - keywords:
     - consumed by
     - used by
@@ -179,7 +173,7 @@ relationship_types:
   target_type: api_consumer
 - relationship_type: authenticated_with
   description: Consumer authenticated with API key
-  sample_rules:
+  extraction_rules:
   - keywords:
     - authenticated with
     - uses key

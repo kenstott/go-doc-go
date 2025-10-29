@@ -1,5 +1,6 @@
 domain: extractive_industries
-description: Mining, oil and gas extraction, quarrying, drilling operations, resource exploration, and commodity production
+description: Mining, oil and gas extraction, quarrying, drilling operations, resource
+  exploration, and commodity production
 subdomains:
 - mining
 - oil_gas
@@ -21,15 +22,14 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - mine
+  extraction_rules:
+  - phrase_list:
     - mine site
+    - mine
     - pit
     - quarry
     - shaft
-    - mining operation
-    - extraction site
+    - operation
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -45,18 +45,14 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - mineral resource
     - ore
     - mineral
-    - coal
-    - gold
-    - copper
-    - iron
-    - lithium
-    - uranium
+    - commodity
+    - resource
     - deposit
-    - reserve
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -72,15 +68,14 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - oil field
-    - gas field
+  extraction_rules:
+  - phrase_list:
+    - oil gas field
+    - field
     - reservoir
     - basin
     - well
     - play
-    - formation
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -95,14 +90,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - exploration project
     - exploration
     - prospect
     - survey
     - drilling program
-    - seismic
-    - geophysical
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -116,14 +110,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - drilling operation
     - drilling
     - well
     - borehole
     - extraction
-    - drill rig
-    - drilling operation
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -138,14 +131,14 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - processing plant
+  extraction_rules:
+  - phrase_list:
+    - processing facility
+    - plant
     - mill
     - refinery
-    - concentrator
-    - smelter
     - processing facility
+    - concentrator
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -161,17 +154,14 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - reserve estimate
     - reserve
     - resource
-    - proven
-    - probable
-    - measured
-    - indicated
-    - inferred
-    - tons
-    - barrels
+    - proven reserve
+    - probable reserve
+    - measured resource
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -186,13 +176,12 @@ entity_types:
   - paragraph
   - table_row
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - production volume
     - production
     - output
     - yield
-    - tons per day
-    - barrels per day
     - extraction rate
   parent_type: ''
   w_category: what
@@ -208,15 +197,14 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - mining equipment
     - equipment
+    - machinery
     - excavator
-    - haul truck
     - drill rig
-    - loader
-    - crusher
-    - conveyor
+    - haul truck
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -231,14 +219,14 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - geologic formation
     - formation
     - stratum
     - seam
-    - geological layer
+    - layer
     - horizon
-    - rock unit
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -254,14 +242,14 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - permit license
     - permit
     - license
     - concession
-    - mining lease
+    - lease
     - claim
-    - exploration license
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -275,14 +263,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - environmental impact
-    - EIA
+    - environmental impact
     - remediation
     - reclamation
     - rehabilitation
-    - mine closure
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -297,15 +284,13 @@ entity_types:
   - paragraph
   - table_row
   - list_item
-  sample_rules:
-  - keywords:
-    - price
+  extraction_rules:
+  - phrase_list:
     - commodity price
+    - price
     - spot price
-    - futures
-    - per ton
-    - per barrel
-    - per ounce
+    - futures price
+    - commodity price
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -319,13 +304,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - operator
     - operator
     - mining company
     - producer
     - E&P company
-    - exploration company
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -339,13 +324,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - contractor
     - contractor
     - service provider
     - drilling contractor
     - mining contractor
-    - EPCM
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -360,14 +345,14 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - safety incident
+    - incident
     - accident
     - injury
     - fatality
-    - lost time injury
-    - TRIFR
+    - safety event
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -383,15 +368,14 @@ entity_types:
   - paragraph
   - table_row
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - grade assay
     - grade
     - assay
-    - g/t
-    - percent
-    - ppm
     - concentration
-    - ore quality
+    - purity
+    - quality
   parent_type: ''
   w_category: what
   domain: extractive_industries
@@ -405,20 +389,20 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - royalty agreement
     - royalty
     - revenue share
-    - NSR
     - net smelter return
-    - production payment
+    - NSR
   parent_type: ''
   w_category: what
   domain: extractive_industries
 relationship_types:
 - relationship_type: extracts_resource
   description: Mine site extracts mineral resource
-  sample_rules:
+  extraction_rules:
   - keywords:
     - extracts
     - produces
@@ -429,7 +413,7 @@ relationship_types:
   target_type: mineral_resource
 - relationship_type: produces_from_field
   description: Operator produces from oil/gas field
-  sample_rules:
+  extraction_rules:
   - keywords:
     - produces from
     - operates
@@ -439,7 +423,7 @@ relationship_types:
   target_type: oil_gas_field
 - relationship_type: explores_for_resource
   description: Exploration project targets resource
-  sample_rules:
+  extraction_rules:
   - keywords:
     - explores for
     - targets
@@ -449,7 +433,7 @@ relationship_types:
   target_type: mineral_resource
 - relationship_type: drills_at_site
   description: Drilling operation at mine site or field
-  sample_rules:
+  extraction_rules:
   - keywords:
     - drilling at
     - located at
@@ -458,7 +442,7 @@ relationship_types:
   target_type: mine_site
 - relationship_type: processes_ore
   description: Processing facility processes ore
-  sample_rules:
+  extraction_rules:
   - keywords:
     - processes
     - treats
@@ -469,7 +453,7 @@ relationship_types:
   target_type: mineral_resource
 - relationship_type: has_reserve_estimate
   description: Mine site has reserve estimate
-  sample_rules:
+  extraction_rules:
   - keywords:
     - has reserves
     - reserves of
@@ -479,7 +463,7 @@ relationship_types:
   target_type: reserve_estimate
 - relationship_type: achieves_production
   description: Mine site achieves production volume
-  sample_rules:
+  extraction_rules:
   - keywords:
     - produces
     - production of
@@ -490,7 +474,7 @@ relationship_types:
   target_type: production_volume
 - relationship_type: uses_equipment
   description: Mine site uses equipment
-  sample_rules:
+  extraction_rules:
   - keywords:
     - uses
     - operates
@@ -500,7 +484,7 @@ relationship_types:
   target_type: mining_equipment
 - relationship_type: located_in_formation
   description: Resource located in geological formation
-  sample_rules:
+  extraction_rules:
   - keywords:
     - located in
     - found in
@@ -510,7 +494,7 @@ relationship_types:
   target_type: geologic_formation
 - relationship_type: authorized_by_permit
   description: Operation authorized by permit
-  sample_rules:
+  extraction_rules:
   - keywords:
     - authorized by
     - permitted by
@@ -520,7 +504,7 @@ relationship_types:
   target_type: permit_license
 - relationship_type: causes_impact
   description: Operation causes environmental impact
-  sample_rules:
+  extraction_rules:
   - keywords:
     - causes
     - results in
@@ -530,7 +514,7 @@ relationship_types:
   target_type: environmental_impact
 - relationship_type: traded_at_price
   description: Commodity traded at price
-  sample_rules:
+  extraction_rules:
   - keywords:
     - traded at
     - priced at
@@ -540,7 +524,7 @@ relationship_types:
   target_type: commodity_price
 - relationship_type: operated_by
   description: Site operated by company
-  sample_rules:
+  extraction_rules:
   - keywords:
     - operated by
     - owned by
@@ -550,7 +534,7 @@ relationship_types:
   target_type: operator
 - relationship_type: contracted_to
   description: Contractor provides services to operator
-  sample_rules:
+  extraction_rules:
   - keywords:
     - contracted to
     - provides services to
@@ -560,7 +544,7 @@ relationship_types:
   target_type: operator
 - relationship_type: reported_incident
   description: Site reported safety incident
-  sample_rules:
+  extraction_rules:
   - keywords:
     - reported
     - incident at
@@ -570,7 +554,7 @@ relationship_types:
   target_type: safety_incident
 - relationship_type: has_grade
   description: Resource has grade/assay
-  sample_rules:
+  extraction_rules:
   - keywords:
     - grade of
     - assay of
@@ -580,7 +564,7 @@ relationship_types:
   target_type: grade_assay
 - relationship_type: subject_to_royalty
   description: Production subject to royalty
-  sample_rules:
+  extraction_rules:
   - keywords:
     - subject to royalty
     - royalty on

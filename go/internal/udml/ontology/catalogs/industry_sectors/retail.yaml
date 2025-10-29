@@ -1,5 +1,6 @@
 domain: retail
-description: Retail sales reports, inventory documents, pricing catalogs, customer analytics, and merchandising documentation
+description: Retail sales reports, inventory documents, pricing catalogs, customer
+  analytics, and merchandising documentation
 subdomains:
 - sales
 - inventory
@@ -85,12 +86,7 @@ entity_types:
   - paragraph
   - table_cell
   - heading
-  sample_rules:
-  - keywords:
-    - product
-    - item
-    - SKU
-    - merchandise
+  extraction_rules:
   - pattern: \bSKU\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
@@ -106,11 +102,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - customer
     - shopper
     - buyer
+    - client
+    - consumer
     - member
   parent_type: global.organization
   w_category: who
@@ -125,12 +123,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - transaction
-    - sale
-    - purchase
-    - order
+  extraction_rules:
   - pattern: \b(?:Order|Transaction|Receipt)\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
@@ -145,13 +138,8 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
+  extraction_rules:
   - pattern: \$[\d,]+(?:\.\d{2})?
-  - keywords:
-    - price
-    - MSRP
-    - retail price
-    - sale price
   parent_type: ''
   w_category: what
   domain: retail
@@ -167,13 +155,7 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - promotion
-    - discount
-    - sale
-    - offer
-    - coupon
+  extraction_rules:
   - pattern: \b\d+%\s+off\b
   parent_type: ''
   w_category: what
@@ -189,12 +171,7 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
-    - store
-    - location
-    - outlet
-    - branch
+  extraction_rules:
   - pattern: \bStore\s*#?\s*\d+
   parent_type: ''
   w_category: what
@@ -209,14 +186,12 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - category
     - department
-    - electronics
-    - apparel
-    - home goods
-    - groceries
+    - classification
+    - segment
   parent_type: ''
   w_category: what
   domain: retail
@@ -229,11 +204,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - brand
     - manufacturer
-    - private label
+    - label
+    - make
   parent_type: ''
   w_category: what
   domain: retail
@@ -246,12 +222,12 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - keywords:
-    - inventory
-    - stock
+  extraction_rules:
+  - phrase_list:
+    - inventory level
+    - stock level
     - on hand
-    - available
+    - available stock
   parent_type: ''
   w_category: what
   domain: retail
@@ -264,14 +240,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
-    - sales
-    - revenue
-    - units sold
-    - conversion rate
-    - basket size
-    - same-store sales
+  extraction_rules:
+  - phrase_list:
+    - sales metric
+    - KPI
+    - metric
+    - performance indicator
   parent_type: ''
   w_category: what
   domain: retail
@@ -283,14 +257,11 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - keywords:
-    - cash
-    - credit card
-    - debit card
-    - mobile payment
-    - gift card
+  extraction_rules:
+  - phrase_list:
     - payment method
+    - payment type
+    - tender type
   parent_type: ''
   w_category: what
   domain: retail
@@ -303,12 +274,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - return
     - refund
     - exchange
-    - RMA
+    - return merchandise
   parent_type: ''
   w_category: what
   domain: retail

@@ -17,7 +17,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>.+(?:must|shall|requires).+)'
         proximity:
           cooccurrence_terms:
@@ -49,7 +49,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>If\s+.+,?\s+then\s+.+)'
       - instance_name: '(?P<name>[A-Z][^.!?]+(?:hypothesis|theory|proposes|suggests)[^.!?]+)'
         proximity:

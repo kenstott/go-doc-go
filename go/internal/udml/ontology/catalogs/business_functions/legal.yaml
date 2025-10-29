@@ -1,5 +1,6 @@
 domain: legal
-description: Legal contracts, agreements, court documents, regulations, and legal correspondence
+description: Legal contracts, agreements, court documents, regulations, and legal
+  correspondence
 subdomains:
 - contract_law
 - corporate_law
@@ -88,14 +89,13 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
-    - plaintiff
-    - defendant
+  extraction_rules:
+  - phrase_list:
     - party
+    - contracting party
+    - litigant
     - signatory
-    - lessor
-    - lessee
+    - legal entity
   parent_type: ''
   w_category: what
   domain: legal
@@ -111,7 +111,7 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-Z][A-Za-z\s]+(?:Inc|Corp|LLC|Ltd|LP|LLP|Company)\b
   parent_type: ''
   w_category: what
@@ -126,15 +126,9 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - pattern: "\\b\\d+\\s+U\\.?S\\.?C\\.?\\s+\xA7\\s*\\d+"
+  extraction_rules:
+  - pattern: \b\d+\s+U\.?S\.?C\.?\s+§\s*\d+
   - pattern: \bSection\s+\d+(?:\.\d+)*\b
-  - keywords:
-    - USC
-    - CFR
-    - statute
-    - section
-    - article
   parent_type: ''
   w_category: what
   domain: legal
@@ -146,7 +140,7 @@ entity_types:
   - court decision
   element_types:
   - paragraph
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-Z][a-z]+\s+v\.\s+[A-Z][a-z]+(?:,\s*\d+\s+[A-Z][a-z\.]+\s+\d+)?
   parent_type: ''
   w_category: what
@@ -161,13 +155,8 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b(?:term|duration|period)\s+of\s+\d+\s+(?:years?|months?|days?)
-  - keywords:
-    - effective date
-    - expiration
-    - term
-    - renewal
   parent_type: ''
   w_category: what
   domain: legal
@@ -182,13 +171,14 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - shall
-    - must
-    - required to
-    - obligated to
+  extraction_rules:
+  - phrase_list:
+    - obligation
+    - duty
+    - requirement
     - covenant
+    - undertaking
+    - promise
   parent_type: ''
   w_category: what
   domain: legal
@@ -202,13 +192,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - right to
-    - entitled to
-    - may
-    - permitted to
+  extraction_rules:
+  - phrase_list:
+    - right
+    - entitlement
+    - privilege
     - license
+    - permission
   parent_type: ''
   w_category: what
   domain: legal
@@ -222,15 +212,13 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - damages
-    - injunction
-    - specific performance
-    - rescission
-    - restitution
+  extraction_rules:
+  - phrase_list:
     - remedy
     - relief
+    - damages
+    - compensation
+    - cure
   parent_type: ''
   w_category: what
   domain: legal
@@ -243,13 +231,13 @@ entity_types:
   - forum
   element_types:
   - paragraph
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - jurisdiction clause
     - governing law
-    - jurisdiction
+    - choice of law
     - venue
     - forum
-    - laws of
   parent_type: ''
   w_category: what
   domain: legal
@@ -263,13 +251,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - confidential
+  extraction_rules:
+  - phrase_list:
+    - confidentiality clause
+    - NDA
     - non-disclosure
-    - proprietary
+    - confidential information
     - trade secret
-    - confidentiality
   parent_type: ''
   w_category: what
   domain: legal
@@ -282,12 +270,13 @@ entity_types:
   - exclusion
   element_types:
   - paragraph
-  sample_rules:
-  - keywords:
-    - limited to
-    - not liable
-    - disclaims
-    - in no event
+  extraction_rules:
+  - phrase_list:
+    - liability limitation
+    - liability cap
+    - limitation
+    - disclaimer
+    - exclusion
   parent_type: ''
   w_category: what
   domain: legal
@@ -301,13 +290,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - terminate
+  extraction_rules:
+  - phrase_list:
+    - termination clause
     - termination
-    - cancel
+    - cancellation
+    - expiration
     - end
-    - expire
   parent_type: ''
   w_category: what
   domain: legal

@@ -1,5 +1,6 @@
 domain: financial
-description: Financial reports, earnings, transactions, investment documents, and financial analysis
+description: Financial reports, earnings, transactions, investment documents, and
+  financial analysis
 terms:
 - name: revenue
   synonyms:
@@ -68,15 +69,8 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\s+(?:Inc|Corp|LLC|Ltd|Company|Co)\b
-  - keywords:
-    - Inc
-    - Corp
-    - LLC
-    - Ltd
-    - Corporation
-    - Company
   parent_type: ''
   w_category: what
   domain: financial
@@ -92,7 +86,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \$[\d,]+(?:\.\d{2})?(?:\s*(?:billion|million|thousand|B|M|K))?
   - pattern: '[\d,]+(?:\.\d{2})?\s*(?:USD|EUR|GBP|dollars|euros)'
   parent_type: ''
@@ -113,16 +107,9 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b(?:Q[1-4]|FY)?\s*\d{4}\b
   - pattern: \b(?:first|second|third|fourth)\s+quarter\s+\d{4}\b
-  - keywords:
-    - Q1
-    - Q2
-    - Q3
-    - Q4
-    - FY
-    - fiscal year
   parent_type: ''
   w_category: what
   domain: financial
@@ -138,21 +125,14 @@ entity_types:
   - paragraph
   - table_cell
   - heading
-  sample_rules:
-  - keywords:
-    - revenue
-    - profit
-    - EBITDA
-    - earnings
-    - EPS
-    - ROI
-    - ROE
-    - ROA
-    - gross margin
-    - operating margin
-    - net margin
-    - cash flow
-    - free cash flow
+  extraction_rules:
+  - phrase_list:
+    - financial metric
+    - KPI
+    - metric
+    - ratio
+    - indicator
+    - measure
   parent_type: ''
   w_category: what
   domain: financial
@@ -166,7 +146,7 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
+  extraction_rules:
   - pattern: \b(?:NYSE|NASDAQ|LSE):\s*[A-Z]{1,5}\b
   - pattern: \b[A-Z]{2,5}\b
   parent_type: ''

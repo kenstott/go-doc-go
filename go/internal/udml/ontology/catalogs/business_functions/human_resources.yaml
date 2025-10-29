@@ -1,5 +1,6 @@
 domain: human_resources
-description: Employee management, recruitment, compensation, benefits, performance management, training, and workforce planning
+description: Employee management, recruitment, compensation, benefits, performance
+  management, training, and workforce planning
 subdomains:
 - recruitment
 - onboarding
@@ -21,16 +22,13 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - employee
-    - staff
-    - personnel
+    - staff member
     - worker
     - team member
-    - full-time
-    - part-time
-    - contractor
+    - personnel
   parent_type: global.person
   w_category: who
   domain: human_resources
@@ -46,16 +44,13 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - position
-    - job title
+    - job
     - role
-    - manager
-    - director
-    - analyst
-    - engineer
-    - coordinator
+    - job title
+    - position title
   parent_type: ''
   w_category: what
   domain: human_resources
@@ -70,18 +65,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - department
     - division
     - unit
     - team
-    - HR
-    - IT
-    - finance
-    - marketing
-    - sales
-    - operations
+    - group
   parent_type: global.organization
   w_category: who
   domain: human_resources
@@ -96,16 +86,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - compensation
     - salary
     - wage
-    - compensation
     - pay
-    - bonus
-    - commission
-    - hourly rate
-    - annual salary
+    - remuneration
   parent_type: ''
   w_category: what
   domain: human_resources
@@ -119,16 +106,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - health insurance
-    - 401k
-    - retirement plan
-    - PTO
-    - vacation
-    - sick leave
-    - dental
-    - vision
+  extraction_rules:
+  - phrase_list:
+    - benefit
+    - perk
+    - employee benefit
+    - fringe benefit
   parent_type: ''
   w_category: what
   domain: human_resources
@@ -143,15 +126,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - performance review
     - appraisal
     - evaluation
     - assessment
-    - feedback
-    - rating
-    - goals
+    - review
   parent_type: ''
   w_category: what
   domain: human_resources
@@ -166,22 +147,20 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - training
-    - workshop
+  extraction_rules:
+  - phrase_list:
+    - training program
     - course
-    - certification
-    - learning
-    - development
-    - seminar
+    - workshop
+    - training
+    - development program
   parent_type: ''
   w_category: what
   domain: human_resources
 relationship_types:
 - relationship_type: reports_to
   description: Employee reporting relationship
-  sample_rules:
+  extraction_rules:
   - keywords:
     - reports to
     - manager
@@ -191,7 +170,7 @@ relationship_types:
   target_type: employee
 - relationship_type: holds_position
   description: Employee holds a specific position
-  sample_rules:
+  extraction_rules:
   - keywords:
     - position
     - job title
@@ -201,7 +180,7 @@ relationship_types:
   target_type: position
 - relationship_type: assigned_to_department
   description: Employee assigned to department
-  sample_rules:
+  extraction_rules:
   - keywords:
     - assigned to
     - works in
@@ -211,7 +190,7 @@ relationship_types:
   target_type: department
 - relationship_type: receives_compensation
   description: Employee receives compensation
-  sample_rules:
+  extraction_rules:
   - keywords:
     - salary
     - wage
@@ -221,7 +200,7 @@ relationship_types:
   target_type: compensation
 - relationship_type: enrolled_in_benefit
   description: Employee enrolled in benefit plan
-  sample_rules:
+  extraction_rules:
   - keywords:
     - enrolled
     - participates
@@ -232,7 +211,7 @@ relationship_types:
   target_type: benefit
 - relationship_type: completed_training
   description: Employee completed training program
-  sample_rules:
+  extraction_rules:
   - keywords:
     - completed
     - finished

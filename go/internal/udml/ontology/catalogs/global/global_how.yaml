@@ -17,7 +17,7 @@ entity_types:
       - paragraph
       - list_item
       - ordered_list
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Process|Procedure|Protocol))'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         proximity:
@@ -52,7 +52,7 @@ entity_types:
       - paragraph
       - list_item
       - heading
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Method|Technique|Approach))'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         proximity:
@@ -86,7 +86,7 @@ entity_types:
       - paragraph
       - code_block
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+Algorithm)'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         proximity:
@@ -114,7 +114,7 @@ entity_types:
       - paragraph
       - list_item
       - ordered_list
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+Protocol)'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         proximity:
@@ -148,7 +148,7 @@ entity_types:
       - paragraph
       - list_item
       - diagram
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Workflow|Pipeline|Flow))'
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         proximity:

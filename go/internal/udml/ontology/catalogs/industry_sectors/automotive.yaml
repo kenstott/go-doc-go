@@ -19,16 +19,13 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - vehicle
     - car
     - automobile
     - truck
     - SUV
-    - VIN
-    - model
-    - make
   parent_type: ''
   w_category: what
   domain: automotive
@@ -42,14 +39,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - part
     - component
     - spare part
-    - OEM
-    - part number
-    - SKU
+    - auto part
   parent_type: ''
   w_category: what
   domain: automotive
@@ -63,14 +58,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - service appointment
     - service
     - maintenance
     - repair
-    - oil change
-    - inspection
-    - tune-up
   parent_type: ''
   w_category: what
   domain: automotive
@@ -84,13 +77,12 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - dealership
     - dealer
     - showroom
     - sales center
-    - service center
   parent_type: ''
   w_category: what
   domain: automotive
@@ -104,20 +96,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - customer
     - owner
     - buyer
     - client
-    - driver
   parent_type: global.organization
   w_category: who
   domain: automotive
 relationship_types:
 - relationship_type: owned_by
   description: Vehicle owned by customer
-  sample_rules:
+  extraction_rules:
   - keywords:
     - owned by
     - belongs to
@@ -126,7 +117,7 @@ relationship_types:
   target_type: customer
 - relationship_type: requires_part
   description: Service requires part
-  sample_rules:
+  extraction_rules:
   - keywords:
     - requires
     - needs
@@ -136,7 +127,7 @@ relationship_types:
   target_type: part
 - relationship_type: serviced_at
   description: Vehicle serviced at dealership
-  sample_rules:
+  extraction_rules:
   - keywords:
     - serviced at
     - service location
@@ -145,7 +136,7 @@ relationship_types:
   target_type: dealership
 - relationship_type: sold_by
   description: Vehicle sold by dealership
-  sample_rules:
+  extraction_rules:
   - keywords:
     - sold by
     - purchased from

@@ -16,7 +16,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>\d{1,2}/\d{1,2}/\d{2,4})'
       - instance_name: '(?P<name>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},?\s+\d{4})'
       - instance_name: '(?P<name>\d{4}-\d{2}-\d{2})'
@@ -34,7 +34,7 @@ entity_types:
       - paragraph
       - list_item
       - table_cell
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)'
 
   # Subtype: duration
@@ -49,7 +49,7 @@ entity_types:
     element_types:
       - paragraph
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>\d+\s*(?:hours?|minutes?|seconds?|days?|weeks?|months?|years?))'
 
   # Top-level: event
@@ -66,7 +66,7 @@ entity_types:
       - paragraph
       - heading
       - list_item
-    sample_rules:
+    extraction_rules:
       - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
         proximity:
           cooccurrence_terms:

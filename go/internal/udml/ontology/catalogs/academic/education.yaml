@@ -1,5 +1,6 @@
 domain: education
-description: Educational institutions, curricula, student records, academic programs, and learning materials
+description: Educational institutions, curricula, student records, academic programs,
+  and learning materials
 subdomains:
 - k12_education
 - higher_education
@@ -43,11 +44,12 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - student
-    - pupil
     - learner
+    - pupil
+    - enrollee
   parent_type: global.person
   w_category: who
   domain: education
@@ -61,12 +63,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - professor
-    - teacher
+  extraction_rules:
+  - phrase_list:
     - instructor
-    - Dr.
+    - teacher
+    - professor
+    - educator
+    - faculty
   parent_type: ''
   w_category: what
   domain: education
@@ -80,11 +83,7 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - course
-    - class
-    - subject
+  extraction_rules:
   - pattern: \b[A-Z]{2,4}\s*\d{3,4}\b
   parent_type: ''
   w_category: what
@@ -98,14 +97,12 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - program
     - degree
     - major
-    - Bachelor
-    - Master
-    - PhD
+    - concentration
   parent_type: ''
   w_category: what
   domain: education
@@ -118,12 +115,7 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
-    - university
-    - college
-    - school
-    - institute
+  extraction_rules:
   - pattern: \b[A-Z][a-z]+\s+(?:University|College|Institute)\b
   parent_type: ''
   w_category: what
@@ -137,7 +129,7 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
+  extraction_rules:
   - pattern: \b[A-F][+-]?\b
   - pattern: \b\d{1,3}%\b
   parent_type: ''
@@ -151,10 +143,9 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - credit
-    - credits
     - credit hour
     - unit
   parent_type: ''

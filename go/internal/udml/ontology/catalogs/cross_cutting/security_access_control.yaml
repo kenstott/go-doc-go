@@ -1,5 +1,6 @@
 domain: security_access_control
-description: Authentication, authorization, permissions, roles, identity management, and access control
+description: Authentication, authorization, permissions, roles, identity management,
+  and access control
 subdomains:
 - authentication
 - authorization
@@ -17,13 +18,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - user
     - identity
     - account
     - principal
-    - username
   parent_type: ''
   w_category: what
   domain: security_access_control
@@ -37,8 +37,8 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - role
     - group
     - security group
@@ -56,13 +56,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - permission
     - privilege
     - access right
     - entitlement
-    - grant
   parent_type: ''
   w_category: what
   domain: security_access_control
@@ -76,13 +75,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - resource
     - object
     - asset
     - protected resource
-    - system
   parent_type: ''
   w_category: what
   domain: security_access_control
@@ -95,15 +93,12 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
-    - authentication
+  extraction_rules:
+  - phrase_list:
+    - authentication method
     - auth method
-    - password
-    - MFA
-    - SSO
-    - OAuth
-    - SAML
+    - authentication mechanism
+    - credential type
   parent_type: ''
   w_category: what
   domain: security_access_control
@@ -117,20 +112,19 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - audit
+  extraction_rules:
+  - phrase_list:
+    - audit event
     - access event
     - security event
-    - log entry
-    - access attempt
+    - audit log
   parent_type: ''
   w_category: what
   domain: security_access_control
 relationship_types:
 - relationship_type: has_role
   description: User has role
-  sample_rules:
+  extraction_rules:
   - keywords:
     - has role
     - member of
@@ -140,7 +134,7 @@ relationship_types:
   target_type: role
 - relationship_type: has_permission
   description: Role has permission
-  sample_rules:
+  extraction_rules:
   - keywords:
     - has permission
     - grants
@@ -150,7 +144,7 @@ relationship_types:
   target_type: permission
 - relationship_type: protects
   description: Permission protects resource
-  sample_rules:
+  extraction_rules:
   - keywords:
     - protects
     - controls access to
@@ -160,7 +154,7 @@ relationship_types:
   target_type: resource
 - relationship_type: authenticated_via
   description: User authenticated via method
-  sample_rules:
+  extraction_rules:
   - keywords:
     - authenticated via
     - logged in with
@@ -170,7 +164,7 @@ relationship_types:
   target_type: authentication_method
 - relationship_type: logged_as
   description: Access logged as audit event
-  sample_rules:
+  extraction_rules:
   - keywords:
     - logged
     - audit

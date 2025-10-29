@@ -1,5 +1,6 @@
 domain: blockchain_crypto
-description: Blockchain transactions, wallets, smart contracts, tokens, and cryptocurrency operations
+description: Blockchain transactions, wallets, smart contracts, tokens, and cryptocurrency
+  operations
 subdomains:
 - blockchain_operations
 - cryptocurrency
@@ -18,14 +19,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - blockchain transaction
     - transaction
     - transfer
     - payment
     - tx
-    - blockchain transaction
-    - hash
   parent_type: ''
   w_category: what
   domain: blockchain_crypto
@@ -39,13 +39,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - wallet
     - address
     - account
     - wallet address
-    - public key
   parent_type: ''
   w_category: what
   domain: blockchain_crypto
@@ -60,13 +59,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - smart contract
     - contract
     - DApp
+    - decentralized app
     - protocol
-    - deployed contract
   parent_type: ''
   w_category: what
   domain: blockchain_crypto
@@ -81,14 +80,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - token
     - coin
     - cryptocurrency
     - digital asset
-    - ERC-20
-    - NFT
+    - crypto
   parent_type: ''
   w_category: what
   domain: blockchain_crypto
@@ -102,12 +100,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - block
     - block
     - blockchain block
-    - block height
-    - block number
+    - ledger entry
   parent_type: ''
   w_category: what
   domain: blockchain_crypto
@@ -121,21 +119,19 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - DeFi
+  extraction_rules:
+  - phrase_list:
+    - defi protocol
     - protocol
-    - decentralized finance
-    - lending
-    - staking
-    - yield
+    - DeFi service
+    - decentralized protocol
   parent_type: ''
   w_category: what
   domain: blockchain_crypto
 relationship_types:
 - relationship_type: sent_from
   description: Transaction sent from wallet
-  sample_rules:
+  extraction_rules:
   - keywords:
     - from
     - sent from
@@ -145,7 +141,7 @@ relationship_types:
   target_type: wallet
 - relationship_type: sent_to
   description: Transaction sent to wallet
-  sample_rules:
+  extraction_rules:
   - keywords:
     - to
     - sent to
@@ -155,7 +151,7 @@ relationship_types:
   target_type: wallet
 - relationship_type: transfers_token
   description: Transaction transfers token
-  sample_rules:
+  extraction_rules:
   - keywords:
     - transfers
     - sends
@@ -166,7 +162,7 @@ relationship_types:
   target_type: token
 - relationship_type: included_in
   description: Transaction included in block
-  sample_rules:
+  extraction_rules:
   - keywords:
     - included in
     - in block
@@ -176,7 +172,7 @@ relationship_types:
   target_type: block
 - relationship_type: executed_by
   description: Transaction executed by smart contract
-  sample_rules:
+  extraction_rules:
   - keywords:
     - executed by
     - called
@@ -186,7 +182,7 @@ relationship_types:
   target_type: smart_contract
 - relationship_type: uses_protocol
   description: Smart contract uses DeFi protocol
-  sample_rules:
+  extraction_rules:
   - keywords:
     - uses
     - integrates with

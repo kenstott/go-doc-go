@@ -18,14 +18,13 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - ml model
     - model
-    - ML model
-    - neural network
     - AI model
+    - neural network
     - algorithm
-    - classifier
   parent_type: ''
   w_category: what
   domain: artificial_intelligence
@@ -39,13 +38,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - training data
+  extraction_rules:
+  - phrase_list:
+    - training dataset
     - dataset
+    - training data
     - data collection
-    - training set
-    - labeled data
   parent_type: ''
   w_category: what
   domain: artificial_intelligence
@@ -59,13 +57,12 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - model version
     - version
     - iteration
     - checkpoint
-    - model version
-    - release
   parent_type: ''
   w_category: what
   domain: artificial_intelligence
@@ -80,13 +77,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
-    - inference
+  extraction_rules:
+  - phrase_list:
+    - inference request
     - prediction
+    - inference
     - scoring
     - model call
-    - endpoint
   parent_type: ''
   w_category: what
   domain: artificial_intelligence
@@ -101,13 +98,13 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
     - feature
     - input
     - variable
+    - feature vector
     - attribute
-    - feature engineering
   parent_type: ''
   w_category: what
   domain: artificial_intelligence
@@ -123,14 +120,14 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - phrase_list:
+    - model metric
+    - performance metric
     - accuracy
     - precision
     - recall
     - F1
-    - AUC
-    - performance metric
   parent_type: ''
   w_category: what
   domain: artificial_intelligence
@@ -144,20 +141,19 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
-    - AI policy
-    - governance
-    - ethical AI
-    - responsible AI
-    - fairness
+  extraction_rules:
+  - phrase_list:
+    - ai policy
+    - governance policy
+    - AI guideline
+    - ethical policy
   parent_type: ''
   w_category: what
   domain: artificial_intelligence
 relationship_types:
 - relationship_type: trained_on
   description: Model trained on dataset
-  sample_rules:
+  extraction_rules:
   - keywords:
     - trained on
     - trained with
@@ -167,7 +163,7 @@ relationship_types:
   target_type: training_dataset
 - relationship_type: version_of
   description: Version of model
-  sample_rules:
+  extraction_rules:
   - keywords:
     - version of
     - iteration of
@@ -176,7 +172,7 @@ relationship_types:
   target_type: ml_model
 - relationship_type: uses_feature
   description: Model uses feature
-  sample_rules:
+  extraction_rules:
   - keywords:
     - uses
     - inputs
@@ -186,7 +182,7 @@ relationship_types:
   target_type: feature
 - relationship_type: evaluated_with
   description: Model evaluated with metric
-  sample_rules:
+  extraction_rules:
   - keywords:
     - evaluated
     - measured
@@ -196,7 +192,7 @@ relationship_types:
   target_type: model_metric
 - relationship_type: governed_by
   description: Model governed by policy
-  sample_rules:
+  extraction_rules:
   - keywords:
     - governed by
     - complies with
@@ -206,7 +202,7 @@ relationship_types:
   target_type: ai_policy
 - relationship_type: inference_from
   description: Inference from model
-  sample_rules:
+  extraction_rules:
   - keywords:
     - from
     - using
