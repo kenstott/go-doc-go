@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -35,7 +37,7 @@ func NewAnthropicClient(apiKey, model string) *AnthropicClient {
 		apiKey: apiKey,
 		model:  model,
 		httpClient: &http.Client{
-			Timeout: 120 * time.Second,
+			Timeout: 600 * time.Second, // 10 minutes for long-running LLM calls with MCP tools
 		},
 		apiURL: "https://api.anthropic.com/v1/messages",
 	}
@@ -46,9 +48,122 @@ func (c *AnthropicClient) SetMCPServer(server MCPToolExecutor) {
 	c.mcpServer = server
 }
 
-// Complete sends a prompt to Claude and returns the response
+// isRetryableError checks if an error is retryable (e.g., rate limiting, overloaded)
+func isRetryableError(err error, statusCode int, body string) bool {
+	if err != nil {
+		return false
+	}
+
+	// 429 = rate limit, 500/503/520 = server error/overloaded/bad gateway
+	if statusCode == 429 || statusCode == 500 || statusCode == 503 || statusCode == 520 {
+		return true
+	}
+
+	// Check for "Overloaded" message in error body
+	if strings.Contains(body, "Overloaded") || strings.Contains(body, "overloaded") {
+		return true
+	}
+
+	return false
+}
+
+// withRetry wraps an API call with exponential backoff retry logic
+func withRetry(ctx context.Context, fn func() (string, int, string, error)) (string, error) {
+	maxRetries := 5
+	baseDelay := 2 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		result, statusCode, body, err := fn()
+
+		// Success case
+		if err == nil && statusCode == http.StatusOK {
+			return result, nil
+		}
+
+		// Check if retryable
+		if !isRetryableError(err, statusCode, body) {
+			// Non-retryable error
+			if err != nil {
+				return "", err
+			}
+			return "", fmt.Errorf("API error (status %d): %s", statusCode, body)
+		}
+
+		// Last attempt - return error
+		if attempt == maxRetries {
+			if err != nil {
+				return "", fmt.Errorf("max retries exceeded: %w", err)
+			}
+			return "", fmt.Errorf("max retries exceeded, API error (status %d): %s", statusCode, body)
+		}
+
+		// Calculate backoff delay: 2s, 4s, 8s, 16s, 32s
+		delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(attempt)))
+		fmt.Printf("⚠️  API overloaded/rate limited (attempt %d/%d), retrying in %v...\n", attempt+1, maxRetries+1, delay)
+
+		// Wait with context cancellation support
+		select {
+		case <-time.After(delay):
+			// Continue to retry
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
+	}
+
+	return "", fmt.Errorf("unexpected retry loop exit")
+}
+
+// withRetryExtended wraps an API call with exponential backoff retry logic
+// Returns both response text and stop_reason
+func withRetryExtended(ctx context.Context, fn func() (string, string, int, string, error)) (string, string, error) {
+	maxRetries := 5
+	baseDelay := 2 * time.Second
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		result, stopReason, statusCode, body, err := fn()
+
+		// Success case
+		if err == nil && statusCode == http.StatusOK {
+			return result, stopReason, nil
+		}
+
+		// Check if retryable
+		if !isRetryableError(err, statusCode, body) {
+			// Non-retryable error
+			if err != nil {
+				return "", "", err
+			}
+			return "", "", fmt.Errorf("API error (status %d): %s", statusCode, body)
+		}
+
+		// Last attempt - return error
+		if attempt == maxRetries {
+			if err != nil {
+				return "", "", fmt.Errorf("max retries exceeded: %w", err)
+			}
+			return "", "", fmt.Errorf("max retries exceeded, API error (status %d): %s", statusCode, body)
+		}
+
+		// Calculate backoff delay: 2s, 4s, 8s, 16s, 32s
+		delay := time.Duration(float64(baseDelay) * math.Pow(2, float64(attempt)))
+		fmt.Printf("⚠️  API overloaded/rate limited (attempt %d/%d), retrying in %v...\n", attempt+1, maxRetries+1, delay)
+
+		// Wait with context cancellation support
+		select {
+		case <-time.After(delay):
+			// Continue to retry
+		case <-ctx.Done():
+			return "", "", ctx.Err()
+		}
+	}
+
+	return "", "", fmt.Errorf("unexpected retry loop exit")
+}
+
+// Complete sends a prompt to Claude and returns the response with automatic retry on rate limits
+// Handles truncated responses (stop_reason="max_tokens") by continuing generation
 func (c *AnthropicClient) Complete(ctx context.Context, prompt string, options LLMOptions) (string, error) {
-	// Build request payload
+	// Build initial request payload
 	messages := []anthropicMessage{
 		{
 			Role:    "user",
@@ -56,63 +171,116 @@ func (c *AnthropicClient) Complete(ctx context.Context, prompt string, options L
 		},
 	}
 
-	payload := anthropicRequest{
-		Model:       c.model,
-		MaxTokens:   options.MaxTokens,
-		Messages:    messages,
-		Temperature: options.Temperature,
+	var fullResponse strings.Builder
+	maxContinuations := 10 // Limit continuation attempts (increased from 3 to handle large responses)
+
+	for attempt := 0; attempt < maxContinuations; attempt++ {
+		payload := anthropicRequest{
+			Model:       c.model,
+			MaxTokens:   options.MaxTokens,
+			Messages:    messages,
+			Temperature: options.Temperature,
+		}
+
+		if options.SystemPrompt != "" {
+			payload.System = options.SystemPrompt
+		}
+
+		// Serialize request
+		jsonData, err := json.Marshal(payload)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		// Wrap API call with retry logic
+		responseText, stopReason, err := c.completeOnce(ctx, jsonData)
+		if err != nil {
+			return "", err
+		}
+
+		// Append to full response
+		fullResponse.WriteString(responseText)
+
+		// Log stop reason
+		if attempt == 0 {
+			fmt.Printf("DEBUG: LLM stop_reason=%s, response_length=%d chars\n", stopReason, len(responseText))
+		} else {
+			fmt.Printf("DEBUG: LLM continuation %d/%d, stop_reason=%s, response_length=%d chars\n", attempt, maxContinuations, stopReason, len(responseText))
+		}
+
+		// Check if we need to continue
+		if stopReason != "max_tokens" {
+			// Normal completion
+			return fullResponse.String(), nil
+		}
+
+		// Truncated response - need to continue
+		fmt.Printf("⚠️  Response truncated at max_tokens, continuing generation (attempt %d/%d)...\n", attempt+1, maxContinuations)
+
+		// Add assistant response to message history
+		messages = append(messages, anthropicMessage{
+			Role:    "assistant",
+			Content: responseText,
+		})
+
+		// Add continuation prompt
+		messages = append(messages, anthropicMessage{
+			Role:    "user",
+			Content: "Please continue exactly where you left off.",
+		})
 	}
 
-	if options.SystemPrompt != "" {
-		payload.System = options.SystemPrompt
-	}
+	// Reached max continuations
+	fmt.Printf("⚠️  Reached maximum continuation attempts (%d), returning partial response\n", maxContinuations)
+	return fullResponse.String(), nil
+}
 
-	// Serialize request
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
-	}
+// completeOnce performs a single API call and returns the response text and stop reason
+func (c *AnthropicClient) completeOnce(ctx context.Context, jsonData []byte) (string, string, error) {
+	responseText, stopReason, err := withRetryExtended(ctx, func() (string, string, int, string, error) {
+		// Create HTTP request
+		req, err := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return "", "", 0, "", fmt.Errorf("failed to create request: %w", err)
+		}
 
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("x-api-key", c.apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
+		// Send request
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return "", "", 0, "", fmt.Errorf("API request failed: %w", err)
+		}
+		defer resp.Body.Close()
 
-	// Send request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("API request failed: %w", err)
-	}
-	defer resp.Body.Close()
+		// Read response
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", "", resp.StatusCode, "", fmt.Errorf("failed to read response: %w", err)
+		}
 
-	// Read response
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
+		// Return status and body for retry logic to evaluate
+		if resp.StatusCode != http.StatusOK {
+			return "", "", resp.StatusCode, string(body), nil
+		}
 
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
-	}
+		// Parse response
+		var apiResp anthropicResponse
+		if err := json.Unmarshal(body, &apiResp); err != nil {
+			return "", "", resp.StatusCode, string(body), fmt.Errorf("failed to parse response: %w", err)
+		}
 
-	// Parse response
-	var apiResp anthropicResponse
-	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return "", fmt.Errorf("failed to parse response: %w", err)
-	}
+		// Extract text from response
+		if len(apiResp.Content) == 0 {
+			return "", "", resp.StatusCode, string(body), fmt.Errorf("empty response from API")
+		}
 
-	// Extract text from response
-	if len(apiResp.Content) == 0 {
-		return "", fmt.Errorf("empty response from API")
-	}
+		return apiResp.Content[0].Text, apiResp.StopReason, http.StatusOK, "", nil
+	})
 
-	return apiResp.Content[0].Text, nil
+	return responseText, stopReason, err
 }
 
 // GetProvider returns the provider name
@@ -160,39 +328,49 @@ func (c *AnthropicClient) CompleteWithTools(ctx context.Context, prompt string, 
 			payload.System = options.SystemPrompt
 		}
 
-		// Send request
+		// Send request with retry logic
 		jsonData, err := json.Marshal(payload)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal request: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewBuffer(jsonData))
+		// Execute API call with automatic retry
+		responseText, err := withRetry(ctx, func() (string, int, string, error) {
+			req, err := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewBuffer(jsonData))
+			if err != nil {
+				return "", 0, "", fmt.Errorf("failed to create request: %w", err)
+			}
+
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("x-api-key", c.apiKey)
+			req.Header.Set("anthropic-version", "2023-06-01")
+
+			resp, err := c.httpClient.Do(req)
+			if err != nil {
+				return "", 0, "", fmt.Errorf("API request failed: %w", err)
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return "", resp.StatusCode, "", fmt.Errorf("failed to read response: %w", err)
+			}
+
+			// Return status and body for retry logic
+			if resp.StatusCode != http.StatusOK {
+				return "", resp.StatusCode, string(body), nil
+			}
+
+			return string(body), http.StatusOK, "", nil
+		})
+
 		if err != nil {
-			return "", fmt.Errorf("failed to create request: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("x-api-key", c.apiKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			return "", fmt.Errorf("API request failed: %w", err)
-		}
-
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return "", fmt.Errorf("failed to read response: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+			return "", err
 		}
 
 		// Parse response
 		var apiResp anthropicResponseWithTools
-		if err := json.Unmarshal(body, &apiResp); err != nil {
+		if err := json.Unmarshal([]byte(responseText), &apiResp); err != nil {
 			return "", fmt.Errorf("failed to parse response: %w", err)
 		}
 
@@ -340,12 +518,13 @@ type anthropicMessage struct {
 }
 
 type anthropicResponse struct {
-	ID      string              `json:"id"`
-	Type    string              `json:"type"`
-	Role    string              `json:"role"`
-	Content []anthropicContent  `json:"content"`
-	Model   string              `json:"model"`
-	Usage   anthropicUsage      `json:"usage"`
+	ID         string              `json:"id"`
+	Type       string              `json:"type"`
+	Role       string              `json:"role"`
+	Content    []anthropicContent  `json:"content"`
+	Model      string              `json:"model"`
+	StopReason string              `json:"stop_reason"` // Why generation stopped: "end_turn", "max_tokens", "stop_sequence"
+	Usage      anthropicUsage      `json:"usage"`
 }
 
 type anthropicContent struct {
