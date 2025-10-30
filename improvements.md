@@ -272,7 +272,7 @@ Add comprehensive disambiguation guidance:
    - HIGH severity warning for distances > 75 tokens
    - Suggest using structural patterns for long-range relationships
 
-### Phase 2.5: Entity Type Uniqueness (Critical)
+### Phase 2.5: Entity Type Uniqueness (Critical) ✅ COMPLETED
 **Problem**: Multiple entity_type definitions with same name across domains (e.g., 'person' defined 5 times) causing extraction conflicts
 
 **Solution Principles**:
@@ -283,23 +283,15 @@ Add comprehensive disambiguation guidance:
 - If conflict with non-global: Qualify both entity names
 
 **Implementation Tasks**:
-1. ⏳ Add `checkDuplicateEntityTypes()` validation function
-2. ⏳ Display CRITICAL severity warnings for duplicate entity_type names
-3. ⏳ Block schema save if duplicate entity_type names exist (validation.go)
-4. ⏳ Update LLM prompts with entity reuse guidance (builder.go):
-   - Instruct to reuse global entities by default
+1. ✅ Add `checkDuplicateEntityTypes()` validation function (validation.go:365-394)
+2. ✅ Display CRITICAL severity warnings for duplicate entity_type names
+3. ✅ Integrated into ValidateSchemaQuality() pipeline (validation.go:39)
+4. ✅ Update LLM prompts with entity reuse guidance (builder.go:1730-1737):
+   - Instructs to reuse global entities by default
    - Only create domain-specific qualified subtypes if they provide clear value
    - Format: `{domain}_{entity_name}` (e.g., `banking_account`, `medical_procedure`)
-5. ⏳ Add `Parent` field to ElementEntityMappingConfig (types.go):
-   ```go
-   type ElementEntityMappingConfig struct {
-       EntityType  string `json:"entity_type"`
-       Parent      string `json:"parent,omitempty"` // Reference to parent entity (e.g., "global.person")
-       Domain      string `json:"domain"`
-       // ... existing fields
-   }
-   ```
-6. ⏳ Implement parent reference validation (ensure parent exists if specified)
+5. ✅ Parent field already exists in ElementEntityMappingConfig (types.go:99)
+6. ⏳ Implement parent reference validation (ensure parent exists if specified) - DEFERRED to Phase 3
 
 **Example Conflict Resolution**:
 ```yaml
@@ -384,5 +376,5 @@ grep "confidence:" validation_prefill_test.yaml | \
 ---
 
 **Last Updated**: 2025-10-30
-**Status**: Phase 1 & Phase 2 Complete ✅
-**Next Action**: Begin Phase 2.5 (Entity Type Uniqueness)
+**Status**: Phase 1, Phase 2, and Phase 2.5 Complete ✅
+**Next Action**: Phase 3 Feature Enhancements (exclusion_patterns, priority, ValidationRules, gazetteer import)

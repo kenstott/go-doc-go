@@ -35,7 +35,8 @@ func ValidateSchemaQuality(schema *OntologySchema) *SchemaQualityReport {
 		Warnings:            []ValidationWarning{},
 	}
 
-	// Run all validation checks
+	// Run all validation checks - check duplicate entity types first (CRITICAL)
+	report.Warnings = append(report.Warnings, checkDuplicateEntityTypes(schema)...)
 	report.Warnings = append(report.Warnings, checkDuplicatePatterns(schema)...)
 	report.Warnings = append(report.Warnings, checkConfidenceSpecificityCorrelation(schema)...)
 	report.Warnings = append(report.Warnings, checkMissingDisambiguation(schema)...)
@@ -356,6 +357,37 @@ func checkExcessiveProximityDistance(schema *OntologySchema) []ValidationWarning
 					Suggestion: "Most proximity rules should use ≤30 tokens. Consider reducing distance or using structural patterns",
 				})
 			}
+		}
+	}
+
+	return warnings
+}
+
+// checkDuplicateEntityTypes detects multiple definitions of the same entity_type name
+// This causes extraction conflicts where the same entity name is defined multiple times
+func checkDuplicateEntityTypes(schema *OntologySchema) []ValidationWarning {
+	warnings := []ValidationWarning{}
+
+	// Track entity_type names and their domains
+	entityTypeMap := make(map[string][]string) // entity_type -> [domains]
+
+	for _, mapping := range schema.ElementEntityMappings {
+		entityTypeMap[mapping.EntityType] = append(entityTypeMap[mapping.EntityType], mapping.Domain)
+	}
+
+	// Check for duplicates
+	for entityType, domains := range entityTypeMap {
+		if len(domains) > 1 {
+			// CRITICAL severity - this breaks extraction
+			warnings = append(warnings, ValidationWarning{
+				Severity:   "CRITICAL",
+				Category:   "duplicate_entity_type",
+				EntityType: entityType,
+				Message: fmt.Sprintf("Entity type '%s' defined %d times across domains: %v. This causes extraction conflicts.",
+					entityType, len(domains), domains),
+				Suggestion: fmt.Sprintf("Choose ONE approach: (1) Keep only global.%s and remove domain-specific versions, OR (2) Qualify domain versions as '{domain}_%s' (e.g., '%s_%s') with parent_type: 'global.%s'",
+					entityType, entityType, domains[1], entityType, entityType),
+			})
 		}
 	}
 
