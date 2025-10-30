@@ -21,13 +21,13 @@ type DictionaryProvider interface {
 // LexicalEntry represents lexical/semantic information about a word
 type LexicalEntry struct {
 	Word        string                 `json:"word"`
-	POS         []string               `json:"pos"`          // Part of speech: ["noun", "verb"]
-	Categories  []string               `json:"categories"`   // ["place", "medical_condition", "organization"]
+	POS         []string               `json:"pos"`        // Part of speech: ["noun", "verb"]
+	Categories  []string               `json:"categories"` // ["place", "medical_condition", "organization"]
 	Definitions []string               `json:"definitions"`
 	Synonyms    []string               `json:"synonyms"`
-	Hypernyms   []string               `json:"hypernyms"`    // Parent concepts
-	Source      string                 `json:"source"`       // Which provider found it
-	IsProper    bool                   `json:"is_proper"`    // Proper noun vs common noun
+	Hypernyms   []string               `json:"hypernyms"` // Parent concepts
+	Source      string                 `json:"source"`    // Which provider found it
+	IsProper    bool                   `json:"is_proper"` // Proper noun vs common noun
 	Metadata    map[string]interface{} `json:"metadata"`
 }
 

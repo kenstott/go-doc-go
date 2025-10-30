@@ -18,9 +18,9 @@ type UnifiedDictionary struct {
 // NewUnifiedDictionary creates a new unified dictionary
 func NewUnifiedDictionary(cachePath string) (*UnifiedDictionary, error) {
 	// Default cache settings
-	maxMemSize := 10000                    // 10k hot entries in memory
-	maxDiskSize := 1000000                 // 1M entries on disk
-	defaultTTL := 30 * 24 * time.Hour      // 30 days default
+	maxMemSize := 10000               // 10k hot entries in memory
+	maxDiskSize := 1000000            // 1M entries on disk
+	defaultTTL := 30 * 24 * time.Hour // 30 days default
 
 	cache, err := NewPersistentLRUCache(cachePath, maxMemSize, maxDiskSize, defaultTTL)
 	if err != nil {

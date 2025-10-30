@@ -20,4 +20,3 @@ type ExtractionJobControl interface {
 	// Cleanup
 	CleanupRun(runID string) error
 }
-

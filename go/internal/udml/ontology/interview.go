@@ -17,8 +17,8 @@ import (
 type InterviewMode int
 
 const (
-	ModeNewOntology InterviewMode = iota // Create new ontology from scratch
-	ModeRefineOntology                   // Refine existing ontology
+	ModeNewOntology    InterviewMode = iota // Create new ontology from scratch
+	ModeRefineOntology                      // Refine existing ontology
 )
 
 // InterviewBuilderV2 provides interactive ontology creation/refinement
@@ -50,10 +50,10 @@ func (ib *InterviewBuilderV2) SetNonInteractive(enabled bool) {
 
 // StartInterview begins the interactive ontology creation workflow (3 phases with mandatory confirmation)
 func (ib *InterviewBuilderV2) StartInterview(ctx context.Context) (*OntologySchema, error) {
-	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("" + strings.Repeat("=", 80))
 	fmt.Println("  INTERACTIVE ONTOLOGY BUILDER - NEW ONTOLOGY")
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Println("This interview creates a custom ontology for your corpus through 3 phases:\n")
+	fmt.Println("This interview creates a custom ontology for your corpus through 3 phases:")
 	fmt.Println("  Phase 1: Domain Selection - LLM analyzes corpus and suggests domains")
 	fmt.Println("           └─ You confirm or adjust domain selection")
 	fmt.Println()
@@ -91,7 +91,7 @@ func (ib *InterviewBuilderV2) StartInterview(ctx context.Context) (*OntologySche
 		return nil, fmt.Errorf("user rejected ontology schema")
 	}
 
-	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("" + strings.Repeat("=", 80))
 	fmt.Println("  ✅ ONTOLOGY APPROVED AND FINALIZED")
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Printf("• Schema name: %s\n", ib.schema.Name)
@@ -109,10 +109,10 @@ func (ib *InterviewBuilderV2) StartRefinementInterview(ctx context.Context, exis
 	ib.existingSchema = existingSchema
 	ib.schema = existingSchema // Start with existing
 
-	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("" + strings.Repeat("=", 80))
 	fmt.Println("  INTERACTIVE ONTOLOGY BUILDER - REFINEMENT MODE")
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Println("This interview refines an existing ontology based on corpus analysis:\n")
+	fmt.Println("This interview refines an existing ontology based on corpus analysis:")
 	fmt.Println("  Phase 1: Corpus Analysis - LLM analyzes current schema vs corpus")
 	fmt.Println("           └─ Identifies gaps, issues, and improvement opportunities")
 	fmt.Println()
@@ -150,7 +150,7 @@ func (ib *InterviewBuilderV2) StartRefinementInterview(ctx context.Context, exis
 		return existingSchema, nil
 	}
 
-	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("" + strings.Repeat("=", 80))
 	fmt.Println("  ✅ REFINED ONTOLOGY APPROVED")
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Printf("• Schema name: %s\n", ib.schema.Name)
@@ -220,11 +220,11 @@ func (ib *InterviewBuilderV2) formatCorpusStatistics() string {
 
 // phaseDomainSelection - Hybrid approach: LLM selects from catalog OR proposes new domains if needed
 func (ib *InterviewBuilderV2) phaseDomainSelection(ctx context.Context) error {
-	fmt.Println("\n" + strings.Repeat("-", 80))
+	fmt.Println("" + strings.Repeat("-", 80))
 	fmt.Println("  PHASE 1: DOMAIN SELECTION (HYBRID MODE)")
 	fmt.Println(strings.Repeat("-", 80) + "\n")
 	fmt.Println("This phase tries to match corpus to predefined domains.")
-	fmt.Println("If catalog coverage is insufficient, LLM may propose new domains.\n")
+	fmt.Println("If catalog coverage is insufficient, LLM may propose new domains.")
 	fmt.Printf("DEBUG: nonInteractive flag = %v\n\n", ib.nonInteractive)
 
 	sampleTexts := ib.builder.prepareSampleTexts(ib.samples.Samples, 20)
@@ -330,7 +330,14 @@ For each domain you select or propose:
 
 Ask 2-3 clarifying questions to better understand the corpus and use case.
 
-Return JSON:
+**CRITICAL OUTPUT FORMAT RULES:**
+- You MUST respond with ONLY valid JSON - NO preamble text, NO explanations, NO commentary
+- Do NOT include phrases like "Based on the analysis..." or "Here is..." before the JSON
+- Do NOT include analysis or explanations after the JSON
+- Start your response DIRECTLY with the opening brace: {
+- End your response with the closing brace: }
+
+Return JSON (and NOTHING ELSE):
 {
   "detected_domains": [
     {
@@ -392,9 +399,9 @@ IMPORTANT: Order domains by estimated coverage (highest first). Return 3-5 domai
 			KeyConcepts       []string `json:"key_concepts"`
 			EstimatedCoverage float64  `json:"estimated_coverage"`
 		} `json:"detected_domains"`
-		ClarifyingQuestions      []string `json:"clarifying_questions"`
-		CatalogAdequacy          string   `json:"catalog_adequacy"`
-		CatalogAdequacyExplanation string `json:"catalog_adequacy_explanation"`
+		ClarifyingQuestions        []string `json:"clarifying_questions"`
+		CatalogAdequacy            string   `json:"catalog_adequacy"`
+		CatalogAdequacyExplanation string   `json:"catalog_adequacy_explanation"`
 	}
 
 	if err := ib.builder.extractJSON(response, &result); err != nil {
@@ -410,7 +417,7 @@ IMPORTANT: Order domains by estimated coverage (highest first). Return 3-5 domai
 			// Validate the proposed domain name
 			if err := validateProposedDomainName(domain.Name, predefinedDomains); err != nil {
 				fmt.Printf("⚠️  WARNING: Rejected proposed domain '%s': %v\n", domain.Name, err)
-				fmt.Println("    This domain will be excluded from the final selection.\n")
+				fmt.Println("    This domain will be excluded from the final selection.")
 				continue
 			}
 			proposedDomains = append(proposedDomains, domain.Name)
@@ -418,7 +425,7 @@ IMPORTANT: Order domains by estimated coverage (highest first). Return 3-5 domai
 			// Verify catalog domain exists
 			if _, exists := predefinedDomains[domain.Name]; !exists {
 				fmt.Printf("⚠️  WARNING: Domain '%s' marked as 'catalog' but not found in catalog\n", domain.Name)
-				fmt.Println("    This domain will be excluded from the final selection.\n")
+				fmt.Println("    This domain will be excluded from the final selection.")
 				continue
 			}
 			catalogDomains = append(catalogDomains, domain.Name)
@@ -598,19 +605,19 @@ Apply changes and return updated domain list as JSON array.`, strings.TrimSpace(
 		CreatedAt:               time.Now(),
 	}
 
-	fmt.Println("\n  ✅ Domains confirmed\n")
+	fmt.Println("\n  ✅ Domains confirmed")
 
 	return nil
 }
 
 // phaseDraftGeneration - LLM generates complete entity/relationship schema (automated)
 func (ib *InterviewBuilderV2) phaseDraftGeneration(ctx context.Context) error {
-	fmt.Println("\n" + strings.Repeat("-", 80))
+	fmt.Println("" + strings.Repeat("-", 80))
 	fmt.Println("  PHASE 2: DRAFT GENERATION")
 	fmt.Println(strings.Repeat("-", 80) + "\n")
 
 	fmt.Println("🤖 LLM is generating entity types and relationships...")
-	fmt.Println("   (this may take 30-60 seconds)\n")
+	fmt.Println("   (this may take 30-60 seconds)")
 
 	topEntities := ib.samples.GetTopEntities(ib.builder.config.TopEntityCount)
 
@@ -659,14 +666,14 @@ func (ib *InterviewBuilderV2) phaseDraftGeneration(ctx context.Context) error {
 	ib.schema.EntityRelationshipRules = relationshipRules
 
 	fmt.Printf("  ✓ Generated %d relationship rules\n", len(relationshipRules))
-	fmt.Println("\n  ✅ Draft schema complete\n")
+	fmt.Println("\n  ✅ Draft schema complete")
 
 	return nil
 }
 
 // phaseReviewAndConfirmation - MANDATORY user approval of schema (returns approved bool)
 func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx context.Context) (bool, error) {
-	fmt.Println("\n" + strings.Repeat("-", 80))
+	fmt.Println("" + strings.Repeat("-", 80))
 	fmt.Println("  PHASE 3: REVIEW & CONFIRMATION (MANDATORY)")
 	fmt.Println(strings.Repeat("-", 80) + "\n")
 
@@ -705,7 +712,62 @@ func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx context.Context) (b
 		fmt.Printf("    Confidence: %.2f | Patterns: %d\n", r.Confidence, len(r.ExtractionPatterns))
 	}
 
-	fmt.Println("\n" + strings.Repeat("=", 80))
+	fmt.Println("" + strings.Repeat("=", 80))
+
+	// Run quality validation
+	fmt.Println("\n🔍 SCHEMA QUALITY VALIDATION")
+	fmt.Println(strings.Repeat("-", 80))
+	qualityReport := ValidateSchemaQuality(ib.schema)
+
+	// Display summary statistics
+	fmt.Printf("  Semantic filters: %d/%d entity mappings (%.1f%%)\n",
+		qualityReport.SemanticFilterUsageCount,
+		qualityReport.TotalEntityMappings,
+		qualityReport.CalculateSemanticFilterUsagePercent())
+	fmt.Printf("  Proximity filters: %d\n", qualityReport.ProximityFilterUsageCount)
+	fmt.Printf("  Generic patterns: %d\n", qualityReport.GenericPatternCount)
+	fmt.Printf("  Quality score: %.0f/100\n", qualityReport.CalculateQualityScore())
+
+	// Display warnings by severity
+	highWarnings := qualityReport.GetWarningsBySeverity("HIGH")
+	mediumWarnings := qualityReport.GetWarningsBySeverity("MEDIUM")
+	lowWarnings := qualityReport.GetWarningsBySeverity("LOW")
+
+	if len(highWarnings) > 0 {
+		fmt.Printf("\n  ⚠️  HIGH severity warnings (%d):\n", len(highWarnings))
+		for i, w := range highWarnings {
+			if i >= 5 {
+				fmt.Printf("     ... and %d more HIGH warnings\n", len(highWarnings)-5)
+				break
+			}
+			fmt.Printf("     • %s\n", w.Message)
+			if w.Suggestion != "" {
+				fmt.Printf("       → %s\n", w.Suggestion)
+			}
+		}
+	}
+
+	if len(mediumWarnings) > 0 {
+		fmt.Printf("\n  ⚠️  MEDIUM severity warnings (%d):\n", len(mediumWarnings))
+		for i, w := range mediumWarnings {
+			if i >= 3 {
+				fmt.Printf("     ... and %d more MEDIUM warnings\n", len(mediumWarnings)-3)
+				break
+			}
+			fmt.Printf("     • %s\n", w.Message)
+		}
+	}
+
+	if len(lowWarnings) > 0 {
+		fmt.Printf("\n  ℹ️  LOW severity warnings (%d):\n", len(lowWarnings))
+	}
+
+	if len(qualityReport.Warnings) == 0 {
+		fmt.Println("  ✅ No quality warnings detected")
+	}
+
+	fmt.Println("" + strings.Repeat("=", 80))
+
 	fmt.Println("\n❓ APPROVAL REQUIRED")
 	fmt.Println("   Your options:")
 	fmt.Println("     1. 'approve' - Accept schema as-is and finalize")
@@ -776,8 +838,8 @@ Apply the requested changes and return the COMPLETE updated schema as JSON.
 Preserve all fields and structure.`, strings.TrimSpace(changes), string(schemaJSON))
 
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
-		MaxTokens:   8000,
-		Temperature: 0.2,
+		MaxTokens:    8000,
+		Temperature:  0.2,
 		SystemPrompt: "Apply user-requested changes to ontology schema while preserving structure and quality.",
 	})
 	if err != nil {
@@ -800,7 +862,7 @@ Preserve all fields and structure.`, strings.TrimSpace(changes), string(schemaJS
 
 // phaseAnalyzeExisting - Analyze existing schema against corpus
 func (ib *InterviewBuilderV2) phaseAnalyzeExisting(ctx context.Context) error {
-	fmt.Println("\n" + strings.Repeat("-", 80))
+	fmt.Println("" + strings.Repeat("-", 80))
 	fmt.Println("  PHASE 1: ANALYZE EXISTING SCHEMA")
 	fmt.Println(strings.Repeat("-", 80) + "\n")
 
@@ -901,7 +963,7 @@ Return JSON:
 
 // phaseSuggestChanges - LLM suggests specific changes, user approves/rejects each
 func (ib *InterviewBuilderV2) phaseSuggestChanges(ctx context.Context) error {
-	fmt.Println("\n" + strings.Repeat("-", 80))
+	fmt.Println("" + strings.Repeat("-", 80))
 	fmt.Println("  PHASE 2: SUGGESTED CHANGES")
 	fmt.Println(strings.Repeat("-", 80) + "\n")
 
@@ -999,7 +1061,7 @@ Return JSON array of specific changes:
 	}
 
 	if len(approvedChanges) == 0 {
-		fmt.Println("  No changes approved. Schema unchanged.\n")
+		fmt.Println("  No changes approved. Schema unchanged.")
 		return nil
 	}
 
@@ -1034,7 +1096,7 @@ Return the COMPLETE updated schema as JSON.`, string(changesJSON), string(schema
 
 	ib.schema = &updatedSchema
 
-	fmt.Println("  ✅ Changes applied successfully\n")
+	fmt.Println("  ✅ Changes applied successfully")
 
 	return nil
 }

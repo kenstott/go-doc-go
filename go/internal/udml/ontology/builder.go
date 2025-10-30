@@ -8,9 +8,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/analytics"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/embeddings"
 	"github.com/kennethstott/doculyzer-go-conversion/internal/resolver"
@@ -44,15 +46,15 @@ type OntologyBuilder struct {
 // BuilderConfig configures the ontology building process
 type BuilderConfig struct {
 	// Sampling
-	SampleSize          int     // Number of elements to sample
-	StoragePath         string  // Path to UDML storage (format-agnostic)
-	DiversityThreshold  float64 // Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse)
+	SampleSize         int     // Number of elements to sample
+	StoragePath        string  // Path to UDML storage (format-agnostic)
+	DiversityThreshold float64 // Cosine similarity threshold for diversity filtering (0.0-1.0, lower = more diverse)
 
 	// LLM
-	LLMProvider   string // "anthropic", "openai", etc.
-	LLMModel      string // Model name
-	LLMAPIKey     string // API key
-	LLMMaxTokens  int    // Max tokens for LLM responses
+	LLMProvider  string // "anthropic", "openai", etc.
+	LLMModel     string // Model name
+	LLMAPIKey    string // API key
+	LLMMaxTokens int    // Max tokens for LLM responses
 
 	// MCP Configuration (optional - enables interactive corpus exploration)
 	EnableMCP      bool   // Enable MCP server for LLM tool calling
@@ -70,6 +72,14 @@ type BuilderConfig struct {
 
 	// Catalog Configuration
 	ExternalCatalogPath string // Optional: path to external catalog directory to extend embedded catalogs
+
+	// Relationship Generation Configuration
+	MaxRelationshipsPerDomain int        // Maximum relationships per domain (prevents runaway generation, default: 1000000)
+	InterDomainGroups         [][]string // Inter-domain relationship groups (each inner array is analyzed together, default: all domains in one group)
+
+	// Debug Configuration
+	DebugMode      bool   // Enable debug mode: preserve raw LLM responses for analysis
+	DebugOutputDir string // Directory to store debug outputs (default: derived from output path)
 }
 
 // LLMClient defines the interface for LLM providers
@@ -89,13 +99,14 @@ type LLMOptions struct {
 	MaxTokens    int
 	Temperature  float64
 	SystemPrompt string
+	Prefill      string // Optional: Content to prefill in assistant's response (Anthropic-specific)
 }
 
 // MCPToolDefinition describes an MCP tool to the LLM
 type MCPToolDefinition struct {
-	Name        string                    // Tool name (e.g., "search_corpus")
-	Description string                    // What the tool does
-	Parameters  map[string]ParameterDef   // Tool parameters
+	Name        string                  // Tool name (e.g., "search_corpus")
+	Description string                  // What the tool does
+	Parameters  map[string]ParameterDef // Tool parameters
 }
 
 // ParameterDef describes a tool parameter
@@ -139,15 +150,15 @@ type MCPCapableLLMClient interface {
 
 // BuildResult contains the output of the build process
 type BuildResult struct {
-	Schema           *OntologySchema
-	DraftSchema      *OntologySchema // Initial automatic draft
-	Samples          *sampler.SamplingResult
-	TopEntities      []sampler.EntityFrequency
-	AnalysisLog      []string // Log of analysis steps
-	UserRefinements  []string // Log of user changes
-	BuildTime        time.Duration
-	LLMCallCount     int
-	TotalLLMTokens   int
+	Schema          *OntologySchema
+	DraftSchema     *OntologySchema // Initial automatic draft
+	Samples         *sampler.SamplingResult
+	TopEntities     []sampler.EntityFrequency
+	AnalysisLog     []string // Log of analysis steps
+	UserRefinements []string // Log of user changes
+	BuildTime       time.Duration
+	LLMCallCount    int
+	TotalLLMTokens  int
 }
 
 // NewOntologyBuilder creates a new ontology builder
@@ -169,13 +180,13 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 		ParquetPath:         config.StoragePath,
 		SampleSize:          config.SampleSize,
 		MaxTextLength:       2000,
-		ElementTypes:        substantiveTypes,    // Focus sampling on substantive content (excludes links, images, divs)
-		IncludeMetadata:     false,               // Skip metadata (not present in older Parquet schemas)
-		IncludeEmbedding:    true,                // Include embedding vectors for cosine similarity diversity
-		PreferEmbeddingText: true,                // Use embeddings.text when available (richer context)
-		ExcludeContainers:   true,                // Only sample leaf elements with actual content (fallback for non-embedding path)
-		MinPerStratum:       5,                   // Ensure minimum representation from each substantive type
-		DiversityThreshold:  diversityThreshold,  // Cosine similarity threshold for diversity filtering
+		ElementTypes:        substantiveTypes,   // Focus sampling on substantive content (excludes links, images, divs)
+		IncludeMetadata:     false,              // Skip metadata (not present in older Parquet schemas)
+		IncludeEmbedding:    true,               // Include embedding vectors for cosine similarity diversity
+		PreferEmbeddingText: true,               // Use embeddings.text when available (richer context)
+		ExcludeContainers:   true,               // Only sample leaf elements with actual content (fallback for non-embedding path)
+		MinPerStratum:       5,                  // Ensure minimum representation from each substantive type
+		DiversityThreshold:  diversityThreshold, // Cosine similarity threshold for diversity filtering
 	}
 
 	samp, err := sampler.NewSampler(samplerConfig)
@@ -218,6 +229,13 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 	}
 	if config.EmbeddingModel == "" {
 		config.EmbeddingModel = "all-MiniLM-L6-v2" // Default embedding model
+	}
+	if config.MaxRelationshipsPerDomain == 0 {
+		config.MaxRelationshipsPerDomain = 1000000 // Default: 1M relationships per domain (prevents runaway generation)
+	}
+	if config.DebugOutputDir == "" && config.DebugMode {
+		// Auto-derive debug output directory from storage path
+		config.DebugOutputDir = filepath.Join(filepath.Dir(config.StoragePath), "ontology_debug")
 	}
 
 	// Create MCP server if enabled
@@ -365,7 +383,7 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 		Name:                    b.config.SchemaName,
 		Version:                 b.config.SchemaVersion,
 		Description:             fmt.Sprintf("Automatically generated ontology for %s domain(s)", primaryDomain),
-		Domain:                  primaryDomain,          // Deprecated: set for backward compatibility
+		Domain:                  primaryDomain, // Deprecated: set for backward compatibility
 		Domains:                 domains,
 		KeyConcepts:             keyConcepts,
 		ElementEntityMappings:   entityMappings,
@@ -391,11 +409,11 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 
 // GlobalCatalogSchema represents the structure of a global catalog YAML file
 type GlobalCatalogSchema struct {
-	Domain       string                          `yaml:"domain"`
-	Description  string                          `yaml:"description"`
-	Subdomains   []string                        `yaml:"subdomains,omitempty"`
-	EntityTypes  []GlobalEntityTypeTemplate      `yaml:"entity_types"`
-	Relationships []GlobalRelationshipTemplate   `yaml:"relationships,omitempty"`
+	Domain        string                       `yaml:"domain"`
+	Description   string                       `yaml:"description"`
+	Subdomains    []string                     `yaml:"subdomains,omitempty"`
+	EntityTypes   []GlobalEntityTypeTemplate   `yaml:"entity_types"`
+	Relationships []GlobalRelationshipTemplate `yaml:"relationships,omitempty"`
 }
 
 // GlobalEntityTypeTemplate represents an entity type in the global catalog
@@ -488,7 +506,7 @@ func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
 	// Add global domain to domains list (prepend so it appears first)
 	globalDomain := Domain{
 		Name:        "global",
-		Description:  "Universal entity types and baseline patterns (37 types across 6 W's)",
+		Description: "Universal entity types and baseline patterns (37 types across 6 W's)",
 		Owner:       "System",
 	}
 	schema.Domains = append([]Domain{globalDomain}, schema.Domains...)
@@ -681,7 +699,6 @@ func loadPredefinedDomains() (map[string]string, error) {
 
 // loadPredefinedDomainsWithExternal loads domain catalogs from embedded files and optional external directory
 func loadPredefinedDomainsWithExternal(externalCatalogPath string) (map[string]string, error) {
-	fmt.Println("DEBUG: loadPredefinedDomainsWithExternal() called")
 	domains := make(map[string]string) // map[domain_name]description
 
 	// Load embedded catalogs (shipped with binary)
@@ -793,13 +810,10 @@ func loadPredefinedDomainsWithExternal(externalCatalogPath string) (map[string]s
 
 // identifyDomains asks LLM to identify domains and key concepts
 func (b *OntologyBuilder) identifyDomains(ctx context.Context, samples *sampler.SamplingResult) ([]Domain, []string, int, int, error) {
-	fmt.Println("DEBUG: identifyDomains() called - starting domain identification")
-
 	// Prepare sample text
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 20)
 
 	// Load predefined domains from catalog (embedded + optional external)
-	fmt.Println("DEBUG: About to call loadPredefinedDomainsWithExternal()")
 	predefinedDomains, err := loadPredefinedDomainsWithExternal(b.config.ExternalCatalogPath)
 	if err != nil {
 		return nil, nil, 0, 0, fmt.Errorf("failed to load domain catalog: %w", err)
@@ -892,8 +906,8 @@ Before returning your response, verify EVERY domain name appears EXACTLY in the 
 	// Call LLM with or without MCP tools
 	var response string
 	llmOptions := LLMOptions{
-		MaxTokens:   b.config.LLMMaxTokens,
-		Temperature: 0.3,
+		MaxTokens:    b.config.LLMMaxTokens,
+		Temperature:  0.3,
 		SystemPrompt: "You are an expert at identifying BUSINESS domains using data mesh principles. A domain is a BUSINESS CAPABILITY owned by a business team, NOT a data type, technical concern, or infrastructure component. Focus on business value and organizational ownership. Examples: Financial Management, Legal & Compliance, Healthcare Services, Sales & Marketing.",
 	}
 
@@ -918,8 +932,8 @@ Before returning your response, verify EVERY domain name appears EXACTLY in the 
 
 	// Parse response
 	var result struct {
-		Domains             []Domain `json:"domains"`
-		OverallKeyConcepts  []string `json:"overall_key_concepts"`
+		Domains            []Domain `json:"domains"`
+		OverallKeyConcepts []string `json:"overall_key_concepts"`
 	}
 
 	if err := b.extractJSON(response, &result); err != nil {
@@ -1180,7 +1194,7 @@ Extracts entities from document content using a **required instance_name regex**
 **REQUIRED FIELD:**
 - instance_name (string, REQUIRED): Regex with named capture group (?P<name>...) that extracts entity text
   - Keywords → Use regex OR: (?P<name>Microsoft|MSFT|MS|Google|GOOG)
-  - Patterns → Use regex: (?P<name>\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b) (email)
+  - Patterns → Use regex: (?P<name>\\b[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b) (email)
 
 **OPTIONAL FILTERS** (applied BEFORE instance_name for performance):
 - pattern (string): Cheap pre-filter regex - only run instance_name if this matches
@@ -1347,7 +1361,7 @@ All content_extraction rules MUST include an instance_name field with a (?P<name
 
 2. **Structured patterns** (for formatted entities):
    - Use regex with named capture
-   - Example: (?P<name>\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b) (email)
+   - Example: (?P<name>\\b[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b) (email)
    - Example: (?P<name>\\b[A-Z][a-z]+ (?:Inc|Corp|LLC|Ltd)\\.?\\b) (company)
    - Extracts: "john@example.com", "Microsoft Corp", etc.
 
@@ -1472,7 +1486,7 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "extraction_rules": [
       {
         "type": "content_extraction",
-        "instance_name": "(?P<name>\\b[A-Za-z0-9._%%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b)"
+        "instance_name": "(?P<name>\\b[A-Za-z0-9._%%%%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b)"
       }
     ]
   },
@@ -1525,8 +1539,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
 	var response string
 	var err error
 	llmOptions := LLMOptions{
-		MaxTokens:   b.config.LLMMaxTokens,
-		Temperature: 0.3,
+		MaxTokens:    b.config.LLMMaxTokens,
+		Temperature:  0.3,
 		SystemPrompt: "You are an expert at entity extraction and ontology design.",
 	}
 
@@ -1711,7 +1725,16 @@ Generate a JSON array of entity mappings. You MUST include:
 - Use ONLY element types from the closed list above
 - Include ALL 4 common types (person, organization, location, date)
 - Include 2-5 domain-specific types
-- Adapt all extraction rules to %s domain context`,
+- Adapt all extraction rules to %s domain context
+
+**ENTITY TYPE UNIQUENESS RULES:**
+- Entity type names MUST be unique across ALL domains (global + domain-specific)
+- PREFER reusing existing entity types from global domain when the concept is the same
+- ONLY create domain-specific entity types when they provide clear additional value
+- If creating a domain-specific variant, use qualified naming: {domain}_{entity_type}
+  Example: If global "procedure" exists, use "medical_procedure" NOT "procedure"
+- Set parent_type field to reference the parent entity (e.g., "parent_type": "global.procedure")
+- DO NOT duplicate common entity types (person, organization, location, date, etc.) - these should only exist in global domain`,
 		strings.Join(elementTypeList, "\n"),
 		domain.Name,
 		domain.Name, domain.Description, domain.Owner,
@@ -1725,7 +1748,7 @@ Generate a JSON array of entity mappings. You MUST include:
 		domain.Name, domain.Name)
 
 	llmOptions := LLMOptions{
-		MaxTokens:   b.config.LLMMaxTokens,
+		MaxTokens:    b.config.LLMMaxTokens,
 		Temperature:  0.2,
 		SystemPrompt: "You are an expert at discovering entity types and creating extraction rules adapted to domain-specific contexts.",
 	}
@@ -1744,7 +1767,566 @@ Generate a JSON array of entity mappings. You MUST include:
 }
 
 // defineRelationshipTypes asks LLM to define relationship types
+// ====================================================================
+// DOMAIN-SCOPED RELATIONSHIP GENERATION HELPERS
+// ====================================================================
+
+// filterEntitiesByDomain returns entity mappings belonging to a specific domain
+func filterEntitiesByDomain(allEntities []ElementEntityMappingConfig, domain string) []ElementEntityMappingConfig {
+	var filtered []ElementEntityMappingConfig
+	for _, e := range allEntities {
+		if e.Domain == domain {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+// filterEntitiesToDomains returns entity mappings belonging to a set of domains
+func filterEntitiesToDomains(allEntities []ElementEntityMappingConfig, domains []string) []ElementEntityMappingConfig {
+	domainSet := make(map[string]bool)
+	for _, d := range domains {
+		domainSet[d] = true
+	}
+
+	var filtered []ElementEntityMappingConfig
+	for _, e := range allEntities {
+		if domainSet[e.Domain] {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
+// formatEntityList formats entity mappings for LLM prompt (entity_type [domain])
+func formatEntityList(entities []ElementEntityMappingConfig) string {
+	var lines []string
+	for _, e := range entities {
+		lines = append(lines, fmt.Sprintf("  - %s [%s]", e.EntityType, e.Domain))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// formatEntityListWithDomains formats entity list showing domains prominently
+func formatEntityListWithDomains(entities []ElementEntityMappingConfig, domains []string) string {
+	domainStr := strings.Join(domains, ", ")
+	return fmt.Sprintf("Entities from domains: %s\n\n%s", domainStr, formatEntityList(entities))
+}
+
+// saveDebugResponse saves raw LLM response to debug output directory
+func (b *OntologyBuilder) saveDebugResponse(phase string, responseText string) error {
+	if !b.config.DebugMode || b.config.DebugOutputDir == "" {
+		return nil // Debug mode disabled
+	}
+
+	// Create debug directory if it doesn't exist
+	if err := os.MkdirAll(b.config.DebugOutputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create debug output directory: %w", err)
+	}
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("20060102_150405")
+	filename := filepath.Join(b.config.DebugOutputDir, fmt.Sprintf("%s_%s.txt", phase, timestamp))
+
+	// Write response to file
+	if err := os.WriteFile(filename, []byte(responseText), 0644); err != nil {
+		return fmt.Errorf("failed to write debug response: %w", err)
+	}
+
+	fmt.Printf("  [DEBUG] Saved raw LLM response to: %s\n", filename)
+	return nil
+}
+
+// ====================================================================
+// RELATIONSHIP GENERATION
+// ====================================================================
+
+// generateIntraDomainRelationships generates relationships for entities within a single domain
+func (b *OntologyBuilder) generateIntraDomainRelationships(
+	ctx context.Context,
+	domain string,
+	domainEntities []ElementEntityMappingConfig,
+	samples *sampler.SamplingResult,
+) ([]EntityRelationshipRule, error) {
+
+	if len(domainEntities) == 0 {
+		return nil, fmt.Errorf("no entities provided for domain %s", domain)
+	}
+
+	// Filter samples to only include domain-relevant content
+	filteredSamples := b.filterSamplesForDomain(samples.Samples, domain, domainEntities)
+	sampleTexts := b.prepareSampleTexts(filteredSamples, 10)
+	entityList := formatEntityList(domainEntities)
+
+	prompt := fmt.Sprintf(`Given these entity types from the '%s' domain:
+%s
+
+Analyze these sample texts to discover relationship patterns within this domain:
+
+%s
+
+Identify relationship types between these entities and provide extraction rules.
+
+**REQUIREMENTS:**
+1. Only define relationships where BOTH source and target are from the entity list above
+2. Focus on domain-specific relationship semantics (not just generic "related_to")
+3. For each relationship, provide:
+   - Descriptive name (e.g., "author_wrote_publication", "section_contains_subsection")
+   - Source and target entity types
+   - Relationship type category (part_of, attribute_of, related_to, etc.)
+   - Confidence score (0.0-1.0)
+   - At least 2 extraction patterns with concrete examples from the samples
+
+**RELATIONSHIP TYPE CATEGORIES:**
+- part_of: Structural containment (document contains section)
+- attribute_of: Descriptive property (title describes document)
+- related_to: General association (person mentioned in document)
+- authored_by: Authorship (document authored by person)
+- cited_by: Citation (publication cited by publication)
+- member_of: Membership (person member of organization)
+- located_in: Location (facility located in location)
+- occurred_at: Temporal (event occurred at time)
+
+**EXTRACTION PATTERN TYPES:**
+1. text_template: Text pattern with entity placeholders
+   - template: "{source_entity} pattern text {target_entity}"
+   - examples: List of real examples from corpus
+
+2. proximity: Entities appearing near each other
+   - max_distance: Maximum tokens between entities
+   - context_keywords: Keywords indicating relationship
+   - examples: Real examples from corpus
+
+3. structural: Hierarchy-based relationship
+   - hierarchy_type: "parent_child", "sibling", "ancestor_descendant"
+   - depth_constraint: Maximum depth difference
+   - examples: Real structural patterns from corpus
+
+**OUTPUT FORMAT:**
+Return a JSON array of relationship rules:
+
+[
+  {
+    "name": "descriptive_relationship_name",
+    "source_entity_type": "entity_type_1",
+    "target_entity_type": "entity_type_2",
+    "relationship_type": "part_of|attribute_of|related_to|authored_by|cited_by|member_of|located_in|occurred_at",
+    "description": "Clear description of this relationship",
+    "confidence": 0.85,
+    "extraction_patterns": [
+      {
+        "type": "text_template",
+        "template": "{source} text pattern {target}",
+        "examples": ["Example 1 from corpus", "Example 2 from corpus"]
+      },
+      {
+        "type": "proximity",
+        "max_distance": 50,
+        "context_keywords": ["keyword1", "keyword2"],
+        "examples": ["Example from corpus"]
+      }
+    ]
+  }
+]
+
+Focus on the most important and clearly observable relationships in the corpus samples.
+Aim for 3-8 high-confidence relationships per domain.`, domain, entityList, sampleTexts)
+
+	// Call LLM with or without MCP tools
+	var response string
+	var err error
+	llmOptions := LLMOptions{
+		MaxTokens:    b.config.LLMMaxTokens,
+		Temperature:  0.3,
+		SystemPrompt: "You are an expert at relationship extraction and knowledge graph design. Focus on practical, observable relationships with clear extraction patterns.",
+		Prefill:      "[", // Force JSON array output without preamble
+	}
+
+	if b.config.EnableMCP && b.mcpServer != nil {
+		mcpClient, ok := b.llmClient.(MCPCapableLLMClient)
+		if !ok {
+			response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+		} else {
+			tools := b.getMCPToolDefinitions()
+			response, err = mcpClient.CompleteWithTools(ctx, prompt, tools, llmOptions)
+		}
+	} else {
+		response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("LLM call failed for domain %s: %w", domain, err)
+	}
+
+	// Save debug response if debug mode enabled
+	if b.config.DebugMode {
+		if err := b.saveDebugResponse(fmt.Sprintf("intra_domain_relationships_%s", domain), response); err != nil {
+			// Log but don't fail on debug save errors
+			fmt.Printf("Warning: Failed to save debug response for domain %s: %v\n", domain, err)
+		}
+	}
+
+	// Parse relationship rules from JSON response
+	var rules []EntityRelationshipRule
+	if err := b.extractJSON(response, &rules); err != nil {
+		return nil, fmt.Errorf("failed to parse relationships for domain %s: %w", domain, err)
+	}
+
+	// Validate that all rules reference entities from this domain
+	for i, rule := range rules {
+		// Check that source and target entity types exist in domainEntities
+		sourceFound := false
+		targetFound := false
+		for _, entity := range domainEntities {
+			if entity.EntityType == rule.SourceEntityType {
+				sourceFound = true
+			}
+			if entity.EntityType == rule.TargetEntityType {
+				targetFound = true
+			}
+		}
+		if !sourceFound || !targetFound {
+			fmt.Printf("Warning: Relationship %d (%s) references entities outside domain %s - skipping\n",
+				i, rule.Name, domain)
+			continue
+		}
+	}
+
+	return rules, nil
+}
+
+// generateInterDomainRelationshipsForGroup generates relationships between entities from different domains within a group
+func (b *OntologyBuilder) generateInterDomainRelationshipsForGroup(
+	ctx context.Context,
+	domains []string,
+	allEntityMappings []ElementEntityMappingConfig,
+	samples *sampler.SamplingResult,
+) ([]EntityRelationshipRule, error) {
+
+	if len(domains) < 2 {
+		return nil, fmt.Errorf("inter-domain relationships require at least 2 domains, got %d", len(domains))
+	}
+
+	// Filter entities to only those in the specified domains
+	groupEntities := filterEntitiesToDomains(allEntityMappings, domains)
+	if len(groupEntities) == 0 {
+		return nil, fmt.Errorf("no entities found for domains: %v", domains)
+	}
+
+	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
+	entityList := formatEntityListWithDomains(groupEntities, domains)
+
+	prompt := fmt.Sprintf(`Given these entity types from multiple related domains (%s):
+%s
+
+Analyze these sample texts to discover relationship patterns that CROSS domain boundaries:
+
+%s
+
+Identify relationship types where source and target are from DIFFERENT domains.
+
+**REQUIREMENTS:**
+1. Only define relationships where source and target are from DIFFERENT domains
+2. Focus on meaningful cross-domain relationships (e.g., medical_procedure performed_at healthcare_facility)
+3. Avoid redundant or generic relationships
+4. For each relationship, provide:
+   - Descriptive name (e.g., "publication_cites_research_data", "person_affiliated_with_organization")
+   - Source entity type and its domain
+   - Target entity type and its domain
+   - Relationship type category (related_to, authored_by, cited_by, member_of, located_in, occurred_at, etc.)
+   - Confidence score (0.0-1.0)
+   - At least 2 extraction patterns with concrete examples from the samples
+
+**RELATIONSHIP TYPE CATEGORIES:**
+- related_to: General cross-domain association
+- authored_by: Authorship across domains
+- cited_by: Citation across domains
+- member_of: Membership across domains
+- located_in: Location across domains
+- occurred_at: Temporal relationship across domains
+- performed_at: Activity at location/organization
+- uses: Resource usage across domains
+- requires: Dependency across domains
+
+**EXTRACTION PATTERN TYPES:**
+1. text_template: Text pattern with entity placeholders
+   - template: "{source_entity} pattern text {target_entity}"
+   - examples: List of real examples from corpus
+
+2. proximity: Entities appearing near each other
+   - max_distance: Maximum tokens between entities
+   - context_keywords: Keywords indicating relationship
+   - examples: Real examples from corpus
+
+**OUTPUT FORMAT:**
+Return a JSON array of relationship rules:
+
+[
+  {
+    "name": "cross_domain_relationship_name",
+    "source_entity_type": "entity_from_domain_1",
+    "target_entity_type": "entity_from_domain_2",
+    "relationship_type": "related_to|authored_by|cited_by|member_of|located_in|occurred_at|performed_at|uses|requires",
+    "description": "Clear description of this cross-domain relationship",
+    "confidence": 0.80,
+    "extraction_patterns": [
+      {
+        "type": "text_template",
+        "template": "{source} text pattern {target}",
+        "examples": ["Example 1 from corpus", "Example 2 from corpus"]
+      },
+      {
+        "type": "proximity",
+        "max_distance": 100,
+        "context_keywords": ["keyword1", "keyword2"],
+        "examples": ["Example from corpus"]
+      }
+    ]
+  }
+]
+
+Focus on the most important cross-domain relationships that connect these domains.
+Aim for 2-5 high-confidence relationships per domain pair.`, strings.Join(domains, ", "), entityList, sampleTexts)
+
+	// Call LLM with or without MCP tools
+	var response string
+	var err error
+	llmOptions := LLMOptions{
+		MaxTokens:    b.config.LLMMaxTokens,
+		Temperature:  0.3,
+		SystemPrompt: "You are an expert at relationship extraction and knowledge graph design. Focus on meaningful cross-domain relationships with clear extraction patterns.",
+		Prefill:      "[", // Force JSON array output without preamble
+	}
+
+	if b.config.EnableMCP && b.mcpServer != nil {
+		mcpClient, ok := b.llmClient.(MCPCapableLLMClient)
+		if !ok {
+			response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+		} else {
+			tools := b.getMCPToolDefinitions()
+			response, err = mcpClient.CompleteWithTools(ctx, prompt, tools, llmOptions)
+		}
+	} else {
+		response, err = b.llmClient.Complete(ctx, prompt, llmOptions)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("LLM call failed for inter-domain group %v: %w", domains, err)
+	}
+
+	// Save debug response if debug mode enabled
+	if b.config.DebugMode {
+		groupName := strings.Join(domains, "_")
+		if err := b.saveDebugResponse(fmt.Sprintf("inter_domain_relationships_%s", groupName), response); err != nil {
+			// Log but don't fail on debug save errors
+			fmt.Printf("Warning: Failed to save debug response for domain group %v: %v\n", domains, err)
+		}
+	}
+
+	// Parse relationship rules from JSON response with retry-then-salvage logic
+	var rules []EntityRelationshipRule
+	err = b.extractJSONWithRetry(
+		ctx,
+		response,
+		&rules,
+		func(ctx context.Context) (string, error) {
+			// Retry the LLM call
+			var retryResp string
+			var retryErr error
+			if b.config.EnableMCP && b.mcpServer != nil {
+				mcpClient, ok := b.llmClient.(MCPCapableLLMClient)
+				if !ok {
+					retryResp, retryErr = b.llmClient.Complete(ctx, prompt, llmOptions)
+				} else {
+					tools := b.getMCPToolDefinitions()
+					retryResp, retryErr = mcpClient.CompleteWithTools(ctx, prompt, tools, llmOptions)
+				}
+			} else {
+				retryResp, retryErr = b.llmClient.Complete(ctx, prompt, llmOptions)
+			}
+
+			// Save debug response for retry if debug mode enabled
+			if retryErr == nil && b.config.DebugMode {
+				groupName := strings.Join(domains, "_")
+				if saveErr := b.saveDebugResponse(fmt.Sprintf("inter_domain_relationships_%s_retry", groupName), retryResp); saveErr != nil {
+					fmt.Printf("Warning: Failed to save retry debug response for domain group %v: %v\n", domains, saveErr)
+				}
+			}
+
+			return retryResp, retryErr
+		},
+		fmt.Sprintf("inter-domain relationships for group %v", domains),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse inter-domain relationships for group %v: %w", domains, err)
+	}
+
+	// Validate that all rules cross domain boundaries
+	for i, rule := range rules {
+		sourceDomain := ""
+		targetDomain := ""
+
+		// Find domains for source and target entities
+		for _, entity := range groupEntities {
+			if entity.EntityType == rule.SourceEntityType {
+				sourceDomain = entity.Domain
+			}
+			if entity.EntityType == rule.TargetEntityType {
+				targetDomain = entity.Domain
+			}
+		}
+
+		// Check that source and target are from different domains
+		if sourceDomain == "" || targetDomain == "" {
+			fmt.Printf("Warning: Inter-domain relationship %d (%s) references unknown entities - skipping\n",
+				i, rule.Name)
+			continue
+		}
+		if sourceDomain == targetDomain {
+			fmt.Printf("Warning: Inter-domain relationship %d (%s) has source and target in same domain (%s) - skipping\n",
+				i, rule.Name, sourceDomain)
+			continue
+		}
+	}
+
+	return rules, nil
+}
+
+// generateInterDomainRelationshipGroups orchestrates inter-domain relationship generation for multiple domain groups
+func (b *OntologyBuilder) generateInterDomainRelationshipGroups(
+	ctx context.Context,
+	domainGroups [][]string,
+	allEntityMappings []ElementEntityMappingConfig,
+	samples *sampler.SamplingResult,
+) ([]EntityRelationshipRule, int, error) {
+
+	if len(domainGroups) == 0 {
+		// No inter-domain groups specified, return empty result
+		return []EntityRelationshipRule{}, 0, nil
+	}
+
+	var allRules []EntityRelationshipRule
+	llmCallCount := 0
+
+	fmt.Printf("\n🔹 Generating inter-domain relationships...\n")
+
+	for i, group := range domainGroups {
+		if len(group) < 2 {
+			fmt.Printf("  ⚠️  Group %d: Skipping (needs at least 2 domains, got %d)\n", i+1, len(group))
+			continue
+		}
+
+		fmt.Printf("  🔗 Group %d: Analyzing relationships between domains: %v\n", i+1, group)
+
+		rules, err := b.generateInterDomainRelationshipsForGroup(ctx, group, allEntityMappings, samples)
+		if err != nil {
+			return nil, llmCallCount, fmt.Errorf("failed to generate inter-domain relationships for group %v: %w", group, err)
+		}
+
+		llmCallCount++
+		allRules = append(allRules, rules...)
+		fmt.Printf("  ✓ Generated %d inter-domain relationships for group %d\n", len(rules), i+1)
+	}
+
+	fmt.Printf("\n  ✅ Total inter-domain relationships generated: %d (from %d LLM calls)\n", len(allRules), llmCallCount)
+
+	return allRules, llmCallCount, nil
+}
+
 func (b *OntologyBuilder) defineRelationshipTypes(ctx context.Context, samples *sampler.SamplingResult, entityMappings []ElementEntityMappingConfig) ([]EntityRelationshipRule, int, int, error) {
+	// ====================================================================
+	// DOMAIN-SCOPED RELATIONSHIP GENERATION
+	// ====================================================================
+	// This function now uses a domain-scoped approach to prevent JSON truncation:
+	// 1. Generate intra-domain relationships (per domain)
+	// 2. Generate inter-domain relationships (per domain group)
+	// This breaks the monolithic LLM call into smaller, manageable calls
+
+	fmt.Printf("\n🔹 Generating relationship types...\n")
+
+	// Group entities by domain
+	domainEntities := make(map[string][]ElementEntityMappingConfig)
+	for _, mapping := range entityMappings {
+		domain := mapping.Domain
+		if domain == "" {
+			domain = "default"
+		}
+		domainEntities[domain] = append(domainEntities[domain], mapping)
+	}
+
+	domains := make([]string, 0, len(domainEntities))
+	for domain := range domainEntities {
+		domains = append(domains, domain)
+	}
+
+	fmt.Printf("  📊 %d domains with entities: %v\n", len(domains), domains)
+
+	var allRules []EntityRelationshipRule
+	totalLLMCalls := 0
+	totalResponseLength := 0
+
+	// ====================================================================
+	// PHASE 1: INTRA-DOMAIN RELATIONSHIPS
+	// ====================================================================
+	fmt.Printf("\n🔹 Generating intra-domain relationships...\n")
+
+	for _, domain := range domains {
+		entities := domainEntities[domain]
+		if len(entities) == 0 {
+			continue
+		}
+
+		fmt.Printf("  🏗️  Domain '%s': Analyzing relationships among %d entity types\n", domain, len(entities))
+
+		rules, err := b.generateIntraDomainRelationships(ctx, domain, entities, samples)
+		if err != nil {
+			return nil, totalLLMCalls, totalResponseLength, fmt.Errorf("failed to generate intra-domain relationships for domain %s: %w", domain, err)
+		}
+
+		totalLLMCalls++
+		allRules = append(allRules, rules...)
+		fmt.Printf("  ✓ Generated %d intra-domain relationships for '%s'\n", len(rules), domain)
+	}
+
+	fmt.Printf("\n  ✅ Total intra-domain relationships: %d (from %d LLM calls)\n", len(allRules), totalLLMCalls)
+
+	// ====================================================================
+	// PHASE 2: INTER-DOMAIN RELATIONSHIPS
+	// ====================================================================
+
+	// Get inter-domain groups from config (default: all domains together if not specified)
+	domainGroups := b.config.InterDomainGroups
+	if len(domainGroups) == 0 && len(domains) > 1 {
+		// Default: create one group with all domains
+		domainGroups = [][]string{domains}
+	}
+
+	if len(domainGroups) > 0 && len(domains) > 1 {
+		interDomainRules, interDomainCalls, err := b.generateInterDomainRelationshipGroups(ctx, domainGroups, entityMappings, samples)
+		if err != nil {
+			return nil, totalLLMCalls, totalResponseLength, fmt.Errorf("failed to generate inter-domain relationships: %w", err)
+		}
+
+		totalLLMCalls += interDomainCalls
+		allRules = append(allRules, interDomainRules...)
+	} else if len(domains) == 1 {
+		fmt.Printf("\n  ℹ️  Skipping inter-domain relationships (only 1 domain)\n")
+	}
+
+	// ====================================================================
+	// SUMMARY
+	// ====================================================================
+	fmt.Printf("\n  ✅ Total relationship rules generated: %d\n", len(allRules))
+	fmt.Printf("  📊 Total LLM calls: %d\n", totalLLMCalls)
+
+	// Note: totalResponseLength is not accurately tracked in domain-scoped approach
+	// since we make multiple smaller calls. Return 0 as it's not critical for the fix.
+	return allRules, totalLLMCalls, 0, nil
+}
+
+// DEPRECATED IMPLEMENTATION (kept for reference, not used)
+// The old monolithic implementation that caused JSON truncation:
+func (b *OntologyBuilder) defineRelationshipTypes_DEPRECATED_MONOLITHIC(ctx context.Context, samples *sampler.SamplingResult, entityMappings []ElementEntityMappingConfig) ([]EntityRelationshipRule, int, int, error) {
 	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
 
 	// Format entity types
@@ -1812,6 +2394,10 @@ For each relationship type, discover MULTIPLE extraction patterns (aim for 3-6 p
 3. Use COMPREHENSIVE signal word/keyword lists (aim for 10-30 words per proximity/cooccurrence pattern)
 4. Consider synonyms, variations, and domain-specific terminology in all patterns
 5. Use entity constraints (source_constraints/target_constraints) when relationships only apply to specific entity subtypes
+6. MUST use source_constraints/target_constraints when relationship applies to entity subtypes (e.g., only academics→universities, not all people→organizations)
+7. Regex patterns MUST be specific enough to avoid false positives - use context-aware patterns, not just capitalization
+8. When multiple entity types could match same pattern (e.g., person vs organization), use proximity_filter or semantic_filter to disambiguate
+9. Assign confidence based on pattern specificity: highly specific patterns (0.85-0.95), context-dependent (0.75-0.85), generic patterns (0.60-0.75)
 
 ## MULTIPLE RULES FOR SAME RELATIONSHIP
 
@@ -1822,12 +2408,35 @@ You SHOULD create MULTIPLE rules for the same relationship type with different c
 
 When multiple rules detect same relationship → HIGHEST confidence wins.
 
-## ENTITY CONSTRAINTS (USE FREQUENTLY)
+## ENTITY CONSTRAINTS (MUST USE WHEN APPLICABLE)
 
-You should use entity constraints to create specialized relationship rules that only apply to specific entity subtypes:
+**IMPORTANT**: You MUST use entity constraints to create specialized relationship rules when relationships only apply to specific entity subtypes.
 
 - source_constraints (object, optional): Filters that source entities must satisfy
 - target_constraints (object, optional): Filters that target entities must satisfy
+
+**When to Use Constraints (vs. Creating Entity Subtypes)**:
+
+Constraints are PREFERRED when:
+1. The entity subtype is defined by CONTEXT or RELATIONSHIPS, not intrinsic properties
+   - Example: A "person" becomes an "academic" based on affiliation with universities
+   - Creating "academic" entity type would require duplicate extraction rules for all person patterns
+2. The subtype distinction only matters for SPECIFIC relationships
+   - Example: Only link Fortune 500 CEOs to board memberships, but person→organization still applies broadly
+3. Multiple overlapping subtypes exist (a person can be both researcher AND patient)
+   - Constraints allow same entity to participate in different relationship patterns
+4. The subtype filter is SIMPLE (a few keywords or a regex pattern)
+   - Complex subtypes with many extraction rules should be separate entity types
+
+Create ENTITY SUBTYPES when:
+1. The subtype has intrinsic, easily identifiable properties in text
+   - Example: "anatomical_structure" vs "organ" vs "cell" - each has distinct linguistic markers
+2. The subtype requires significantly different extraction rules
+   - Example: "researcher" vs "politician" - different name patterns, context keywords
+3. The subtype matters for MOST or ALL relationships the entity participates in
+   - Example: "academic_publication" vs "news_article" - different relationship patterns throughout
+4. The domain model benefits from explicit subtype hierarchy
+   - Example: organization → company → public_company (improves schema clarity)
 
 **Constraint Fields** (all optional, applied in order):
 1. pattern (string): Pre-filter regex - entity name must match (e.g., "\\b(Dr|Professor)\\b.*" for academics)
@@ -1835,9 +2444,15 @@ You should use entity constraints to create specialized relationship rules that 
    - required_keywords: Keywords that must appear in entity's context
    - window_size: Context window in tokens
 3. instance_name (string): Named capture regex - entity name must match
-4. semantic_filter (object): Embedding similarity on entity context
+4. **semantic_filter (object): RECOMMENDED for disambiguation** - Embedding similarity on entity context
    - query: Semantic query describing the entity subtype
    - similarity_threshold: Minimum similarity (0.0-1.0)
+   - **Example use cases for disambiguation:**
+     * Disambiguate "Washington" (person) vs "Washington" (location): query="person name, historical figure" vs query="city, geographic location"
+     * Disambiguate "Apple" (company) vs "apple" (fruit): query="technology company, corporation" vs query="food, fruit"
+     * Distinguish entity types with similar surface forms: person vs organization, product vs concept
+
+**IMPORTANT**: When regex patterns are generic (match capitalized text), you MUST add semantic_filter or proximity_filter to reduce false positives.
 
 **Example Use Cases**:
 - Only link people with academic titles (Dr, Professor) to universities
@@ -1867,6 +2482,16 @@ You should use entity constraints to create specialized relationship rules that 
   },
   "extraction_patterns": [...]
 }
+
+## PATTERN SPECIFICITY & DISAMBIGUATION
+
+**Avoid Generic Patterns**: Patterns like [A-Z][a-z]+(?:\s+[A-Z][a-z]+)* match ANY capitalized text (names, titles, random words).
+
+**Confidence Assignment Guidelines**:
+- **0.90-0.95**: Highly specific patterns with structural markers (DOI: 10.xxxx/yyyy, binomial nomenclature with italics)
+- **0.80-0.90**: Context-dependent patterns with semantic_filter or proximity_filter (similarity_threshold >= 0.75)
+- **0.70-0.80**: Moderate specificity with keyword co-occurrence (5+ required_keywords)
+- **0.60-0.70**: Generic patterns with weak context (use as fallback only, not primary extraction)
 
 Return JSON array (NO confidence in extraction_patterns, confidence at RULE level):
 [
@@ -1909,6 +2534,12 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
     "relationship_type": "part_of",
     "description": "Person in leadership role detected via proximity (medium confidence)",
     "confidence": 0.80,
+    "source_constraints": {
+      "proximity_filter": {
+        "required_keywords": ["executive", "leader", "founder", "officer", "director"],
+        "window_size": 40
+      }
+    },
     "extraction_patterns": [
       {
         "type": "proximity",
@@ -2004,8 +2635,8 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
 	var response string
 	var err error
 	llmOptions := LLMOptions{
-		MaxTokens:   b.config.LLMMaxTokens,
-		Temperature: 0.3,
+		MaxTokens:    b.config.LLMMaxTokens,
+		Temperature:  0.3,
 		SystemPrompt: "You are an expert at relationship extraction and pattern discovery. Analyze text samples to find patterns that signal relationships between entities.",
 	}
 
@@ -2038,6 +2669,83 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
 
 // Helper functions
 
+// filterSamplesForDomain filters corpus samples to only include those relevant to the target domain
+// Uses keyword matching against entity types and descriptions to score sample relevance
+func (b *OntologyBuilder) filterSamplesForDomain(
+	samples []sampler.Sample,
+	domain string,
+	domainEntities []ElementEntityMappingConfig,
+) []sampler.Sample {
+	if len(samples) == 0 || len(domainEntities) == 0 {
+		return samples
+	}
+
+	// Extract keywords from domain entities (entity types + description words)
+	keywords := make(map[string]bool)
+	for _, entity := range domainEntities {
+		// Add entity type as keyword (normalized)
+		entityType := strings.ToLower(strings.TrimSpace(entity.EntityType))
+		keywords[entityType] = true
+
+		// Extract words from description (split on whitespace and common separators)
+		descWords := strings.FieldsFunc(strings.ToLower(entity.Description), func(r rune) bool {
+			return r == ' ' || r == ',' || r == '.' || r == ';' || r == ':' || r == '(' || r == ')'
+		})
+		for _, word := range descWords {
+			// Filter out very short/common words
+			if len(word) >= 4 && word != "this" && word != "that" && word != "with" && word != "from" {
+				keywords[word] = true
+			}
+		}
+	}
+
+	// Score each sample by keyword match count
+	type scoredSample struct {
+		sample sampler.Sample
+		score  int
+	}
+	scoredSamples := make([]scoredSample, 0, len(samples))
+
+	for _, sample := range samples {
+		// Check content for keyword matches
+		contentLower := strings.ToLower(sample.Content)
+		score := 0
+		for keyword := range keywords {
+			if strings.Contains(contentLower, keyword) {
+				score++
+			}
+		}
+
+		// Only include samples with at least one keyword match
+		if score > 0 {
+			scoredSamples = append(scoredSamples, scoredSample{sample: sample, score: score})
+		}
+	}
+
+	// Sort by score (descending) - highest relevance first
+	sort.Slice(scoredSamples, func(i, j int) bool {
+		return scoredSamples[i].score > scoredSamples[j].score
+	})
+
+	// Extract filtered samples
+	filtered := make([]sampler.Sample, len(scoredSamples))
+	for i, ss := range scoredSamples {
+		filtered[i] = ss.sample
+	}
+
+	// Log filtering results
+	fmt.Printf("    [Domain Filter] %s: %d/%d samples matched keywords (%.1f%%)\n",
+		domain, len(filtered), len(samples), float64(len(filtered))/float64(len(samples))*100)
+
+	// If very few samples matched, warn but return what we have
+	if len(filtered) < 3 && len(samples) >= 3 {
+		fmt.Printf("    ⚠️  Warning: Only %d domain-relevant samples found for '%s' (may affect relationship quality)\n",
+			len(filtered), domain)
+	}
+
+	return filtered
+}
+
 func (b *OntologyBuilder) prepareSampleTexts(samples []sampler.Sample, maxSamples int) string {
 	var texts []string
 	for i, sample := range samples {
@@ -2050,9 +2758,8 @@ func (b *OntologyBuilder) prepareSampleTexts(samples []sampler.Sample, maxSample
 }
 
 func (b *OntologyBuilder) extractJSON(response string, target interface{}) error {
-	// Find JSON in response (handle markdown code blocks and preamble text)
+	// Find JSON in response (handle markdown code blocks, preamble text, and trailing commentary)
 	jsonStr := response
-	fmt.Printf("DEBUG extractJSON: Input response length: %d, starts with: %q\n", len(response), response[:min(50, len(response))])
 
 	// Strip ALL code block markers (handles continuation responses)
 	// When responses are continued, we get: ```json\n[...json (no closing marker)
@@ -2062,7 +2769,6 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 	if strings.Contains(response, "```") {
 		jsonStr = strings.ReplaceAll(response, "```json", "")
 		jsonStr = strings.ReplaceAll(jsonStr, "```", "")
-		fmt.Printf("DEBUG: Stripped all code block markers, length=%d\n", len(jsonStr))
 
 		// After stripping markers, there may still be preamble text before JSON
 		// Find the actual JSON start ({ or [)
@@ -2075,7 +2781,14 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 		}
 		if jsonStart > 0 {
 			jsonStr = jsonStr[jsonStart:]
-			fmt.Printf("DEBUG: Found JSON start at position %d, trimmed preamble\n", jsonStart)
+		}
+
+		// Apply brace counting to find exact JSON end (excludes trailing commentary)
+		jsonStr = b.extractCompleteJSON(jsonStr)
+
+		// Check if JSON is incomplete
+		if jsonStr == "" {
+			return fmt.Errorf("incomplete JSON detected: unmatched braces or unterminated strings")
 		}
 	} else {
 		// No code fence - try to find valid JSON by searching for { or [ and attempting to parse
@@ -2152,18 +2865,218 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 
 	jsonStr = strings.TrimSpace(jsonStr)
 
-	// Debug: show first 200 chars of extracted JSON
-	preview := jsonStr
-	if len(preview) > 200 {
-		preview = preview[:200] + "..."
-	}
-	fmt.Printf("DEBUG extractJSON: extracted %d chars, first 200:\n%s\n", len(jsonStr), preview)
-
 	// Sanitize JSON to fix common LLM output issues
 	jsonStr = b.sanitizeJSON(jsonStr)
 
 	if err := json.Unmarshal([]byte(jsonStr), target); err != nil {
+		// Write the failing JSON to a debug file for inspection
+		debugFile := "./tests/test_output/ontology_results/debug_failing_json.txt"
+		_ = os.WriteFile(debugFile, []byte(jsonStr), 0644)
 		return fmt.Errorf("failed to parse LLM response as JSON: %w\nExtracted JSON (first 500 chars): %s", err, jsonStr[:min(500, len(jsonStr))])
+	}
+
+	return nil
+}
+
+// extractCompleteJSON finds the complete JSON object/array using brace counting.
+// Returns substring from start to (and including) the final closing bracket.
+// This prevents parsing trailing commentary that LLMs sometimes add after JSON.
+// Returns empty string if JSON is incomplete (unmatched braces or unterminated strings).
+func (b *OntologyBuilder) extractCompleteJSON(jsonStr string) string {
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i, ch := range jsonStr {
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if ch == '\\' {
+			escaped = true
+			continue
+		}
+
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+
+		if !inString {
+			if ch == '{' || ch == '[' {
+				depth++
+			} else if ch == '}' || ch == ']' {
+				depth--
+				if depth == 0 {
+					return jsonStr[:i+1] // Return up to and including closing bracket
+				}
+			}
+		}
+	}
+
+	// If we reach here, JSON is incomplete:
+	// - depth != 0 means unmatched braces
+	// - inString == true means unterminated string
+	// Return empty string to signal incompleteness
+	return ""
+}
+
+// extractPartialJSON salvages valid elements from incomplete JSON arrays/objects.
+// Returns the partial JSON with artificial closing brackets and the count of complete elements found.
+// This allows us to recover partial results from LLM responses that ended mid-generation.
+func (b *OntologyBuilder) extractPartialJSON(jsonStr string) (string, int) {
+	depth := 0
+	inString := false
+	escaped := false
+	lastValidEnd := -1
+	elementCount := 0
+
+	// Determine if we're starting with array or object
+	trimmed := strings.TrimSpace(jsonStr)
+	if len(trimmed) == 0 {
+		return "", 0
+	}
+
+	isArray := trimmed[0] == '['
+	isObject := trimmed[0] == '{'
+
+	if !isArray && !isObject {
+		return "", 0
+	}
+
+	for i, ch := range jsonStr {
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if ch == '\\' {
+			escaped = true
+			continue
+		}
+
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+
+		if !inString {
+			if ch == '{' || ch == '[' {
+				depth++
+			} else if ch == '}' || ch == ']' {
+				depth--
+				if depth == 0 {
+					// Complete JSON found
+					return jsonStr[:i+1], -1 // Return -1 to signal completeness
+				}
+			} else if ch == ',' && depth == 1 {
+				// Just completed an element at top level
+				lastValidEnd = i
+				elementCount++
+			}
+		}
+	}
+
+	// If we reach here, JSON is incomplete
+	if lastValidEnd > 0 {
+		// We have at least one complete element, artificially close the structure
+		partial := jsonStr[:lastValidEnd]
+		if isArray {
+			partial += "]"
+		} else {
+			partial += "}"
+		}
+		return partial, elementCount
+	}
+
+	return "", 0
+}
+
+// extractJSONWithRetry attempts to parse JSON, retries LLM call on incomplete JSON, and salvages partial results if both fail.
+// This implements the retry-then-salvage strategy:
+// 1. Attempt 1: Try parsing initial response
+// 2. If incomplete: Retry LLM call
+// 3. If both incomplete: Use extractPartialJSON to salvage best attempt
+func (b *OntologyBuilder) extractJSONWithRetry(
+	ctx context.Context,
+	response string,
+	target interface{},
+	retryFunc func(context.Context) (string, error),
+	operationType string,
+) error {
+	// Try parsing first response
+	err := b.extractJSON(response, target)
+	if err == nil {
+		return nil // Success on first attempt
+	}
+
+	// Check if error is due to incomplete JSON
+	if !strings.Contains(err.Error(), "incomplete JSON") {
+		return err // Different error type, don't retry
+	}
+
+	fmt.Printf("⚠️  Incomplete JSON detected for %s, retrying LLM call...\n", operationType)
+
+	// Retry the LLM call
+	response2, retryErr := retryFunc(ctx)
+	if retryErr != nil {
+		// Retry call failed, attempt to salvage first response
+		fmt.Printf("⚠️  Retry LLM call failed for %s: %v\n", operationType, retryErr)
+		fmt.Printf("Attempting to salvage partial JSON from first response...\n")
+		return b.salvagePartialJSON(response, target, operationType)
+	}
+
+	// Try parsing retry response
+	err = b.extractJSON(response2, target)
+	if err == nil {
+		fmt.Printf("✅ Retry succeeded for %s\n", operationType)
+		return nil // Retry succeeded
+	}
+
+	// Check if second attempt also incomplete
+	if !strings.Contains(err.Error(), "incomplete JSON") {
+		return err // Different error on retry, return it
+	}
+
+	// Both attempts produced incomplete JSON - compare and use best
+	fmt.Printf("⚠️  Both attempts produced incomplete JSON for %s\n", operationType)
+	fmt.Printf("Comparing partial results to use best attempt...\n")
+
+	_, count1 := b.extractPartialJSON(response)
+	_, count2 := b.extractPartialJSON(response2)
+
+	best := response
+	bestCount := count1
+	attemptNum := 1
+
+	if count2 > count1 {
+		best = response2
+		bestCount = count2
+		attemptNum = 2
+	}
+
+	if bestCount == 0 {
+		return fmt.Errorf("unable to salvage any complete elements from incomplete JSON for %s", operationType)
+	}
+
+	fmt.Printf("Using partial JSON from attempt %d with %d complete elements for %s\n", attemptNum, bestCount, operationType)
+
+	return b.salvagePartialJSON(best, target, operationType)
+}
+
+// salvagePartialJSON extracts and parses the partial valid JSON from an incomplete response
+func (b *OntologyBuilder) salvagePartialJSON(response string, target interface{}, operationType string) error {
+	partial, count := b.extractPartialJSON(response)
+	if count == 0 {
+		return fmt.Errorf("no complete elements found in incomplete JSON for %s", operationType)
+	}
+
+	fmt.Printf("⚠️  Salvaging %d complete elements from incomplete JSON for %s\n", count, operationType)
+
+	// Parse the salvaged partial JSON
+	if err := b.extractJSON(partial, target); err != nil {
+		return fmt.Errorf("failed to parse salvaged partial JSON for %s: %w", operationType, err)
 	}
 
 	return nil
@@ -2381,11 +3294,11 @@ func loadUDMLElementTypes() ([]string, error) {
 	// Filter out non-substantive types that shouldn't be used for entity extraction
 	// These are container/metadata types that don't carry extractable entities
 	excluded := map[string]bool{
-		"image":      true, // Media - not text content
-		"link":       true, // Navigation - not entity content
-		"meta":       true, // Metadata - not content
-		"property":   true, // Metadata field
-		"attribute":  true, // Metadata field
+		"image":     true, // Media - not text content
+		"link":      true, // Navigation - not entity content
+		"meta":      true, // Metadata - not content
+		"property":  true, // Metadata field
+		"attribute": true, // Metadata field
 	}
 
 	var substantive []string
@@ -2399,4 +3312,163 @@ func loadUDMLElementTypes() ([]string, error) {
 		len(substantive), len(allTypes), len(substantive))
 
 	return substantive, nil
+}
+
+// ValidateWithLLM validates schema and uses LLM to fix errors (up to maxAttempts)
+func (b *OntologyBuilder) ValidateWithLLM(ctx context.Context, schema *OntologySchema, maxAttempts int) (*OntologySchema, error) {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		// Attempt validation
+		err := schema.Validate()
+		if err == nil {
+			// Validation passed
+			return schema, nil
+		}
+
+		// Check if error is ValidationErrors type
+		validationErrs, ok := err.(*ValidationErrors)
+		if !ok {
+			// Not a ValidationErrors - fail immediately (system error)
+			return nil, fmt.Errorf("validation failed (system error): %w", err)
+		}
+
+		// Validation errors found - ask LLM to fix
+		fmt.Printf("\n⚠️  Validation attempt %d/%d failed with %d errors\n",
+			attempt, maxAttempts, len(validationErrs.SchemaErrors)+len(validationErrs.GraphErrors))
+
+		if attempt == maxAttempts {
+			// Max attempts exceeded
+			return nil, fmt.Errorf("validation failed after %d attempts:\n%v", maxAttempts, validationErrs)
+		}
+
+		// Request LLM fix
+		fmt.Printf("🔄 Requesting LLM to fix validation errors...\n")
+		fixedSchema, err := b.requestLLMFix(ctx, schema, validationErrs, attempt)
+		if err != nil {
+			return nil, fmt.Errorf("LLM fix attempt %d failed: %w", attempt, err)
+		}
+
+		schema = fixedSchema
+	}
+
+	// Should not reach here
+	return nil, fmt.Errorf("validation failed after %d attempts", maxAttempts)
+}
+
+// requestLLMFix asks LLM to fix validation errors using RFC 6902 JSON Patch
+func (b *OntologyBuilder) requestLLMFix(ctx context.Context, schema *OntologySchema, errors *ValidationErrors, attempt int) (*OntologySchema, error) {
+	// Format errors for LLM
+	errorReport := b.formatValidationErrorsForLLM(errors)
+
+	// Serialize current schema to JSON (for reference in prompt)
+	schemaJSON, err := json.MarshalIndent(schema, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize schema: %w", err)
+	}
+
+	// Build prompt requesting RFC 6902 JSON Patch
+	prompt := fmt.Sprintf(`You are an ontology schema validator. Generate an RFC 6902 JSON Patch to fix the validation errors below.
+
+## Validation Errors Found:
+%s
+
+## Current Schema (for reference):
+%s
+
+## Instructions:
+Return a RFC 6902 JSON Patch (array of operations) to fix ALL validation errors. Common fixes:
+
+**Schema Errors:**
+- Missing extraction rules: Use "add" operation to add rules array
+- Invalid confidence: Use "replace" operation to set valid value (0.0-1.0)
+- Missing required fields: Use "add" operation to add missing fields
+
+**Graph Errors:**
+- Broken references: Use "replace" operation to fix parent_type references
+- Circular hierarchies: Use "remove" or "replace" to break cycles
+
+**RFC 6902 Format Example:**
+[
+  {"op": "replace", "path": "/element_entity_mappings/5/confidence", "value": 0.85},
+  {"op": "add", "path": "/element_entity_mappings/10/extraction_rules", "value": [{"type": "keyword_match", "keywords": ["example"]}]},
+  {"op": "replace", "path": "/element_entity_mappings/3/entity_type", "value": "researcher [science_research]"}
+]
+
+Output ONLY the RFC 6902 JSON Patch array with NO explanation.`, errorReport, string(schemaJSON))
+
+	// Call LLM with low temperature and prefill to force JSON array output
+	options := LLMOptions{
+		MaxTokens:   b.config.LLMMaxTokens,
+		Temperature: 0.2,
+		Prefill:     "[", // Force JSON array output without preamble
+	}
+	response, err := b.llmClient.Complete(ctx, prompt, options)
+	if err != nil {
+		return nil, fmt.Errorf("LLM query failed: %w", err)
+	}
+
+	// Save debug output if debug mode enabled
+	if b.config.DebugMode {
+		debugPath := filepath.Join(b.config.DebugOutputDir, fmt.Sprintf("validation_fix_attempt_%d_patch.json", attempt))
+		if err := os.WriteFile(debugPath, []byte(response), 0644); err != nil {
+			fmt.Printf("⚠️  Failed to write debug file: %v\n", err)
+		} else {
+			fmt.Printf("📝 Saved validation fix patch %d to %s\n", attempt, debugPath)
+		}
+	}
+
+	// Extract and parse JSON from response (handles markdown code blocks)
+	var patchOps []interface{}
+	if err := b.extractJSON(response, &patchOps); err != nil {
+		return nil, fmt.Errorf("failed to extract JSON patch from LLM response: %w", err)
+	}
+
+	// Re-marshal to get clean JSON bytes for json-patch library
+	patchJSON, err := json.Marshal(patchOps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal patch operations: %w", err)
+	}
+
+	// Parse and apply RFC 6902 patch
+	patch, err := jsonpatch.DecodePatch(patchJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode RFC 6902 patch: %w", err)
+	}
+
+	// Apply patch to schema JSON
+	modifiedJSON, err := patch.Apply(schemaJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply RFC 6902 patch: %w", err)
+	}
+
+	// Parse patched JSON back into schema
+	var fixedSchema OntologySchema
+	if err := json.Unmarshal(modifiedJSON, &fixedSchema); err != nil {
+		return nil, fmt.Errorf("failed to parse patched schema: %w", err)
+	}
+
+	return &fixedSchema, nil
+}
+
+// formatValidationErrorsForLLM formats validation errors for LLM prompt
+func (b *OntologyBuilder) formatValidationErrorsForLLM(errors *ValidationErrors) string {
+	var result strings.Builder
+
+	if len(errors.SchemaErrors) > 0 {
+		result.WriteString("Schema Errors:\n")
+		for i, err := range errors.SchemaErrors {
+			result.WriteString(fmt.Sprintf("  %d. %s\n", i+1, err))
+		}
+	}
+
+	if len(errors.GraphErrors) > 0 {
+		if len(errors.SchemaErrors) > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString("Graph Errors:\n")
+		for i, err := range errors.GraphErrors {
+			result.WriteString(fmt.Sprintf("  %d. %s\n", i+1, err))
+		}
+	}
+
+	return result.String()
 }

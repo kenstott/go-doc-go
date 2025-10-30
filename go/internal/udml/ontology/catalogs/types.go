@@ -8,8 +8,8 @@ type DomainCatalog struct {
 	Description      string
 	Subdomains       []string
 	Terms            []Term
-	EntityTypes      []EntityTemplate       // Domain-specific entities
-	CommonEntityRefs []string               // References to common entity templates
+	EntityTypes      []EntityTemplate // Domain-specific entities
+	CommonEntityRefs []string         // References to common entity templates
 	Relationships    []RelationshipTemplate
 }
 
@@ -23,9 +23,9 @@ type Term struct {
 // EntityTemplate represents a template for an entity type
 type EntityTemplate struct {
 	EntityType   string
-	ParentType   string   // Optional: qualified parent reference (e.g., "global.person")
-	WCategory    string   // 5 W's category: who, what, where, when, why
-	Domain       string   // Domain this template belongs to (e.g., "global", "medical")
+	ParentType   string // Optional: qualified parent reference (e.g., "global.person")
+	WCategory    string // 5 W's category: who, what, where, when, why
+	Domain       string // Domain this template belongs to (e.g., "global", "medical")
 	Description  string
 	Aliases      []string
 	Subdomain    string   // Optional: for domain-specific entities

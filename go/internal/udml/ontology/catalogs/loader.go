@@ -29,15 +29,15 @@ type TermConfig struct {
 
 // EntityTemplateConfig represents an entity template in the config file
 type EntityTemplateConfig struct {
-	EntityType   string                      `yaml:"entity_type" json:"entity_type"`
-	ParentType   string                      `yaml:"parent_type,omitempty" json:"parent_type,omitempty"`
-	WCategory    string                      `yaml:"w_category,omitempty" json:"w_category,omitempty"`
-	Domain       string                      `yaml:"domain,omitempty" json:"domain,omitempty"`
-	Description  string                      `yaml:"description" json:"description"`
-	Aliases      []string                    `yaml:"aliases,omitempty" json:"aliases,omitempty"`
-	Subdomain    string                      `yaml:"subdomain,omitempty" json:"subdomain,omitempty"`
-	ElementTypes []string                    `yaml:"element_types,omitempty" json:"element_types,omitempty"`
-	SampleRules  []ExtractionRuleConfig      `yaml:"sample_rules,omitempty" json:"sample_rules,omitempty"`
+	EntityType   string                 `yaml:"entity_type" json:"entity_type"`
+	ParentType   string                 `yaml:"parent_type,omitempty" json:"parent_type,omitempty"`
+	WCategory    string                 `yaml:"w_category,omitempty" json:"w_category,omitempty"`
+	Domain       string                 `yaml:"domain,omitempty" json:"domain,omitempty"`
+	Description  string                 `yaml:"description" json:"description"`
+	Aliases      []string               `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+	Subdomain    string                 `yaml:"subdomain,omitempty" json:"subdomain,omitempty"`
+	ElementTypes []string               `yaml:"element_types,omitempty" json:"element_types,omitempty"`
+	SampleRules  []ExtractionRuleConfig `yaml:"sample_rules,omitempty" json:"sample_rules,omitempty"`
 }
 
 // ExtractionRuleConfig represents an extraction rule in the config file

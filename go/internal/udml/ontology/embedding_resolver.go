@@ -10,9 +10,9 @@ import (
 
 // EmbeddingResolver provides on-demand lookup of element embeddings with LRU caching
 type EmbeddingResolver struct {
-	storage analytics.Storage
-	cache   map[string][]float64 // element_id -> embedding vector (LRU cache)
-	mu      sync.RWMutex
+	storage      analytics.Storage
+	cache        map[string][]float64 // element_id -> embedding vector (LRU cache)
+	mu           sync.RWMutex
 	maxCacheSize int
 }
 

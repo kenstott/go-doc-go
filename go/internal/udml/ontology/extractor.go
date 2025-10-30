@@ -25,8 +25,8 @@ type ContentResolver interface {
 type RuleBasedExtractor struct {
 	schema             *OntologySchema
 	contentResolver    ContentResolver
-	embeddingResolver  *EmbeddingResolver         // For retrieving element embeddings
-	embeddingGenerator EmbeddingGenerator         // For generating concept embeddings
+	embeddingResolver  *EmbeddingResolver            // For retrieving element embeddings
+	embeddingGenerator EmbeddingGenerator            // For generating concept embeddings
 	dictionary         *dictionary.UnifiedDictionary // For linguistic/semantic validation (dictionary lookups)
 	idCounter          uint64
 	// Performance optimization caches
@@ -44,7 +44,7 @@ type EmbeddingGenerator interface {
 type Element struct {
 	ElementID       string                 `json:"element_id"`
 	ElementType     string                 `json:"element_type"`
-	Content         string                 `json:"content"`          // May be empty - use ContentLocation instead
+	Content         string                 `json:"content"` // May be empty - use ContentLocation instead
 	ContentPreview  string                 `json:"content_preview"`
 	ContentLocation map[string]interface{} `json:"content_location"` // Pointer to actual content (HTML selector, etc.)
 	ParentID        string                 `json:"parent_id"`
@@ -437,10 +437,10 @@ func (e *RuleBasedExtractor) MaterializeMissingAncestors(canonicalLeaves []Entit
 			} else {
 				// Materialize new canonical composite (synthesized entity)
 				parentEntity = &Entity{
-					ID:      e.generateID("ent"),
-					Name:    currentEntity.Name, // Inherit name from child
-					Type:    EntityType(parentMapping.EntityType),
-					Domain:  parentMapping.Domain,
+					ID:     e.generateID("ent"),
+					Name:   currentEntity.Name, // Inherit name from child
+					Type:   EntityType(parentMapping.EntityType),
+					Domain: parentMapping.Domain,
 					Attributes: map[string]interface{}{
 						"synthesized": true, // Created during materialization (not extracted)
 						"w_category":  parentMapping.WCategory,
@@ -456,11 +456,11 @@ func (e *RuleBasedExtractor) MaterializeMissingAncestors(canonicalLeaves []Entit
 
 			// Create IS-A relationship: child IS-A parent (only between canonical entities)
 			isaRelationships = append(isaRelationships, Relationship{
-				ID:       e.generateID("rel"),
-				Type:     RelationshipIsA,
-				Domain:   currentEntity.Domain,
-				SourceID: currentEntity.ID,
-				TargetID: parentEntity.ID,
+				ID:         e.generateID("rel"),
+				Type:       RelationshipIsA,
+				Domain:     currentEntity.Domain,
+				SourceID:   currentEntity.ID,
+				TargetID:   parentEntity.ID,
 				Confidence: 1.0,
 				Attributes: map[string]interface{}{
 					"hierarchy_level": "direct_parent",

@@ -32,13 +32,13 @@ var llmValidationTemplates = map[string]LLMValidationTemplate{
 			"World Health",
 			"Public Health",
 			"Harvard Medical",
-			"", // Empty string
+			"",        // Empty string
 			"Abraham", // Single-word names
 			"Apollo",  // Deity
 			"Adam",
 			"Antoine",
 			"Anon",
-			"Amon",    // Deity
+			"Amon", // Deity
 			"Abbate",
 			"Achillini",
 		},
@@ -142,12 +142,12 @@ func (v *LLMValidator) BatchValidate(ctx context.Context, entities []EntityToVal
 		log.Printf("WARNING: No LLM validation template found for entity type '%s' - using generic validation", entityType)
 		// Use generic validation without specific examples
 		template = LLMValidationTemplate{
-			EntityType:          entityType,
-			QuestionTemplate:    "Is '{entity}' a valid " + entityType + "?",
+			EntityType:           entityType,
+			QuestionTemplate:     "Is '{entity}' a valid " + entityType + "?",
 			RequireVeryConfident: true,
-			RejectExamples:      []string{},
-			AcceptExamples:      []string{},
-			AdditionalGuidance:  "Answer 'yes' ONLY if you are VERY confident. Answer 'no' for anything uncertain.",
+			RejectExamples:       []string{},
+			AcceptExamples:       []string{},
+			AdditionalGuidance:   "Answer 'yes' ONLY if you are VERY confident. Answer 'no' for anything uncertain.",
 		}
 	}
 

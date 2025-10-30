@@ -10,9 +10,9 @@ import (
 // Useful for testing and single-process distributed extraction
 // NOTE: Actual extraction results (entities/relationships) are written directly to Storage
 type MemoryExtractionJobControl struct {
-	tasks   map[string]*ExtractionTask        // taskID -> task
-	results map[string]*ExtractionTaskResult  // taskID -> result (just metrics)
-	leaders map[string]string                 // runID -> workerID (leader for that run)
+	tasks   map[string]*ExtractionTask       // taskID -> task
+	results map[string]*ExtractionTaskResult // taskID -> result (just metrics)
+	leaders map[string]string                // runID -> workerID (leader for that run)
 	mu      sync.RWMutex
 }
 
@@ -71,8 +71,8 @@ func (m *MemoryExtractionJobControl) ClaimTask(runID string, taskType Extraction
 	// Find first pending task of the requested type
 	for _, task := range m.tasks {
 		if task.RunID == runID &&
-		   task.Type == taskType &&
-		   task.Status == TaskStatusPending {
+			task.Type == taskType &&
+			task.Status == TaskStatusPending {
 
 			// Claim the task
 			now := time.Now()
@@ -167,8 +167,8 @@ func (m *MemoryExtractionJobControl) GetPendingTaskCount(runID string, taskType 
 	count := 0
 	for _, task := range m.tasks {
 		if task.RunID == runID &&
-		   task.Type == taskType &&
-		   task.Status == TaskStatusPending {
+			task.Type == taskType &&
+			task.Status == TaskStatusPending {
 			count++
 		}
 	}

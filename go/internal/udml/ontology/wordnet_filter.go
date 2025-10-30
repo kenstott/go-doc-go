@@ -28,19 +28,19 @@ func NewWordNetValidator() *WordNetValidator {
 			"national": true, "park": true, "capitol": true, "reef": true,
 			"mountain": true, "river": true, "ocean": true, "lake": true,
 			"city": true, "state": true, "country": true, "island": true,
-			
+
 			// Academic/Publishing
 			"academic": true, "university": true, "press": true, "publishing": true,
 			"publisher": true, "journal": true, "review": true,
-			
+
 			// Abstract concepts
 			"concept": true, "theory": true, "principle": true, "method": true,
 			"approach": true, "system": true, "process": true,
-			
+
 			// Time
 			"century": true, "decade": true, "year": true, "era": true,
 			"period": true, "age": true,
-			
+
 			// Document structure
 			"chapter": true, "section": true, "appendix": true, "index": true,
 			"table": true, "figure": true, "reference": true,
@@ -201,7 +201,7 @@ func (v *WordNetValidator) IsProbablyNotPerson(text string) bool {
 
 		// "National Park", "Capitol Reef", etc.
 		if (v.commonNouns[word1] || v.placeTerms[word1]) &&
-		   (v.commonNouns[word2] || v.placeTerms[word2]) {
+			(v.commonNouns[word2] || v.placeTerms[word2]) {
 			return true // Reject - compound noun phrase
 		}
 
@@ -222,11 +222,11 @@ func (v *WordNetValidator) IsProbablyNotPerson(text string) bool {
 		// Check if contains common sentence words
 		lowerText := strings.ToLower(text)
 		if strings.Contains(lowerText, " you ") ||
-		   strings.Contains(lowerText, " should ") ||
-		   strings.Contains(lowerText, " what ") ||
-		   strings.Contains(lowerText, " how ") ||
-		   strings.Contains(lowerText, " when ") ||
-		   strings.Contains(lowerText, " where ") {
+			strings.Contains(lowerText, " should ") ||
+			strings.Contains(lowerText, " what ") ||
+			strings.Contains(lowerText, " how ") ||
+			strings.Contains(lowerText, " when ") ||
+			strings.Contains(lowerText, " where ") {
 			return true // Reject - contains question/instruction words
 		}
 	}

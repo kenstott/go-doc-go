@@ -31,6 +31,7 @@ func runInterview(args []string) {
 	nonInteractive := false
 	diversityThreshold := 0.0 // 0.0 means use default (0.85)
 	enableMCP := false
+	debugMode := false
 	embeddingModel := "all-MiniLM-L6-v2" // Default embedding model
 	outputPath := "ontology.json"
 	argsOffset := 1
@@ -82,6 +83,9 @@ func runInterview(args []string) {
 			argsOffset += 2
 		case "--enable-mcp":
 			enableMCP = true
+			argsOffset++
+		case "--debug":
+			debugMode = true
 			argsOffset++
 		case "--embedding-model":
 			if len(os.Args) < argsOffset+2 {
@@ -136,6 +140,8 @@ func runInterview(args []string) {
 		SchemaVersion:      "1.0.0",
 		EnableMCP:          enableMCP,
 		EmbeddingModel:     embeddingModel,
+		DebugMode:          debugMode,
+		DebugOutputDir:     "", // Will be auto-derived from storagePath
 	}
 
 	// Create builder
@@ -177,12 +183,13 @@ func runInterview(args []string) {
 		}
 	}
 
-	// Validate schema (computes hierarchies and fills parent_type/children/w_category fields)
+	// Validate schema with LLM-assisted fix loop (up to 5 attempts)
 	fmt.Println("\n🔄 Validating and finalizing schema...")
-	if err := schema.Validate(); err != nil {
-		log.Fatalf("Schema validation failed: %v", err)
+	schema, err = builder.ValidateWithLLM(ctx, schema, 5)
+	if err != nil {
+		log.Fatalf("Schema validation failed after 5 attempts:\n%v", err)
 	}
-	fmt.Println("✅ Schema validation passed (hierarchies computed)")
+	fmt.Println("✅ Schema validation passed (hierarchies computed, attributes merged)")
 
 	// Save schema to file (YAML or JSON based on extension)
 	ext := filepath.Ext(outputPath)

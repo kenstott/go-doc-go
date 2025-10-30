@@ -8,13 +8,13 @@ import (
 
 // InMemoryProvider provides fast dictionary lookups from in-memory word lists
 type InMemoryProvider struct {
-	name         string
-	priority     int
-	commonNouns  map[string]bool
-	commonVerbs  map[string]bool
-	placeTerms   map[string]bool
+	name          string
+	priority      int
+	commonNouns   map[string]bool
+	commonVerbs   map[string]bool
+	placeTerms    map[string]bool
 	temporalTerms map[string]bool
-	uiTerms      map[string]bool
+	uiTerms       map[string]bool
 	organizations map[string]bool
 }
 

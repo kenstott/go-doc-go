@@ -12,7 +12,7 @@ func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "Speaker",
 				Domain:       "test",
@@ -28,6 +28,14 @@ func TestRuleBasedExtractor_MetadataExtraction(t *testing.T) {
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -88,7 +96,7 @@ func TestRuleBasedExtractor_RegexExtraction(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "Email",
 				Domain:       "test",
@@ -97,13 +105,21 @@ func TestRuleBasedExtractor_RegexExtraction(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`,
+						Pattern:      `\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b`,
+						InstanceName: "$[0]", // Extract first match
 					},
 				},
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -144,7 +160,7 @@ func TestRuleBasedExtractor_KeywordExtraction(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "Organization",
 				Domain:       "test",
@@ -153,13 +169,20 @@ func TestRuleBasedExtractor_KeywordExtraction(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:     RuleTypeKeyword,
-						Keywords: []string{"Microsoft", "Apple", "Google"},
+						PhraseList: []string{"Microsoft", "Apple", "Google"},
 					},
 				},
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -205,7 +228,7 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "person",
 				Domain:       "test",
@@ -214,8 +237,8 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						Pattern:      `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						InstanceName: "$[0]",
 					},
 				},
 			},
@@ -227,8 +250,7 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:     RuleTypeKeyword,
-						Keywords: []string{"Corp", "Inc", "LLC"},
+						PhraseList: []string{"Corp", "Inc", "LLC"},
 					},
 				},
 			},
@@ -244,6 +266,14 @@ func TestRuleBasedExtractor_RelationshipExtraction(t *testing.T) {
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -304,7 +334,7 @@ func TestRuleBasedExtractor_ElementTypeFiltering(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "Heading",
 				Domain:       "test",
@@ -313,13 +343,21 @@ func TestRuleBasedExtractor_ElementTypeFiltering(t *testing.T) {
 				ElementTypes: []string{"heading"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `.+`,
+						Pattern:      `.+`,
+						InstanceName: "$[0]",
 					},
 				},
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -366,7 +404,7 @@ func TestRuleBasedExtractor_NestedMetadata(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "Author",
 				Domain:       "test",
@@ -375,13 +413,21 @@ func TestRuleBasedExtractor_NestedMetadata(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:      RuleTypeMetadata,
-						FieldPath: "author.name",
+						JSONPath:     "$.author.name",
+						InstanceName: "$[0]",
 					},
 				},
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -427,7 +473,7 @@ func TestRuleBasedExtractor_MultipleRules(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "person",
 				Domain:       "test",
@@ -436,17 +482,25 @@ func TestRuleBasedExtractor_MultipleRules(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:      RuleTypeMetadata,
-						FieldPath: "author",
+						JSONPath:     "$.author",
+						InstanceName: "$[0]",
 					},
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						Pattern:      `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						InstanceName: "$[0]",
 					},
 				},
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -494,7 +548,7 @@ func TestRuleBasedExtractor_Deduplication(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "person",
 				Domain:       "test",
@@ -503,13 +557,21 @@ func TestRuleBasedExtractor_Deduplication(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\bAlice\b`,
+						Pattern:      `\bAlice\b`,
+						InstanceName: "$[0]",
 					},
 				},
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -560,9 +622,17 @@ func TestRuleBasedExtractor_EmptySchema(t *testing.T) {
 		Name:                    "empty_schema",
 		Version:                 "1.0.0",
 		Domains:                 []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings:   []ElementEntityMapping{},
+		ElementEntityMappings:   []ElementEntityMappingConfig{},
 		EntityRelationshipRules: []EntityRelationshipRule{},
 		CreatedAt:               time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -598,7 +668,7 @@ func TestRuleBasedExtractor_ValidationError(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "test", Description: "Test domain", Owner: "Test Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "person",
 				Domain:       "test",
@@ -607,8 +677,7 @@ func TestRuleBasedExtractor_ValidationError(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:     RuleTypeKeyword,
-						Keywords: []string{"John"},
+						PhraseList: []string{"John"},
 					},
 				},
 			},
@@ -623,6 +692,14 @@ func TestRuleBasedExtractor_ValidationError(t *testing.T) {
 			},
 		},
 		CreatedAt: time.Now(),
+	}
+
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
 	}
 
 	extractor := NewRuleBasedExtractor(schema, nil)
@@ -677,7 +754,7 @@ func TestRuleBasedExtractor_SemanticFilteringAccepts(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "person",
 				Domain:       "medical",
@@ -686,9 +763,9 @@ func TestRuleBasedExtractor_SemanticFilteringAccepts(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
-						SemanticFilter: &SemanticFilter{
+						Pattern:      `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						InstanceName: "$[0]",
+						Semantic: &SemanticFilter{
 							ReferenceConcepts: []string{
 								"individual person with biography or credentials",
 								"author or creator attribution to individual",
@@ -764,7 +841,7 @@ func TestRuleBasedExtractor_SemanticFilteringRejects(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "person",
 				Domain:       "medical",
@@ -773,15 +850,15 @@ func TestRuleBasedExtractor_SemanticFilteringRejects(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
-						SemanticFilter: &SemanticFilter{
+						Pattern:      `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						InstanceName: "$[0]",
+						Semantic: &SemanticFilter{
 							ReferenceConcepts: []string{
 								"individual person with biography or credentials",
 								"author or creator attribution to individual",
 							},
 							SimilarityThreshold: 0.65,
-		},
+						},
 					},
 				},
 			},
@@ -800,7 +877,7 @@ func TestRuleBasedExtractor_SemanticFilteringRejects(t *testing.T) {
 
 	// Mock concept embedding cache with person-related concepts
 	conceptEmbeddingCache = map[string][]float64{
-		"individual person with biography or credentials": {0.1, 0.2, 0.3, 0.4}, // Not similar to elem1
+		"individual person with biography or credentials": {0.1, 0.2, 0.3, 0.4},     // Not similar to elem1
 		"author or creator attribution to individual":     {0.12, 0.22, 0.31, 0.39}, // Not similar to elem1
 	}
 	defer func() { conceptEmbeddingCache = make(map[string][]float64) }() // Reset after test
@@ -840,7 +917,7 @@ func TestRuleBasedExtractor_SemanticFilteringGracefulDegradation(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "person",
 				Domain:       "medical",
@@ -849,9 +926,9 @@ func TestRuleBasedExtractor_SemanticFilteringGracefulDegradation(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
-						SemanticFilter: &SemanticFilter{
+						Pattern:      `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						InstanceName: "$[0]",
+						Semantic: &SemanticFilter{
 							ReferenceConcepts:   []string{"person context"},
 							SimilarityThreshold: 0.65,
 						},
@@ -863,6 +940,14 @@ func TestRuleBasedExtractor_SemanticFilteringGracefulDegradation(t *testing.T) {
 	}
 
 	// No mock resolver - embeddings unavailable
+	// Compute hierarchies to populate computedMappings
+
+	if err := schema.ComputeHierarchies(); err != nil {
+
+		t.Fatalf("ComputeHierarchies() error = %v", err)
+
+	}
+
 	extractor := NewRuleBasedExtractor(schema, nil)
 
 	elements := []Element{
@@ -894,7 +979,7 @@ func TestRuleBasedExtractor_SemanticFilterWithKeywords(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			{
 				EntityType:   "organization",
 				Domain:       "medical",
@@ -903,9 +988,8 @@ func TestRuleBasedExtractor_SemanticFilterWithKeywords(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:     RuleTypeKeyword,
-						Keywords: []string{"Hospital", "Clinic", "Center"},
-						SemanticFilter: &SemanticFilter{
+						PhraseList: []string{"Hospital", "Clinic", "Center"},
+						Semantic: &SemanticFilter{
 							ReferenceConcepts: []string{
 								"healthcare facility providing medical services",
 								"hospital or clinic with patients and doctors",
@@ -921,7 +1005,7 @@ func TestRuleBasedExtractor_SemanticFilterWithKeywords(t *testing.T) {
 
 	mockResolver := &mockEmbeddingResolver{
 		embeddings: map[string][]float64{
-			"elem1": {0.2, 0.3, 0.4, 0.3}, // Medical context
+			"elem1": {0.2, 0.3, 0.4, 0.3},   // Medical context
 			"elem2": {0.9, 0.1, 0.05, 0.02}, // Non-medical context
 		},
 	}
@@ -929,8 +1013,8 @@ func TestRuleBasedExtractor_SemanticFilterWithKeywords(t *testing.T) {
 	extractor := NewRuleBasedExtractor(schema, mockResolver)
 
 	conceptEmbeddingCache = map[string][]float64{
-		"healthcare facility providing medical services":  {0.25, 0.35, 0.38, 0.32}, // Similar to elem1
-		"hospital or clinic with patients and doctors": {0.22, 0.32, 0.41, 0.31}, // Similar to elem1
+		"healthcare facility providing medical services": {0.25, 0.35, 0.38, 0.32}, // Similar to elem1
+		"hospital or clinic with patients and doctors":   {0.22, 0.32, 0.41, 0.31}, // Similar to elem1
 	}
 	defer func() { conceptEmbeddingCache = make(map[string][]float64) }()
 
@@ -987,7 +1071,7 @@ func TestRuleBasedExtractor_MultipleRulesWithSemanticFilter(t *testing.T) {
 		Name:    "test_schema",
 		Version: "1.0.0",
 		Domains: []Domain{{Name: "medical", Description: "Medical domain", Owner: "Medical Team"}},
-		ElementEntityMappings: []ElementEntityMapping{
+		ElementEntityMappings: []ElementEntityMappingConfig{
 			// High confidence - title prefix (no semantic filter)
 			{
 				EntityType:   "person",
@@ -997,8 +1081,8 @@ func TestRuleBasedExtractor_MultipleRulesWithSemanticFilter(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b(?:Dr|Prof)\.\s+[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						Pattern:      `\b(?:Dr|Prof)\.\s+[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						InstanceName: "$[0]",
 						// No semantic filter - title is strong signal
 					},
 				},
@@ -1012,9 +1096,9 @@ func TestRuleBasedExtractor_MultipleRulesWithSemanticFilter(t *testing.T) {
 				ElementTypes: []string{"paragraph"},
 				ExtractionRules: []ExtractionRule{
 					{
-						Type:    RuleTypeRegex,
-						Pattern: `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
-						SemanticFilter: &SemanticFilter{
+						Pattern:      `\b[A-Z][a-z]+ [A-Z][a-z]+\b`,
+						InstanceName: "$[0]",
+						Semantic: &SemanticFilter{
 							ReferenceConcepts:   []string{"biographical context"},
 							SimilarityThreshold: 0.65,
 						},
@@ -1027,7 +1111,7 @@ func TestRuleBasedExtractor_MultipleRulesWithSemanticFilter(t *testing.T) {
 
 	mockResolver := &mockEmbeddingResolver{
 		embeddings: map[string][]float64{
-			"elem1": {0.1, 0.2, 0.3, 0.4}, // Biographical context
+			"elem1": {0.1, 0.2, 0.3, 0.4},   // Biographical context
 			"elem2": {0.9, 0.1, 0.05, 0.02}, // Heading context
 		},
 	}

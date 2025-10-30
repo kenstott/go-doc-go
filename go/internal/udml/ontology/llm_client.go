@@ -171,6 +171,14 @@ func (c *AnthropicClient) Complete(ctx context.Context, prompt string, options L
 		},
 	}
 
+	// Add prefill message if provided (Anthropic-specific feature to constrain output format)
+	if options.Prefill != "" {
+		messages = append(messages, anthropicMessage{
+			Role:    "assistant",
+			Content: options.Prefill,
+		})
+	}
+
 	var fullResponse strings.Builder
 	maxContinuations := 10 // Limit continuation attempts (increased from 3 to handle large responses)
 
@@ -199,6 +207,10 @@ func (c *AnthropicClient) Complete(ctx context.Context, prompt string, options L
 		}
 
 		// Append to full response
+		// On first attempt with prefill, include the prefill in the response
+		if attempt == 0 && options.Prefill != "" {
+			fullResponse.WriteString(options.Prefill)
+		}
 		fullResponse.WriteString(responseText)
 
 		// Log stop reason
@@ -312,6 +324,16 @@ func (c *AnthropicClient) CompleteWithTools(ctx context.Context, prompt string, 
 		},
 	}
 
+	// Add prefill message if provided (Anthropic-specific feature to constrain output format)
+	if options.Prefill != "" {
+		messages = append(messages, anthropicMessageWithContent{
+			Role: "assistant",
+			Content: []anthropicContentBlock{
+				{Type: "text", Text: options.Prefill},
+			},
+		})
+	}
+
 	// Tool calling loop
 	maxIterations := 10 // Prevent infinite loops
 	for iteration := 0; iteration < maxIterations; iteration++ {
@@ -377,7 +399,12 @@ func (c *AnthropicClient) CompleteWithTools(ctx context.Context, prompt string, 
 		// Check stop reason
 		if apiResp.StopReason == "end_turn" || apiResp.StopReason == "max_tokens" {
 			// LLM finished - extract text response
-			return c.extractTextFromResponse(apiResp), nil
+			responseText := c.extractTextFromResponse(apiResp)
+			// On first iteration with prefill, prepend prefill to response
+			if iteration == 0 && options.Prefill != "" {
+				responseText = options.Prefill + responseText
+			}
+			return responseText, nil
 		}
 
 		if apiResp.StopReason == "tool_use" {
@@ -505,11 +532,11 @@ func (c *AnthropicClient) extractTextFromResponse(resp anthropicResponseWithTool
 // Anthropic API types
 
 type anthropicRequest struct {
-	Model       string              `json:"model"`
-	MaxTokens   int                 `json:"max_tokens"`
-	Messages    []anthropicMessage  `json:"messages"`
-	System      string              `json:"system,omitempty"`
-	Temperature float64             `json:"temperature,omitempty"`
+	Model       string             `json:"model"`
+	MaxTokens   int                `json:"max_tokens"`
+	Messages    []anthropicMessage `json:"messages"`
+	System      string             `json:"system,omitempty"`
+	Temperature float64            `json:"temperature,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -518,13 +545,13 @@ type anthropicMessage struct {
 }
 
 type anthropicResponse struct {
-	ID         string              `json:"id"`
-	Type       string              `json:"type"`
-	Role       string              `json:"role"`
-	Content    []anthropicContent  `json:"content"`
-	Model      string              `json:"model"`
-	StopReason string              `json:"stop_reason"` // Why generation stopped: "end_turn", "max_tokens", "stop_sequence"
-	Usage      anthropicUsage      `json:"usage"`
+	ID         string             `json:"id"`
+	Type       string             `json:"type"`
+	Role       string             `json:"role"`
+	Content    []anthropicContent `json:"content"`
+	Model      string             `json:"model"`
+	StopReason string             `json:"stop_reason"` // Why generation stopped: "end_turn", "max_tokens", "stop_sequence"
+	Usage      anthropicUsage     `json:"usage"`
 }
 
 type anthropicContent struct {
@@ -554,14 +581,14 @@ type anthropicMessageWithContent struct {
 }
 
 type anthropicContentBlock struct {
-	Type      string                 `json:"type"`                 // "text", "tool_use", "tool_result"
-	Text      string                 `json:"text,omitempty"`       // For text blocks
-	ID        string                 `json:"id,omitempty"`         // For tool_use blocks
-	Name      string                 `json:"name,omitempty"`       // For tool_use blocks
-	Input     map[string]interface{} `json:"input,omitempty"`      // For tool_use blocks
+	Type      string                 `json:"type"`                  // "text", "tool_use", "tool_result"
+	Text      string                 `json:"text,omitempty"`        // For text blocks
+	ID        string                 `json:"id,omitempty"`          // For tool_use blocks
+	Name      string                 `json:"name,omitempty"`        // For tool_use blocks
+	Input     map[string]interface{} `json:"input,omitempty"`       // For tool_use blocks
 	ToolUseID string                 `json:"tool_use_id,omitempty"` // For tool_result blocks
-	Content   string                 `json:"content,omitempty"`    // For tool_result blocks
-	IsError   bool                   `json:"is_error,omitempty"`   // For tool_result blocks
+	Content   string                 `json:"content,omitempty"`     // For tool_result blocks
+	IsError   bool                   `json:"is_error,omitempty"`    // For tool_result blocks
 }
 
 type anthropicTool struct {
