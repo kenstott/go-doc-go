@@ -1,0 +1,147 @@
+# Attribute Extraction Example
+# This demonstrates Phase 3 Item #5: Attribute extraction for schema parsimony
+#
+# Instead of creating 50+ entity types for medical specialties (cardiologist, neurologist, etc.),
+# use 1 "physician" entity type with "specialty" attribute extracted via regex from finite vocabulary.
+
+name: "Medical Personnel Attribute Extraction"
+version: "1.0.0"
+description: "Demonstrates attribute extraction for entities and relationships"
+llm_model: "claude-sonnet-4"
+
+domains:
+  - name: medical
+    description: "Medical domain"
+    owner: "medical_team"
+
+element_entity_mappings:
+  # Entity with attributes: Physician with specialty
+  - entity_type: physician
+    domain: medical
+    w_category: who
+    description: "Medical doctor with specialty attribute"
+    confidence: 0.85
+    extraction_rules:
+      - instance_name: '(?P<name>Dr\.\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+        attributes:
+          # Constant attribute - always set for entities matched by this rule
+          - name: role
+            type: constant
+            constant_value: "physician"
+
+          # Regex extraction from finite specialty list (proximity scope)
+          - name: specialty
+            type: regex
+            regex_pattern: '\b(?P<value>cardiology|neurology|pediatrics|oncology|surgery|internal_medicine|psychiatry|radiology|anesthesiology|dermatology|orthopedics)\b'
+            scope: proximity
+            proximity_distance: 30
+            default_value: "general_practice"
+            transform: lowercase
+
+          # Extract department from nearby text
+          - name: department
+            type: regex
+            regex_pattern: 'department\s+of\s+(?P<value>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+            scope: element
+            transform: trim
+
+  # Entity with attributes: Medical facility with type and bed count
+  - entity_type: medical_facility
+    domain: medical
+    w_category: where
+    description: "Hospital, clinic, or medical center with facility metadata"
+    confidence: 0.80
+    extraction_rules:
+      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Hospital|Clinic|Medical\s+Center))'
+        attributes:
+          # Extract facility type from entity name itself (entity_match scope)
+          - name: facility_type
+            type: regex
+            regex_pattern: '(?P<value>Hospital|Clinic|Medical\s+Center)$'
+            scope: entity_match
+            transform: lowercase
+
+          # Extract bed count from nearby text
+          - name: bed_count
+            type: regex
+            regex_pattern: '(\d+)-bed'
+            scope: proximity
+            proximity_distance: 30
+
+  # Simple entity without attributes
+  - entity_type: patient
+    domain: medical
+    w_category: who
+    description: "Patient mentioned in medical context"
+    confidence: 0.75
+    extraction_rules:
+      - instance_name: '(?P<name>patient\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+
+# Relationship with attributes: Employment relationship with role and dates
+entity_relationship_rules:
+  - name: physician_works_at_facility
+    source_entity_type: physician
+    target_entity_type: medical_facility
+    relationship_type: employed_at
+    description: "Physician employment at medical facility with role and date attributes"
+    confidence: 0.80
+    extraction_patterns:
+      - type: text_template
+        template: "{physician} works at {medical_facility}"
+      - type: text_template
+        template: "{physician} employed at {medical_facility}"
+      - type: text_template
+        template: "{physician} practices at {medical_facility}"
+    attributes:
+      # Extract role from relationship context
+      - name: role
+        type: regex
+        regex_pattern: 'as\s+(?:a|an)\s+(?P<value>attending\s+physician|resident|fellow|chief\s+of\s+staff)'
+        scope: element
+        transform: lowercase
+
+      # Extract start date
+      - name: start_date
+        type: regex
+        regex_pattern: 'since\s+(?P<value>\w+\s+\d{4})'
+        scope: proximity
+        proximity_distance: 50
+
+      # Mark as current employment by default
+      - name: employment_status
+        type: constant
+        constant_value: "current"
+
+  # Simple relationship without attributes
+  - name: patient_treated_at_facility
+    source_entity_type: patient
+    target_entity_type: medical_facility
+    relationship_type: treated_at
+    description: "Patient treatment at medical facility"
+    confidence: 0.75
+    extraction_patterns:
+      - type: text_template
+        template: "{patient} treated at {medical_facility}"
+      - type: text_template
+        template: "{patient} admitted to {medical_facility}"
+
+# Example Text that would match these rules:
+#
+# "Dr. Sarah Chen, specialty: cardiology, works in the department of Cardiovascular Medicine.
+#  She has been employed at Stanford Hospital (850-bed facility) as an attending physician since January 2020.
+#  Patient John Doe was treated at Stanford Hospital last week."
+#
+# Expected Extracted Entities:
+# 1. physician: "Dr. Sarah Chen"
+#    attributes: {"role": "physician", "specialty": "cardiology", "department": "Cardiovascular Medicine"}
+#
+# 2. medical_facility: "Stanford Hospital"
+#    attributes: {"facility_type": "hospital", "bed_count": "850"}
+#
+# 3. patient: "patient John Doe"
+#
+# Expected Extracted Relationships:
+# 1. employed_at: Dr. Sarah Chen -> Stanford Hospital
+#    attributes: {"role": "attending physician", "start_date": "January 2020", "employment_status": "current"}
+#
+# 2. treated_at: patient John Doe -> Stanford Hospital
