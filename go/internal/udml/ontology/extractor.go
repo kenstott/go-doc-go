@@ -288,18 +288,29 @@ func (e *RuleBasedExtractor) tryExtractWithRule(ctx context.Context, mapping Ele
 		}
 	}
 
-	// All filters passed - create entity
+	// All filters passed - create entity with attributes
+	entityAttrs := map[string]interface{}{
+		"w_category": mapping.WCategory,
+		"jsonpath":   rule.JSONPath,
+	}
+
+	// STEP 8: Extract rule-defined attributes (OPTIONAL - best-effort)
+	if len(rule.Attributes) > 0 {
+		extractedAttrs := e.extractAttributes(rule.Attributes, entityName, &elem)
+		// Merge extracted attributes into entity attributes
+		for key, value := range extractedAttrs {
+			entityAttrs[key] = value
+		}
+	}
+
 	return &Entity{
 		ID:         e.generateID("ent"),
 		Name:       entityName,
 		Type:       EntityType(mapping.EntityType),
 		Domain:     mapping.Domain,
 		Confidence: mapping.Confidence,
-		Attributes: map[string]interface{}{
-			"w_category": mapping.WCategory,
-			"jsonpath":   rule.JSONPath,
-		},
-		ElementID: elem.ElementID,
+		Attributes: entityAttrs,
+		ElementID:  elem.ElementID,
 		Mentions: []Mention{
 			{ElementID: elem.ElementID, Text: entityName, StartPos: 0, EndPos: len(entityName)},
 		},
@@ -518,6 +529,33 @@ func (e *RuleBasedExtractor) applyRelationshipRule(rule EntityRelationshipRule, 
 		for _, target := range targetEntities {
 			// Check if entities are in the same element or adjacent elements
 			if e.areEntitiesRelated(source, target) {
+				// Build relationship attributes
+				relAttrs := map[string]interface{}{
+					"rule": rule.Name,
+				}
+
+				// Extract rule-defined attributes (OPTIONAL - best-effort)
+				if len(rule.Attributes) > 0 {
+					// For relationships, use the source entity element for context
+					var sourceElem Element
+					// Find the source element from elements list
+					for _, elem := range elements {
+						if elem.ElementID == source.ElementID {
+							sourceElem = elem
+							break
+						}
+					}
+
+					// Extract attributes using the relationship context (source + target names)
+					relationshipContext := fmt.Sprintf("%s %s", source.Name, target.Name)
+					extractedAttrs := e.extractAttributes(rule.Attributes, relationshipContext, &sourceElem)
+
+					// Merge extracted attributes
+					for key, value := range extractedAttrs {
+						relAttrs[key] = value
+					}
+				}
+
 				// Use rule confidence (pattern reliability)
 				// Entity confidence is separate and already set
 				// Domain inherited from source entity (consumer domain owns enrichment relationship)
@@ -529,12 +567,10 @@ func (e *RuleBasedExtractor) applyRelationshipRule(rule EntityRelationshipRule, 
 					SourceID:   source.ID,
 					TargetID:   target.ID,
 					Confidence: rule.Confidence, // Pattern reliability
-					Attributes: map[string]interface{}{
-						"rule": rule.Name,
-					},
-					ElementID: source.ElementID,
-					Evidence:  fmt.Sprintf("%s and %s appear in element %s", source.Name, target.Name, source.ElementID),
-					CreatedAt: time.Now(),
+					Attributes: relAttrs,
+					ElementID:  source.ElementID,
+					Evidence:   fmt.Sprintf("%s and %s appear in element %s", source.Name, target.Name, source.ElementID),
+					CreatedAt:  time.Now(),
 				}
 
 				relationships = append(relationships, rel)
@@ -1497,4 +1533,214 @@ func matchesSequence(actual []string, pattern []string) bool {
 		}
 	}
 	return true
+}
+
+// extractAttributes extracts attribute values from content based on attribute extraction rules
+// Returns a map of attribute_name -> extracted_value
+// This is best-effort extraction - failures are logged but don't block entity/relationship creation
+func (e *RuleBasedExtractor) extractAttributes(
+	attributeRules []AttributeExtractionRule,
+	entityMatch string,
+	elem *Element,
+) map[string]interface{} {
+	if len(attributeRules) == 0 {
+		return nil
+	}
+
+	attributes := make(map[string]interface{})
+
+	for _, attrRule := range attributeRules {
+		value := e.extractSingleAttribute(attrRule, entityMatch, elem)
+		if value != nil {
+			attributes[attrRule.Name] = value
+		} else if attrRule.DefaultValue != nil {
+			// Use default value if extraction failed
+			attributes[attrRule.Name] = attrRule.DefaultValue
+		}
+		// If value is nil and no default, skip this attribute (best-effort)
+	}
+
+	if len(attributes) == 0 {
+		return nil
+	}
+
+	return attributes
+}
+
+// extractSingleAttribute extracts a single attribute value based on its type
+func (e *RuleBasedExtractor) extractSingleAttribute(
+	attrRule AttributeExtractionRule,
+	entityMatch string,
+	elem *Element,
+) interface{} {
+	switch attrRule.Type {
+	case "constant":
+		return attrRule.ConstantValue
+
+	case "regex":
+		return e.extractRegexAttribute(attrRule, entityMatch, elem)
+
+	default:
+		log.Printf("WARNING: Unknown attribute extraction type '%s' for attribute '%s'", attrRule.Type, attrRule.Name)
+		return nil
+	}
+}
+
+// extractRegexAttribute extracts attribute value using regex with (?P<value>...) capture group
+func (e *RuleBasedExtractor) extractRegexAttribute(
+	attrRule AttributeExtractionRule,
+	entityMatch string,
+	elem *Element,
+) interface{} {
+	// Get the content scope to search in
+	searchContent := e.getAttributeSearchScope(attrRule, entityMatch, elem)
+	if searchContent == "" {
+		return nil
+	}
+
+	// Compile regex
+	re, err := regexp.Compile(attrRule.RegexPattern)
+	if err != nil {
+		log.Printf("WARNING: Invalid regex pattern for attribute '%s': %v", attrRule.Name, err)
+		return nil
+	}
+
+	// Execute regex
+	match := re.FindStringSubmatch(searchContent)
+	if match == nil {
+		return nil // No match - not an error, just no value extracted
+	}
+
+	// Look for named capture group "value"
+	for i, groupName := range re.SubexpNames() {
+		if groupName == "value" && i < len(match) {
+			extracted := strings.TrimSpace(match[i])
+			if extracted != "" {
+				// Apply transform if specified
+				return e.applyAttributeTransform(extracted, attrRule.Transform)
+			}
+		}
+	}
+
+	log.Printf("DEBUG: Regex matched for attribute '%s' but no 'value' capture group found", attrRule.Name)
+	return nil
+}
+
+// getAttributeSearchScope returns the content to search based on scope configuration
+func (e *RuleBasedExtractor) getAttributeSearchScope(
+	attrRule AttributeExtractionRule,
+	entityMatch string,
+	elem *Element,
+) string {
+	scope := attrRule.Scope
+	if scope == "" {
+		scope = "entity_match" // Default scope
+	}
+
+	switch scope {
+	case "entity_match":
+		// Search within the matched entity text itself
+		return entityMatch
+
+	case "element":
+		// Search within the entire element content
+		return e.resolveContent(elem)
+
+	case "proximity":
+		// Search within N words around the entity match
+		if attrRule.ProximityDistance <= 0 {
+			log.Printf("WARNING: proximity scope requires proximity_distance > 0 for attribute '%s'", attrRule.Name)
+			return entityMatch
+		}
+
+		elementContent := e.resolveContent(elem)
+		if elementContent == "" {
+			return entityMatch
+		}
+
+		// Find entity match position in element content
+		matchPos := strings.Index(elementContent, entityMatch)
+		if matchPos == -1 {
+			// Entity match not found in element content - fall back to element content
+			return elementContent
+		}
+
+		// Extract words around the match
+		return e.extractProximityWindow(elementContent, matchPos, len(entityMatch), attrRule.ProximityDistance)
+
+	default:
+		log.Printf("WARNING: Unknown scope '%s' for attribute '%s', using entity_match", scope, attrRule.Name)
+		return entityMatch
+	}
+}
+
+// extractProximityWindow extracts text within N words before and after a match position
+func (e *RuleBasedExtractor) extractProximityWindow(content string, matchPos int, matchLen int, wordDistance int) string {
+	// Tokenize content into words
+	words := strings.Fields(content)
+	if len(words) == 0 {
+		return content
+	}
+
+	// Find which word index contains the match start
+	charCount := 0
+	matchWordStart := -1
+	matchWordEnd := -1
+
+	for i, word := range words {
+		wordStart := charCount
+		wordEnd := charCount + len(word)
+
+		if wordStart <= matchPos && matchPos < wordEnd {
+			matchWordStart = i
+		}
+
+		if wordStart <= (matchPos+matchLen) && (matchPos+matchLen) <= wordEnd {
+			matchWordEnd = i
+			break
+		}
+
+		charCount = wordEnd + 1 // +1 for space
+	}
+
+	if matchWordStart == -1 {
+		// Couldn't find match position in words - return full content
+		return content
+	}
+
+	if matchWordEnd == -1 {
+		matchWordEnd = matchWordStart
+	}
+
+	// Extract window: matchWordStart-wordDistance to matchWordEnd+wordDistance
+	windowStart := matchWordStart - wordDistance
+	if windowStart < 0 {
+		windowStart = 0
+	}
+
+	windowEnd := matchWordEnd + wordDistance + 1 // +1 because slice is exclusive
+	if windowEnd > len(words) {
+		windowEnd = len(words)
+	}
+
+	return strings.Join(words[windowStart:windowEnd], " ")
+}
+
+// applyAttributeTransform applies post-processing transform to extracted value
+func (e *RuleBasedExtractor) applyAttributeTransform(value string, transform string) interface{} {
+	if transform == "" {
+		return value
+	}
+
+	switch transform {
+	case "lowercase":
+		return strings.ToLower(value)
+	case "uppercase":
+		return strings.ToUpper(value)
+	case "trim":
+		return strings.TrimSpace(value)
+	default:
+		log.Printf("WARNING: Unknown transform '%s', returning value as-is", transform)
+		return value
+	}
 }
