@@ -9,11 +9,16 @@ import (
 
 // ValidationWarning represents a quality issue detected in the schema
 type ValidationWarning struct {
-	Severity    string `json:"severity"` // "HIGH", "MEDIUM", "LOW"
-	Category    string `json:"category"` // "duplicate_patterns", "confidence_mismatch", etc.
-	Message     string `json:"message"`
-	EntityType  string `json:"entity_type,omitempty"`
-	Suggestion  string `json:"suggestion,omitempty"`
+	Severity          string `json:"severity"`            // "CRITICAL", "HIGH", "MEDIUM", "LOW"
+	Category          string `json:"category"`            // "duplicate_patterns", "confidence_mismatch", etc.
+	Message           string `json:"message"`
+	EntityType        string `json:"entity_type,omitempty"`
+	Suggestion        string `json:"suggestion,omitempty"`
+	Indices           []int  `json:"indices,omitempty"`            // Array indices of all occurrences (for duplicate detection)
+	IndicesToRemove   []int  `json:"indices_to_remove,omitempty"`  // Indices to remove (in descending order)
+	IndexToKeep       int    `json:"index_to_keep,omitempty"`      // Index of the occurrence to keep (-1 if not applicable)
+	DomainToKeep      string `json:"domain_to_keep,omitempty"`     // Domain of the occurrence to keep
+	ConfidenceToKeep  float64 `json:"confidence_to_keep,omitempty"` // Confidence of the occurrence to keep
 }
 
 // SchemaQualityReport contains quality metrics and warnings
@@ -37,10 +42,12 @@ func ValidateSchemaQuality(schema *OntologySchema) *SchemaQualityReport {
 
 	// Run all validation checks - check duplicate entity types first (CRITICAL)
 	report.Warnings = append(report.Warnings, checkDuplicateEntityTypes(schema)...)
+	report.Warnings = append(report.Warnings, checkMissingWCategory(schema)...)
 	report.Warnings = append(report.Warnings, checkDuplicatePatterns(schema)...)
 	report.Warnings = append(report.Warnings, checkConfidenceSpecificityCorrelation(schema)...)
 	report.Warnings = append(report.Warnings, checkMissingDisambiguation(schema)...)
 	report.Warnings = append(report.Warnings, checkExcessiveProximityDistance(schema)...)
+	report.Warnings = append(report.Warnings, checkGenericRelationshipTypes(schema)...)
 
 	// Calculate statistics
 	calculateQualityMetrics(schema, report)
@@ -89,7 +96,7 @@ func checkDuplicatePatterns(schema *OntologySchema) []ValidationWarning {
 
 			if !hasDisambiguation {
 				warnings = append(warnings, ValidationWarning{
-					Severity: "HIGH",
+					Severity: "CRITICAL", // Duplicate patterns without disambiguation will cause extraction conflicts
 					Category: "duplicate_patterns",
 					Message: fmt.Sprintf("Pattern '%s' used by %d entity types without disambiguation: %v",
 						truncatePattern(pattern), len(entityTypes), entityTypes),
@@ -181,17 +188,29 @@ func checkConfidenceSpecificityCorrelation(schema *OntologySchema) []ValidationW
 func checkMissingDisambiguation(schema *OntologySchema) []ValidationWarning {
 	warnings := []ValidationWarning{}
 
+	// Expanded generic pattern detection
+	genericIndicators := []string{
+		`\[A-Z\]\[a-z\]\+`,              // Capitalized word
+		`\[A-Z\]\[A-Za-z\]\+`,           // Any capitalized text
+		`\\b\[A-Z\]\\w\+\\b`,            // Word boundary capitalized
+		`\[A-Z\]\[a-z\]\+\(\?:\\s\+\[A-Z\]\[a-z\]\+\)\*`, // Multiple capitalized words
+	}
+
 	// Check each entity mapping
-	for _, mapping := range schema.ElementEntityMappings {
+	for i, mapping := range schema.ElementEntityMappings {
 		hasGenericPattern := false
 		hasDisambiguation := false
 
 		for _, rule := range mapping.ExtractionRules {
-			// Check if pattern is generic (matches common capitalization patterns)
-			if rule.InstanceName != "" {
-				// Very generic patterns that match lots of text
-				if matched, _ := regexp.MatchString(`\[A-Z\]\[a-z\]\+`, rule.InstanceName); matched {
+			if rule.InstanceName == "" {
+				continue
+			}
+
+			// Check if pattern matches ANY generic indicator
+			for _, indicator := range genericIndicators {
+				if strings.Contains(rule.InstanceName, indicator) {
 					hasGenericPattern = true
+					break
 				}
 			}
 
@@ -201,15 +220,16 @@ func checkMissingDisambiguation(schema *OntologySchema) []ValidationWarning {
 			}
 		}
 
-		// Warn if generic pattern without disambiguation
+		// CRITICAL if generic pattern without disambiguation
 		if hasGenericPattern && !hasDisambiguation && len(mapping.ExtractionRules) > 0 {
 			warnings = append(warnings, ValidationWarning{
-				Severity:   "MEDIUM",
+				Severity:   "CRITICAL",
 				Category:   "missing_disambiguation",
 				EntityType: mapping.EntityType,
-				Message: fmt.Sprintf("Entity '%s' uses generic capitalization patterns without semantic or proximity filters",
+				Indices:    []int{i},
+				Message: fmt.Sprintf("Entity '%s' uses generic regex without semantic or proximity filters. Will produce high false positives.",
 					mapping.EntityType),
-				Suggestion: "Add semantic_filter (recommended) or proximity_filter to reduce false positives",
+				Suggestion: "Add EITHER: (1) semantic_filter with reference_terms and similarity_threshold>=0.70, OR (2) proximity_filter requiring nearby entities",
 			})
 		}
 	}
@@ -291,6 +311,16 @@ func (report *SchemaQualityReport) GetWarningsBySeverity(severity string) []Vali
 	return filtered
 }
 
+// HasCriticalWarnings checks if there are any CRITICAL severity warnings
+func (report *SchemaQualityReport) HasCriticalWarnings() bool {
+	for _, w := range report.Warnings {
+		if w.Severity == "CRITICAL" {
+			return true
+		}
+	}
+	return false
+}
+
 // HasHighSeverityWarnings checks if there are any HIGH severity warnings
 func (report *SchemaQualityReport) HasHighSeverityWarnings() bool {
 	for _, w := range report.Warnings {
@@ -328,33 +358,48 @@ func (report *SchemaQualityReport) CalculateQualityScore() float64 {
 func checkExcessiveProximityDistance(schema *OntologySchema) []ValidationWarning {
 	warnings := []ValidationWarning{}
 
-	for _, rule := range schema.EntityRelationshipRules {
+	for i, rule := range schema.EntityRelationshipRules {
 		for _, pattern := range rule.ExtractionPatterns {
 			// Only check patterns that use max_distance
 			if pattern.MaxDistance == 0 {
 				continue
 			}
 
-			// HIGH severity for distances > 75 tokens
+			// CRITICAL: distances > 75 tokens
 			if pattern.MaxDistance > 75 {
 				warnings = append(warnings, ValidationWarning{
-					Severity: "HIGH",
+					Severity: "CRITICAL",
 					Category: "excessive_proximity_distance",
-					Message: fmt.Sprintf("Relationship rule '%s' (%s -> %s) uses max_distance=%d tokens (type: %s)",
-						rule.Name, rule.SourceEntityType, rule.TargetEntityType, pattern.MaxDistance, pattern.Type),
-					Suggestion: "Entities >75 tokens apart are essentially unrelated. Reduce to ≤30 tokens or use structural patterns for long-range relationships",
+					Indices:  []int{i},
+					Message: fmt.Sprintf("Relationship '%s' (%s → %s) uses max_distance=%d tokens (CRITICAL: >75)",
+						rule.Name, rule.SourceEntityType, rule.TargetEntityType, pattern.MaxDistance),
+					Suggestion: "Entities >75 tokens apart are essentially unrelated. Reduce to ≤30 tokens or use structural patterns",
 				})
 				continue
 			}
 
-			// MEDIUM severity for distances > 50 tokens
-			if pattern.MaxDistance > 50 {
+			// HIGH: distances 51-75 tokens
+			if pattern.MaxDistance > 50 && pattern.MaxDistance <= 75 {
+				warnings = append(warnings, ValidationWarning{
+					Severity: "HIGH",
+					Category: "excessive_proximity_distance",
+					Indices:  []int{i},
+					Message: fmt.Sprintf("Relationship '%s' (%s → %s) uses max_distance=%d tokens (HIGH: 51-75)",
+						rule.Name, rule.SourceEntityType, rule.TargetEntityType, pattern.MaxDistance),
+					Suggestion: "Consider reducing to ≤30 tokens for better precision",
+				})
+				continue
+			}
+
+			// MEDIUM: distances 31-50 tokens
+			if pattern.MaxDistance > 30 && pattern.MaxDistance <= 50 {
 				warnings = append(warnings, ValidationWarning{
 					Severity: "MEDIUM",
-					Category: "excessive_proximity_distance",
-					Message: fmt.Sprintf("Relationship rule '%s' (%s -> %s) uses max_distance=%d tokens (type: %s)",
-						rule.Name, rule.SourceEntityType, rule.TargetEntityType, pattern.MaxDistance, pattern.Type),
-					Suggestion: "Most proximity rules should use ≤30 tokens. Consider reducing distance or using structural patterns",
+					Category: "high_proximity_distance",
+					Indices:  []int{i},
+					Message: fmt.Sprintf("Relationship '%s' (%s → %s) uses max_distance=%d tokens (above recommended 30)",
+						rule.Name, rule.SourceEntityType, rule.TargetEntityType, pattern.MaxDistance),
+					Suggestion: "Recommended maximum is 30 tokens. Consider reducing for better precision.",
 				})
 			}
 		}
@@ -368,27 +413,164 @@ func checkExcessiveProximityDistance(schema *OntologySchema) []ValidationWarning
 func checkDuplicateEntityTypes(schema *OntologySchema) []ValidationWarning {
 	warnings := []ValidationWarning{}
 
-	// Track entity_type names and their domains
-	entityTypeMap := make(map[string][]string) // entity_type -> [domains]
+	// Track entity_type occurrences with index, domain, and confidence
+	type entityOccurrence struct {
+		index      int
+		domain     string
+		confidence float64
+	}
+	entityTypeMap := make(map[string][]entityOccurrence) // entity_type -> [occurrences]
 
-	for _, mapping := range schema.ElementEntityMappings {
-		entityTypeMap[mapping.EntityType] = append(entityTypeMap[mapping.EntityType], mapping.Domain)
+	for i, mapping := range schema.ElementEntityMappings {
+		entityTypeMap[mapping.EntityType] = append(entityTypeMap[mapping.EntityType], entityOccurrence{
+			index:      i,
+			domain:     mapping.Domain,
+			confidence: mapping.Confidence,
+		})
 	}
 
 	// Check for duplicates
-	for entityType, domains := range entityTypeMap {
-		if len(domains) > 1 {
+	for entityType, occurrences := range entityTypeMap {
+		if len(occurrences) > 1 {
+			// Determine which occurrence to keep:
+			// 1. Prefer global domain
+			// 2. If no global, prefer highest confidence
+			// 3. If tied, prefer first occurrence
+			keepIndex := 0
+			for i, occ := range occurrences {
+				if occ.domain == "global" {
+					keepIndex = i
+					break
+				}
+				if occ.confidence > occurrences[keepIndex].confidence {
+					keepIndex = i
+				}
+			}
+
+			// Build list of indices to remove (in descending order to avoid index shifting)
+			var indicesToRemove []int
+			var allIndices []int
+			var domains []string
+			for i, occ := range occurrences {
+				allIndices = append(allIndices, occ.index)
+				domains = append(domains, occ.domain)
+				if i != keepIndex {
+					indicesToRemove = append(indicesToRemove, occ.index)
+				}
+			}
+			// Sort indicesToRemove in descending order
+			for i := 0; i < len(indicesToRemove); i++ {
+				for j := i + 1; j < len(indicesToRemove); j++ {
+					if indicesToRemove[i] < indicesToRemove[j] {
+						indicesToRemove[i], indicesToRemove[j] = indicesToRemove[j], indicesToRemove[i]
+					}
+				}
+			}
+
+			// Build alternative names for domain-specific versions
+			var renameAlternatives []string
+			for i, occ := range occurrences {
+				if i != keepIndex && occ.domain != "global" {
+					qualifiedName := fmt.Sprintf("%s_%s", occ.domain, entityType)
+					renameAlternatives = append(renameAlternatives, fmt.Sprintf("index %d → '%s'", occ.index, qualifiedName))
+				}
+			}
+
 			// CRITICAL severity - this breaks extraction
+			suggestion := fmt.Sprintf("Choose ONE approach:\n"+
+				"  (1) REMOVE duplicates at indices %v and keep only index %d (domain: %s, confidence: %.2f)\n"+
+				"  (2) RENAME domain-specific versions with qualified names: %v",
+				indicesToRemove, occurrences[keepIndex].index, occurrences[keepIndex].domain, occurrences[keepIndex].confidence,
+				renameAlternatives)
+
 			warnings = append(warnings, ValidationWarning{
-				Severity:   "CRITICAL",
-				Category:   "duplicate_entity_type",
-				EntityType: entityType,
+				Severity:         "CRITICAL",
+				Category:         "duplicate_entity_type",
+				EntityType:       entityType,
+				Indices:          allIndices,
+				IndicesToRemove:  indicesToRemove,
+				IndexToKeep:      occurrences[keepIndex].index,
+				DomainToKeep:     occurrences[keepIndex].domain,
+				ConfidenceToKeep: occurrences[keepIndex].confidence,
 				Message: fmt.Sprintf("Entity type '%s' defined %d times across domains: %v. This causes extraction conflicts.",
 					entityType, len(domains), domains),
-				Suggestion: fmt.Sprintf("Choose ONE approach: (1) Keep only global.%s and remove domain-specific versions, OR (2) Qualify domain versions as '{domain}_%s' (e.g., '%s_%s') with parent_type: 'global.%s'",
-					entityType, entityType, domains[1], entityType, entityType),
+				Suggestion: suggestion,
 			})
 		}
+	}
+
+	return warnings
+}
+
+// checkMissingWCategory validates that all ROOT entities have w_category (REQUIRED field)
+func checkMissingWCategory(schema *OntologySchema) []ValidationWarning {
+	warnings := []ValidationWarning{}
+
+	for i, mapping := range schema.ElementEntityMappings {
+		// Only check ROOT entities (no parent_type)
+		if mapping.ParentType != "" {
+			continue // Child entities can inherit w_category
+		}
+
+		// Check if w_category is missing or empty
+		if mapping.WCategory == "" {
+			warnings = append(warnings, ValidationWarning{
+				Severity:   "CRITICAL",
+				Category:   "missing_w_category",
+				EntityType: mapping.EntityType,
+				Indices:    []int{i},
+				Message: fmt.Sprintf("ROOT entity '%s' (domain: %s) missing REQUIRED w_category field. Cannot inherit (no parent_type).",
+					mapping.EntityType, mapping.Domain),
+				Suggestion: "Add w_category (who/what/where/when/why/how). Examples: person=who, location=where, date=when, process=how",
+			})
+		}
+	}
+
+	return warnings
+}
+
+// checkGenericRelationshipTypes warns about overuse of generic "related_to" type
+func checkGenericRelationshipTypes(schema *OntologySchema) []ValidationWarning {
+	warnings := []ValidationWarning{}
+
+	totalRelationships := len(schema.EntityRelationshipRules)
+	relatedToCount := 0
+	relatedToIndices := []int{}
+
+	// Count "related_to" usage
+	for i, rule := range schema.EntityRelationshipRules {
+		if rule.RelationshipType == "related_to" {
+			relatedToCount++
+			relatedToIndices = append(relatedToIndices, i)
+		}
+	}
+
+	if totalRelationships == 0 {
+		return warnings
+	}
+
+	relatedToPercent := float64(relatedToCount) / float64(totalRelationships) * 100.0
+
+	// HIGH if >50% use "related_to"
+	if relatedToPercent > 50.0 {
+		warnings = append(warnings, ValidationWarning{
+			Severity: "HIGH",
+			Category: "generic_relationship_types",
+			Indices:  relatedToIndices,
+			Message: fmt.Sprintf("%d of %d relationships (%.1f%%) use generic 'related_to' type. Loses semantic precision.",
+				relatedToCount, totalRelationships, relatedToPercent),
+			Suggestion: "Use specific types: treats, manufactures, regulates, employs, contains, produces, enables, requires, etc.",
+		})
+	} else if relatedToPercent > 40.0 {
+		// MEDIUM if 40-50%
+		warnings = append(warnings, ValidationWarning{
+			Severity: "MEDIUM",
+			Category: "generic_relationship_types",
+			Indices:  relatedToIndices,
+			Message: fmt.Sprintf("%d of %d relationships (%.1f%%) use generic 'related_to' type.",
+				relatedToCount, totalRelationships, relatedToPercent),
+			Suggestion: "Consider using more specific relationship types where applicable (target: <40%)",
+		})
 	}
 
 	return warnings

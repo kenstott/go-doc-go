@@ -4,6 +4,8 @@
 
 This document outlines improvements needed to address critical weaknesses in LLM-generated ontology schemas, categorized by solution approach: human intervention, feature enhancements, and LLM prompt improvements.
 
+**Schema Design Philosophy**: Effective ontology schemas favor parsimony over exhaustive enumeration. A well-designed schema with 15-25 entity types and 40-60 relationship types can provide comprehensive coverage through compositional power. Entities should represent fundamental abstractions (not variations), with attributes and relationships carrying the semantic weight. Relationship chains naturally create thousands of semantic paths from a compact schema. Prefer adding attributes to edges over creating new entity types.
+
 ---
 
 ## Critical Weaknesses Identified
@@ -163,6 +165,7 @@ Add three new mandatory instructions:
    - Highly specific patterns (0.85-0.95)
    - Context-dependent (0.75-0.85)
    - Generic patterns (0.60-0.75)
+10. **NEW** Schema Parsimony: Limit entity types to 15-25 core abstractions (not variations) and relationship types to 40-60. Use attributes on entities/relationships to capture variations. Compositional power creates comprehensive coverage from compact schemas.
 ```
 
 #### B. Enhanced ENTITY CONSTRAINTS Section
@@ -252,6 +255,51 @@ Add comprehensive disambiguation guidance:
   - Use as fallback only, not primary extraction
 ```
 
+#### D. Schema Parsimony: Entity and Relationship Type Guidance
+
+**Principle**: Small, well-abstracted schemas provide comprehensive coverage through compositional power.
+
+**Target Scale**:
+- **Entity Types**: 15-25 core abstractions (not variations)
+- **Relationship Types**: 40-60 semantic connections
+- **Coverage**: Relationship chains create 1000s of semantic paths from compact schemas
+
+**Design Guidelines**:
+
+1. **Entities as Abstractions, Not Instances**
+   - BAD: `academic_researcher`, `industry_researcher`, `government_researcher` (3 types)
+   - GOOD: `researcher` with `affiliation_type` attribute (1 type, 3 values)
+
+2. **Relationships Carry Semantic Weight**
+   - Compositional power: `(person)-[works_at]->(organization)-[located_in]->(city)-[part_of]->(country)`
+   - Single chain expresses: employment, geography, administrative hierarchy
+   - 4 relationship types × average 3 entity types each = 12 combinations
+   - Real coverage: 50 relationships × 20 entities = 1000+ semantic paths
+
+3. **Attributes Over Type Explosion**
+   - Store context on edges: `employed_at {role, start_date, department}`
+   - Store context on nodes: `organization {sector, size, founded_year}`
+   - Variations become queryable attributes, not separate types
+
+4. **When to Create New Entity Types** (only if YES to both):
+   - Does it represent a fundamentally different abstraction? (not a subtype/variation)
+   - Does it participate in unique relationships unavailable to similar types?
+
+5. **When to Create New Relationship Types** (only if YES):
+   - Does it express a semantically distinct connection not capturable by existing relationships + attributes?
+
+**Missing Relationship Categories to Consider**:
+- **Temporal**: `precedes`, `follows`, `during`, `caused_by`
+- **Negation/Absence**: `lacks`, `excludes`, `opposes`
+- **Meta-relationships**: `similar_to`, `example_of`, `defined_as`
+- **Provenance**: `cited_by`, `derived_from`, `supports`
+
+**Example - Medical Domain**:
+- **Too many types** (30+ entities): `lung`, `heart`, `liver`, `kidney`, `brain`, `stomach`, `intestine`, `artery`, `vein`, `capillary`, `neuron`, `muscle_cell`, ...
+- **Parsimonious** (5 entities): `organ`, `tissue`, `cell`, `anatomical_structure`, `biological_process`
+  - Use attributes: `organ {type: 'lung', system: 'respiratory'}`
+  - Relationships create specificity: `(lung)-[part_of]->(respiratory_system)`, `(alveoli)-[contained_in]->(lung)`
+
 ---
 
 ## Implementation Priorities
@@ -277,8 +325,9 @@ Add comprehensive disambiguation guidance:
 
 **Solution Principles**:
 - Minimize qualification - only qualify when conflicts exist
-- Prefer simple, global entity definitions
-- Reuse global entities by default
+- Prefer simple, global entity definitions (supports schema parsimony: 15-25 core types)
+- Reuse global entities by default (avoid type explosion, use attributes for variations)
+- Compositional power: Relationship chains across domains provide coverage without redundant entity types
 - If conflict with global: If unique enough → qualify + add parent; If not unique → remove
 - If conflict with non-global: Qualify both entity names
 
