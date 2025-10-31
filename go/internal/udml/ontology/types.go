@@ -79,6 +79,7 @@ type OntologySchema struct {
 	CrossDomainMerging      *CrossDomainMerging          `json:"cross_domain_merging,omitempty" yaml:"cross_domain_merging,omitempty"`           // Cross-domain entity merging configuration
 	Metadata                map[string]interface{}       `json:"metadata,omitempty" yaml:"metadata,omitempty"`                                   // Additional metadata
 	CreatedAt               time.Time                    `json:"created_at" yaml:"created_at"`                                                   // Creation timestamp
+	ValidationReport        *SchemaQualityReport         `json:"validation_report,omitempty" yaml:"validation_report,omitempty"`                 // Quality validation results
 
 	// Computed fields (populated by Validate(), not serialized)
 	computedMappings []ElementEntityMapping `json:"-" yaml:"-"` // Runtime entity mappings (as-computed, with inherited/computed fields)
@@ -180,6 +181,36 @@ type LLMValidationPrompt struct {
 	BatchSize int    `json:"batch_size,omitempty" yaml:"batch_size,omitempty"` // Batch size for LLM API calls (default: 50)
 }
 
+// AttributeExtractionRule defines how to extract an attribute value for an entity or relationship
+//
+// Enables schema parsimony: instead of creating 50+ entity types for medical specialties,
+// use 1 "physician" entity type with "specialty" attribute extracted via regex from finite vocabulary.
+//
+// EXTRACTION TYPES:
+//   - constant: Fixed value (e.g., role="physician" for all matches)
+//   - regex: Extract from text using (?P<value>...) capture group
+//
+// SCOPE OPTIONS:
+//   - entity_match: Extract from the matched entity text itself (default)
+//   - element: Extract from the entire UDML element containing the entity
+//   - proximity: Extract from within N words of the entity (requires proximity_distance)
+type AttributeExtractionRule struct {
+	Name string `json:"name" yaml:"name"` // Attribute name (e.g., "specialty", "role", "department")
+	Type string `json:"type" yaml:"type"` // Extraction type: "constant" or "regex"
+
+	// Type-specific fields (use appropriate field based on Type)
+	ConstantValue interface{} `json:"constant_value,omitempty" yaml:"constant_value,omitempty"` // For type="constant" - fixed metadata
+	RegexPattern  string      `json:"regex_pattern,omitempty" yaml:"regex_pattern,omitempty"`   // For type="regex" - uses (?P<value>...) capture group
+
+	// Context scope for extraction
+	Scope             string `json:"scope,omitempty" yaml:"scope,omitempty"`                               // Where to extract from: "entity_match" (default), "element", "proximity"
+	ProximityDistance int    `json:"proximity_distance,omitempty" yaml:"proximity_distance,omitempty"`     // For scope="proximity" - word distance from entity
+
+	// Optional processing
+	DefaultValue interface{} `json:"default_value,omitempty" yaml:"default_value,omitempty"` // Default if extraction fails
+	Transform    string      `json:"transform,omitempty" yaml:"transform,omitempty"`         // Post-processing: "lowercase", "uppercase", "trim"
+}
+
 // ExtractionRule defines a rule for extracting entities
 //
 // EXTRACTION METHODS (choose ONE):
@@ -209,6 +240,9 @@ type ExtractionRule struct {
 	Dictionary    *DictionaryFilter    `json:"dictionary,omitempty" yaml:"dictionary,omitempty"`         // Linguistic validation
 	Semantic      *SemanticFilter      `json:"semantic,omitempty" yaml:"semantic,omitempty"`             // Embedding similarity
 	LLMValidation *LLMValidationPrompt `json:"llm_validation,omitempty" yaml:"llm_validation,omitempty"` // LLM-based validation
+
+	// Attribute extraction (OPTIONAL) - extract attributes when entity matches
+	Attributes []AttributeExtractionRule `json:"attributes,omitempty" yaml:"attributes,omitempty"` // Extract attributes for matched entities
 }
 
 // RelationshipExtractionPatternType defines types of relationship extraction patterns
@@ -268,6 +302,7 @@ type EntityRelationshipRule struct {
 	ExtractionPatterns []RelationshipExtractionPattern `json:"extraction_patterns" yaml:"extraction_patterns"`                     // Patterns for extracting relationship (APPENDED to parent patterns if inheritance used, OR logic)
 	SourceConstraints  *EntityConstraints              `json:"source_constraints,omitempty" yaml:"source_constraints,omitempty"`   // Optional filters for source entity (ADDED to parent constraints if inheritance used, AND logic)
 	TargetConstraints  *EntityConstraints              `json:"target_constraints,omitempty" yaml:"target_constraints,omitempty"`   // Optional filters for target entity (ADDED to parent constraints if inheritance used, AND logic)
+	Attributes         []AttributeExtractionRule       `json:"attributes,omitempty" yaml:"attributes,omitempty"`                   // Extract attributes when relationship matches (e.g., role, start_date, employment_status)
 }
 
 // DerivedEntity defines an entity derived from combinations of other entities
@@ -622,6 +657,55 @@ func (s *OntologySchema) Validate() error {
 					errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d: llm_validation requires prompt", i, mapping.EntityType, j))
 				}
 			}
+
+			// Validate attribute extraction rules if present
+			for k, attrRule := range rule.Attributes {
+				if attrRule.Name == "" {
+					errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %d: name is required", i, mapping.EntityType, j, k))
+				}
+				if attrRule.Type == "" {
+					errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: type is required", i, mapping.EntityType, j, attrRule.Name))
+				}
+
+				// Validate type-specific fields
+				validTypes := map[string]bool{"constant": true, "regex": true}
+				if !validTypes[attrRule.Type] {
+					errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: invalid type '%s' (must be 'constant' or 'regex')", i, mapping.EntityType, j, attrRule.Name, attrRule.Type))
+				}
+
+				if attrRule.Type == "constant" && attrRule.ConstantValue == nil {
+					errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: constant_value is required for type='constant'", i, mapping.EntityType, j, attrRule.Name))
+				}
+
+				if attrRule.Type == "regex" {
+					if attrRule.RegexPattern == "" {
+						errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: regex_pattern is required for type='regex'", i, mapping.EntityType, j, attrRule.Name))
+					} else if !strings.Contains(attrRule.RegexPattern, "(?P<value>") {
+						errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: regex_pattern must contain (?P<value>...) capture group", i, mapping.EntityType, j, attrRule.Name))
+					}
+				}
+
+				// Validate scope if specified
+				if attrRule.Scope != "" {
+					validScopes := map[string]bool{"entity_match": true, "element": true, "proximity": true}
+					if !validScopes[attrRule.Scope] {
+						errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: invalid scope '%s' (must be 'entity_match', 'element', or 'proximity')", i, mapping.EntityType, j, attrRule.Name, attrRule.Scope))
+					}
+
+					// Proximity scope requires proximity_distance
+					if attrRule.Scope == "proximity" && attrRule.ProximityDistance <= 0 {
+						errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: proximity_distance must be > 0 for scope='proximity'", i, mapping.EntityType, j, attrRule.Name))
+					}
+				}
+
+				// Validate transform if specified
+				if attrRule.Transform != "" {
+					validTransforms := map[string]bool{"lowercase": true, "uppercase": true, "trim": true}
+					if !validTransforms[attrRule.Transform] {
+						errors.Add("schema", fmt.Sprintf("entity mapping %d (%s), rule %d, attribute %s: invalid transform '%s' (must be 'lowercase', 'uppercase', or 'trim')", i, mapping.EntityType, j, attrRule.Name, attrRule.Transform))
+					}
+				}
+			}
 		}
 	}
 
@@ -641,6 +725,55 @@ func (s *OntologySchema) Validate() error {
 		}
 		if len(rule.ExtractionPatterns) == 0 {
 			errors.Add("schema", fmt.Sprintf("relationship rule %d (%s) has no extraction patterns", i, rule.Name))
+		}
+
+		// Validate attribute extraction rules for relationships
+		for k, attrRule := range rule.Attributes {
+			if attrRule.Name == "" {
+				errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %d: name is required", i, rule.Name, k))
+			}
+			if attrRule.Type == "" {
+				errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: type is required", i, rule.Name, attrRule.Name))
+			}
+
+			// Validate type-specific fields
+			validTypes := map[string]bool{"constant": true, "regex": true}
+			if !validTypes[attrRule.Type] {
+				errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: invalid type '%s' (must be 'constant' or 'regex')", i, rule.Name, attrRule.Name, attrRule.Type))
+			}
+
+			if attrRule.Type == "constant" && attrRule.ConstantValue == nil {
+				errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: constant_value is required for type='constant'", i, rule.Name, attrRule.Name))
+			}
+
+			if attrRule.Type == "regex" {
+				if attrRule.RegexPattern == "" {
+					errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: regex_pattern is required for type='regex'", i, rule.Name, attrRule.Name))
+				} else if !strings.Contains(attrRule.RegexPattern, "(?P<value>") {
+					errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: regex_pattern must contain (?P<value>...) capture group", i, rule.Name, attrRule.Name))
+				}
+			}
+
+			// Validate scope if specified
+			if attrRule.Scope != "" {
+				validScopes := map[string]bool{"entity_match": true, "element": true, "proximity": true}
+				if !validScopes[attrRule.Scope] {
+					errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: invalid scope '%s' (must be 'entity_match', 'element', or 'proximity')", i, rule.Name, attrRule.Name, attrRule.Scope))
+				}
+
+				// Proximity scope requires proximity_distance
+				if attrRule.Scope == "proximity" && attrRule.ProximityDistance <= 0 {
+					errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: proximity_distance must be > 0 for scope='proximity'", i, rule.Name, attrRule.Name))
+				}
+			}
+
+			// Validate transform if specified
+			if attrRule.Transform != "" {
+				validTransforms := map[string]bool{"lowercase": true, "uppercase": true, "trim": true}
+				if !validTransforms[attrRule.Transform] {
+					errors.Add("schema", fmt.Sprintf("relationship rule %d (%s), attribute %s: invalid transform '%s' (must be 'lowercase', 'uppercase', or 'trim')", i, rule.Name, attrRule.Name, attrRule.Transform))
+				}
+			}
 		}
 	}
 
