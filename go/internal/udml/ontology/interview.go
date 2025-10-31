@@ -375,12 +375,13 @@ Return JSON (and NOTHING ELSE):
 IMPORTANT: Order domains by estimated coverage (highest first). Return 3-5 domains total.`, domainListFormatted.String(), corpusStats, sampleTexts)
 
 	// Build system prompt
-	systemPrompt := "You are an expert at domain analysis and data mesh principles. Identify distinct domains based on ownership boundaries and vocabulary."
+	systemPrompt := "You are an expert at domain analysis and data mesh principles. Identify distinct domains based on ownership boundaries and vocabulary.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON objects, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON."
 
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
-		MaxTokens:    2000,
+		MaxTokens:    ib.builder.config.LLMMaxTokens,
 		Temperature:  0.3,
 		SystemPrompt: systemPrompt,
+		Prefill:      "{",  // Force JSON object format, avoid preamble
 	})
 	if err != nil {
 		return err
@@ -527,7 +528,8 @@ If you create ANY other name, the response will be rejected.`, detectedNames, fo
 	finalResponse, err := ib.builder.llmClient.Complete(ctx, refinementPrompt, LLMOptions{
 		MaxTokens:    1500,
 		Temperature:  0.2,
-		SystemPrompt: "Finalize domain selection based on analysis and user input.",
+		SystemPrompt: "You are an expert at domain selection and refinement using data mesh principles.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "[",  // Force JSON array format, avoid preamble
 	})
 	if err != nil {
 		return err
@@ -578,8 +580,10 @@ Current domains:
 Apply changes and return updated domain list as JSON array.`, strings.TrimSpace(changes), formatDomainsJSON(domains))
 
 		adjustedResponse, err := ib.builder.llmClient.Complete(ctx, adjustmentPrompt, LLMOptions{
-			MaxTokens:   1500,
-			Temperature: 0.2,
+			MaxTokens:    1500,
+			Temperature:  0.2,
+			SystemPrompt: "You are an expert at domain selection and refinement using data mesh principles.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+			Prefill:      "[",  // Force JSON array format, avoid preamble
 		})
 		if err != nil {
 			return err
@@ -719,6 +723,9 @@ func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx context.Context) (b
 	fmt.Println(strings.Repeat("-", 80))
 	qualityReport := ValidateSchemaQuality(ib.schema)
 
+	// Store validation report in schema
+	ib.schema.ValidationReport = qualityReport
+
 	// Display summary statistics
 	fmt.Printf("  Semantic filters: %d/%d entity mappings (%.1f%%)\n",
 		qualityReport.SemanticFilterUsageCount,
@@ -729,9 +736,20 @@ func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx context.Context) (b
 	fmt.Printf("  Quality score: %.0f/100\n", qualityReport.CalculateQualityScore())
 
 	// Display warnings by severity
+	criticalWarnings := qualityReport.GetWarningsBySeverity("CRITICAL")
 	highWarnings := qualityReport.GetWarningsBySeverity("HIGH")
 	mediumWarnings := qualityReport.GetWarningsBySeverity("MEDIUM")
 	lowWarnings := qualityReport.GetWarningsBySeverity("LOW")
+
+	if len(criticalWarnings) > 0 {
+		fmt.Printf("\n  🚨 CRITICAL severity warnings (%d):\n", len(criticalWarnings))
+		for _, w := range criticalWarnings {
+			fmt.Printf("     • %s\n", w.Message)
+			if w.Suggestion != "" {
+				fmt.Printf("       → %s\n", w.Suggestion)
+			}
+		}
+	}
 
 	if len(highWarnings) > 0 {
 		fmt.Printf("\n  ⚠️  HIGH severity warnings (%d):\n", len(highWarnings))
@@ -778,6 +796,26 @@ func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx context.Context) (b
 	for {
 		var decision string
 		if ib.nonInteractive {
+			// Use LLM to fix CRITICAL warnings automatically
+			if qualityReport.HasCriticalWarnings() {
+				fmt.Println("\n  ⚠️  CRITICAL validation errors detected - attempting automatic fixes...")
+				fmt.Printf("     Found %d critical warnings - using LLM validation-fix loop\n", len(criticalWarnings))
+
+				// Attempt to fix with LLM (up to 5 attempts)
+				maxAttempts := 5
+				fixedSchema, err := ib.builder.ValidateWithLLM(ctx, ib.schema, maxAttempts)
+				if err != nil {
+					// Fix failed - report error
+					fmt.Println("\n  ❌ Automatic validation fix failed")
+					fmt.Printf("     Error: %v\n", err)
+					return false, fmt.Errorf("schema has CRITICAL validation errors that could not be fixed automatically: %d critical warnings found", len(criticalWarnings))
+				}
+
+				// Fix succeeded - use fixed schema
+				fmt.Println("\n  ✅ Automatic validation fix succeeded")
+				ib.schema = fixedSchema
+				// Continue to approval (no longer have critical warnings)
+			}
 			decision = "approve"
 			fmt.Print("   Your decision (approve/refine/reject): approve [auto-approved]\n")
 		} else {
@@ -840,7 +878,8 @@ Preserve all fields and structure.`, strings.TrimSpace(changes), string(schemaJS
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:    8000,
 		Temperature:  0.2,
-		SystemPrompt: "Apply user-requested changes to ontology schema while preserving structure and quality.",
+		SystemPrompt: "You are an expert at ontology schema manipulation and refinement. Apply requested changes while preserving structure and quality.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON objects, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "{",  // Force JSON object format, avoid preamble
 	})
 	if err != nil {
 		return err
@@ -910,7 +949,8 @@ Return JSON:
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:    3000,
 		Temperature:  0.3,
-		SystemPrompt: "You are an expert at ontology quality analysis. Identify gaps and issues systematically.",
+		SystemPrompt: "You are an expert at ontology quality analysis and schema evaluation. Identify gaps and issues systematically.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON objects, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "{",  // Force JSON object format, avoid preamble
 	})
 	if err != nil {
 		return err
@@ -1014,7 +1054,8 @@ Return JSON array of specific changes:
 	response, err := ib.builder.llmClient.Complete(ctx, prompt, LLMOptions{
 		MaxTokens:    4000,
 		Temperature:  0.3,
-		SystemPrompt: "Propose specific, actionable changes to improve ontology quality.",
+		SystemPrompt: "You are an expert at ontology improvement and change proposal. Propose specific, actionable changes to improve ontology quality.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "[",  // Force JSON array format, avoid preamble
 	})
 	if err != nil {
 		return err
@@ -1080,8 +1121,10 @@ Current schema:
 Return the COMPLETE updated schema as JSON.`, string(changesJSON), string(schemaJSON))
 
 	applyResponse, err := ib.builder.llmClient.Complete(ctx, applyPrompt, LLMOptions{
-		MaxTokens:   8000,
-		Temperature: 0.2,
+		MaxTokens:    8000,
+		Temperature:  0.2,
+		SystemPrompt: "You are an expert at ontology schema manipulation and change application. Apply proposed changes systematically.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON objects, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "{",  // Force JSON object format, avoid preamble
 	})
 	if err != nil {
 		return err

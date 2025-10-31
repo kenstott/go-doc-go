@@ -8,17 +8,21 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 // AnthropicClient implements LLMClient and MCPCapableLLMClient for Anthropic's Claude API
 type AnthropicClient struct {
-	apiKey     string
-	model      string
-	httpClient *http.Client
-	apiURL     string
-	mcpServer  MCPToolExecutor // Optional: MCP server for tool calling
+	apiKey         string
+	model          string
+	httpClient     *http.Client
+	apiURL         string
+	mcpServer      MCPToolExecutor // Optional: MCP server for tool calling
+	debugOutputDir string          // Optional: directory to save debug logs of requests/responses
+	callCounter    int             // Counter for naming debug files
 }
 
 // MCPToolExecutor is the interface for executing MCP tools
@@ -46,6 +50,12 @@ func NewAnthropicClient(apiKey, model string) *AnthropicClient {
 // SetMCPServer sets the MCP server for tool calling support
 func (c *AnthropicClient) SetMCPServer(server MCPToolExecutor) {
 	c.mcpServer = server
+}
+
+// SetDebugOutputDir enables debug logging of all LLM requests/responses to specified directory
+func (c *AnthropicClient) SetDebugOutputDir(dir string) {
+	c.debugOutputDir = dir
+	c.callCounter = 0
 }
 
 // isRetryableError checks if an error is retryable (e.g., rate limiting, overloaded)
@@ -206,12 +216,23 @@ func (c *AnthropicClient) Complete(ctx context.Context, prompt string, options L
 			return "", err
 		}
 
+		// Log debug output if enabled (log each continuation separately)
+		c.logDebugLLMCall(jsonData, responseText)
+
+		// Strip code fences from each continuation chunk BEFORE concatenating
+		// This prevents code fences split across continuations (e.g., "```" + "\njson\n")
+		cleanedChunk := responseText
+		cleanedChunk = strings.ReplaceAll(cleanedChunk, "```json\n", "")
+		cleanedChunk = strings.ReplaceAll(cleanedChunk, "```json", "")
+		cleanedChunk = strings.ReplaceAll(cleanedChunk, "\n```", "")
+		cleanedChunk = strings.ReplaceAll(cleanedChunk, "```", "")
+
 		// Append to full response
 		// On first attempt with prefill, include the prefill in the response
 		if attempt == 0 && options.Prefill != "" {
 			fullResponse.WriteString(options.Prefill)
 		}
-		fullResponse.WriteString(responseText)
+		fullResponse.WriteString(cleanedChunk)
 
 		// Log stop reason
 		if attempt == 0 {
@@ -229,7 +250,16 @@ func (c *AnthropicClient) Complete(ctx context.Context, prompt string, options L
 		// Truncated response - need to continue
 		fmt.Printf("⚠️  Response truncated at max_tokens, continuing generation (attempt %d/%d)...\n", attempt+1, maxContinuations)
 
-		// Add assistant response to message history
+		// Re-add prefill constraint for continuation (if originally provided)
+		// This ensures continuation requests maintain the same format constraints as the initial request
+		if options.Prefill != "" {
+			messages = append(messages, anthropicMessage{
+				Role:    "assistant",
+				Content: options.Prefill,
+			})
+		}
+
+		// Add assistant's truncated response to message history
 		messages = append(messages, anthropicMessage{
 			Role:    "assistant",
 			Content: responseText,
@@ -390,6 +420,9 @@ func (c *AnthropicClient) CompleteWithTools(ctx context.Context, prompt string, 
 			return "", err
 		}
 
+		// Log debug output if enabled (log each tool calling iteration separately)
+		c.logDebugLLMCall(jsonData, responseText)
+
 		// Parse response
 		var apiResp anthropicResponseWithTools
 		if err := json.Unmarshal([]byte(responseText), &apiResp); err != nil {
@@ -400,6 +433,13 @@ func (c *AnthropicClient) CompleteWithTools(ctx context.Context, prompt string, 
 		if apiResp.StopReason == "end_turn" || apiResp.StopReason == "max_tokens" {
 			// LLM finished - extract text response
 			responseText := c.extractTextFromResponse(apiResp)
+
+			// Strip code fences (same logic as Complete method)
+			responseText = strings.ReplaceAll(responseText, "```json\n", "")
+			responseText = strings.ReplaceAll(responseText, "```json", "")
+			responseText = strings.ReplaceAll(responseText, "\n```", "")
+			responseText = strings.ReplaceAll(responseText, "```", "")
+
 			// On first iteration with prefill, prepend prefill to response
 			if iteration == 0 && options.Prefill != "" {
 				responseText = options.Prefill + responseText
@@ -605,4 +645,38 @@ type anthropicResponseWithTools struct {
 	Model      string                  `json:"model"`
 	StopReason string                  `json:"stop_reason"`
 	Usage      anthropicUsage          `json:"usage"`
+}
+
+// logDebugLLMCall saves request and response to debug directory if debug logging is enabled
+func (c *AnthropicClient) logDebugLLMCall(requestJSON []byte, response string) {
+	if c.debugOutputDir == "" {
+		return // Debug logging disabled
+	}
+
+	// Create debug directory if needed
+	if err := os.MkdirAll(c.debugOutputDir, 0755); err != nil {
+		fmt.Printf("Warning: Failed to create debug output directory: %v\n", err)
+		return
+	}
+
+	// Increment counter for unique filenames
+	c.callCounter++
+	timestamp := time.Now().Format("20060102_150405")
+	prefix := fmt.Sprintf("llm_call_%03d_%s", c.callCounter, timestamp)
+
+	// Save request
+	requestFile := filepath.Join(c.debugOutputDir, prefix+"_request.json")
+	if err := os.WriteFile(requestFile, requestJSON, 0644); err != nil {
+		fmt.Printf("Warning: Failed to write debug request: %v\n", err)
+	} else {
+		fmt.Printf("  [DEBUG] Saved LLM request to: %s\n", requestFile)
+	}
+
+	// Save response
+	responseFile := filepath.Join(c.debugOutputDir, prefix+"_response.txt")
+	if err := os.WriteFile(responseFile, []byte(response), 0644); err != nil {
+		fmt.Printf("Warning: Failed to write debug response: %v\n", err)
+	} else {
+		fmt.Printf("  [DEBUG] Saved LLM response to: %s\n", responseFile)
+	}
 }

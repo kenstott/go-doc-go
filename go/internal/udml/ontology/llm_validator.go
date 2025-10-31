@@ -192,7 +192,8 @@ func (v *LLMValidator) BatchValidate(ctx context.Context, entities []EntityToVal
 	response, err := v.llmClient.Complete(ctx, promptBuilder.String(), LLMOptions{
 		MaxTokens:    2000,
 		Temperature:  0.1, // Low temperature for consistent validation
-		SystemPrompt: "You are a precise entity validation system that returns structured JSON responses.",
+		SystemPrompt: "You are a JSON-only API. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "[", // Force JSON array format, avoid preamble
 	})
 
 	if err != nil {

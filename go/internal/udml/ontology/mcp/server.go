@@ -48,7 +48,7 @@ func (e *OntologyCorpusExplorer) CreateMCPServer() *server.MCPServer {
 	// Tool 2: analyze_patterns
 	e.addAnalyzePatternsTool(s)
 
-	// Tool 3: compute_frequencies
+	// Tool 3: compute_frequencies (with semantic pre-filtering optimization)
 	e.addComputeFrequenciesTool(s)
 
 	// Tool 4: find_cooccurrences
@@ -545,7 +545,7 @@ func (e *OntologyCorpusExplorer) GetToolDefinitions() []interface{} {
 		},
 		map[string]interface{}{
 			"name":        "compute_frequencies",
-			"description": "Compute frequency counts for terms or entities across the corpus. Useful for understanding what concepts are most prominent.",
+			"description": "Compute frequency counts for terms or entities across the corpus using semantic pre-filtering for performance. Searches only semantically relevant elements.",
 			"parameters": map[string]interface{}{
 				"terms": map[string]interface{}{
 					"type":        "array",
@@ -562,7 +562,7 @@ func (e *OntologyCorpusExplorer) GetToolDefinitions() []interface{} {
 				},
 				"element_types": map[string]interface{}{
 					"type":        "array",
-					"description": "Filter by element types",
+					"description": "Filter by element types (leaf nodes only: paragraph, text, table_cell, list_item, code_block)",
 					"required":    false,
 					"items": map[string]interface{}{
 						"type": "string",

@@ -134,11 +134,46 @@ func (e *OntologyCorpusExplorer) analyzePattern(ctx context.Context, pattern str
 func (e *OntologyCorpusExplorer) computeFrequencies(ctx context.Context, terms []string, caseSensitive bool, elementTypes []string) ([]analytics.TermFrequency, error) {
 	log.Printf("[MCP:compute_frequencies] terms=%v, case_sensitive=%v, element_types=%v", terms, caseSensitive, elementTypes)
 
-	// Build filters for Storage query
-	filters := make(map[string]interface{})
-	filters["latest_only"] = true // Enable temporal filtering by default
+	// OPTIMIZATION: Use semantic similarity to pre-filter to relevant elements
+	// This avoids scanning the entire corpus for term frequencies
 
-	// Use Storage interface for frequency computation
+	// Step 1: Create semantic query from terms
+	semanticQuery := ""
+	for i, term := range terms {
+		if i > 0 {
+			semanticQuery += " "
+		}
+		semanticQuery += term
+	}
+
+	// Step 2: Use semantic search to find top 500-1000 relevant leaf elements
+	leafElementTypes := []string{"paragraph", "text", "table_cell", "list_item", "code_block"}
+	if len(elementTypes) > 0 {
+		// Use provided element types (should already be leaf types)
+		leafElementTypes = elementTypes
+	}
+
+	log.Printf("[MCP:compute_frequencies] Using semantic pre-filter: query=%q, leaf_types=%v", semanticQuery, leafElementTypes)
+
+	relevantElements, err := e.executeSemanticSearch(ctx, semanticQuery, leafElementTypes, 1000, 0.5)
+	if err != nil {
+		return nil, fmt.Errorf("semantic pre-filtering failed: %w", err)
+	}
+
+	log.Printf("[MCP:compute_frequencies] Found %d semantically relevant elements (filtered from full corpus)", len(relevantElements))
+
+	// Step 3: Extract element IDs for filtering
+	elementIDs := make([]string, len(relevantElements))
+	for i, elem := range relevantElements {
+		elementIDs[i] = elem.Element.ElementID
+	}
+
+	// Step 4: Build filters for Storage query with element ID restriction
+	filters := make(map[string]interface{})
+	filters["latest_only"] = true
+	filters["element_ids"] = elementIDs // Only count within semantically relevant elements
+
+	// Step 5: Use Storage interface for frequency computation on filtered set
 	results, err := e.storage.ComputeTermFrequencies(terms, caseSensitive, filters)
 	if err != nil {
 		return nil, fmt.Errorf("frequency computation failed: %w", err)
