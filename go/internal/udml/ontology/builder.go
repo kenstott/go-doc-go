@@ -1447,6 +1447,70 @@ Extracts entities from JSON documents using JSONPath expressions.
 
 ---
 
+## ATTRIBUTE EXTRACTION (OPTIONAL - SCHEMA PARSIMONY)
+
+**PURPOSE**: Extract entity/relationship attributes instead of creating entity type variations.
+
+Instead of creating 50+ entity types for medical specialties (cardiologist, neurologist, etc.),
+use 1 "physician" entity type with "specialty" attribute extracted via regex from finite vocabulary.
+
+**WHEN TO USE**:
+- Finite vocabulary lists (medical specialties, job roles, industry sectors)
+- Metadata enhancement (bed count, founding year, department name)
+- Temporal/status information (employment dates, current/former status)
+
+**ATTRIBUTE TYPES**:
+1. **constant** - Fixed value for all matches (e.g., role="physician")
+2. **regex** - Extract from text using (?P<value>...) capture group
+
+**ATTRIBUTE SCOPES**:
+- entity_match (default): Extract from matched entity text itself
+- element: Extract from entire element content
+- proximity: Extract from N words around entity (requires proximity_distance)
+
+**OPTIONAL PROCESSING**:
+- transform: "lowercase", "uppercase", "trim"
+- default_value: Fallback if extraction fails (best-effort extraction)
+
+**EXAMPLE - PHYSICIAN WITH SPECIALTY:**
+{
+  "entity_type": "physician",
+  "domain": "medical",
+  "description": "Medical doctor with specialty attribute",
+  "element_types": ["paragraph", "list_item"],
+  "confidence": 0.85,
+  "extraction_rules": [
+    {
+      "type": "content_extraction",
+      "instance_name": "(?P<name>Dr\\.\\s+[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)",
+      "attributes": [
+        {
+          "name": "role",
+          "type": "constant",
+          "constant_value": "physician"
+        },
+        {
+          "name": "specialty",
+          "type": "regex",
+          "regex_pattern": "\\b(?P<value>cardiology|neurology|pediatrics|oncology|surgery|internal_medicine)\\b",
+          "scope": "proximity",
+          "proximity_distance": 30,
+          "default_value": "general_practice",
+          "transform": "lowercase"
+        }
+      ]
+    }
+  ]
+}
+
+**BENEFITS**:
+- 1 entity type with attributes vs 50+ entity type variations
+- Easier to maintain and extend vocabularies
+- Cleaner schema with better reusability
+- Backward compatible (attributes are optional)
+
+---
+
 ## MULTIPLE MAPPINGS FOR SAME ENTITY TYPE
 
 You can create MULTIPLE mappings for the same entity_type with different confidence levels:
