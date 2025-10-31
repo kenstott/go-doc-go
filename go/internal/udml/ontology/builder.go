@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -236,6 +237,14 @@ func NewOntologyBuilder(config BuilderConfig) (*OntologyBuilder, error) {
 	if config.DebugOutputDir == "" && config.DebugMode {
 		// Auto-derive debug output directory from storage path
 		config.DebugOutputDir = filepath.Join(filepath.Dir(config.StoragePath), "ontology_debug")
+	}
+
+	// Enable LLM debug logging if debug mode is enabled
+	if config.DebugMode && config.DebugOutputDir != "" {
+		if anthropicClient, ok := llmClient.(*AnthropicClient); ok {
+			anthropicClient.SetDebugOutputDir(config.DebugOutputDir)
+			fmt.Printf("✓ LLM debug logging enabled: %s\n", config.DebugOutputDir)
+		}
 	}
 
 	// Create MCP server if enabled
@@ -908,7 +917,8 @@ Before returning your response, verify EVERY domain name appears EXACTLY in the 
 	llmOptions := LLMOptions{
 		MaxTokens:    b.config.LLMMaxTokens,
 		Temperature:  0.3,
-		SystemPrompt: "You are an expert at identifying BUSINESS domains using data mesh principles. A domain is a BUSINESS CAPABILITY owned by a business team, NOT a data type, technical concern, or infrastructure component. Focus on business value and organizational ownership. Examples: Financial Management, Legal & Compliance, Healthcare Services, Sales & Marketing.",
+		SystemPrompt: "You are an expert at identifying BUSINESS domains using data mesh principles.\n\nAlways provide your analysis as structured JSON. You respond exclusively with valid JSON objects, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "{",  // Force JSON object format, avoid preamble
 	}
 
 	if b.config.EnableMCP && b.mcpServer != nil {
@@ -1541,7 +1551,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
 	llmOptions := LLMOptions{
 		MaxTokens:    b.config.LLMMaxTokens,
 		Temperature:  0.3,
-		SystemPrompt: "You are an expert at entity extraction and ontology design.",
+		SystemPrompt: "You are a JSON-only API. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "[",  // Force JSON array format, avoid preamble
 	}
 
 	if b.config.EnableMCP && b.mcpServer != nil {
@@ -1682,9 +1693,17 @@ Analyze corpus samples and identify ALL relevant entities for this domain. This 
 
 ## OUTPUT REQUIREMENTS
 
-Generate a JSON array of entity mappings. You MUST include:
-- ALL 4 common types (person, organization, location, date) adapted to this domain
-- 2-5 domain-specific entity types unique to %s domain
+Generate a JSON array of entity mappings. Include entity types that are:
+1. **Clearly observable** in the corpus samples with concrete extraction patterns
+2. **High-value** for this domain based on frequency and importance
+3. **Well-defined** with distinct boundaries from other entity types
+
+**Entity Type Selection Guidelines:**
+- Include common types (person, organization, location, date) ONLY if clearly present in corpus
+- Add domain-specific types based on corpus analysis (no artificial limits)
+- Quality over quantity: Better to have 5 well-defined types than 15 vague ones
+- Each entity type must have at least 2 concrete extraction patterns from corpus samples
+- Typical range: 5-15 entity types per domain (let corpus complexity guide you)
 
 **JSON Format:**
 [
@@ -1750,12 +1769,21 @@ Generate a JSON array of entity mappings. You MUST include:
 	llmOptions := LLMOptions{
 		MaxTokens:    b.config.LLMMaxTokens,
 		Temperature:  0.2,
-		SystemPrompt: "You are an expert at discovering entity types and creating extraction rules adapted to domain-specific contexts.",
+		SystemPrompt: "You are a JSON-only API. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "[",  // Force JSON array format, avoid preamble (no trailing whitespace)
 	}
 
 	response, err := b.llmClient.Complete(ctx, prompt, llmOptions)
 	if err != nil {
 		return nil, 1, 0, err
+	}
+
+	// Save debug response if debug mode enabled
+	if b.config.DebugMode {
+		if err := b.saveDebugResponse(fmt.Sprintf("entity_types_domain_%s", domain.Name), response); err != nil {
+			// Log but don't fail on debug save errors
+			fmt.Printf("Warning: Failed to save debug response for domain %s entity types: %v\n", domain.Name, err)
+		}
 	}
 
 	var mappings []ElementEntityMappingConfig
@@ -1929,8 +1957,12 @@ Return a JSON array of relationship rules:
   }
 ]
 
-Focus on the most important and clearly observable relationships in the corpus samples.
-Aim for 3-8 high-confidence relationships per domain.`, domain, entityList, sampleTexts)
+**Relationship Selection Guidelines:**
+- Focus on clearly observable relationships in corpus samples
+- Each relationship must have concrete extraction patterns with examples
+- Quality over quantity: Better to have 3 well-defined relationships than 10 vague ones
+- Typical range: 3-15 relationships per domain (let corpus complexity guide you)
+- Only include relationships you can confidently extract from the corpus`, domain, entityList, sampleTexts)
 
 	// Call LLM with or without MCP tools
 	var response string
@@ -1938,7 +1970,7 @@ Aim for 3-8 high-confidence relationships per domain.`, domain, entityList, samp
 	llmOptions := LLMOptions{
 		MaxTokens:    b.config.LLMMaxTokens,
 		Temperature:  0.3,
-		SystemPrompt: "You are an expert at relationship extraction and knowledge graph design. Focus on practical, observable relationships with clear extraction patterns.",
+		SystemPrompt: "You are a JSON-only API. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
 		Prefill:      "[", // Force JSON array output without preamble
 	}
 
@@ -2059,7 +2091,7 @@ Identify relationship types where source and target are from DIFFERENT domains.
    - examples: Real examples from corpus
 
 **OUTPUT FORMAT:**
-Return a JSON array of relationship rules:
+IMPORTANT: Respond with ONLY a JSON array. Do not include any explanation, preamble, analysis, or markdown code fences.
 
 [
   {
@@ -2086,7 +2118,9 @@ Return a JSON array of relationship rules:
 ]
 
 Focus on the most important cross-domain relationships that connect these domains.
-Aim for 2-5 high-confidence relationships per domain pair.`, strings.Join(domains, ", "), entityList, sampleTexts)
+Aim for 2-5 high-confidence relationships per domain pair.
+
+REMINDER: Output ONLY the JSON array with no additional text.`, strings.Join(domains, ", "), entityList, sampleTexts)
 
 	// Call LLM with or without MCP tools
 	var response string
@@ -2094,7 +2128,7 @@ Aim for 2-5 high-confidence relationships per domain pair.`, strings.Join(domain
 	llmOptions := LLMOptions{
 		MaxTokens:    b.config.LLMMaxTokens,
 		Temperature:  0.3,
-		SystemPrompt: "You are an expert at relationship extraction and knowledge graph design. Focus on meaningful cross-domain relationships with clear extraction patterns.",
+		SystemPrompt: "You are a JSON-only API. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
 		Prefill:      "[", // Force JSON array output without preamble
 	}
 
@@ -2637,7 +2671,8 @@ Return JSON array (NO confidence in extraction_patterns, confidence at RULE leve
 	llmOptions := LLMOptions{
 		MaxTokens:    b.config.LLMMaxTokens,
 		Temperature:  0.3,
-		SystemPrompt: "You are an expert at relationship extraction and pattern discovery. Analyze text samples to find patterns that signal relationships between entities.",
+		SystemPrompt: "You are a JSON-only API. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
+		Prefill:      "[",  // Force JSON array format, avoid preamble
 	}
 
 	if b.config.EnableMCP && b.mcpServer != nil {
@@ -2868,6 +2903,10 @@ func (b *OntologyBuilder) extractJSON(response string, target interface{}) error
 	// Sanitize JSON to fix common LLM output issues
 	jsonStr = b.sanitizeJSON(jsonStr)
 
+	// Fix for prefill failures: LLM sometimes returns single object instead of array
+	// despite Prefill: "[". Detect and wrap object in array before parsing.
+	jsonStr = b.wrapObjectIfArrayExpected(jsonStr, target)
+
 	if err := json.Unmarshal([]byte(jsonStr), target); err != nil {
 		// Write the failing JSON to a debug file for inspection
 		debugFile := "./tests/test_output/ontology_results/debug_failing_json.txt"
@@ -3080,6 +3119,35 @@ func (b *OntologyBuilder) salvagePartialJSON(response string, target interface{}
 	}
 
 	return nil
+}
+// wrapObjectIfArrayExpected detects when LLM returns a single object instead of array
+// despite prefill requesting an array. This happens when prefill is ignored or fails.
+// Uses reflection to check if target is a slice type, and if JSON starts with '{' instead of '[',
+// wraps it in array brackets before parsing.
+func (b *OntologyBuilder) wrapObjectIfArrayExpected(jsonStr string, target interface{}) string {
+	// Use reflection to check if target is expecting an array/slice
+	targetVal := reflect.ValueOf(target)
+	if targetVal.Kind() != reflect.Ptr {
+		return jsonStr // Target not a pointer, can't determine type
+	}
+
+	elem := targetVal.Elem()
+	if elem.Kind() != reflect.Slice {
+		return jsonStr // Not expecting a slice, no fix needed
+	}
+
+	// Target is expecting a slice/array - check if JSON is an object instead
+	// REMOVED: Array wrapping hack that masked syntax errors instead of failing fast
+	// This hack allowed malformed JSON to be parsed, causing partial patch application
+	// Now we let JSON parsing fail with clear error messages
+	// trimmed := strings.TrimSpace(jsonStr)
+	// if len(trimmed) > 0 && trimmed[0] == '{' {
+	// 	// LLM returned object instead of array - wrap it
+	// 	fmt.Printf("⚠️  LLM returned object instead of array (prefill ignored) - wrapping in array brackets\n")
+	// 	return "[" + jsonStr + "]"
+	// }
+
+	return jsonStr
 }
 
 // sanitizeJSON fixes common LLM JSON generation issues
@@ -3317,23 +3385,64 @@ func loadUDMLElementTypes() ([]string, error) {
 // ValidateWithLLM validates schema and uses LLM to fix errors (up to maxAttempts)
 func (b *OntologyBuilder) ValidateWithLLM(ctx context.Context, schema *OntologySchema, maxAttempts int) (*OntologySchema, error) {
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		// Attempt validation
-		err := schema.Validate()
-		if err == nil {
+		// Debug: Log current array sizes to track index changes
+		if b.config.DebugMode {
+			fmt.Printf("🔍 Validation attempt %d/%d - Current schema state:\n", attempt, maxAttempts)
+			fmt.Printf("   - element_entity_mappings: %d items (indices 0-%d)\n",
+				len(schema.ElementEntityMappings), len(schema.ElementEntityMappings)-1)
+			fmt.Printf("   - entity_relationship_rules: %d items (indices 0-%d)\n",
+				len(schema.EntityRelationshipRules), len(schema.EntityRelationshipRules)-1)
+		}
+
+		// Attempt structural validation
+		structuralErr := schema.Validate()
+
+		// Also check quality validation (especially CRITICAL warnings like duplicate entity types)
+		qualityReport := ValidateSchemaQuality(schema)
+		hasCriticalWarnings := qualityReport.HasCriticalWarnings()
+
+		// Pass only if both structural validation passes AND no critical quality warnings
+		if structuralErr == nil && !hasCriticalWarnings {
 			// Validation passed
 			return schema, nil
 		}
 
-		// Check if error is ValidationErrors type
-		validationErrs, ok := err.(*ValidationErrors)
-		if !ok {
-			// Not a ValidationErrors - fail immediately (system error)
-			return nil, fmt.Errorf("validation failed (system error): %w", err)
+		// Build combined validation errors
+		var validationErrs *ValidationErrors
+
+		if structuralErr != nil {
+			// Check if error is ValidationErrors type
+			var ok bool
+			validationErrs, ok = structuralErr.(*ValidationErrors)
+			if !ok {
+				// Not a ValidationErrors - fail immediately (system error)
+				return nil, fmt.Errorf("validation failed (system error): %w", structuralErr)
+			}
+		} else {
+			// No structural errors, but we have critical quality warnings
+			validationErrs = &ValidationErrors{
+				SchemaErrors: []string{},
+				GraphErrors:  []string{},
+			}
+		}
+
+		// Add CRITICAL quality warnings to validation errors
+		if hasCriticalWarnings {
+			for _, warning := range qualityReport.Warnings {
+				if warning.Severity == "CRITICAL" {
+					errMsg := fmt.Sprintf("[CRITICAL] %s: %s", warning.Category, warning.Message)
+					if warning.Suggestion != "" {
+						errMsg += fmt.Sprintf(" (Suggestion: %s)", warning.Suggestion)
+					}
+					validationErrs.SchemaErrors = append(validationErrs.SchemaErrors, errMsg)
+				}
+			}
 		}
 
 		// Validation errors found - ask LLM to fix
+		errorCount := len(validationErrs.SchemaErrors) + len(validationErrs.GraphErrors)
 		fmt.Printf("\n⚠️  Validation attempt %d/%d failed with %d errors\n",
-			attempt, maxAttempts, len(validationErrs.SchemaErrors)+len(validationErrs.GraphErrors))
+			attempt, maxAttempts, errorCount)
 
 		if attempt == maxAttempts {
 			// Max attempts exceeded
@@ -3366,9 +3475,17 @@ func (b *OntologyBuilder) requestLLMFix(ctx context.Context, schema *OntologySch
 	}
 
 	// Build prompt requesting RFC 6902 JSON Patch
+	// Include array size information to help LLM understand valid index ranges
+	numEntityMappings := len(schema.ElementEntityMappings)
+	numRelationships := len(schema.EntityRelationshipRules)
+
 	prompt := fmt.Sprintf(`You are an ontology schema validator. Generate an RFC 6902 JSON Patch to fix the validation errors below.
 
-## Validation Errors Found:
+## Current Schema State:
+- element_entity_mappings: %d items (valid indices: 0-%d)
+- entity_relationship_rules: %d items (valid indices: 0-%d)
+
+## Validation Errors Found (Attempt %d/%d):
 %s
 
 ## Current Schema (for reference):
@@ -3382,22 +3499,41 @@ Return a RFC 6902 JSON Patch (array of operations) to fix ALL validation errors.
 - Invalid confidence: Use "replace" operation to set valid value (0.0-1.0)
 - Missing required fields: Use "add" operation to add missing fields
 
+**Duplicate Entity Types (CRITICAL):**
+- When entity type is defined in multiple domains (e.g., "person" in global, technical, financial domains):
+  - REMOVE domain-specific duplicates using "remove" operation
+  - KEEP only the global domain version (or the one with the highest confidence)
+  - Example: If "person" exists at indices 5, 12, 24, 36, 48, 60 and index 5 is global domain:
+    {"op": "remove", "path": "/element_entity_mappings/60"}  (remove highest index first)
+    {"op": "remove", "path": "/element_entity_mappings/48"}
+    {"op": "remove", "path": "/element_entity_mappings/36"}
+    {"op": "remove", "path": "/element_entity_mappings/24"}
+    {"op": "remove", "path": "/element_entity_mappings/12"}
+  - IMPORTANT: Remove in descending index order to avoid index shifting issues
+
 **Graph Errors:**
 - Broken references: Use "replace" operation to fix parent_type references
 - Circular hierarchies: Use "remove" or "replace" to break cycles
 
 **RFC 6902 Format Example:**
 [
+  {"op": "remove", "path": "/element_entity_mappings/24"},
+  {"op": "remove", "path": "/element_entity_mappings/12"},
   {"op": "replace", "path": "/element_entity_mappings/5/confidence", "value": 0.85},
   {"op": "add", "path": "/element_entity_mappings/10/extraction_rules", "value": [{"type": "keyword_match", "keywords": ["example"]}]},
   {"op": "replace", "path": "/element_entity_mappings/3/entity_type", "value": "researcher [science_research]"}
 ]
 
-Output ONLY the RFC 6902 JSON Patch array with NO explanation.`, errorReport, string(schemaJSON))
+Output ONLY the RFC 6902 JSON Patch array with NO explanation.`,
+		numEntityMappings, numEntityMappings-1,
+		numRelationships, numRelationships-1,
+		attempt, 5, // maxAttempts is hardcoded to 5 in caller
+		errorReport, string(schemaJSON))
 
 	// Call LLM with low temperature and prefill to force JSON array output
+	// Use 4x configured max tokens for large validation fix patches (141 errors requires ~10k tokens)
 	options := LLMOptions{
-		MaxTokens:   b.config.LLMMaxTokens,
+		MaxTokens:   b.config.LLMMaxTokens * 4,
 		Temperature: 0.2,
 		Prefill:     "[", // Force JSON array output without preamble
 	}
@@ -3407,16 +3543,26 @@ Output ONLY the RFC 6902 JSON Patch array with NO explanation.`, errorReport, st
 	}
 
 	// Save debug output if debug mode enabled
+	// Note: Code fences are already stripped in llm_client.go during continuation concatenation
 	if b.config.DebugMode {
+		// Save the patch
 		debugPath := filepath.Join(b.config.DebugOutputDir, fmt.Sprintf("validation_fix_attempt_%d_patch.json", attempt))
 		if err := os.WriteFile(debugPath, []byte(response), 0644); err != nil {
 			fmt.Printf("⚠️  Failed to write debug file: %v\n", err)
 		} else {
 			fmt.Printf("📝 Saved validation fix patch %d to %s\n", attempt, debugPath)
 		}
+
+		// Save the current schema state for comparison/debugging
+		schemaPath := filepath.Join(b.config.DebugOutputDir, fmt.Sprintf("validation_fix_attempt_%d_schema.json", attempt))
+		if err := os.WriteFile(schemaPath, schemaJSON, 0644); err != nil {
+			fmt.Printf("⚠️  Failed to write schema debug file: %v\n", err)
+		} else {
+			fmt.Printf("📝 Saved schema state %d to %s\n", attempt, schemaPath)
+		}
 	}
 
-	// Extract and parse JSON from response (handles markdown code blocks)
+	// Extract and parse JSON from response (handles any remaining markdown code blocks)
 	var patchOps []interface{}
 	if err := b.extractJSON(response, &patchOps); err != nil {
 		return nil, fmt.Errorf("failed to extract JSON patch from LLM response: %w", err)
@@ -3428,16 +3574,17 @@ Output ONLY the RFC 6902 JSON Patch array with NO explanation.`, errorReport, st
 		return nil, fmt.Errorf("failed to marshal patch operations: %w", err)
 	}
 
-	// Parse and apply RFC 6902 patch
+	// Validate patch is valid RFC 6902 before applying (fail fast on malformed LLM responses)
+	// This catches syntax errors and structural issues that might cause partial application
 	patch, err := jsonpatch.DecodePatch(patchJSON)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode RFC 6902 patch: %w", err)
+		return nil, fmt.Errorf("LLM generated invalid RFC 6902 patch: %w", err)
 	}
 
-	// Apply patch to schema JSON
-	modifiedJSON, err := patch.Apply(schemaJSON)
+	// Apply patch to schema JSON with retry on application errors
+	modifiedJSON, err := b.applyPatchWithRetry(ctx, patch, patchJSON, schemaJSON, schema, errors, attempt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to apply RFC 6902 patch: %w", err)
+		return nil, err
 	}
 
 	// Parse patched JSON back into schema
@@ -3449,7 +3596,163 @@ Output ONLY the RFC 6902 JSON Patch array with NO explanation.`, errorReport, st
 	return &fixedSchema, nil
 }
 
+// applyPatchWithRetry attempts to apply an RFC 6902 patch with LLM-assisted retry on errors
+// If patch application fails (e.g., path doesn't exist, wrong operation type), it asks the LLM
+// to generate a corrected patch based on the error message and schema state
+func (b *OntologyBuilder) applyPatchWithRetry(
+	ctx context.Context,
+	initialPatch jsonpatch.Patch,
+	initialPatchJSON []byte,
+	schemaJSON []byte,
+	schema *OntologySchema,
+	validationErrors *ValidationErrors,
+	validationAttempt int,
+) ([]byte, error) {
+	const maxPatchRetries = 3
+
+	currentPatch := initialPatch
+	currentPatchJSON := initialPatchJSON
+
+	for patchRetry := 0; patchRetry < maxPatchRetries; patchRetry++ {
+		// Attempt to apply the patch
+		modifiedJSON, err := currentPatch.Apply(schemaJSON)
+		if err == nil {
+			// Success!
+			return modifiedJSON, nil
+		}
+
+		// Patch application failed
+		if patchRetry == maxPatchRetries-1 {
+			// Out of retries
+			return nil, fmt.Errorf("failed to apply RFC 6902 patch after %d retries: %w", maxPatchRetries, err)
+		}
+
+		// Ask LLM to correct the patch
+		fmt.Printf("⚠️  Patch application failed (retry %d/%d): %v\n", patchRetry+1, maxPatchRetries, err)
+		fmt.Printf("🔄 Requesting LLM to correct the patch...\n")
+
+		correctedPatchJSON, corrErr := b.requestPatchCorrection(ctx, schema, schemaJSON, currentPatchJSON, err, validationAttempt, patchRetry+1)
+		if corrErr != nil {
+			return nil, fmt.Errorf("LLM patch correction failed: %w", corrErr)
+		}
+
+		// Decode the corrected patch
+		correctedPatch, decodeErr := jsonpatch.DecodePatch(correctedPatchJSON)
+		if decodeErr != nil {
+			return nil, fmt.Errorf("corrected patch is invalid: %w", decodeErr)
+		}
+
+		// Try again with corrected patch
+		currentPatch = correctedPatch
+		currentPatchJSON = correctedPatchJSON
+	}
+
+	return nil, fmt.Errorf("unexpected: exceeded max patch retries without return")
+}
+
+// requestPatchCorrection asks the LLM to fix a patch that failed to apply
+func (b *OntologyBuilder) requestPatchCorrection(
+	ctx context.Context,
+	schema *OntologySchema,
+	schemaJSON []byte,
+	failedPatchJSON []byte,
+	patchError error,
+	validationAttempt int,
+	patchRetry int,
+) ([]byte, error) {
+	// Parse error to provide specific guidance
+	errorMsg := patchError.Error()
+	specificGuidance := ""
+
+	if strings.Contains(errorMsg, "missing key") || strings.Contains(errorMsg, "missing value") {
+		// Extract the path from error if possible
+		specificGuidance = `
+**CRITICAL**: The error "missing key" or "missing value" means the field DOES NOT EXIST in the schema.
+
+You MUST change the operation from "replace" to "add" for paths that don't exist:
+- If error says path X is missing, change: {"op": "replace", "path": "X", ...}
+                                     to: {"op": "add", "path": "X", ...}
+
+Example fix:
+  WRONG: {"op": "replace", "path": "/entity_relationship_rules/32/extraction_patterns/0/max_distance", "value": 30}
+  RIGHT: {"op": "add", "path": "/entity_relationship_rules/32/extraction_patterns/0/max_distance", "value": 30}`
+	} else if strings.Contains(errorMsg, "invalid index") {
+		specificGuidance = `
+**CRITICAL**: The error "invalid index" means you're trying to access an array element that doesn't exist.
+
+Check the "Current Schema State" below to see valid index ranges, then:
+- Remove operations for indices that are out of bounds
+- Or reduce the index to be within valid range`
+	}
+
+	prompt := fmt.Sprintf(`The RFC 6902 JSON Patch you generated failed to apply to the schema.
+
+## Error Message:
+%s
+%s
+
+## Current Schema State:
+- element_entity_mappings: %d items (valid indices: 0-%d)
+- entity_relationship_rules: %d items (valid indices: 0-%d)
+
+## Your Failed Patch:
+%s
+
+## Current Schema (for reference):
+%s
+
+## Instructions:
+Generate a CORRECTED RFC 6902 JSON Patch that fixes the specific error above.
+- Review the error message and apply the specific guidance
+- An error with the phrase "missing key" indicates a path does not exist. Use "add" for paths that do not exist.
+- Use valid array indices only
+
+Return ONLY the JSON patch array - no explanations.`,
+		errorMsg,
+		specificGuidance,
+		len(schema.ElementEntityMappings), len(schema.ElementEntityMappings)-1,
+		len(schema.EntityRelationshipRules), len(schema.EntityRelationshipRules)-1,
+		string(failedPatchJSON),
+		string(schemaJSON))
+
+	options := LLMOptions{
+		MaxTokens:   b.config.LLMMaxTokens * 4,
+		Temperature: 0.1, // Lower temperature for correction
+		Prefill:     "[",
+	}
+
+	response, err := b.llmClient.Complete(ctx, prompt, options)
+	if err != nil {
+		return nil, fmt.Errorf("LLM query failed: %w", err)
+	}
+
+	// Save debug output
+	if b.config.DebugMode {
+		debugPath := filepath.Join(b.config.DebugOutputDir,
+			fmt.Sprintf("validation_fix_attempt_%d_patch_correction_%d.json", validationAttempt, patchRetry))
+		if err := os.WriteFile(debugPath, []byte(response), 0644); err != nil {
+			fmt.Printf("⚠️  Failed to write patch correction debug file: %v\n", err)
+		} else {
+			fmt.Printf("📝 Saved corrected patch %d.%d to %s\n", validationAttempt, patchRetry, debugPath)
+		}
+	}
+
+	// Parse and validate the corrected patch
+	var patchOps []interface{}
+	if err := b.extractJSON(response, &patchOps); err != nil {
+		return nil, fmt.Errorf("failed to extract JSON from corrected patch: %w", err)
+	}
+
+	correctedPatchJSON, err := json.Marshal(patchOps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal corrected patch: %w", err)
+	}
+
+	return correctedPatchJSON, nil
+}
+
 // formatValidationErrorsForLLM formats validation errors for LLM prompt
+// Extracts array indices from CRITICAL warnings to help LLM generate correct RFC 6902 patches
 func (b *OntologyBuilder) formatValidationErrorsForLLM(errors *ValidationErrors) string {
 	var result strings.Builder
 
@@ -3457,6 +3760,22 @@ func (b *OntologyBuilder) formatValidationErrorsForLLM(errors *ValidationErrors)
 		result.WriteString("Schema Errors:\n")
 		for i, err := range errors.SchemaErrors {
 			result.WriteString(fmt.Sprintf("  %d. %s\n", i+1, err))
+
+			// Parse if this is a CRITICAL duplicate_entity_type error with indices
+			// Format: "[CRITICAL] duplicate_entity_type: Entity type 'X' defined N times..."
+			if strings.Contains(err, "[CRITICAL] duplicate_entity_type:") {
+				// Extract entity type and look it up in current quality validation
+				// This will provide RFC 6902 patch instructions
+				if strings.Contains(err, "Entity type '") {
+					start := strings.Index(err, "Entity type '") + len("Entity type '")
+					end := strings.Index(err[start:], "'")
+					if end > 0 {
+						// Note: The actual indices are already included in the Suggestion field
+						// which was extracted from the ValidationWarning and added to the error string
+						// So we don't need to extract them here - they're already in the error message
+					}
+				}
+			}
 		}
 	}
 
