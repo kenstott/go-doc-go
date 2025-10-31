@@ -141,6 +141,89 @@ func (b *Builder) validateEntityMappings() []ValidationWarning {
 }
 ```
 
+##### E. Attribute Extraction
+Add attribute extraction rules to enable schema parsimony (use attributes instead of creating entity type variations):
+
+**Rationale**: Instead of creating separate entity types for `cardiologist`, `neurologist`, `pediatrician`, use single `physician` entity type with `specialty` attribute extracted via regex from finite vocabulary list.
+
+```go
+// AttributeExtractionRule defines how to extract an attribute value for an entity or relationship
+type AttributeExtractionRule struct {
+    Name         string      `json:"name" yaml:"name"`                                             // Attribute name (e.g., "specialty", "role", "department")
+    Type         string      `json:"type" yaml:"type"`                                             // Extraction type: "constant" or "regex"
+
+    // Type-specific fields (use appropriate field based on Type)
+    ConstantValue interface{} `json:"constant_value,omitempty" yaml:"constant_value,omitempty"`   // For type="constant" - fixed metadata
+    RegexPattern  string      `json:"regex_pattern,omitempty" yaml:"regex_pattern,omitempty"`     // For type="regex" - uses (?P<value>...) capture group
+
+    // Context scope for extraction
+    Scope             string `json:"scope,omitempty" yaml:"scope,omitempty"`                       // Where to extract from: "entity_match" (default), "element", "proximity"
+    ProximityDistance int    `json:"proximity_distance,omitempty" yaml:"proximity_distance,omitempty"` // For scope="proximity" - word distance from entity
+
+    // Optional processing
+    DefaultValue interface{} `json:"default_value,omitempty" yaml:"default_value,omitempty"`      // Default if extraction fails
+    Transform    string      `json:"transform,omitempty" yaml:"transform,omitempty"`              // Post-processing: "lowercase", "uppercase", "trim"
+}
+
+// Add to ExtractionRule (for entity attributes)
+type ExtractionRule struct {
+    // ... existing fields ...
+    Attributes []AttributeExtractionRule `json:"attributes,omitempty" yaml:"attributes,omitempty"` // Extract attributes when entity matches
+}
+
+// Add to EntityRelationshipRule (for relationship attributes)
+type EntityRelationshipRule struct {
+    // ... existing fields ...
+    Attributes []AttributeExtractionRule `json:"attributes,omitempty" yaml:"attributes,omitempty"` // Extract attributes when relationship matches
+}
+```
+
+**Example YAML** - Physician with specialty attribute:
+```yaml
+element_entity_mappings:
+  - entity_type: physician
+    domain: medical
+    description: "Medical doctors"
+    confidence: 0.85
+    extraction_rules:
+      - instance_name: '(?P<name>Dr\.\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+        attributes:
+          # Constant attribute - always set for entities matched by this rule
+          - name: role
+            type: constant
+            constant_value: "physician"
+
+          # Regex extraction from finite specialty list
+          - name: specialty
+            type: regex
+            regex_pattern: '\b(?P<value>cardiology|neurology|pediatrics|oncology|surgery|internal_medicine|psychiatry)\b'
+            scope: proximity
+            proximity_distance: 30
+            default_value: "general_practice"
+            transform: lowercase
+```
+
+**Text**: "Dr. Sarah Chen, specialty: cardiology, has been practicing for 15 years."
+
+**Extracted Entity**:
+```json
+{
+  "entity_type": "physician",
+  "name": "Dr. Sarah Chen",
+  "attributes": {
+    "role": "physician",
+    "specialty": "cardiology"
+  }
+}
+```
+
+**Benefits**:
+- **Enables schema parsimony**: Use 1 `physician` type instead of 50+ specialty types
+- **Efficient extraction**: Regex from finite keyword lists (medical specialties, job roles, sectors)
+- **Leverages existing infrastructure**: Database already has `attributes` VARCHAR column
+- **Backward compatible**: Optional feature, existing schemas work unchanged
+- **Covers 90% of cases**: Finite vocabularies handle most attribute extraction needs
+
 ---
 
 ### 3. LLM Prompt Improvements (MOST CRITICAL)
@@ -365,6 +448,7 @@ Add comprehensive disambiguation guidance:
 2. Add `priority` field for pattern precedence
 3. Implement `ValidationRules` for post-extraction filtering
 4. Add gazetteer import functionality
+5. Add attribute extraction for entities and relationships (enables schema parsimony - use attributes instead of type variations)
 
 ### Phase 4: Advanced Disambiguation (Long-term)
 1. Multi-pass entity extraction with conflict resolution
