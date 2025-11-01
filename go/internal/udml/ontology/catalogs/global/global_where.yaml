@@ -17,7 +17,9 @@ entity_types:
       - list_item
       - table_cell
     extraction_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:,\s*[A-Z]{2})?)'
+      - name: "location_with_optional_state"
+        description: "Matches capitalized names optionally followed by a 2-letter state abbreviation"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:,\s*[A-Z]{2})?)'
         semantic:
           reference_concepts:
             - geographic location with coordinates
@@ -39,8 +41,12 @@ entity_types:
       - list_item
       - table_cell
     extraction_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})'
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+      - name: "city_with_state_abbreviation"
+        description: "Matches city names with 2-letter state abbreviation (e.g., 'New York, NY')"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})'
+      - name: "capitalized_name_near_city_terms"
+        description: "Matches capitalized names near city/town/municipality terms"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
         proximity:
           cooccurrence_terms:
             - city
@@ -63,7 +69,9 @@ entity_types:
       - list_item
       - table_cell
     extraction_rules:
-      - phrase_list:
+      - name: "known_country_names"
+        description: "Matches well-known country names from a curated list"
+        phrase_list:
           - United States
           - Canada
           - Mexico
@@ -94,7 +102,9 @@ entity_types:
       - list_item
       - table_cell
     extraction_rules:
-      - phrase_list:
+      - name: "known_states_and_provinces"
+        description: "Matches well-known state and province names from a curated list"
+        phrase_list:
           - California
           - Texas
           - New York
@@ -103,7 +113,9 @@ entity_types:
           - Quebec
           - Bavaria
           - Tuscany
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
+      - name: "capitalized_name_near_region_terms"
+        description: "Matches capitalized names near state/province/region terms (20-word window)"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
         proximity:
           cooccurrence_terms:
             - state
@@ -126,7 +138,9 @@ entity_types:
       - list_item
       - table_cell
     extraction_rules:
-      - instance_name: '(?P<name>\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:St|Ave|Rd|Dr|Blvd|Street|Avenue|Road|Drive|Boulevard))'
+      - name: "us_street_address_pattern"
+        description: "Matches US-style street addresses with number, street name, and suffix"
+        instance_name: '(?P<name>\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:St|Ave|Rd|Dr|Blvd|Street|Avenue|Road|Drive|Boulevard))'
 
   # Subtype: building
   - entity_type: building
@@ -142,7 +156,9 @@ entity_types:
       - paragraph
       - list_item
     extraction_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Building|Tower|Center|Hall|Complex))'
+      - name: "named_building_with_suffix"
+        description: "Matches building names ending with Building/Tower/Center/Hall/Complex"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Building|Tower|Center|Hall|Complex))'
         proximity:
           cooccurrence_terms:
             - located
