@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +26,85 @@ import (
 
 //go:embed catalogs/**/*.yaml
 var embeddedCatalogs embed.FS
+
+// Config structs for loading domain catalogs (inlined to avoid import cycle)
+type domainCatalogConfig struct {
+	Domain      string                 `yaml:"domain"`
+	Description string                 `yaml:"description"`
+	Subdomains  []string               `yaml:"subdomains,omitempty"`
+	EntityTypes []entityTemplateConfig `yaml:"entity_types"`
+}
+
+type entityTemplateConfig struct {
+	EntityType      string                 `yaml:"entity_type"`
+	ParentType      string                 `yaml:"parent_type,omitempty"`
+	WCategory       string                 `yaml:"w_category,omitempty"`
+	Domain          string                 `yaml:"domain,omitempty"`
+	Description     string                 `yaml:"description"`
+	ElementTypes    []string               `yaml:"element_types,omitempty"`
+	ExtractionRules []extractionRuleConfig `yaml:"extraction_rules,omitempty"`
+}
+
+type extractionRuleConfig struct {
+	// New format fields
+	Name          string                   `yaml:"name,omitempty"`
+	Description   string                   `yaml:"description,omitempty"`
+	InheritanceOp string                   `yaml:"inheritance_op,omitempty"`
+	JSONPath      string                   `yaml:"jsonpath,omitempty"`
+	PhraseList    []string                 `yaml:"phrase_list,omitempty"`
+	InstanceName  string                   `yaml:"instance_name,omitempty"`
+	Pattern       string                   `yaml:"pattern,omitempty"`
+	Proximity     *ProximityFilter         `yaml:"proximity,omitempty"`
+	Dictionary    *DictionaryFilter        `yaml:"dictionary,omitempty"`
+	Semantic      *SemanticFilter          `yaml:"semantic,omitempty"`
+	LLMValidation *LLMValidationPrompt     `yaml:"llm_validation,omitempty"`
+	Attributes    []AttributeExtractionRule `yaml:"attributes,omitempty"`
+
+	// Old format fields (backward compatibility)
+	Keywords     []string `yaml:"keywords,omitempty"`
+	JSONPathExpr string   `yaml:"jsonpath_expr,omitempty"`
+	FieldPath    string   `yaml:"field_path,omitempty"`
+}
+
+// convertRuleConfigs converts extraction rule configs to ExtractionRule, handling old format
+func convertRuleConfigs(configs []extractionRuleConfig) []ExtractionRule {
+	rules := make([]ExtractionRule, len(configs))
+	for i, c := range configs {
+		rule := ExtractionRule{
+			Name:          c.Name,
+			Description:   c.Description,
+			InheritanceOp: c.InheritanceOp,
+			PhraseList:    c.PhraseList,
+			InstanceName:  c.InstanceName,
+			Pattern:       c.Pattern,
+			Proximity:     c.Proximity,
+			Dictionary:    c.Dictionary,
+			Semantic:      c.Semantic,
+			LLMValidation: c.LLMValidation,
+			Attributes:    c.Attributes,
+		}
+
+		// Map JSONPath field
+		if c.JSONPath != "" {
+			rule.JSONPath = c.JSONPath
+		} else if c.JSONPathExpr != "" {
+			rule.JSONPath = c.JSONPathExpr
+		}
+
+		// Old format fallbacks
+		if rule.InstanceName == "" && c.FieldPath != "" {
+			rule.InstanceName = c.FieldPath
+		}
+
+		// Map old 'keywords' field to new 'phrase_list' field
+		if len(rule.PhraseList) == 0 && len(c.Keywords) > 0 {
+			rule.PhraseList = c.Keywords
+		}
+
+		rules[i] = rule
+	}
+	return rules
+}
 
 // min returns the smaller of two integers
 func min(a, b int) int {
@@ -79,8 +159,9 @@ type BuilderConfig struct {
 	InterDomainGroups         [][]string // Inter-domain relationship groups (each inner array is analyzed together, default: all domains in one group)
 
 	// Debug Configuration
-	DebugMode      bool   // Enable debug mode: preserve raw LLM responses for analysis
-	DebugOutputDir string // Directory to store debug outputs (default: derived from output path)
+	DebugMode              bool   // Enable debug mode: preserve raw LLM responses for analysis
+	DebugOutputDir         string // Directory to store debug outputs (default: derived from output path)
+	MaxValidationAttempts  int    // Maximum attempts for LLM validation fix loop (default: 10)
 }
 
 // LLMClient defines the interface for LLM providers
@@ -420,6 +501,7 @@ func (b *OntologyBuilder) generateDraftSchema(ctx context.Context, samples *samp
 type GlobalCatalogSchema struct {
 	Domain        string                       `yaml:"domain"`
 	Description   string                       `yaml:"description"`
+	Dependencies  []string                     `yaml:"dependencies,omitempty"`
 	Subdomains    []string                     `yaml:"subdomains,omitempty"`
 	EntityTypes   []GlobalEntityTypeTemplate   `yaml:"entity_types"`
 	Relationships []GlobalRelationshipTemplate `yaml:"relationships,omitempty"`
@@ -433,7 +515,7 @@ type GlobalEntityTypeTemplate struct {
 	Domain       string           `yaml:"domain,omitempty"`
 	Description  string           `yaml:"description"`
 	ElementTypes []string         `yaml:"element_types,omitempty"`
-	SampleRules  []ExtractionRule `yaml:"sample_rules,omitempty"`
+	SampleRules  []ExtractionRule `yaml:"extraction_rules,omitempty"` // Changed from sample_rules to match domain catalogs
 }
 
 // GlobalRelationshipTemplate represents a relationship template in the global catalog
@@ -474,6 +556,13 @@ func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
 
 		// Collect entity types
 		for _, entityTemplate := range catalog.EntityTypes {
+			// Mark all global catalog rules with CatalogSource="global"
+			markedRules := make([]ExtractionRule, len(entityTemplate.SampleRules))
+			for i, rule := range entityTemplate.SampleRules {
+				rule.CatalogSource = "global"
+				markedRules[i] = rule
+			}
+
 			globalEntities = append(globalEntities, ElementEntityMappingConfig{
 				EntityType:      entityTemplate.EntityType,
 				ParentType:      entityTemplate.ParentType,
@@ -482,7 +571,7 @@ func (b *OntologyBuilder) mergeGlobalCatalog(schema *OntologySchema) error {
 				Description:     entityTemplate.Description,
 				ElementTypes:    entityTemplate.ElementTypes,
 				Confidence:      0.75, // Default confidence for global types
-				ExtractionRules: entityTemplate.SampleRules,
+				ExtractionRules: markedRules,
 			})
 		}
 
@@ -547,6 +636,13 @@ func (b *OntologyBuilder) mergeDomainCatalog(schema *OntologySchema, domainName 
 	// Merge entities from domain catalog
 	var domainEntities []ElementEntityMappingConfig
 	for _, entityTemplate := range domainCatalog.EntityTypes {
+		// Mark all domain catalog rules with CatalogSource="domain"
+		markedRules := make([]ExtractionRule, len(entityTemplate.SampleRules))
+		for i, rule := range entityTemplate.SampleRules {
+			rule.CatalogSource = "domain"
+			markedRules[i] = rule
+		}
+
 		domainEntities = append(domainEntities, ElementEntityMappingConfig{
 			EntityType:      entityTemplate.EntityType,
 			ParentType:      entityTemplate.ParentType,
@@ -555,7 +651,7 @@ func (b *OntologyBuilder) mergeDomainCatalog(schema *OntologySchema, domainName 
 			Description:     entityTemplate.Description,
 			ElementTypes:    entityTemplate.ElementTypes,
 			Confidence:      0.80, // Domain-specific entities get higher confidence than global (0.75)
-			ExtractionRules: entityTemplate.SampleRules,
+			ExtractionRules: markedRules,
 		})
 	}
 
@@ -578,6 +674,14 @@ func (b *OntologyBuilder) mergeDomainCatalog(schema *OntologySchema, domainName 
 	// Append domain relationships
 	schema.EntityRelationshipRules = append(schema.EntityRelationshipRules, domainRels...)
 
+	// Register domain with its dependencies in schema.Domains
+	domainEntry := Domain{
+		Name:         domainCatalog.Domain,
+		Description:  domainCatalog.Description,
+		Dependencies: domainCatalog.Dependencies,
+	}
+	schema.Domains = append(schema.Domains, domainEntry)
+
 	fmt.Printf("✓ Merged %d entities and %d relationships from '%s' domain catalog\n",
 		len(domainEntities), len(domainRels), domainName)
 
@@ -588,6 +692,7 @@ func (b *OntologyBuilder) mergeDomainCatalog(schema *OntologySchema, domainName 
 func (b *OntologyBuilder) loadDomainCatalogFromEmbedded(domainName string) (*GlobalCatalogSchema, error) {
 	// Search for domain catalog file in embedded filesystem
 	var catalogPath string
+	var catalogData []byte
 	err := fs.WalkDir(embeddedCatalogs, "catalogs", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -606,13 +711,17 @@ func (b *OntologyBuilder) loadDomainCatalogFromEmbedded(domainName string) (*Glo
 			return nil // Skip on error
 		}
 
-		var catalog GlobalCatalogSchema
-		if err := yaml.Unmarshal(data, &catalog); err != nil {
+		// Use a temporary struct to check domain name
+		var domainCheck struct {
+			Domain string `yaml:"domain"`
+		}
+		if err := yaml.Unmarshal(data, &domainCheck); err != nil {
 			return nil // Skip on parse error
 		}
 
-		if catalog.Domain == domainName {
+		if domainCheck.Domain == domainName {
 			catalogPath = path
+			catalogData = data
 			return fs.SkipAll // Found it, stop walking
 		}
 
@@ -627,19 +736,34 @@ func (b *OntologyBuilder) loadDomainCatalogFromEmbedded(domainName string) (*Glo
 		return nil, fmt.Errorf("domain '%s' not found in embedded catalogs", domainName)
 	}
 
-	// Load the catalog
-	data, err := embeddedCatalogs.ReadFile(catalogPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read embedded catalog %s: %w", catalogPath, err)
-	}
-
-	var catalog GlobalCatalogSchema
-	if err := yaml.Unmarshal(data, &catalog); err != nil {
+	// Parse catalog config, which handles both old format (keywords) and new format (phrase_list)
+	var catalogConfig domainCatalogConfig
+	if err := yaml.Unmarshal(catalogData, &catalogConfig); err != nil {
 		return nil, fmt.Errorf("failed to parse embedded catalog %s: %w", catalogPath, err)
 	}
 
-	fmt.Printf("  • Loaded embedded domain catalog: %s\n", catalogPath)
-	return &catalog, nil
+	// Convert to GlobalCatalogSchema
+	catalog := &GlobalCatalogSchema{
+		Domain:      catalogConfig.Domain,
+		Description: catalogConfig.Description,
+		Subdomains:  catalogConfig.Subdomains,
+		EntityTypes: make([]GlobalEntityTypeTemplate, len(catalogConfig.EntityTypes)),
+	}
+
+	for i, entityTemplate := range catalogConfig.EntityTypes {
+		catalog.EntityTypes[i] = GlobalEntityTypeTemplate{
+			EntityType:   entityTemplate.EntityType,
+			ParentType:   entityTemplate.ParentType,
+			WCategory:    entityTemplate.WCategory,
+			Domain:       entityTemplate.Domain,
+			Description:  entityTemplate.Description,
+			ElementTypes: entityTemplate.ElementTypes,
+			SampleRules:  convertRuleConfigs(entityTemplate.ExtractionRules), // Convert with name/description preservation
+		}
+	}
+
+	fmt.Printf("  • Loaded embedded domain catalog: %s (with name/description preservation)\n", catalogPath)
+	return catalog, nil
 }
 
 // loadDomainCatalogFromExternal loads a domain catalog from external filesystem
@@ -1187,19 +1311,29 @@ Sample texts:
 
 All extraction patterns are BINARY (TRUE/FALSE match). Confidence is assigned at the mapping level based on WHERE entities are found, not HOW they match.
 
-## EXTRACTION RULE TYPES
+## EXTRACTION RULE STRUCTURE
 
-There are THREE extraction rule types:
+Extraction rules define HOW to extract entities from documents. There is NO "type" field - the extraction method is determined by which field you populate:
 
-1. **content_extraction** - Extract entities from document content using regex with optional filters
-2. **metadata_field** - Extract from document metadata fields
-3. **jsonpath_query** - Extract from JSON documents using JSONPath
+- **instance_name**: Regex with (?P<name>...) capture group - extracts from document content
+- **phrase_list**: List of exact phrases to match - keyword extraction
+- **jsonpath**: JSONPath expression - extracts from JSON structure (future use)
+
+**MOST COMMON**: Use instance_name for regex-based extraction with optional pre-filters.
 
 ---
 
-### RULE TYPE 1: content_extraction
+### EXTRACTION WITH REGEX (instance_name)
 
 Extracts entities from document content using a **required instance_name regex** with optional pre-filters.
+
+**RULE METADATA FIELDS (REQUIRED):**
+- name (string, **REQUIRED**): Descriptive name for this rule. Must be unique within the entity type. Examples: "physician_with_title", "org_with_legal_suffix", "email_validation"
+- description (string, **REQUIRED**): Human-readable explanation of what this rule matches. Examples: "Matches names with Dr/Prof title", "Matches organizations ending with Inc/Corp/LLC"
+- inheritance_op (string, OPTIONAL): For child entities inheriting from parents. One of: "merge", "remove", "replace", or omit for new rules
+  - **merge**: Combine parent's extraction method (instance_name/phrase_list) with child's additional filters
+  - **remove**: Exclude parent rule from final rule set (referenced by name)
+  - **replace**: Override parent rule completely with child's version (referenced by name)
 
 **REQUIRED FIELD:**
 - instance_name (string, REQUIRED): Regex with named capture group (?P<name>...) that extracts entity text
@@ -1251,7 +1385,8 @@ Use semantic_filter when:
 
 **STRUCTURE EXAMPLE:**
 {
-  "type": "content_extraction",
+  "name": "person_name_with_semantic_filter",
+  "description": "Matches capitalized multi-word names validated as persons using semantic context",
   "instance_name": "(?P<name>\\b[A-Z][a-z]+(?:\\s+[A-Z]\\.)?\\s+[A-Z][a-z]+\\b)",
   "semantic_filter": {
     "reference_concepts": [
@@ -1318,6 +1453,91 @@ MAPPING 2 (Lower confidence - ambiguous two-word pattern):
 - Exclude "header" from element_types to prevent title-case heading false positives
 - Test with actual corpus data to tune similarity thresholds
 
+## INHERITANCE OPERATIONS - REFINING PARENT RULES
+
+**IMPORTANT**: When an entity type has parent_type set (e.g., "physician" with parent_type: "global.person"), it inherits all extraction rules from the parent. Use inheritance operations to refine parent rules instead of duplicating them.
+
+**THREE INHERITANCE OPERATIONS:**
+
+1. **merge** - Combine parent's extraction method with additional filters
+   - Keeps parent's instance_name or phrase_list
+   - Adds child's filters (proximity, semantic, dictionary) on top
+   - Use when parent pattern is good but needs disambiguation
+
+2. **remove** - Exclude parent rule from final rule set
+   - Reference parent rule by name
+   - Use when parent rule doesn't apply to child entity
+
+3. **replace** - Override parent rule completely
+   - Reference parent rule by name
+   - Provide complete new extraction method and filters
+   - Use when parent pattern is wrong for child
+
+**EXAMPLE 1 - MERGE (Add filters to parent pattern):**
+Parent rule in global.person:
+{
+  "name": "person_name_with_validation",
+  "description": "Matches capitalized multi-word names validated as persons",
+  "instance_name": "(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)+)",
+  "dictionary": {"require_unknown_words": true},
+  "semantic": {
+    "reference_concepts": ["individual person with biography", "personal pronouns referencing name"],
+    "similarity_threshold": 0.65
+  }
+}
+
+Child rule in medical.physician (MERGES additional proximity filter):
+{
+  "name": "person_name_with_validation",
+  "description": "Matches capitalized multi-word names appearing near medical titles",
+  "inheritance_op": "merge",
+  "proximity": {
+    "cooccurrence_terms": ["Dr", "MD", "physician", "doctor", "medical"],
+    "max_distance": 30,
+    "distance_unit": "word"
+  }
+}
+✅ Result: Uses parent's instance_name + dictionary + semantic filters, PLUS child's proximity filter
+
+**EXAMPLE 2 - REMOVE (Exclude parent rule that doesn't fit):**
+Parent rule in global.person:
+{
+  "name": "person_with_title_prefix",
+  "description": "Matches names with Mr/Mrs/Ms title",
+  "instance_name": "(?P<name>(?:Mr|Mrs|Ms)\\.\\s+[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)"
+}
+
+Child rule in medical.physician (REMOVES rule because physicians use Dr, not Mr/Mrs/Ms):
+{
+  "name": "person_with_title_prefix",
+  "description": "Remove generic title prefix rule (physicians use Dr, not Mr/Mrs/Ms)",
+  "inheritance_op": "remove"
+}
+✅ Result: Parent rule excluded from final physician extraction rules
+
+**EXAMPLE 3 - REPLACE (Override parent pattern completely):**
+Parent rule in global.organization:
+{
+  "name": "org_with_legal_suffix",
+  "description": "Matches organizations ending with Inc/Corp/LLC",
+  "instance_name": "(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*\\s+(?:Inc|Corp|LLC))"
+}
+
+Child rule in medical.hospital (REPLACES with hospital-specific suffixes):
+{
+  "name": "org_with_legal_suffix",
+  "description": "Matches hospitals ending with Hospital/Medical Center/Clinic",
+  "inheritance_op": "replace",
+  "instance_name": "(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)*\\s+(?:Hospital|Medical Center|Clinic))"
+}
+✅ Result: Child's pattern completely replaces parent's pattern
+
+**WHEN TO USE EACH OPERATION:**
+- **merge**: Parent pattern is correct but too broad → add filters to narrow it
+- **remove**: Parent pattern doesn't apply to child at all → exclude it
+- **replace**: Parent pattern is wrong for child → provide corrected pattern
+- **No operation**: Adding a NEW rule not present in parent
+
 ## ENTITY NAME EXTRACTION - INSTANCE VS CATEGORY
 
 **CRITICAL PRINCIPLE**: The extracted entity name must be a specific INSTANCE name, not a category descriptor or fragment.
@@ -1359,8 +1579,12 @@ Your extraction rules should capture the COMPLETE identifying information, not j
 If your regex pattern \\b(?:PMID|DOI|ISBN)\\s*:?\\s*[0-9\\-\\.]+\\b matches "ISBN 978-1-4939-8933-1",
 the entity name should be "978-1-4939-8933-1" (the identifier value), NOT "ISBN" (the label).
 
-**instance_name IS REQUIRED:**
-All content_extraction rules MUST include an instance_name field with a (?P<name>...) capture group.
+**EXTRACTION METHOD IS REQUIRED:**
+All extraction rules MUST include at least ONE extraction method:
+- instance_name: Regex with (?P<name>...) capture group (most common)
+- phrase_list: List of exact phrases to match
+- json_path: JSONPath expression for structured data
+CRITICAL: Rules with ONLY filters (semantic_filter, proximity_filter, etc.) and NO extraction method will be treated as empty and automatically removed.
 
 **REGEX PATTERNS FOR DIFFERENT NEEDS:**
 
@@ -1389,63 +1613,6 @@ All content_extraction rules MUST include an instance_name field with a (?P<name
    - Use (?P<name>.{1,100}) to limit length
    - Prevents excessively long entity names
    - Try specific pattern first, fall back to truncated content
-
-**EXAMPLES:**
-
-Specific entity extraction:
-{
-  "type": "text_similarity",
-  "reference_text": "medical specialty classification",
-  "similarity_threshold": 0.7,
-  "instance_name": "\\b(?P<name>\\w+(?:\\s+\\w+){0,2}(?:ology|iatry|medicine))\\b"
-}
-✓ Extracts specialty names like "cardiology", "internal medicine"
-
-Full content capture:
-{
-  "type": "text_similarity",
-  "reference_text": "therapeutic management strategy and treatment approach",
-  "similarity_threshold": 0.7,
-  "instance_name": "(?P<name>.+)"
-}
-✓ Uses entire matched text as entity name
-
-Truncated content:
-{
-  "type": "text_similarity",
-  "reference_text": "person with professional credentials",
-  "similarity_threshold": 0.7,
-  "instance_name": "\\b(?P<name>[A-Z][a-z]+(?:\\s+[A-Z][a-z]+){0,3})\\b|(?P<name>.{1,100})"
-}
-✓ Tries to extract person name, falls back to first 100 characters
-
-### RULE TYPE 2: metadata_field
-
-Extracts entities from document metadata fields (e.g., author, title, company).
-
-**REQUIRED FIELD:**
-- field_path (string): Dot-notation path to metadata field (e.g., "author.name", "company_info.ticker")
-
-**EXAMPLE:**
-{
-  "type": "metadata_field",
-  "field_path": "author.name"
-}
-
-### RULE TYPE 3: jsonpath_query
-
-Extracts entities from JSON documents using JSONPath expressions.
-
-**REQUIRED FIELD:**
-- jsonpath_expr (string): JSONPath query (e.g., "$.items[*].price", "$.author.name")
-
-**EXAMPLE:**
-{
-  "type": "jsonpath_query",
-  "jsonpath_expr": "$.metadata.company_info.ticker"
-}
-
----
 
 ## ATTRIBUTE EXTRACTION (OPTIONAL - SCHEMA PARSIMONY)
 
@@ -1481,7 +1648,8 @@ use 1 "physician" entity type with "specialty" attribute extracted via regex fro
   "confidence": 0.85,
   "extraction_rules": [
     {
-      "type": "content_extraction",
+      "name": "physician_with_title",
+      "description": "Matches names with Dr title prefix",
       "instance_name": "(?P<name>Dr\\.\\s+[A-Z][a-z]+(?:\\s+[A-Z][a-z]+)?)",
       "attributes": [
         {
@@ -1529,11 +1697,13 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.95,
     "extraction_rules": [
       {
-        "type": "content_extraction",
+        "name": "known_tech_companies",
+        "description": "Matches well-known tech company names and abbreviations",
         "instance_name": "(?P<name>Microsoft|MSFT|MS|Microsoft Corporation|Google|GOOG|Alphabet)"
       },
       {
-        "type": "content_extraction",
+        "name": "org_with_legal_suffix",
+        "description": "Matches organizations ending with legal entity suffixes",
         "instance_name": "(?P<name>\\b[A-Z][a-z]+ (?:Inc|Corp|LLC|Ltd)\\.?\\b)"
       }
     ]
@@ -1546,7 +1716,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.75,
     "extraction_rules": [
       {
-        "type": "content_extraction",
+        "name": "known_tech_companies",
+        "description": "Matches well-known tech company names and abbreviations",
         "instance_name": "(?P<name>Microsoft|MSFT|MS|Microsoft Corporation|Google|GOOG|Alphabet)"
       }
     ]
@@ -1559,7 +1730,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.95,
     "extraction_rules": [
       {
-        "type": "content_extraction",
+        "name": "standard_email_pattern",
+        "description": "Matches standard email address format",
         "instance_name": "(?P<name>\\b[A-Za-z0-9._%%%%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b)"
       }
     ]
@@ -1572,7 +1744,8 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.95,
     "extraction_rules": [
       {
-        "type": "content_extraction",
+        "name": "financial_metric_keywords",
+        "description": "Matches financial metric keywords",
         "instance_name": "(?P<name>revenue|profit|EBITDA|earnings|sales)"
       }
     ]
@@ -1585,25 +1758,13 @@ Return JSON array with DOMAIN FIELD (NO confidence field in extraction_rules):
     "confidence": 0.75,
     "extraction_rules": [
       {
-        "type": "content_extraction",
+        "name": "financial_metric_with_context",
+        "description": "Matches financial metric keywords validated by semantic context",
         "instance_name": "(?P<name>revenue|profit|EBITDA|earnings|sales)",
         "semantic_filter": {
           "reference_concepts": ["quarterly revenue reporting", "financial performance metrics", "earnings statements"],
           "similarity_threshold": 0.7
         }
-      }
-    ]
-  },
-  {
-    "entity_type": "stock_ticker",
-    "domain": "financial",
-    "description": "Stock ticker symbols from JSON metadata",
-    "element_types": ["paragraph", "table_cell"],
-    "confidence": 0.95,
-    "extraction_rules": [
-      {
-        "type": "jsonpath_query",
-        "jsonpath_expr": "$.metadata.company_info.ticker"
       }
     ]
   }
@@ -1668,194 +1829,50 @@ func (b *OntologyBuilder) defineEntityTypesMultiStep(ctx context.Context, sample
 	return allMappings, totalLLMCalls, totalTokens, nil
 }
 
-// generateAllEntitiesForDomain generates all entity types for a domain in a single LLM call
+// generateAllEntitiesForDomain loads entity types directly from domain catalog
+// No LLM calls - simply copies catalog entities with their extraction rules
 func (b *OntologyBuilder) generateAllEntitiesForDomain(ctx context.Context, samples *sampler.SamplingResult, topEntities []sampler.EntityFrequency, domain Domain) ([]ElementEntityMappingConfig, int, int, error) {
-	sampleTexts := b.prepareSampleTexts(samples.Samples, 10)
-
-	// Format element types CLOSED LIST
-	elementTypeList := make([]string, len(b.substantiveTypes))
-	for i, et := range b.substantiveTypes {
-		elementTypeList[i] = fmt.Sprintf("  • **%s**", et)
-	}
-
-	// Format top entities for context
-	domainEntities := []string{}
-	for i, e := range topEntities {
-		if i >= 15 {
-			break
-		}
-		domainEntities = append(domainEntities, fmt.Sprintf("%s (%d occurrences)", e.Entity, e.Count))
-	}
-
-	// Universal entity template descriptions
-	templatesDesc := `
-### PERSON
-- Description: Individual people including names, roles, identities
-- Suggested element types: paragraph, list_item, div, table_cell
-- Example patterns:
-  - Regex: \b([A-Z][a-z]+(?:\s+[A-Z]\.)?(?:\s+[A-Z][a-z]+)+)\b (capitalized names)
-  - Keywords: Dr., Prof., CEO, President, Director
-  - Proximity filter: Match person names only when near biographical keywords (born, died, founded, created)
-
-### ORGANIZATION
-- Description: Companies, institutions, groups, agencies, foundations
-- Suggested element types: paragraph, list_item, div, table_cell
-- Example patterns:
-  - Regex: \b([A-Z][A-Za-z&\s]+(?:Inc|Corp|LLC|Ltd|Company|Foundation|Institute|University|Hospital|Bank|Group))\b
-  - Keywords: company, corporation, organization, institution, foundation
-  - Proximity filter: Match org names near keywords like founded, headquartered, acquired
-
-### LOCATION
-- Description: Geographic locations including cities, countries, addresses, regions
-- Suggested element types: paragraph, list_item, div, table_cell
-- Example patterns:
-  - Regex: \b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*,?\s*(?:USA|UK|Canada|France|Germany|China|Japan)?)\b
-  - Keywords: city, country, region, state, province, located in
-  - Named entity recognition patterns for place names
-
-### DATE
-- Description: Temporal references including dates, times, periods, durations
-- Suggested element types: paragraph, list_item, div, table_cell
-- Example patterns:
-  - Regex: \b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})\b
-  - Regex: \b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b
-  - Keywords: date, time, year, month, period
-`
-
-	prompt := fmt.Sprintf(`You MUST use element types from this CLOSED LIST ONLY:
-
-## ALLOWED ELEMENT TYPES
-%s
-
-## TASK: Discover All Entity Types for Domain "%s"
-
-**Domain Context:**
-- Name: %s
-- Description: %s
-- Owner: %s
-
-**Your Task:**
-Analyze corpus samples and identify ALL relevant entities for this domain. This includes:
-
-1. **Common entity types** (person, organization, location, date) - Adapt extraction rules to %s domain context
-2. **Domain-specific entity types** - Specialized concepts unique to %s domain
-
-**Common Entity Type Templates:**
-%s
-
-**Examples of Good Domain-Specific Types:**
-- medical domain: "medical_procedure", "diagnosis", "medication", "symptom"
-- banking domain: "financial_metric", "account_type", "transaction_type", "compliance_term"
-- government domain: "legislation", "policy", "government_program", "regulation"
-- technology domain: "programming_language", "framework", "protocol", "api_endpoint"
-
-**Top Entities Found in Corpus:**
-%s
-
-**Domain Samples:**
-%s
-
-## OUTPUT REQUIREMENTS
-
-Generate a JSON array of entity mappings. Include entity types that are:
-1. **Clearly observable** in the corpus samples with concrete extraction patterns
-2. **High-value** for this domain based on frequency and importance
-3. **Well-defined** with distinct boundaries from other entity types
-
-**Entity Type Selection Guidelines:**
-- Include common types (person, organization, location, date) ONLY if clearly present in corpus
-- Add domain-specific types based on corpus analysis (no artificial limits)
-- Quality over quantity: Better to have 5 well-defined types than 15 vague ones
-- Each entity type must have at least 2 concrete extraction patterns from corpus samples
-- Typical range: 5-15 entity types per domain (let corpus complexity guide you)
-
-**JSON Format:**
-[
-  {
-    "entity_type": "person",
-    "domain": "%s",
-    "description": "People entities in %s domain context",
-    "element_types": ["paragraph", "div", "list_item"],
-    "confidence": 0.85,
-    "extraction_rules": [
-      {
-        "type": "content_extraction",
-        "instance_name": "(?P<name>...pattern adapted for %s...)"
-      }
-    ]
-  },
-  {
-    "entity_type": "medical_procedure",
-    "domain": "%s",
-    "description": "Medical procedures and interventions",
-    "element_types": ["paragraph", "list_item"],
-    "confidence": 0.80,
-    "extraction_rules": [
-      {
-        "type": "content_extraction",
-        "instance_name": "(?P<name>...domain-specific pattern...)",
-        "proximity_filter": {
-          "keywords": ["procedure", "treatment"],
-          "max_distance": 100
-        }
-      }
-    ]
-  }
-]
-
-**CRITICAL REQUIREMENTS:**
-- All mappings MUST be assigned to domain "%s"
-- Use ONLY element types from the closed list above
-- Include ALL 4 common types (person, organization, location, date)
-- Include 2-5 domain-specific types
-- Adapt all extraction rules to %s domain context
-
-**ENTITY TYPE UNIQUENESS RULES:**
-- Entity type names MUST be unique across ALL domains (global + domain-specific)
-- PREFER reusing existing entity types from global domain when the concept is the same
-- ONLY create domain-specific entity types when they provide clear additional value
-- If creating a domain-specific variant, use qualified naming: {domain}_{entity_type}
-  Example: If global "procedure" exists, use "medical_procedure" NOT "procedure"
-- Set parent_type field to reference the parent entity (e.g., "parent_type": "global.procedure")
-- DO NOT duplicate common entity types (person, organization, location, date, etc.) - these should only exist in global domain`,
-		strings.Join(elementTypeList, "\n"),
-		domain.Name,
-		domain.Name, domain.Description, domain.Owner,
-		domain.Name, domain.Name,
-		templatesDesc,
-		strings.Join(domainEntities, "\n"),
-		sampleTexts,
-		domain.Name,
-		domain.Name, domain.Name, domain.Name,
-		domain.Name,
-		domain.Name, domain.Name)
-
-	llmOptions := LLMOptions{
-		MaxTokens:    b.config.LLMMaxTokens,
-		Temperature:  0.2,
-		SystemPrompt: "You are a JSON-only API. You respond exclusively with valid JSON arrays, nothing else. No explanations, no preambles, no markdown code fences - only pure JSON.",
-		Prefill:      "[",  // Force JSON array format, avoid preamble (no trailing whitespace)
-	}
-
-	response, err := b.llmClient.Complete(ctx, prompt, llmOptions)
+	// Load domain catalog
+	domainCatalog, err := b.loadDomainCatalogFromEmbedded(domain.Name)
 	if err != nil {
-		return nil, 1, 0, err
-	}
-
-	// Save debug response if debug mode enabled
-	if b.config.DebugMode {
-		if err := b.saveDebugResponse(fmt.Sprintf("entity_types_domain_%s", domain.Name), response); err != nil {
-			// Log but don't fail on debug save errors
-			fmt.Printf("Warning: Failed to save debug response for domain %s entity types: %v\n", domain.Name, err)
+		// Try external catalog path if specified
+		if b.config.ExternalCatalogPath != "" {
+			domainCatalog, err = b.loadDomainCatalogFromExternal(domain.Name, b.config.ExternalCatalogPath)
+			if err != nil {
+				return nil, 0, 0, fmt.Errorf("domain catalog not found in embedded or external locations: %w", err)
+			}
+		} else {
+			return nil, 0, 0, fmt.Errorf("domain catalog not found in embedded catalogs: %w", err)
 		}
 	}
 
+	// Convert catalog entities to ElementEntityMappingConfig
 	var mappings []ElementEntityMappingConfig
-	if err := b.extractJSON(response, &mappings); err != nil {
-		return nil, 1, len(response), err
+	for _, entityTemplate := range domainCatalog.EntityTypes {
+		mappings = append(mappings, ElementEntityMappingConfig{
+			EntityType:      entityTemplate.EntityType,
+			ParentType:      entityTemplate.ParentType,
+			WCategory:       entityTemplate.WCategory,
+			Domain:          entityTemplate.Domain,
+			Description:     entityTemplate.Description,
+			ElementTypes:    entityTemplate.ElementTypes,
+			Confidence:      0.90, // High confidence for catalog entities
+			ExtractionRules: entityTemplate.SampleRules, // Direct copy - both are []ExtractionRule
+		})
 	}
 
-	return mappings, 1, len(response), nil
+	// Save debug output if debug mode enabled
+	if b.config.DebugMode {
+		debugJSON, err := json.MarshalIndent(mappings, "", "  ")
+		if err == nil {
+			if err := b.saveDebugResponse(fmt.Sprintf("entity_types_domain_%s", domain.Name), string(debugJSON)); err != nil {
+				fmt.Printf("Warning: Failed to save debug response for domain %s entity types: %v\n", domain.Name, err)
+			}
+		}
+	}
+
+	// Return 0 LLM calls, 0 tokens since we're just copying catalog
+	return mappings, 0, 0, nil
 }
 
 // defineRelationshipTypes asks LLM to define relationship types
@@ -2013,7 +2030,7 @@ Return a JSON array of relationship rules:
       },
       {
         "type": "proximity",
-        "max_distance": 50,
+        "max_distance": 30,
         "context_keywords": ["keyword1", "keyword2"],
         "examples": ["Example from corpus"]
       }
@@ -2173,7 +2190,7 @@ IMPORTANT: Respond with ONLY a JSON array. Do not include any explanation, pream
       },
       {
         "type": "proximity",
-        "max_distance": 100,
+        "max_distance": 30,
         "context_keywords": ["keyword1", "keyword2"],
         "examples": ["Example from corpus"]
       }
@@ -3491,9 +3508,43 @@ func (b *OntologyBuilder) ValidateWithLLM(ctx context.Context, schema *OntologyS
 		}
 
 		// Add CRITICAL quality warnings to validation errors
+		// But first check if any conflicts involve ONLY global catalog entities
+		var catalogBugErrors []string
 		if hasCriticalWarnings {
 			for _, warning := range qualityReport.Warnings {
 				if warning.Severity == "CRITICAL" {
+					// Check if this is a conflict involving only global entities
+					if (warning.Category == "duplicate_patterns_due_to_inheritance" || warning.Category == "duplicate_patterns") && len(warning.ConflictingTypes) > 0 {
+						// Check if all conflicting entities are from global domain
+						allGlobal := true
+						var globalEntities []string
+						for _, entityType := range warning.ConflictingTypes {
+							// Check if domain is "global" (entities are qualified as "domain.entity_type")
+							if !strings.HasPrefix(entityType, "global.") {
+								allGlobal = false
+								break
+							}
+							globalEntities = append(globalEntities, entityType)
+						}
+
+						// If ALL conflicting entities are from global domain, this is a catalog bug
+						if allGlobal && len(globalEntities) > 0 {
+							// Build detailed error message with conflicting rules
+							errMsg := fmt.Sprintf("CATALOG BUG: Global catalog has conflicting entities %v", globalEntities)
+							if len(warning.ConflictingRules) > 0 {
+								errMsg += fmt.Sprintf("\n     Conflicting rules: %v", warning.ConflictingRules)
+							}
+							errMsg += fmt.Sprintf("\n     Category: %s", warning.Category)
+							errMsg += fmt.Sprintf("\n     Message: %s", warning.Message)
+							errMsg += "\n     → This conflict must be fixed in catalogs/global/*.yaml files."
+							errMsg += "\n     → LLM cannot modify global catalog entities."
+
+							catalogBugErrors = append(catalogBugErrors, errMsg)
+							continue // Don't add to validationErrs - will fail immediately
+						}
+					}
+
+					// Regular validation error - add to list for LLM fixing
 					errMsg := fmt.Sprintf("[CRITICAL] %s: %s", warning.Category, warning.Message)
 					if warning.Suggestion != "" {
 						errMsg += fmt.Sprintf(" (Suggestion: %s)", warning.Suggestion)
@@ -3501,6 +3552,16 @@ func (b *OntologyBuilder) ValidateWithLLM(ctx context.Context, schema *OntologyS
 					validationErrs.SchemaErrors = append(validationErrs.SchemaErrors, errMsg)
 				}
 			}
+		}
+
+		// If catalog bugs detected, fail immediately
+		if len(catalogBugErrors) > 0 {
+			fmt.Printf("\n❌ CATALOG BUGS DETECTED - Cannot be fixed by LLM\n")
+			for _, err := range catalogBugErrors {
+				fmt.Printf("   • %s\n", err)
+			}
+			return nil, fmt.Errorf("schema validation failed due to catalog bugs:\n%s",
+				strings.Join(catalogBugErrors, "\n"))
 		}
 
 		// Validation errors found - ask LLM to fix
@@ -3513,7 +3574,7 @@ func (b *OntologyBuilder) ValidateWithLLM(ctx context.Context, schema *OntologyS
 			return nil, fmt.Errorf("validation failed after %d attempts:\n%v", maxAttempts, validationErrs)
 		}
 
-		// Request LLM fix
+		// Request LLM to generate fix and apply it
 		fmt.Printf("🔄 Requesting LLM to fix validation errors...\n")
 		fixedSchema, err := b.requestLLMFix(ctx, schema, validationErrs, attempt)
 		if err != nil {
@@ -3556,7 +3617,24 @@ func (b *OntologyBuilder) requestLLMFix(ctx context.Context, schema *OntologySch
 %s
 
 ## Instructions:
-Return a RFC 6902 JSON Patch (array of operations) to fix ALL validation errors. Common fixes:
+
+**CRITICAL - Catalog Rule Protection:**
+- Rules have a 'catalog_source' field that indicates their origin: "global", "domain", or "llm_generated"
+- Protection hierarchy (from most to least protected):
+  1. catalog_source="global" → IMMUTABLE - NEVER modify, remove, or change these rules under ANY circumstances
+  2. catalog_source="domain" → STRONGLY PRESERVE - Only modify if absolutely necessary to fix CRITICAL blocking errors
+  3. catalog_source="llm_generated" or empty → MODIFIABLE - Can be freely modified, removed, or replaced
+- When fixing duplicate patterns or other conflicts:
+  - If conflict involves rules with catalog_source="global": Modify OTHER rules only, NEVER the global ones
+  - If conflict involves rules with catalog_source="domain": Prefer modifying llm_generated rules first
+  - Only remove/modify domain rules as last resort for CRITICAL blocking errors that prevent schema usage
+- NEVER generate patch operations that remove or modify extraction_rules where catalog_source="global"
+- When adding disambiguation (semantic_filter, proximity_filter) to resolve conflicts:
+  - ADD filters to llm_generated rules first
+  - Only ADD filters to domain rules if llm_generated rules don't exist or can't resolve the conflict
+  - NEVER ADD, REMOVE, or MODIFY filters on global rules - instead modify the competing rules
+
+Return a RFC 6902 JSON Patch (array of operations) to fix ALL errors. Common fixes:
 
 **Schema Errors:**
 - Missing extraction rules: Use "add" operation to add rules array
@@ -3583,21 +3661,23 @@ Return a RFC 6902 JSON Patch (array of operations) to fix ALL validation errors.
   - CRITICAL: This is a BLOCKING error - the schema cannot be used until ALL conflicts are resolved
 
 **Strategy 1 - Add Semantic Filters (PREFERRED for distinct concepts like city/country/region):**
-  - Add semantic_filter with relevant keywords to each entity type
+  - Add semantic_filter with relevant reference_concepts to each entity type
+  - CRITICAL: The extraction rule MUST have an extraction method (instance_name, phrase_list, or json_path)
   - Example fix for [location, city, country, region] pattern conflict:
-    {"op": "add", "path": "/element_entity_mappings/5/extraction_rules/0/semantic_filter", "value": {"keywords": ["place", "area", "site", "spot", "locale"], "similarity_threshold": 0.3}}
-    {"op": "add", "path": "/element_entity_mappings/12/extraction_rules/0/semantic_filter", "value": {"keywords": ["city", "town", "municipality", "urban", "metro"], "similarity_threshold": 0.3}}
-    {"op": "add", "path": "/element_entity_mappings/18/extraction_rules/0/semantic_filter", "value": {"keywords": ["country", "nation", "state", "republic", "kingdom"], "similarity_threshold": 0.3}}
-    {"op": "add", "path": "/element_entity_mappings/24/extraction_rules/0/semantic_filter", "value": {"keywords": ["region", "province", "territory", "district", "zone"], "similarity_threshold": 0.3}}
-  - Keywords should be semantically related to the entity type concept
+    {"op": "add", "path": "/element_entity_mappings/5/extraction_rules/0/semantic_filter", "value": {"reference_concepts": ["place", "area", "site", "spot", "locale"], "similarity_threshold": 0.3}}
+    {"op": "add", "path": "/element_entity_mappings/12/extraction_rules/0/semantic_filter", "value": {"reference_concepts": ["city", "town", "municipality", "urban", "metro"], "similarity_threshold": 0.3}}
+    {"op": "add", "path": "/element_entity_mappings/18/extraction_rules/0/semantic_filter", "value": {"reference_concepts": ["country", "nation", "state", "republic", "kingdom"], "similarity_threshold": 0.3}}
+    {"op": "add", "path": "/element_entity_mappings/24/extraction_rules/0/semantic_filter", "value": {"reference_concepts": ["region", "province", "territory", "district", "zone"], "similarity_threshold": 0.3}}
+  - reference_concepts should be semantically related to the entity type concept
   - similarity_threshold: 0.3 is recommended (lower = stricter matching)
 
 **Strategy 2 - Add Proximity Filters (for context-dependent disambiguation):**
-  - Add proximity_filter with nearby keywords that indicate the entity type
+  - Add proximity_filter with nearby cooccurrence_terms that indicate the entity type
+  - CRITICAL: The extraction rule MUST have an extraction method (instance_name, phrase_list, or json_path)
   - Example for distinguishing "physician" from "surgeon":
-    {"op": "add", "path": "/element_entity_mappings/15/extraction_rules/0/proximity_filter", "value": {"keywords": ["doctor", "physician", "MD", "medical"], "proximity_distance": 30}}
-    {"op": "add", "path": "/element_entity_mappings/22/extraction_rules/0/proximity_filter", "value": {"keywords": ["surgery", "surgical", "operation", "OR"], "proximity_distance": 30}}
-  - proximity_distance: 30 tokens is recommended (adjust based on context)
+    {"op": "add", "path": "/element_entity_mappings/15/extraction_rules/0/proximity_filter", "value": {"cooccurrence_terms": ["doctor", "physician", "MD", "medical"], "max_distance": 30}}
+    {"op": "add", "path": "/element_entity_mappings/22/extraction_rules/0/proximity_filter", "value": {"cooccurrence_terms": ["surgery", "surgical", "operation", "OR"], "max_distance": 30}}
+  - IMPORTANT: max_distance MUST be <= 30 tokens. Values > 30 will cause validation errors.
 
 **IMPORTANT RULES:**
   - First, determine if entities are DISTINCT concepts or DUPLICATES:
@@ -3609,6 +3689,32 @@ Return a RFC 6902 JSON Patch (array of operations) to fix ALL validation errors.
   - Use semantic_filter for concept-based disambiguation (city vs country vs region)
   - Use proximity_filter for context-based disambiguation (nearby words indicate type)
   - You can combine both filters on the same entity if needed
+
+**Duplicate Patterns Due to Inheritance (CRITICAL):**
+- When a CHILD entity inherits extraction rules from a PARENT but has no additional disambiguation:
+  - Example error: "Child entity 'technical.api_endpoint' inherits extraction rules from parent 'global.resource' but has no additional disambiguation"
+  - The child and parent will have IDENTICAL extraction filters after inheritance resolution
+  - YOU MUST either:
+    (1) Add or modify the CHILD entity's filters (instance_name regex, semantic_filter, proximity_filter, dictionary_filter) to distinguish it from the parent
+    (2) Use "replace" operation to make an existing child filter MORE RESTRICTIVE than the parent
+    (3) Use "remove" operation to remove the child entity if it's truly redundant
+  - **MCP Tools Available**: You have access to MCP tools to analyze the corpus and understand how these entities differ in actual usage
+  - Use your foundational knowledge and MCP corpus exploration to determine the best disambiguation approach based on real document patterns
+  - Consider semantic context, co-occurrence patterns, and domain-specific terminology when choosing disambiguation strategies
+
+**Missing W_Category (CRITICAL):**
+- When an entity has no parent_type, it MUST have a w_category field
+- w_category must be one of: who, what, where, when, why, how
+- Example error: "Entity 'api_integration_standard' (domain: technical) is missing the REQUIRED w_category field"
+- Fix with "add" operation:
+  {"op": "add", "path": "/element_entity_mappings/15/w_category", "value": "what"}
+- Mapping guidelines: person=who, location=where, date=when, process=how, object=what, reason=why
+
+**Excessive Proximity Distance (CRITICAL):**
+- Proximity filters with max_distance > 30 tokens will cause validation errors
+- Example error: "Relationship 'location_mention' uses max_distance=50 tokens (CRITICAL: >30)"
+- Fix with "replace" operation to reduce max_distance to <= 30:
+  {"op": "replace", "path": "/entity_relationship_rules/5/extraction_patterns/0/max_distance", "value": 30}
 
 **Graph Errors:**
 - Broken references: Use "replace" operation to fix parent_type references
@@ -3680,6 +3786,21 @@ Output ONLY the RFC 6902 JSON Patch array with NO explanation.`,
 		return nil, fmt.Errorf("LLM generated invalid RFC 6902 patch: %w", err)
 	}
 
+	// ATOMIC FIX: Reorder patch operations to prevent index shifting pollution
+	// Order: replace (don't change indices) → add → remove (descending index)
+	// This ensures operations don't reference stale indices after array modifications
+	reorderedPatchJSON, err := b.reorderPatchOperations(patchOps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reorder patch operations: %w", err)
+	}
+
+	// Decode the reordered patch
+	patch, err = jsonpatch.DecodePatch(reorderedPatchJSON)
+	if err != nil {
+		return nil, fmt.Errorf("reordered patch is invalid: %w", err)
+	}
+	patchJSON = reorderedPatchJSON // Update patchJSON for debug output and retry logic
+
 	// Apply patch to schema JSON with retry on application errors
 	modifiedJSON, err := b.applyPatchWithRetry(ctx, patch, patchJSON, schemaJSON, schema, errors, attempt)
 	if err != nil {
@@ -3693,6 +3814,88 @@ Output ONLY the RFC 6902 JSON Patch array with NO explanation.`,
 	}
 
 	return &fixedSchema, nil
+}
+
+// reorderPatchOperations reorders RFC 6902 patch operations to prevent index shifting issues
+// Order: replace (don't change indices) → add → remove (descending index)
+func (b *OntologyBuilder) reorderPatchOperations(patchOps []interface{}) ([]byte, error) {
+	var replaceOps []interface{}
+	var addOps []interface{}
+	var removeOps []interface{}
+	var otherOps []interface{} // test, move, copy operations (rare)
+
+	// Group operations by type
+	for _, opInterface := range patchOps {
+		opMap, ok := opInterface.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid patch operation format: expected object, got %T", opInterface)
+		}
+
+		op, ok := opMap["op"].(string)
+		if !ok {
+			return nil, fmt.Errorf("patch operation missing 'op' field")
+		}
+
+		switch op {
+		case "replace":
+			replaceOps = append(replaceOps, opInterface)
+		case "add":
+			addOps = append(addOps, opInterface)
+		case "remove":
+			removeOps = append(removeOps, opInterface)
+		default:
+			// test, move, copy operations (pass through in original order)
+			otherOps = append(otherOps, opInterface)
+		}
+	}
+
+	// Sort remove operations by descending index to prevent index shifting
+	// Example: removing index 80 before 79 before 78, so indices stay valid
+	sort.Slice(removeOps, func(i, j int) bool {
+		indexI := extractArrayIndex(removeOps[i])
+		indexJ := extractArrayIndex(removeOps[j])
+		return indexI > indexJ // Descending order (highest index first)
+	})
+
+	// Combine in optimal order: replace → add → remove (descending)
+	reorderedOps := make([]interface{}, 0, len(patchOps))
+	reorderedOps = append(reorderedOps, replaceOps...)
+	reorderedOps = append(reorderedOps, addOps...)
+	reorderedOps = append(reorderedOps, removeOps...)
+	reorderedOps = append(reorderedOps, otherOps...)
+
+	// Marshal back to JSON
+	reorderedJSON, err := json.Marshal(reorderedOps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal reordered operations: %w", err)
+	}
+
+	return reorderedJSON, nil
+}
+
+// extractArrayIndex extracts the array index from a patch operation path
+// Example: "/element_entity_mappings/42/extraction_rules" → 42
+func extractArrayIndex(opInterface interface{}) int {
+	opMap, ok := opInterface.(map[string]interface{})
+	if !ok {
+		return -1
+	}
+
+	path, ok := opMap["path"].(string)
+	if !ok {
+		return -1
+	}
+
+	// Split path by '/' and find first numeric segment
+	// Example: "/element_entity_mappings/42/extraction_rules" → ["", "element_entity_mappings", "42", "extraction_rules"]
+	parts := strings.Split(path, "/")
+	for _, part := range parts {
+		if idx, err := strconv.Atoi(part); err == nil {
+			return idx
+		}
+	}
+
+	return -1 // No array index found (non-array operation)
 }
 
 // applyPatchWithRetry attempts to apply an RFC 6902 patch with LLM-assisted retry on errors
