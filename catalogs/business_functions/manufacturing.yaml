@@ -83,13 +83,17 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: product_keyword_match_1
+    description: 'Matches keywords: product, item, SKU, part number'
+    keywords:
     - product
     - item
     - SKU
     - part number
-  - pattern: \b(?:SKU|Part|Item)\s*#?\s*[A-Z0-9\-]+
+  - name: product_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b(?:SKU|Part|Item)\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -104,8 +108,10 @@ entity_types:
   - paragraph
   - table_cell
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: component_keyword_match_1
+    description: 'Matches keywords: component, part, material, subassembly'
+    keywords:
     - component
     - part
     - material
@@ -122,13 +128,17 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: batch_keyword_match_1
+    description: 'Matches keywords: batch, lot, lot number, batch number'
+    keywords:
     - batch
     - lot
     - lot number
     - batch number
-  - pattern: \b(?:Batch|Lot)\s*#?\s*[A-Z0-9\-]+
+  - name: batch_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b(?:Batch|Lot)\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -142,8 +152,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: specification_keyword_match_1
+    description: 'Matches keywords: specification, spec, requirement, tolerance'
+    keywords:
     - specification
     - spec
     - requirement
@@ -161,8 +173,10 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - pattern: "\\b\\d+(?:\\.\\d+)?\\s*(?:mm|cm|m|kg|g|lbs|inches|\xB0C|\xB0F)"
+  extraction_rules:
+  - name: measurement_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b\d+(?:\.\d+)?\s*(?:mm|cm|m|kg|g|lbs|inches|°C|°F)
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -177,8 +191,10 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: defect_type_keyword_match_1
+    description: Matches 7 keywords including defect, scratch, crack, etc.
+    keywords:
     - defect
     - scratch
     - crack
@@ -199,8 +215,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: production_line_keyword_match_1
+    description: 'Matches keywords: production line, assembly line, line, facility'
+    keywords:
     - production line
     - assembly line
     - line
@@ -218,8 +236,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: machine_keyword_match_1
+    description: Matches 8 keywords including machine, equipment, CNC, etc.
+    keywords:
     - machine
     - equipment
     - CNC
@@ -242,8 +262,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: process_keyword_match_1
+    description: Matches 8 keywords including process, operation, welding, etc.
+    keywords:
     - process
     - operation
     - welding
@@ -264,8 +286,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: supplier_keyword_match_1
+    description: 'Matches keywords: supplier, vendor, manufacturer, provider'
+    keywords:
     - supplier
     - vendor
     - manufacturer
@@ -282,8 +306,10 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: inventory_item_keyword_match_1
+    description: 'Matches keywords: inventory, stock, on hand, warehouse'
+    keywords:
     - inventory
     - stock
     - on hand
@@ -301,15 +327,19 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: quality_standard_keyword_match_1
+    description: Matches 6 keywords including ISO, ANSI, ASTM, etc.
+    keywords:
     - ISO
     - ANSI
     - ASTM
     - standard
     - certification
     - quality standard
-  - pattern: \bISO\s+\d+
+  - name: quality_standard_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bISO\s+\d+
   parent_type: ''
   w_category: what
   domain: manufacturing
@@ -323,13 +353,17 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: work_order_keyword_match_1
+    description: 'Matches keywords: work order, production order, job order, WO'
+    keywords:
     - work order
     - production order
     - job order
     - WO
-  - pattern: \bWO\s*#?\s*[A-Z0-9\-]+
+  - name: work_order_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bWO\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
   domain: manufacturing

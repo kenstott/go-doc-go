@@ -68,8 +68,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: regulation_keyword_match_1
+    description: Matches 13 keywords including AML, KYC, GDPR, etc.
+    keywords:
     - AML
     - KYC
     - GDPR
@@ -83,8 +85,12 @@ entity_types:
     - EPA
     - SEC
     - FINRA
-  - pattern: \b(?:Regulation|Rule|Directive|Act)\s+[A-Z0-9-]+\b
-  - reference_text: compliance with Regulation XYZ requires implementation of controls
+  - name: regulation_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b(?:Regulation|Rule|Directive|Act)\s+[A-Z0-9-]+\b
+  - name: regulation_rule_3
+    description: Extraction rule for matching entities
+    reference_text: compliance with Regulation XYZ requires implementation of controls
     similarity_threshold: 0.7
   parent_type: ''
   w_category: what
@@ -100,8 +106,10 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: compliance_requirement_keyword_match_1
+    description: Matches 7 keywords including must, required, shall, etc.
+    keywords:
     - must
     - required
     - shall
@@ -109,7 +117,9 @@ entity_types:
     - obligated
     - required to
     - must comply
-  - reference_text: organizations must implement customer due diligence procedures
+  - name: compliance_requirement_rule_2
+    description: Extraction rule for matching entities
+    reference_text: organizations must implement customer due diligence procedures
     similarity_threshold: 0.7
   parent_type: ''
   w_category: what
@@ -125,8 +135,10 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: regulatory_body_keyword_match_1
+    description: Matches 11 keywords including SEC, FDA, EPA, etc.
+    keywords:
     - SEC
     - FDA
     - EPA
@@ -138,7 +150,9 @@ entity_types:
     - Federal Reserve
     - HHS
     - CMS
-  - pattern: \b(?:Securities and Exchange Commission|Food and Drug Administration|Environmental Protection Agency|Occupational
+  - name: regulatory_body_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b(?:Securities and Exchange Commission|Food and Drug Administration|Environmental Protection Agency|Occupational
       Safety and Health Administration)\b
   parent_type: ''
   w_category: what
@@ -153,14 +167,18 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: compliance_officer_keyword_match_1
+    description: 'Matches keywords: compliance officer, CCO, chief compliance officer, compliance manager, regulatory affairs'
+    keywords:
     - compliance officer
     - CCO
     - chief compliance officer
     - compliance manager
     - regulatory affairs
-  - pattern: \b(?:Chief Compliance Officer|CCO|Compliance Manager|Director of Compliance)\b
+  - name: compliance_officer_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b(?:Chief Compliance Officer|CCO|Compliance Manager|Director of Compliance)\b
   parent_type: ''
   w_category: what
   domain: compliance
@@ -177,8 +195,10 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: audit_finding_keyword_match_1
+    description: Matches 8 keywords including finding, deficiency, gap, etc.
+    keywords:
     - finding
     - deficiency
     - gap
@@ -187,7 +207,9 @@ entity_types:
     - weakness
     - observation
     - issue identified
-  - reference_text: audit identified deficiencies in the control framework
+  - name: audit_finding_rule_2
+    description: Extraction rule for matching entities
+    reference_text: audit identified deficiencies in the control framework
     similarity_threshold: 0.7
   parent_type: ''
   w_category: what
@@ -204,14 +226,18 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: control_keyword_match_1
+    description: 'Matches keywords: control, safeguard, preventive measure, detective control, monitoring mechanism'
+    keywords:
     - control
     - safeguard
     - preventive measure
     - detective control
     - monitoring mechanism
-  - reference_text: implemented transaction monitoring controls to detect suspicious activity
+  - name: control_rule_2
+    description: Extraction rule for matching entities
+    reference_text: implemented transaction monitoring controls to detect suspicious activity
     similarity_threshold: 0.7
   parent_type: ''
   w_category: what
@@ -227,9 +253,13 @@ entity_types:
   element_types:
   - heading
   - paragraph
-  sample_rules:
-  - pattern: \b(?:Policy|Procedure|Manual|SOP|Guideline)\s+[A-Z0-9-]+\b
-  - keywords:
+  extraction_rules:
+  - name: policy_document_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b(?:Policy|Procedure|Manual|SOP|Guideline)\s+[A-Z0-9-]+\b
+  - name: policy_document_keyword_match_2
+    description: 'Matches keywords: policy document, procedure manual, compliance policy, SOP, operating procedure'
+    keywords:
     - policy document
     - procedure manual
     - compliance policy
@@ -249,15 +279,19 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: penalty_keyword_match_1
+    description: Matches 6 keywords including fine, penalty, sanction, etc.
+    keywords:
     - fine
     - penalty
     - sanction
     - enforcement action
     - monetary penalty
     - disciplinary action
-  - pattern: \$\d{1,3}(?:,\d{3})*(?:\s+(?:fine|penalty|sanction))
+  - name: penalty_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \$\d{1,3}(?:,\d{3})*(?:\s+(?:fine|penalty|sanction))
   parent_type: ''
   w_category: what
   domain: compliance
@@ -272,8 +306,10 @@ entity_types:
   - heading
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: risk_assessment_keyword_match_1
+    description: 'Matches keywords: risk assessment, risk analysis, risk evaluation, risk review, compliance risk'
+    keywords:
     - risk assessment
     - risk analysis
     - risk evaluation
@@ -293,8 +329,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: aml_kyc_entity_keyword_match_1
+    description: Matches 9 keywords including AML, KYC, anti-money laundering, etc.
+    keywords:
     - AML
     - KYC
     - anti-money laundering
@@ -304,7 +342,9 @@ entity_types:
     - beneficial owner
     - UBO
     - suspicious activity
-  - reference_text: performed enhanced due diligence on high-risk customers
+  - name: aml_kyc_entity_rule_2
+    description: Extraction rule for matching entities
+    reference_text: performed enhanced due diligence on high-risk customers
     similarity_threshold: 0.7
   parent_type: ''
   w_category: what
@@ -320,8 +360,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: healthcare_compliance_entity_keyword_match_1
+    description: Matches 7 keywords including HIPAA, PHI, protected health information, etc.
+    keywords:
     - HIPAA
     - PHI
     - protected health information
@@ -343,8 +385,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: data_privacy_entity_keyword_match_1
+    description: Matches 8 keywords including GDPR, CCPA, data privacy, etc.
+    keywords:
     - GDPR
     - CCPA
     - data privacy

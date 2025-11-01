@@ -21,8 +21,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: shipment_keyword_match_1
+    description: Matches 8 keywords including shipment, freight, consignment, etc.
+    keywords:
     - shipment
     - freight
     - consignment
@@ -45,8 +47,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: carrier_keyword_match_1
+    description: Matches 6 keywords including carrier, transporter, freight company, etc.
+    keywords:
     - carrier
     - transporter
     - freight company
@@ -67,8 +71,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: vehicle_keyword_match_1
+    description: Matches 7 keywords including truck, trailer, vehicle, etc.
+    keywords:
     - truck
     - trailer
     - vehicle
@@ -88,8 +94,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: route_keyword_match_1
+    description: Matches 7 keywords including route, lane, origin, etc.
+    keywords:
     - route
     - lane
     - origin
@@ -111,8 +119,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: warehouse_location_keyword_match_1
+    description: Matches 6 keywords including warehouse, distribution center, DC, etc.
+    keywords:
     - warehouse
     - distribution center
     - DC
@@ -132,8 +142,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: driver_keyword_match_1
+    description: 'Matches keywords: driver, operator, trucker, CDL, commercial driver'
+    keywords:
     - driver
     - operator
     - trucker
@@ -152,8 +164,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: delivery_keyword_match_1
+    description: Matches 7 keywords including delivery, drop-off, delivered, etc.
+    keywords:
     - delivery
     - drop-off
     - delivered
@@ -174,8 +188,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: freight_rate_keyword_match_1
+    description: Matches 6 keywords including freight rate, shipping cost, transportation cost, etc.
+    keywords:
     - freight rate
     - shipping cost
     - transportation cost
@@ -188,8 +204,10 @@ entity_types:
 relationship_types:
 - relationship_type: transported_by
   description: Shipment transported by carrier
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: transported_by_keyword_match_1
+    description: 'Matches keywords: transported by, shipped via, carrier, hauled by'
+    keywords:
     - transported by
     - shipped via
     - carrier
@@ -198,8 +216,10 @@ relationship_types:
   target_type: carrier
 - relationship_type: assigned_to_vehicle
   description: Shipment assigned to vehicle
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: assigned_to_vehicle_keyword_match_1
+    description: 'Matches keywords: loaded on, assigned to, vehicle, truck, trailer'
+    keywords:
     - loaded on
     - assigned to
     - vehicle
@@ -209,8 +229,10 @@ relationship_types:
   target_type: vehicle
 - relationship_type: follows_route
   description: Shipment follows route
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: follows_route_keyword_match_1
+    description: 'Matches keywords: route, from, to, via, lane'
+    keywords:
     - route
     - from
     - to
@@ -220,8 +242,10 @@ relationship_types:
   target_type: route
 - relationship_type: stored_at
   description: Shipment stored at warehouse
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: stored_at_keyword_match_1
+    description: 'Matches keywords: stored at, held at, warehouse, DC, facility'
+    keywords:
     - stored at
     - held at
     - warehouse
@@ -231,8 +255,10 @@ relationship_types:
   target_type: warehouse_location
 - relationship_type: driven_by
   description: Vehicle driven by driver
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: driven_by_keyword_match_1
+    description: 'Matches keywords: driven by, operator, assigned driver'
+    keywords:
     - driven by
     - operator
     - assigned driver
@@ -240,8 +266,10 @@ relationship_types:
   target_type: driver
 - relationship_type: delivered_to
   description: Shipment delivered to location
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: delivered_to_keyword_match_1
+    description: 'Matches keywords: delivered to, received at, destination, consignee'
+    keywords:
     - delivered to
     - received at
     - destination
@@ -250,8 +278,10 @@ relationship_types:
   target_type: delivery
 - relationship_type: priced_at
   description: Shipment priced at freight rate
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: priced_at_keyword_match_1
+    description: 'Matches keywords: rate, cost, freight charge, priced at'
+    keywords:
     - rate
     - cost
     - freight charge

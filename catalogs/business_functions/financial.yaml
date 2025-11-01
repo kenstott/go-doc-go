@@ -68,9 +68,13 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - pattern: \b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\s+(?:Inc|Corp|LLC|Ltd|Company|Co)\b
-  - keywords:
+  extraction_rules:
+  - name: company_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b[A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)*\s+(?:Inc|Corp|LLC|Ltd|Company|Co)\b
+  - name: company_keyword_match_2
+    description: Matches 6 keywords including Inc, Corp, LLC, etc.
+    keywords:
     - Inc
     - Corp
     - LLC
@@ -92,9 +96,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - pattern: \$[\d,]+(?:\.\d{2})?(?:\s*(?:billion|million|thousand|B|M|K))?
-  - pattern: '[\d,]+(?:\.\d{2})?\s*(?:USD|EUR|GBP|dollars|euros)'
+  extraction_rules:
+  - name: monetary_amount_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \$[\d,]+(?:\.\d{2})?(?:\s*(?:billion|million|thousand|B|M|K))?
+  - name: monetary_amount_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: '[\d,]+(?:\.\d{2})?\s*(?:USD|EUR|GBP|dollars|euros)'
   parent_type: ''
   w_category: what
   domain: financial
@@ -113,10 +121,16 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - pattern: \b(?:Q[1-4]|FY)?\s*\d{4}\b
-  - pattern: \b(?:first|second|third|fourth)\s+quarter\s+\d{4}\b
-  - keywords:
+  extraction_rules:
+  - name: fiscal_period_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b(?:Q[1-4]|FY)?\s*\d{4}\b
+  - name: fiscal_period_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b(?:first|second|third|fourth)\s+quarter\s+\d{4}\b
+  - name: fiscal_period_keyword_match_3
+    description: Matches 6 keywords including Q1, Q2, Q3, etc.
+    keywords:
     - Q1
     - Q2
     - Q3
@@ -138,8 +152,10 @@ entity_types:
   - paragraph
   - table_cell
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: financial_metric_keyword_match_1
+    description: Matches 13 keywords including revenue, profit, EBITDA, etc.
+    keywords:
     - revenue
     - profit
     - EBITDA
@@ -166,9 +182,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - pattern: \b(?:NYSE|NASDAQ|LSE):\s*[A-Z]{1,5}\b
-  - pattern: \b[A-Z]{2,5}\b
+  extraction_rules:
+  - name: stock_symbol_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b(?:NYSE|NASDAQ|LSE):\s*[A-Z]{1,5}\b
+  - name: stock_symbol_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b[A-Z]{2,5}\b
   parent_type: ''
   w_category: what
   domain: financial

@@ -19,8 +19,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: opportunity_keyword_match_1
+    description: 'Matches keywords: opportunity, deal, potential sale, sales opportunity, prospect'
+    keywords:
     - opportunity
     - deal
     - potential sale
@@ -40,8 +42,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: quote_keyword_match_1
+    description: Matches 6 keywords including quote, quotation, proposal, etc.
+    keywords:
     - quote
     - quotation
     - proposal
@@ -62,8 +66,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: customer_keyword_match_1
+    description: 'Matches keywords: customer, client, account, buyer, purchaser'
+    keywords:
     - customer
     - client
     - account
@@ -83,8 +89,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: product_keyword_match_1
+    description: 'Matches keywords: product, service, solution, offering, SKU'
+    keywords:
     - product
     - service
     - solution
@@ -102,8 +110,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sales_stage_keyword_match_1
+    description: Matches 6 keywords including qualification, proposal, negotiation, etc.
+    keywords:
     - qualification
     - proposal
     - negotiation
@@ -122,8 +132,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: territory_keyword_match_1
+    description: Matches 8 keywords including territory, region, area, etc.
+    keywords:
     - territory
     - region
     - area
@@ -146,8 +158,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sales_rep_keyword_match_1
+    description: 'Matches keywords: sales rep, account executive, AE, sales manager, sales person'
+    keywords:
     - sales rep
     - account executive
     - AE
@@ -166,8 +180,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: forecast_keyword_match_1
+    description: Matches 6 keywords including forecast, projection, pipeline, etc.
+    keywords:
     - forecast
     - projection
     - pipeline
@@ -180,8 +196,10 @@ entity_types:
 relationship_types:
 - relationship_type: assigned_to_rep
   description: Opportunity assigned to sales rep
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: assigned_to_rep_keyword_match_1
+    description: 'Matches keywords: assigned to, owned by, managed by, responsible'
+    keywords:
     - assigned to
     - owned by
     - managed by
@@ -190,8 +208,10 @@ relationship_types:
   target_type: sales_rep
 - relationship_type: associated_with_customer
   description: Opportunity associated with customer
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: associated_with_customer_keyword_match_1
+    description: 'Matches keywords: customer, account, client, for'
+    keywords:
     - customer
     - account
     - client
@@ -200,8 +220,10 @@ relationship_types:
   target_type: customer
 - relationship_type: includes_product
   description: Opportunity includes product
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: includes_product_keyword_match_1
+    description: 'Matches keywords: includes, for, selling, offering'
+    keywords:
     - includes
     - for
     - selling
@@ -210,8 +232,10 @@ relationship_types:
   target_type: product
 - relationship_type: at_stage
   description: Opportunity at sales stage
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: at_stage_keyword_match_1
+    description: 'Matches keywords: stage, phase, status, at'
+    keywords:
     - stage
     - phase
     - status
@@ -220,8 +244,10 @@ relationship_types:
   target_type: sales_stage
 - relationship_type: in_territory
   description: Opportunity in sales territory
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: in_territory_keyword_match_1
+    description: 'Matches keywords: in, territory, region, area'
+    keywords:
     - in
     - territory
     - region
@@ -230,8 +256,10 @@ relationship_types:
   target_type: territory
 - relationship_type: generated_quote
   description: Opportunity generated quote
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: generated_quote_keyword_match_1
+    description: 'Matches keywords: quote, proposal, quotation, pricing'
+    keywords:
     - quote
     - proposal
     - quotation
@@ -240,8 +268,10 @@ relationship_types:
   target_type: quote
 - relationship_type: contributes_to_forecast
   description: Opportunity contributes to forecast
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: contributes_to_forecast_keyword_match_1
+    description: 'Matches keywords: forecast, projected, pipeline, included in'
+    keywords:
     - forecast
     - projected
     - pipeline

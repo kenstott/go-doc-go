@@ -88,8 +88,10 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: party_keyword_match_1
+    description: Matches 6 keywords including plaintiff, defendant, party, etc.
+    keywords:
     - plaintiff
     - defendant
     - party
@@ -111,8 +113,10 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - pattern: \b[A-Z][A-Za-z\s]+(?:Inc|Corp|LLC|Ltd|LP|LLP|Company)\b
+  extraction_rules:
+  - name: legal_entity_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b[A-Z][A-Za-z\s]+(?:Inc|Corp|LLC|Ltd|LP|LLP|Company)\b
   parent_type: ''
   w_category: what
   domain: legal
@@ -126,10 +130,16 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - pattern: "\\b\\d+\\s+U\\.?S\\.?C\\.?\\s+\xA7\\s*\\d+"
-  - pattern: \bSection\s+\d+(?:\.\d+)*\b
-  - keywords:
+  extraction_rules:
+  - name: statute_reference_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b\d+\s+U\.?S\.?C\.?\s+§\s*\d+
+  - name: statute_reference_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bSection\s+\d+(?:\.\d+)*\b
+  - name: statute_reference_keyword_match_3
+    description: 'Matches keywords: USC, CFR, statute, section, article'
+    keywords:
     - USC
     - CFR
     - statute
@@ -146,8 +156,10 @@ entity_types:
   - court decision
   element_types:
   - paragraph
-  sample_rules:
-  - pattern: \b[A-Z][a-z]+\s+v\.\s+[A-Z][a-z]+(?:,\s*\d+\s+[A-Z][a-z\.]+\s+\d+)?
+  extraction_rules:
+  - name: case_citation_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b[A-Z][a-z]+\s+v\.\s+[A-Z][a-z]+(?:,\s*\d+\s+[A-Z][a-z\.]+\s+\d+)?
   parent_type: ''
   w_category: what
   domain: legal
@@ -161,9 +173,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - pattern: \b(?:term|duration|period)\s+of\s+\d+\s+(?:years?|months?|days?)
-  - keywords:
+  extraction_rules:
+  - name: contract_term_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b(?:term|duration|period)\s+of\s+\d+\s+(?:years?|months?|days?)
+  - name: contract_term_keyword_match_2
+    description: 'Matches keywords: effective date, expiration, term, renewal'
+    keywords:
     - effective date
     - expiration
     - term
@@ -182,8 +198,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: obligation_keyword_match_1
+    description: 'Matches keywords: shall, must, required to, obligated to, covenant'
+    keywords:
     - shall
     - must
     - required to
@@ -202,8 +220,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: right_keyword_match_1
+    description: 'Matches keywords: right to, entitled to, may, permitted to, license'
+    keywords:
     - right to
     - entitled to
     - may
@@ -222,8 +242,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: remedy_keyword_match_1
+    description: Matches 7 keywords including damages, injunction, specific performance, etc.
+    keywords:
     - damages
     - injunction
     - specific performance
@@ -243,8 +265,10 @@ entity_types:
   - forum
   element_types:
   - paragraph
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: jurisdiction_clause_keyword_match_1
+    description: 'Matches keywords: governing law, jurisdiction, venue, forum, laws of'
+    keywords:
     - governing law
     - jurisdiction
     - venue
@@ -263,8 +287,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: confidentiality_clause_keyword_match_1
+    description: 'Matches keywords: confidential, non-disclosure, proprietary, trade secret, confidentiality'
+    keywords:
     - confidential
     - non-disclosure
     - proprietary
@@ -282,8 +308,10 @@ entity_types:
   - exclusion
   element_types:
   - paragraph
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: liability_limitation_keyword_match_1
+    description: 'Matches keywords: limited to, not liable, disclaims, in no event'
+    keywords:
     - limited to
     - not liable
     - disclaims
@@ -301,8 +329,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: termination_clause_keyword_match_1
+    description: 'Matches keywords: terminate, termination, cancel, end, expire'
+    keywords:
     - terminate
     - termination
     - cancel

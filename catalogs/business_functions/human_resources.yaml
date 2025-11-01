@@ -21,8 +21,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: employee_keyword_match_1
+    description: Matches 8 keywords including employee, staff, personnel, etc.
+    keywords:
     - employee
     - staff
     - personnel
@@ -46,8 +48,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: position_keyword_match_1
+    description: Matches 8 keywords including position, job title, role, etc.
+    keywords:
     - position
     - job title
     - role
@@ -70,8 +74,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: department_keyword_match_1
+    description: Matches 10 keywords including department, division, unit, etc.
+    keywords:
     - department
     - division
     - unit
@@ -96,8 +102,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: compensation_keyword_match_1
+    description: Matches 8 keywords including salary, wage, compensation, etc.
+    keywords:
     - salary
     - wage
     - compensation
@@ -119,8 +127,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: benefit_keyword_match_1
+    description: Matches 8 keywords including health insurance, 401k, retirement plan, etc.
+    keywords:
     - health insurance
     - 401k
     - retirement plan
@@ -143,8 +153,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: performance_review_keyword_match_1
+    description: Matches 7 keywords including performance review, appraisal, evaluation, etc.
+    keywords:
     - performance review
     - appraisal
     - evaluation
@@ -166,8 +178,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: training_program_keyword_match_1
+    description: Matches 7 keywords including training, workshop, course, etc.
+    keywords:
     - training
     - workshop
     - course
@@ -181,8 +195,10 @@ entity_types:
 relationship_types:
 - relationship_type: reports_to
   description: Employee reporting relationship
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: reports_to_keyword_match_1
+    description: 'Matches keywords: reports to, manager, supervisor, direct report'
+    keywords:
     - reports to
     - manager
     - supervisor
@@ -191,8 +207,10 @@ relationship_types:
   target_type: employee
 - relationship_type: holds_position
   description: Employee holds a specific position
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: holds_position_keyword_match_1
+    description: 'Matches keywords: position, job title, role, works as'
+    keywords:
     - position
     - job title
     - role
@@ -201,8 +219,10 @@ relationship_types:
   target_type: position
 - relationship_type: assigned_to_department
   description: Employee assigned to department
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: assigned_to_department_keyword_match_1
+    description: 'Matches keywords: assigned to, works in, department, division'
+    keywords:
     - assigned to
     - works in
     - department
@@ -211,8 +231,10 @@ relationship_types:
   target_type: department
 - relationship_type: receives_compensation
   description: Employee receives compensation
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: receives_compensation_keyword_match_1
+    description: 'Matches keywords: salary, wage, paid, compensation'
+    keywords:
     - salary
     - wage
     - paid
@@ -221,8 +243,10 @@ relationship_types:
   target_type: compensation
 - relationship_type: enrolled_in_benefit
   description: Employee enrolled in benefit plan
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: enrolled_in_benefit_keyword_match_1
+    description: 'Matches keywords: enrolled, participates, receives, benefit, coverage'
+    keywords:
     - enrolled
     - participates
     - receives
@@ -232,8 +256,10 @@ relationship_types:
   target_type: benefit
 - relationship_type: completed_training
   description: Employee completed training program
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: completed_training_keyword_match_1
+    description: 'Matches keywords: completed, finished, attended, training, course'
+    keywords:
     - completed
     - finished
     - attended

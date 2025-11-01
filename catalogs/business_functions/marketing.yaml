@@ -19,8 +19,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: campaign_keyword_match_1
+    description: 'Matches keywords: campaign, promotion, initiative, marketing program, advertising'
+    keywords:
     - campaign
     - promotion
     - initiative
@@ -39,8 +41,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: lead_keyword_match_1
+    description: 'Matches keywords: lead, prospect, potential customer, inquiry, interested party'
+    keywords:
     - lead
     - prospect
     - potential customer
@@ -58,8 +62,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: channel_keyword_match_1
+    description: Matches 9 keywords including email, social media, website, etc.
+    keywords:
     - email
     - social media
     - website
@@ -82,8 +88,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: content_keyword_match_1
+    description: Matches 7 keywords including blog post, article, whitepaper, etc.
+    keywords:
     - blog post
     - article
     - whitepaper
@@ -103,8 +111,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: brand_keyword_match_1
+    description: Matches 6 keywords including brand, trademark, logo, etc.
+    keywords:
     - brand
     - trademark
     - logo
@@ -123,8 +133,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: audience_segment_keyword_match_1
+    description: 'Matches keywords: target audience, segment, demographic, persona, customer profile'
+    keywords:
     - target audience
     - segment
     - demographic
@@ -143,8 +155,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: metric_keyword_match_1
+    description: Matches 8 keywords including CTR, conversion rate, ROI, etc.
+    keywords:
     - CTR
     - conversion rate
     - ROI
@@ -159,8 +173,10 @@ entity_types:
 relationship_types:
 - relationship_type: targets_audience
   description: Campaign targets specific audience segment
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: targets_audience_keyword_match_1
+    description: 'Matches keywords: targets, aimed at, focused on, designed for'
+    keywords:
     - targets
     - aimed at
     - focused on
@@ -169,8 +185,10 @@ relationship_types:
   target_type: audience_segment
 - relationship_type: uses_channel
   description: Campaign uses marketing channel
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: uses_channel_keyword_match_1
+    description: 'Matches keywords: via, through, using, channel, distributed on'
+    keywords:
     - via
     - through
     - using
@@ -180,8 +198,10 @@ relationship_types:
   target_type: channel
 - relationship_type: generates_lead
   description: Campaign generates leads
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: generates_lead_keyword_match_1
+    description: 'Matches keywords: generated, produced, resulted in, created'
+    keywords:
     - generated
     - produced
     - resulted in
@@ -190,8 +210,10 @@ relationship_types:
   target_type: lead
 - relationship_type: includes_content
   description: Campaign includes content piece
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: includes_content_keyword_match_1
+    description: 'Matches keywords: includes, contains, features, showcases'
+    keywords:
     - includes
     - contains
     - features
@@ -200,8 +222,10 @@ relationship_types:
   target_type: content
 - relationship_type: promotes_brand
   description: Campaign promotes brand
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: promotes_brand_keyword_match_1
+    description: 'Matches keywords: promotes, advertises, markets, highlights'
+    keywords:
     - promotes
     - advertises
     - markets
@@ -210,8 +234,10 @@ relationship_types:
   target_type: brand
 - relationship_type: measured_by
   description: Campaign measured by metric
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: measured_by_keyword_match_1
+    description: 'Matches keywords: measured by, tracked with, performance, metrics, KPI'
+    keywords:
     - measured by
     - tracked with
     - performance

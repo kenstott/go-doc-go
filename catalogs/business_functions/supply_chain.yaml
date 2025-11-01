@@ -19,8 +19,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: supplier_keyword_match_1
+    description: 'Matches keywords: supplier, vendor, provider, manufacturer, distributor'
+    keywords:
     - supplier
     - vendor
     - provider
@@ -40,8 +42,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: purchase_order_keyword_match_1
+    description: 'Matches keywords: purchase order, PO, procurement, buy order, requisition'
+    keywords:
     - purchase order
     - PO
     - procurement
@@ -61,8 +65,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: inventory_item_keyword_match_1
+    description: Matches 6 keywords including SKU, inventory item, stock, etc.
+    keywords:
     - SKU
     - inventory item
     - stock
@@ -83,8 +89,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: warehouse_keyword_match_1
+    description: 'Matches keywords: warehouse, distribution center, DC, storage facility, fulfillment center'
+    keywords:
     - warehouse
     - distribution center
     - DC
@@ -103,8 +111,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: shipment_keyword_match_1
+    description: 'Matches keywords: shipment, delivery, freight, transportation, cargo'
+    keywords:
     - shipment
     - delivery
     - freight
@@ -122,8 +132,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: carrier_keyword_match_1
+    description: 'Matches keywords: carrier, shipper, logistics provider, freight forwarder, courier'
+    keywords:
     - carrier
     - shipper
     - logistics provider
@@ -142,8 +154,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: demand_forecast_keyword_match_1
+    description: 'Matches keywords: demand forecast, demand plan, planning, projection, expected demand'
+    keywords:
     - demand forecast
     - demand plan
     - planning
@@ -155,8 +169,10 @@ entity_types:
 relationship_types:
 - relationship_type: supplied_by
   description: Item supplied by supplier
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: supplied_by_keyword_match_1
+    description: 'Matches keywords: supplied by, from, vendor, sourced from'
+    keywords:
     - supplied by
     - from
     - vendor
@@ -165,8 +181,10 @@ relationship_types:
   target_type: supplier
 - relationship_type: ordered_from
   description: Purchase order placed with supplier
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: ordered_from_keyword_match_1
+    description: 'Matches keywords: ordered from, placed with, vendor'
+    keywords:
     - ordered from
     - placed with
     - vendor
@@ -174,8 +192,10 @@ relationship_types:
   target_type: supplier
 - relationship_type: contains_item
   description: Purchase order contains inventory item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: contains_item_keyword_match_1
+    description: 'Matches keywords: includes, contains, for, item'
+    keywords:
     - includes
     - contains
     - for
@@ -184,8 +204,10 @@ relationship_types:
   target_type: inventory_item
 - relationship_type: stored_in
   description: Item stored in warehouse
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: stored_in_keyword_match_1
+    description: 'Matches keywords: stored in, located at, warehouse, facility'
+    keywords:
     - stored in
     - located at
     - warehouse
@@ -194,8 +216,10 @@ relationship_types:
   target_type: warehouse
 - relationship_type: shipped_via
   description: Shipment transported by carrier
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: shipped_via_keyword_match_1
+    description: 'Matches keywords: shipped via, carrier, transported by, using'
+    keywords:
     - shipped via
     - carrier
     - transported by
@@ -204,8 +228,10 @@ relationship_types:
   target_type: carrier
 - relationship_type: fulfills_order
   description: Shipment fulfills purchase order
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: fulfills_order_keyword_match_1
+    description: 'Matches keywords: fulfills, delivers, for order, PO'
+    keywords:
     - fulfills
     - delivers
     - for order
@@ -214,8 +240,10 @@ relationship_types:
   target_type: purchase_order
 - relationship_type: based_on_forecast
   description: Order based on demand forecast
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: based_on_forecast_keyword_match_1
+    description: 'Matches keywords: based on, forecast, projected demand, planning'
+    keywords:
     - based on
     - forecast
     - projected demand
