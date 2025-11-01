@@ -19,8 +19,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: aircraft_keyword_match_1
+    description: Matches 6 keywords including aircraft, plane, helicopter, etc.
+    keywords:
     - aircraft
     - plane
     - helicopter
@@ -41,8 +43,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: maintenance_event_keyword_match_1
+    description: Matches 6 keywords including maintenance, repair, inspection, etc.
+    keywords:
     - maintenance
     - repair
     - inspection
@@ -63,8 +67,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: defense_contract_keyword_match_1
+    description: 'Matches keywords: contract, procurement, award, solicitation, RFP'
+    keywords:
     - contract
     - procurement
     - award
@@ -83,8 +89,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: flight_keyword_match_1
+    description: Matches 6 keywords including flight, mission, sortie, etc.
+    keywords:
     - flight
     - mission
     - sortie
@@ -105,8 +113,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: component_keyword_match_1
+    description: Matches 7 keywords including component, part, assembly, etc.
+    keywords:
     - component
     - part
     - assembly
@@ -120,8 +130,10 @@ entity_types:
 relationship_types:
 - relationship_type: maintained_by
   description: Aircraft maintained by event
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: maintained_by_keyword_match_1
+    description: 'Matches keywords: maintained, serviced, repaired, inspected'
+    keywords:
     - maintained
     - serviced
     - repaired
@@ -130,8 +142,10 @@ relationship_types:
   target_type: maintenance_event
 - relationship_type: requires_component
   description: Maintenance requires component
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: requires_component_keyword_match_1
+    description: 'Matches keywords: requires, needs, replacement, part'
+    keywords:
     - requires
     - needs
     - replacement
@@ -140,8 +154,10 @@ relationship_types:
   target_type: component
 - relationship_type: contracted_for
   description: Aircraft contracted for
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: contracted_for_keyword_match_1
+    description: 'Matches keywords: for, procurement of, purchase of'
+    keywords:
     - for
     - procurement of
     - purchase of
@@ -149,8 +165,10 @@ relationship_types:
   target_type: aircraft
 - relationship_type: operated_as
   description: Aircraft operated as flight
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: operated_as_keyword_match_1
+    description: 'Matches keywords: operated as, flight, mission'
+    keywords:
     - operated as
     - flight
     - mission

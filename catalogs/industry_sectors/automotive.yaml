@@ -19,8 +19,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: vehicle_keyword_match_1
+    description: Matches 8 keywords including vehicle, car, automobile, etc.
+    keywords:
     - vehicle
     - car
     - automobile
@@ -42,8 +44,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: part_keyword_match_1
+    description: Matches 6 keywords including part, component, spare part, etc.
+    keywords:
     - part
     - component
     - spare part
@@ -63,8 +67,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: service_appointment_keyword_match_1
+    description: Matches 6 keywords including service, maintenance, repair, etc.
+    keywords:
     - service
     - maintenance
     - repair
@@ -84,8 +90,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: dealership_keyword_match_1
+    description: 'Matches keywords: dealership, dealer, showroom, sales center, service center'
+    keywords:
     - dealership
     - dealer
     - showroom
@@ -104,8 +112,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: customer_keyword_match_1
+    description: 'Matches keywords: customer, owner, buyer, client, driver'
+    keywords:
     - customer
     - owner
     - buyer
@@ -117,8 +127,10 @@ entity_types:
 relationship_types:
 - relationship_type: owned_by
   description: Vehicle owned by customer
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: owned_by_keyword_match_1
+    description: 'Matches keywords: owned by, belongs to, registered to'
+    keywords:
     - owned by
     - belongs to
     - registered to
@@ -126,8 +138,10 @@ relationship_types:
   target_type: customer
 - relationship_type: requires_part
   description: Service requires part
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: requires_part_keyword_match_1
+    description: 'Matches keywords: requires, needs, part, component'
+    keywords:
     - requires
     - needs
     - part
@@ -136,8 +150,10 @@ relationship_types:
   target_type: part
 - relationship_type: serviced_at
   description: Vehicle serviced at dealership
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: serviced_at_keyword_match_1
+    description: 'Matches keywords: serviced at, service location, dealer'
+    keywords:
     - serviced at
     - service location
     - dealer
@@ -145,8 +161,10 @@ relationship_types:
   target_type: dealership
 - relationship_type: sold_by
   description: Vehicle sold by dealership
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sold_by_keyword_match_1
+    description: 'Matches keywords: sold by, purchased from, dealer'
+    keywords:
     - sold by
     - purchased from
     - dealer

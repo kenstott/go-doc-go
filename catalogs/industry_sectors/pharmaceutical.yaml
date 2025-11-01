@@ -22,8 +22,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: drug_compound_keyword_match_1
+    description: Matches 7 keywords including compound, API, active ingredient, etc.
+    keywords:
     - compound
     - API
     - active ingredient
@@ -47,8 +49,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: drug_product_keyword_match_1
+    description: Matches 6 keywords including drug product, medication, pharmaceutical product, etc.
+    keywords:
     - drug product
     - medication
     - pharmaceutical product
@@ -69,8 +73,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: clinical_trial_keyword_match_1
+    description: Matches 8 keywords including clinical trial, study, phase I, etc.
+    keywords:
     - clinical trial
     - study
     - phase I
@@ -92,8 +98,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: indication_keyword_match_1
+    description: Matches 6 keywords including indication, disease, condition, etc.
+    keywords:
     - indication
     - disease
     - condition
@@ -115,8 +123,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: adverse_event_keyword_match_1
+    description: Matches 7 keywords including adverse event, AE, SAE, etc.
+    keywords:
     - adverse event
     - AE
     - SAE
@@ -138,8 +148,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: regulatory_agency_keyword_match_1
+    description: Matches 7 keywords including FDA, EMA, PMDA, etc.
+    keywords:
     - FDA
     - EMA
     - PMDA
@@ -163,8 +175,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: regulatory_submission_keyword_match_1
+    description: Matches 8 keywords including NDA, BLA, IND, etc.
+    keywords:
     - NDA
     - BLA
     - IND
@@ -187,8 +201,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: patent_keyword_match_1
+    description: Matches 6 keywords including patent, IP, intellectual property, etc.
+    keywords:
     - patent
     - IP
     - intellectual property
@@ -209,8 +225,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: manufacturer_keyword_match_1
+    description: Matches 6 keywords including manufacturer, CMO, CDMO, etc.
+    keywords:
     - manufacturer
     - CMO
     - CDMO
@@ -232,8 +250,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: formulation_keyword_match_1
+    description: Matches 8 keywords including formulation, dosage form, tablet, etc.
+    keywords:
     - formulation
     - dosage form
     - tablet
@@ -256,8 +276,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: biomarker_keyword_match_1
+    description: Matches 6 keywords including biomarker, endpoint, marker, etc.
+    keywords:
     - biomarker
     - endpoint
     - marker
@@ -277,8 +299,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: investigator_keyword_match_1
+    description: Matches 6 keywords including principal investigator, PI, investigator, etc.
+    keywords:
     - principal investigator
     - PI
     - investigator
@@ -298,8 +322,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sponsor_keyword_match_1
+    description: 'Matches keywords: sponsor, study sponsor, pharmaceutical company, CRO, contract research organization'
+    keywords:
     - sponsor
     - study sponsor
     - pharmaceutical company
@@ -319,8 +345,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: pharmacokinetics_keyword_match_1
+    description: Matches 8 keywords including pharmacokinetics, PK, ADME, etc.
+    keywords:
     - pharmacokinetics
     - PK
     - ADME
@@ -342,8 +370,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: pharmacodynamics_keyword_match_1
+    description: Matches 6 keywords including pharmacodynamics, PD, mechanism of action, etc.
+    keywords:
     - pharmacodynamics
     - PD
     - mechanism of action
@@ -365,8 +395,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: quality_specification_keyword_match_1
+    description: Matches 6 keywords including quality specification, QC, QA, etc.
+    keywords:
     - quality specification
     - QC
     - QA
@@ -388,8 +420,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: batch_lot_keyword_match_1
+    description: Matches 6 keywords including batch, lot, lot number, etc.
+    keywords:
     - batch
     - lot
     - lot number
@@ -409,8 +443,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: clinical_endpoint_keyword_match_1
+    description: 'Matches keywords: primary endpoint, secondary endpoint, outcome, efficacy measure, clinical outcome'
+    keywords:
     - primary endpoint
     - secondary endpoint
     - outcome
@@ -422,8 +458,10 @@ entity_types:
 relationship_types:
 - relationship_type: treats_indication
   description: Drug treats indication
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: treats_indication_keyword_match_1
+    description: 'Matches keywords: treats, indicated for, approved for, treatment of, therapy for'
+    keywords:
     - treats
     - indicated for
     - approved for
@@ -433,8 +471,10 @@ relationship_types:
   target_type: indication
 - relationship_type: contains_compound
   description: Drug product contains active compound
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: contains_compound_keyword_match_1
+    description: 'Matches keywords: contains, active ingredient, comprised of, formulated with'
+    keywords:
     - contains
     - active ingredient
     - comprised of
@@ -443,8 +483,10 @@ relationship_types:
   target_type: drug_compound
 - relationship_type: tested_in_trial
   description: Drug tested in clinical trial
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: tested_in_trial_keyword_match_1
+    description: 'Matches keywords: tested in, evaluated in, clinical trial, study protocol'
+    keywords:
     - tested in
     - evaluated in
     - clinical trial
@@ -453,8 +495,10 @@ relationship_types:
   target_type: clinical_trial
 - relationship_type: causes_adverse_event
   description: Drug causes adverse event
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: causes_adverse_event_keyword_match_1
+    description: 'Matches keywords: causes, associated with, adverse event, side effect, reported'
+    keywords:
     - causes
     - associated with
     - adverse event
@@ -464,8 +508,10 @@ relationship_types:
   target_type: adverse_event
 - relationship_type: approved_by_agency
   description: Drug approved by regulatory agency
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: approved_by_agency_keyword_match_1
+    description: 'Matches keywords: approved by, authorized by, cleared by, regulatory approval from'
+    keywords:
     - approved by
     - authorized by
     - cleared by
@@ -474,8 +520,10 @@ relationship_types:
   target_type: regulatory_agency
 - relationship_type: filed_with_agency
   description: Regulatory submission filed with agency
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: filed_with_agency_keyword_match_1
+    description: 'Matches keywords: filed with, submitted to, application to, submission to'
+    keywords:
     - filed with
     - submitted to
     - application to
@@ -484,8 +532,10 @@ relationship_types:
   target_type: regulatory_agency
 - relationship_type: manufactured_by
   description: Drug manufactured by facility
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: manufactured_by_keyword_match_1
+    description: 'Matches keywords: manufactured by, produced by, made by, manufacturing site'
+    keywords:
     - manufactured by
     - produced by
     - made by
@@ -494,8 +544,10 @@ relationship_types:
   target_type: manufacturer
 - relationship_type: protected_by_patent
   description: Drug protected by patent
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: protected_by_patent_keyword_match_1
+    description: 'Matches keywords: protected by, patent, covered by, intellectual property'
+    keywords:
     - protected by
     - patent
     - covered by
@@ -504,8 +556,10 @@ relationship_types:
   target_type: patent
 - relationship_type: uses_formulation
   description: Drug uses specific formulation
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: uses_formulation_keyword_match_1
+    description: 'Matches keywords: formulated as, dosage form, available as, formulation'
+    keywords:
     - formulated as
     - dosage form
     - available as
@@ -514,8 +568,10 @@ relationship_types:
   target_type: formulation
 - relationship_type: targets_biomarker
   description: Drug targets biomarker
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: targets_biomarker_keyword_match_1
+    description: Matches 6 keywords including targets, acts on, binds to, etc.
+    keywords:
     - targets
     - acts on
     - binds to
@@ -526,8 +582,10 @@ relationship_types:
   target_type: biomarker
 - relationship_type: led_by_investigator
   description: Trial led by investigator
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: led_by_investigator_keyword_match_1
+    description: 'Matches keywords: led by, principal investigator, conducted by, investigator'
+    keywords:
     - led by
     - principal investigator
     - conducted by
@@ -536,8 +594,10 @@ relationship_types:
   target_type: investigator
 - relationship_type: sponsored_by
   description: Trial sponsored by organization
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sponsored_by_keyword_match_1
+    description: 'Matches keywords: sponsored by, funded by, supported by, sponsor'
+    keywords:
     - sponsored by
     - funded by
     - supported by
@@ -546,8 +606,10 @@ relationship_types:
   target_type: sponsor
 - relationship_type: measures_endpoint
   description: Trial measures clinical endpoint
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: measures_endpoint_keyword_match_1
+    description: 'Matches keywords: measures, primary endpoint, secondary endpoint, outcome measure'
+    keywords:
     - measures
     - primary endpoint
     - secondary endpoint
@@ -556,8 +618,10 @@ relationship_types:
   target_type: clinical_endpoint
 - relationship_type: exhibits_pk_profile
   description: Drug exhibits pharmacokinetic profile
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: exhibits_pk_profile_keyword_match_1
+    description: 'Matches keywords: pharmacokinetics, PK profile, ADME, absorption, metabolism'
+    keywords:
     - pharmacokinetics
     - PK profile
     - ADME
@@ -567,8 +631,10 @@ relationship_types:
   target_type: pharmacokinetics
 - relationship_type: exhibits_pd_profile
   description: Drug exhibits pharmacodynamic profile
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: exhibits_pd_profile_keyword_match_1
+    description: 'Matches keywords: mechanism of action, MOA, pharmacodynamics, PD profile'
+    keywords:
     - mechanism of action
     - MOA
     - pharmacodynamics
@@ -577,8 +643,10 @@ relationship_types:
   target_type: pharmacodynamics
 - relationship_type: meets_specification
   description: Batch meets quality specification
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: meets_specification_keyword_match_1
+    description: 'Matches keywords: meets specification, complies with, passes, conforms to'
+    keywords:
     - meets specification
     - complies with
     - passes
@@ -587,8 +655,10 @@ relationship_types:
   target_type: quality_specification
 - relationship_type: part_of_batch
   description: Product part of manufacturing batch
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: part_of_batch_keyword_match_1
+    description: 'Matches keywords: batch, lot number, manufactured in, production batch'
+    keywords:
     - batch
     - lot number
     - manufactured in

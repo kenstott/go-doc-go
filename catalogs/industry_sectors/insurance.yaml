@@ -96,13 +96,17 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: policy_keyword_match_1
+    description: 'Matches keywords: policy, insurance policy, policy number, contract'
+    keywords:
     - policy
     - insurance policy
     - policy number
     - contract
-  - pattern: \bpolicy\s+(?:number|#)?\s*[A-Z0-9\-]+
+  - name: policy_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bpolicy\s+(?:number|#)?\s*[A-Z0-9\-]+
   parent_type: global.document
   w_category: what
   domain: insurance
@@ -116,8 +120,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: policyholder_keyword_match_1
+    description: 'Matches keywords: policyholder, insured, named insured, subscriber'
+    keywords:
     - policyholder
     - insured
     - named insured
@@ -134,8 +140,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: beneficiary_keyword_match_1
+    description: 'Matches keywords: beneficiary, primary beneficiary, contingent beneficiary'
+    keywords:
     - beneficiary
     - primary beneficiary
     - contingent beneficiary
@@ -152,12 +160,16 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: premium_keyword_match_1
+    description: 'Matches keywords: premium, monthly premium, annual premium'
+    keywords:
     - premium
     - monthly premium
     - annual premium
-  - pattern: \$[\d,]+(?:\.\d{2})?\s+(?:premium|per month|annually)
+  - name: premium_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \$[\d,]+(?:\.\d{2})?\s+(?:premium|per month|annually)
   parent_type: ''
   w_category: what
   domain: insurance
@@ -171,8 +183,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: coverage_amount_keyword_match_1
+    description: 'Matches keywords: coverage, benefit amount, sum insured, face amount'
+    keywords:
     - coverage
     - benefit amount
     - sum insured
@@ -189,8 +203,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: deductible_keyword_match_1
+    description: 'Matches keywords: deductible, excess, out-of-pocket'
+    keywords:
     - deductible
     - excess
     - out-of-pocket
@@ -207,12 +223,16 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: claim_keyword_match_1
+    description: 'Matches keywords: claim, claim number, loss claim'
+    keywords:
     - claim
     - claim number
     - loss claim
-  - pattern: \bclaim\s+(?:number|#)?\s*[A-Z0-9\-]+
+  - name: claim_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bclaim\s+(?:number|#)?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
   domain: insurance
@@ -226,8 +246,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: loss_event_keyword_match_1
+    description: Matches 8 keywords including accident, incident, loss, etc.
+    keywords:
     - accident
     - incident
     - loss
@@ -249,8 +271,10 @@ entity_types:
   - paragraph
   - list_item
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: coverage_type_keyword_match_1
+    description: Matches 6 keywords including liability coverage, collision coverage, comprehensive coverage, etc.
+    keywords:
     - liability coverage
     - collision coverage
     - comprehensive coverage
@@ -269,8 +293,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: exclusion_keyword_match_1
+    description: 'Matches keywords: exclusion, not covered, excluded, limitation'
+    keywords:
     - exclusion
     - not covered
     - excluded
@@ -288,8 +314,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: endorsement_keyword_match_1
+    description: 'Matches keywords: endorsement, rider, amendment, modification'
+    keywords:
     - endorsement
     - rider
     - amendment
@@ -307,8 +335,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: insurer_keyword_match_1
+    description: 'Matches keywords: insurance company, carrier, insurer, underwriter'
+    keywords:
     - insurance company
     - carrier
     - insurer
@@ -325,8 +355,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: agent_keyword_match_1
+    description: 'Matches keywords: agent, broker, insurance agent, producer'
+    keywords:
     - agent
     - broker
     - insurance agent
@@ -343,8 +375,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: risk_classification_keyword_match_1
+    description: Matches 6 keywords including preferred, standard, substandard, etc.
+    keywords:
     - preferred
     - standard
     - substandard
@@ -365,13 +399,17 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: vehicle_keyword_match_1
+    description: 'Matches keywords: vehicle, car, automobile, VIN'
+    keywords:
     - vehicle
     - car
     - automobile
     - VIN
-  - pattern: \bVIN:\s*[A-Z0-9]{17}\b
+  - name: vehicle_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bVIN:\s*[A-Z0-9]{17}\b
   parent_type: ''
   w_category: what
   domain: insurance
@@ -386,8 +424,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: property_keyword_match_1
+    description: 'Matches keywords: property, premises, dwelling, structure'
+    keywords:
     - property
     - premises
     - dwelling
@@ -406,8 +446,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: medical_condition_keyword_match_1
+    description: 'Matches keywords: diagnosis, medical condition, illness, disease'
+    keywords:
     - diagnosis
     - medical condition
     - illness
@@ -425,8 +467,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: injury_keyword_match_1
+    description: 'Matches keywords: injury, workplace injury, accident, workers comp'
+    keywords:
     - injury
     - workplace injury
     - accident

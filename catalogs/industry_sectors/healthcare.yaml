@@ -1,5 +1,7 @@
 domain: healthcare
 description: Patient care, medical treatments, diagnoses, healthcare providers, medical records, and clinical operations
+dependencies:
+- medical
 subdomains:
 - clinical_care
 - patient_records
@@ -8,28 +10,6 @@ subdomains:
 - laboratory
 - billing_coding
 entity_types:
-- entity_type: patient
-  description: Individual receiving medical care
-  aliases:
-  - individual
-  - subject
-  - medical record number
-  - MRN
-  element_types:
-  - paragraph
-  - heading
-  - list_item
-  - table_row
-  sample_rules:
-  - keywords:
-    - patient
-    - MRN
-    - medical record
-    - individual
-    - subject
-  parent_type: ''
-  w_category: what
-  domain: healthcare
 - entity_type: provider
   description: Healthcare provider or medical professional
   aliases:
@@ -42,8 +22,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: provider_keyword_match_1
+    description: Matches 9 keywords including physician, doctor, MD, etc.
+    keywords:
     - physician
     - doctor
     - MD
@@ -66,8 +48,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: diagnosis_keyword_match_1
+    description: Matches 7 keywords including diagnosis, ICD-10, condition, etc.
+    keywords:
     - diagnosis
     - ICD-10
     - condition
@@ -75,73 +59,6 @@ entity_types:
     - disorder
     - illness
     - syndrome
-  parent_type: ''
-  w_category: what
-  domain: healthcare
-- entity_type: procedure
-  description: Medical procedure or treatment
-  aliases:
-  - treatment
-  - operation
-  - surgery
-  - intervention
-  element_types:
-  - paragraph
-  - list_item
-  sample_rules:
-  - keywords:
-    - procedure
-    - CPT
-    - treatment
-    - surgery
-    - operation
-    - intervention
-    - therapy
-  parent_type: global.process
-  w_category: how
-  domain: healthcare
-- entity_type: medication
-  description: Pharmaceutical medication or drug
-  aliases:
-  - drug
-  - pharmaceutical
-  - prescription
-  - medicine
-  element_types:
-  - paragraph
-  - list_item
-  - table_row
-  sample_rules:
-  - keywords:
-    - medication
-    - drug
-    - prescription
-    - pharmaceutical
-    - medicine
-    - dosage
-    - mg
-    - ml
-  parent_type: ''
-  w_category: what
-  domain: healthcare
-- entity_type: lab_test
-  description: Laboratory test or diagnostic test
-  aliases:
-  - diagnostic test
-  - lab work
-  - laboratory test
-  element_types:
-  - paragraph
-  - list_item
-  - table_row
-  sample_rules:
-  - keywords:
-    - lab test
-    - laboratory
-    - blood test
-    - diagnostic test
-    - screening
-    - culture
   parent_type: ''
   w_category: what
   domain: healthcare
@@ -156,8 +73,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: imaging_study_keyword_match_1
+    description: Matches 7 keywords including MRI, CT scan, x-ray, etc.
+    keywords:
     - MRI
     - CT scan
     - x-ray
@@ -179,8 +98,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: encounter_keyword_match_1
+    description: Matches 7 keywords including visit, encounter, appointment, etc.
+    keywords:
     - visit
     - encounter
     - appointment
@@ -194,8 +115,10 @@ entity_types:
 relationship_types:
 - relationship_type: treated_by
   description: Patient treated by provider
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: treated_by_keyword_match_1
+    description: 'Matches keywords: treated by, under care of, physician, doctor, provider'
+    keywords:
     - treated by
     - under care of
     - physician
@@ -205,8 +128,10 @@ relationship_types:
   target_type: provider
 - relationship_type: diagnosed_with
   description: Patient diagnosed with condition
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: diagnosed_with_keyword_match_1
+    description: 'Matches keywords: diagnosed with, diagnosis, condition, suffers from'
+    keywords:
     - diagnosed with
     - diagnosis
     - condition
@@ -215,8 +140,10 @@ relationship_types:
   target_type: diagnosis
 - relationship_type: underwent_procedure
   description: Patient underwent procedure
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: underwent_procedure_keyword_match_1
+    description: Matches 6 keywords including underwent, received, had, etc.
+    keywords:
     - underwent
     - received
     - had
@@ -227,8 +154,10 @@ relationship_types:
   target_type: procedure
 - relationship_type: prescribed_medication
   description: Provider prescribed medication
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: prescribed_medication_keyword_match_1
+    description: 'Matches keywords: prescribed, medication, drug, prescription'
+    keywords:
     - prescribed
     - medication
     - drug
@@ -237,8 +166,10 @@ relationship_types:
   target_type: medication
 - relationship_type: ordered_test
   description: Provider ordered lab test
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: ordered_test_keyword_match_1
+    description: 'Matches keywords: ordered, lab test, diagnostic test, requested'
+    keywords:
     - ordered
     - lab test
     - diagnostic test
@@ -247,8 +178,10 @@ relationship_types:
   target_type: lab_test
 - relationship_type: ordered_imaging
   description: Provider ordered imaging study
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: ordered_imaging_keyword_match_1
+    description: Matches 6 keywords including ordered, imaging, scan, etc.
+    keywords:
     - ordered
     - imaging
     - scan
@@ -259,8 +192,10 @@ relationship_types:
   target_type: imaging_study
 - relationship_type: part_of_encounter
   description: Procedure part of encounter
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: part_of_encounter_keyword_match_1
+    description: 'Matches keywords: during, part of, visit, encounter, performed during'
+    keywords:
     - during
     - part of
     - visit

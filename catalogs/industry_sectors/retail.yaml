@@ -85,13 +85,17 @@ entity_types:
   - paragraph
   - table_cell
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: product_keyword_match_1
+    description: 'Matches keywords: product, item, SKU, merchandise'
+    keywords:
     - product
     - item
     - SKU
     - merchandise
-  - pattern: \bSKU\s*#?\s*[A-Z0-9\-]+
+  - name: product_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bSKU\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
   domain: retail
@@ -106,8 +110,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: customer_keyword_match_1
+    description: 'Matches keywords: customer, shopper, buyer, member'
+    keywords:
     - customer
     - shopper
     - buyer
@@ -125,13 +131,17 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: transaction_keyword_match_1
+    description: 'Matches keywords: transaction, sale, purchase, order'
+    keywords:
     - transaction
     - sale
     - purchase
     - order
-  - pattern: \b(?:Order|Transaction|Receipt)\s*#?\s*[A-Z0-9\-]+
+  - name: transaction_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b(?:Order|Transaction|Receipt)\s*#?\s*[A-Z0-9\-]+
   parent_type: ''
   w_category: what
   domain: retail
@@ -145,9 +155,13 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - pattern: \$[\d,]+(?:\.\d{2})?
-  - keywords:
+  extraction_rules:
+  - name: price_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \$[\d,]+(?:\.\d{2})?
+  - name: price_keyword_match_2
+    description: 'Matches keywords: price, MSRP, retail price, sale price'
+    keywords:
     - price
     - MSRP
     - retail price
@@ -167,14 +181,18 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: promotion_keyword_match_1
+    description: 'Matches keywords: promotion, discount, sale, offer, coupon'
+    keywords:
     - promotion
     - discount
     - sale
     - offer
     - coupon
-  - pattern: \b\d+%\s+off\b
+  - name: promotion_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \b\d+%\s+off\b
   parent_type: ''
   w_category: what
   domain: retail
@@ -189,13 +207,17 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: store_keyword_match_1
+    description: 'Matches keywords: store, location, outlet, branch'
+    keywords:
     - store
     - location
     - outlet
     - branch
-  - pattern: \bStore\s*#?\s*\d+
+  - name: store_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: \bStore\s*#?\s*\d+
   parent_type: ''
   w_category: what
   domain: retail
@@ -209,8 +231,10 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: category_keyword_match_1
+    description: Matches 6 keywords including category, department, electronics, etc.
+    keywords:
     - category
     - department
     - electronics
@@ -229,8 +253,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: brand_keyword_match_1
+    description: 'Matches keywords: brand, manufacturer, private label'
+    keywords:
     - brand
     - manufacturer
     - private label
@@ -246,8 +272,10 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: inventory_level_keyword_match_1
+    description: 'Matches keywords: inventory, stock, on hand, available'
+    keywords:
     - inventory
     - stock
     - on hand
@@ -264,8 +292,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sales_metric_keyword_match_1
+    description: Matches 6 keywords including sales, revenue, units sold, etc.
+    keywords:
     - sales
     - revenue
     - units sold
@@ -283,8 +313,10 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: payment_method_keyword_match_1
+    description: Matches 6 keywords including cash, credit card, debit card, etc.
+    keywords:
     - cash
     - credit card
     - debit card
@@ -303,8 +335,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: return_keyword_match_1
+    description: 'Matches keywords: return, refund, exchange, RMA'
+    keywords:
     - return
     - refund
     - exchange

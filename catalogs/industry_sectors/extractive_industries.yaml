@@ -21,8 +21,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: mine_site_keyword_match_1
+    description: Matches 7 keywords including mine, mine site, pit, etc.
+    keywords:
     - mine
     - mine site
     - pit
@@ -45,8 +47,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: mineral_resource_keyword_match_1
+    description: Matches 10 keywords including ore, mineral, coal, etc.
+    keywords:
     - ore
     - mineral
     - coal
@@ -72,8 +76,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: oil_gas_field_keyword_match_1
+    description: Matches 7 keywords including oil field, gas field, reservoir, etc.
+    keywords:
     - oil field
     - gas field
     - reservoir
@@ -95,8 +101,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: exploration_project_keyword_match_1
+    description: Matches 6 keywords including exploration, prospect, survey, etc.
+    keywords:
     - exploration
     - prospect
     - survey
@@ -116,8 +124,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: drilling_operation_keyword_match_1
+    description: Matches 6 keywords including drilling, well, borehole, etc.
+    keywords:
     - drilling
     - well
     - borehole
@@ -138,8 +148,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: processing_facility_keyword_match_1
+    description: Matches 6 keywords including processing plant, mill, refinery, etc.
+    keywords:
     - processing plant
     - mill
     - refinery
@@ -161,8 +173,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: reserve_estimate_keyword_match_1
+    description: Matches 9 keywords including reserve, resource, proven, etc.
+    keywords:
     - reserve
     - resource
     - proven
@@ -186,8 +200,10 @@ entity_types:
   - paragraph
   - table_row
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: production_volume_keyword_match_1
+    description: Matches 6 keywords including production, output, yield, etc.
+    keywords:
     - production
     - output
     - yield
@@ -208,8 +224,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: mining_equipment_keyword_match_1
+    description: Matches 7 keywords including equipment, excavator, haul truck, etc.
+    keywords:
     - equipment
     - excavator
     - haul truck
@@ -231,8 +249,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: geologic_formation_keyword_match_1
+    description: Matches 6 keywords including formation, stratum, seam, etc.
+    keywords:
     - formation
     - stratum
     - seam
@@ -254,8 +274,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: permit_license_keyword_match_1
+    description: Matches 6 keywords including permit, license, concession, etc.
+    keywords:
     - permit
     - license
     - concession
@@ -275,8 +297,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: environmental_impact_keyword_match_1
+    description: Matches 6 keywords including environmental impact, EIA, remediation, etc.
+    keywords:
     - environmental impact
     - EIA
     - remediation
@@ -297,8 +321,10 @@ entity_types:
   - paragraph
   - table_row
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: commodity_price_keyword_match_1
+    description: Matches 7 keywords including price, commodity price, spot price, etc.
+    keywords:
     - price
     - commodity price
     - spot price
@@ -319,8 +345,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: operator_keyword_match_1
+    description: 'Matches keywords: operator, mining company, producer, E&P company, exploration company'
+    keywords:
     - operator
     - mining company
     - producer
@@ -339,8 +367,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: contractor_keyword_match_1
+    description: 'Matches keywords: contractor, service provider, drilling contractor, mining contractor, EPCM'
+    keywords:
     - contractor
     - service provider
     - drilling contractor
@@ -360,8 +390,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: safety_incident_keyword_match_1
+    description: Matches 6 keywords including safety incident, accident, injury, etc.
+    keywords:
     - safety incident
     - accident
     - injury
@@ -383,8 +415,10 @@ entity_types:
   - paragraph
   - table_row
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: grade_assay_keyword_match_1
+    description: Matches 7 keywords including grade, assay, g/t, etc.
+    keywords:
     - grade
     - assay
     - g/t
@@ -405,8 +439,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: royalty_agreement_keyword_match_1
+    description: 'Matches keywords: royalty, revenue share, NSR, net smelter return, production payment'
+    keywords:
     - royalty
     - revenue share
     - NSR
@@ -418,8 +454,10 @@ entity_types:
 relationship_types:
 - relationship_type: extracts_resource
   description: Mine site extracts mineral resource
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: extracts_resource_keyword_match_1
+    description: 'Matches keywords: extracts, produces, mines, recovers, yields'
+    keywords:
     - extracts
     - produces
     - mines
@@ -429,8 +467,10 @@ relationship_types:
   target_type: mineral_resource
 - relationship_type: produces_from_field
   description: Operator produces from oil/gas field
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: produces_from_field_keyword_match_1
+    description: 'Matches keywords: produces from, operates, extracts from, field operator'
+    keywords:
     - produces from
     - operates
     - extracts from
@@ -439,8 +479,10 @@ relationship_types:
   target_type: oil_gas_field
 - relationship_type: explores_for_resource
   description: Exploration project targets resource
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: explores_for_resource_keyword_match_1
+    description: 'Matches keywords: explores for, targets, searching for, prospecting for'
+    keywords:
     - explores for
     - targets
     - searching for
@@ -449,8 +491,10 @@ relationship_types:
   target_type: mineral_resource
 - relationship_type: drills_at_site
   description: Drilling operation at mine site or field
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: drills_at_site_keyword_match_1
+    description: 'Matches keywords: drilling at, located at, operating at'
+    keywords:
     - drilling at
     - located at
     - operating at
@@ -458,8 +502,10 @@ relationship_types:
   target_type: mine_site
 - relationship_type: processes_ore
   description: Processing facility processes ore
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: processes_ore_keyword_match_1
+    description: 'Matches keywords: processes, treats, refines, concentrates, smelts'
+    keywords:
     - processes
     - treats
     - refines
@@ -469,8 +515,10 @@ relationship_types:
   target_type: mineral_resource
 - relationship_type: has_reserve_estimate
   description: Mine site has reserve estimate
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: has_reserve_estimate_keyword_match_1
+    description: 'Matches keywords: has reserves, reserves of, estimated reserves, resource estimate'
+    keywords:
     - has reserves
     - reserves of
     - estimated reserves
@@ -479,8 +527,10 @@ relationship_types:
   target_type: reserve_estimate
 - relationship_type: achieves_production
   description: Mine site achieves production volume
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: achieves_production_keyword_match_1
+    description: 'Matches keywords: produces, production of, output of, yields, achieves'
+    keywords:
     - produces
     - production of
     - output of
@@ -490,8 +540,10 @@ relationship_types:
   target_type: production_volume
 - relationship_type: uses_equipment
   description: Mine site uses equipment
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: uses_equipment_keyword_match_1
+    description: 'Matches keywords: uses, operates, deploys, equipped with'
+    keywords:
     - uses
     - operates
     - deploys
@@ -500,8 +552,10 @@ relationship_types:
   target_type: mining_equipment
 - relationship_type: located_in_formation
   description: Resource located in geological formation
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: located_in_formation_keyword_match_1
+    description: 'Matches keywords: located in, found in, hosted in, within formation'
+    keywords:
     - located in
     - found in
     - hosted in
@@ -510,8 +564,10 @@ relationship_types:
   target_type: geologic_formation
 - relationship_type: authorized_by_permit
   description: Operation authorized by permit
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: authorized_by_permit_keyword_match_1
+    description: 'Matches keywords: authorized by, permitted by, licensed under, covered by'
+    keywords:
     - authorized by
     - permitted by
     - licensed under
@@ -520,8 +576,10 @@ relationship_types:
   target_type: permit_license
 - relationship_type: causes_impact
   description: Operation causes environmental impact
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: causes_impact_keyword_match_1
+    description: 'Matches keywords: causes, results in, environmental impact, affects'
+    keywords:
     - causes
     - results in
     - environmental impact
@@ -530,8 +588,10 @@ relationship_types:
   target_type: environmental_impact
 - relationship_type: traded_at_price
   description: Commodity traded at price
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: traded_at_price_keyword_match_1
+    description: 'Matches keywords: traded at, priced at, selling for, market price'
+    keywords:
     - traded at
     - priced at
     - selling for
@@ -540,8 +600,10 @@ relationship_types:
   target_type: commodity_price
 - relationship_type: operated_by
   description: Site operated by company
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: operated_by_keyword_match_1
+    description: 'Matches keywords: operated by, owned by, managed by, operator'
+    keywords:
     - operated by
     - owned by
     - managed by
@@ -550,8 +612,10 @@ relationship_types:
   target_type: operator
 - relationship_type: contracted_to
   description: Contractor provides services to operator
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: contracted_to_keyword_match_1
+    description: 'Matches keywords: contracted to, provides services to, working for, engaged by'
+    keywords:
     - contracted to
     - provides services to
     - working for
@@ -560,8 +624,10 @@ relationship_types:
   target_type: operator
 - relationship_type: reported_incident
   description: Site reported safety incident
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: reported_incident_keyword_match_1
+    description: 'Matches keywords: reported, incident at, accident at, occurred at'
+    keywords:
     - reported
     - incident at
     - accident at
@@ -570,8 +636,10 @@ relationship_types:
   target_type: safety_incident
 - relationship_type: has_grade
   description: Resource has grade/assay
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: has_grade_keyword_match_1
+    description: 'Matches keywords: grade of, assay of, concentration of, grading'
+    keywords:
     - grade of
     - assay of
     - concentration of
@@ -580,8 +648,10 @@ relationship_types:
   target_type: grade_assay
 - relationship_type: subject_to_royalty
   description: Production subject to royalty
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: subject_to_royalty_keyword_match_1
+    description: 'Matches keywords: subject to royalty, royalty on, NSR applies, revenue share'
+    keywords:
     - subject to royalty
     - royalty on
     - NSR applies

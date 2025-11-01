@@ -17,8 +17,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: guest_keyword_match_1
+    description: 'Matches keywords: guest, customer, visitor, patron, traveler'
+    keywords:
     - guest
     - customer
     - visitor
@@ -38,8 +40,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: reservation_keyword_match_1
+    description: Matches 6 keywords including reservation, booking, check-in, etc.
+    keywords:
     - reservation
     - booking
     - check-in
@@ -59,8 +63,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: room_keyword_match_1
+    description: Matches 7 keywords including room, suite, accommodation, etc.
+    keywords:
     - room
     - suite
     - accommodation
@@ -82,8 +88,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: hotel_property_keyword_match_1
+    description: 'Matches keywords: hotel, property, resort, location, branch'
+    keywords:
     - hotel
     - property
     - resort
@@ -103,8 +111,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: event_keyword_match_1
+    description: Matches 6 keywords including event, function, meeting, etc.
+    keywords:
     - event
     - function
     - meeting
@@ -117,8 +127,10 @@ entity_types:
 relationship_types:
 - relationship_type: booked_by
   description: Reservation booked by guest
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: booked_by_keyword_match_1
+    description: 'Matches keywords: booked by, reserved by, guest name'
+    keywords:
     - booked by
     - reserved by
     - guest name
@@ -126,8 +138,10 @@ relationship_types:
   target_type: guest
 - relationship_type: for_room
   description: Reservation for room
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: for_room_keyword_match_1
+    description: 'Matches keywords: room, suite, accommodation type'
+    keywords:
     - room
     - suite
     - accommodation type
@@ -135,8 +149,10 @@ relationship_types:
   target_type: room
 - relationship_type: at_property
   description: Reservation at property
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: at_property_keyword_match_1
+    description: 'Matches keywords: at, location, property, hotel'
+    keywords:
     - at
     - location
     - property
@@ -145,8 +161,10 @@ relationship_types:
   target_type: hotel_property
 - relationship_type: hosted_at
   description: Event hosted at property
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: hosted_at_keyword_match_1
+    description: 'Matches keywords: hosted at, held at, venue, location'
+    keywords:
     - hosted at
     - held at
     - venue

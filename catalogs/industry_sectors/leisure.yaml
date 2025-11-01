@@ -57,8 +57,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: destination_keyword_match_1
+    description: Matches 6 keywords including destination, resort, beach, etc.
+    keywords:
     - destination
     - resort
     - beach
@@ -79,9 +81,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Hotel|Resort|Inn|Lodge)\b'
-  - keywords:
+  extraction_rules:
+  - name: hotel_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Hotel|Resort|Inn|Lodge)\b'
+  - name: hotel_keyword_match_2
+    description: 'Matches keywords: hotel, resort, inn, lodge, accommodation'
+    keywords:
     - hotel
     - resort
     - inn
@@ -99,9 +105,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Airlines?\b'
-  - keywords:
+  extraction_rules:
+  - name: airline_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Airlines?\b'
+  - name: airline_keyword_match_2
+    description: 'Matches keywords: airline, airways, air'
+    keywords:
     - airline
     - airways
     - air
@@ -116,9 +126,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - pattern: \b[A-Z]{2}\d{1,4}\b
-  - keywords:
+  extraction_rules:
+  - name: flight_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b[A-Z]{2}\d{1,4}\b
+  - name: flight_keyword_match_2
+    description: 'Matches keywords: flight, departure, arrival'
+    keywords:
     - flight
     - departure
     - arrival
@@ -133,8 +147,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: booking_keyword_match_1
+    description: 'Matches keywords: booking, reservation, confirmation number'
+    keywords:
     - booking
     - reservation
     - confirmation number
@@ -151,8 +167,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: tourist_attraction_keyword_match_1
+    description: Matches 6 keywords including museum, monument, park, etc.
+    keywords:
     - museum
     - monument
     - park
@@ -172,8 +190,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: restaurant_keyword_match_1
+    description: 'Matches keywords: restaurant, cafe, bistro, eatery, dining'
+    keywords:
     - restaurant
     - cafe
     - bistro
@@ -192,8 +212,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: event_keyword_match_1
+    description: 'Matches keywords: concert, show, festival, event, performance'
+    keywords:
     - concert
     - show
     - festival
@@ -211,8 +233,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: tour_keyword_match_1
+    description: 'Matches keywords: tour, excursion, guided tour, day trip'
+    keywords:
     - tour
     - excursion
     - guided tour
@@ -230,8 +254,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: traveler_keyword_match_1
+    description: 'Matches keywords: traveler, tourist, visitor, guest'
+    keywords:
     - traveler
     - tourist
     - visitor

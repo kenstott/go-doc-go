@@ -19,8 +19,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: property_keyword_match_1
+    description: Matches 6 keywords including property, building, facility, etc.
+    keywords:
     - property
     - building
     - facility
@@ -40,8 +42,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: lease_keyword_match_1
+    description: 'Matches keywords: lease, rental, tenancy, lease agreement, rental agreement'
+    keywords:
     - lease
     - rental
     - tenancy
@@ -60,8 +64,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: tenant_keyword_match_1
+    description: 'Matches keywords: tenant, lessee, renter, occupant'
+    keywords:
     - tenant
     - lessee
     - renter
@@ -79,8 +85,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: landlord_keyword_match_1
+    description: 'Matches keywords: landlord, lessor, property owner, owner'
+    keywords:
     - landlord
     - lessor
     - property owner
@@ -98,8 +106,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: rental_rate_keyword_match_1
+    description: Matches 6 keywords including rent, rental rate, lease rate, etc.
+    keywords:
     - rent
     - rental rate
     - lease rate
@@ -120,8 +130,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: square_footage_keyword_match_1
+    description: 'Matches keywords: square feet, SF, square footage, area, size'
+    keywords:
     - square feet
     - SF
     - square footage
@@ -133,8 +145,10 @@ entity_types:
 relationship_types:
 - relationship_type: leased_by
   description: Property leased by tenant
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: leased_by_keyword_match_1
+    description: 'Matches keywords: leased by, tenant, renter, occupied by'
+    keywords:
     - leased by
     - tenant
     - renter
@@ -143,8 +157,10 @@ relationship_types:
   target_type: tenant
 - relationship_type: owned_by
   description: Property owned by landlord
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: owned_by_keyword_match_1
+    description: 'Matches keywords: owned by, owner, landlord'
+    keywords:
     - owned by
     - owner
     - landlord
@@ -152,8 +168,10 @@ relationship_types:
   target_type: landlord
 - relationship_type: has_lease
   description: Property has lease agreement
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: has_lease_keyword_match_1
+    description: 'Matches keywords: lease, rental agreement, tenancy'
+    keywords:
     - lease
     - rental agreement
     - tenancy
@@ -161,8 +179,10 @@ relationship_types:
   target_type: lease
 - relationship_type: priced_at
   description: Property priced at rental rate
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: priced_at_keyword_match_1
+    description: 'Matches keywords: priced at, rent, rental rate'
+    keywords:
     - priced at
     - rent
     - rental rate
@@ -170,8 +190,10 @@ relationship_types:
   target_type: rental_rate
 - relationship_type: has_size
   description: Property has square footage
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: has_size_keyword_match_1
+    description: 'Matches keywords: square feet, SF, area, size'
+    keywords:
     - square feet
     - SF
     - area

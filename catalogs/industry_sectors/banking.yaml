@@ -19,8 +19,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: account_keyword_match_1
+    description: 'Matches keywords: account, checking, savings, deposit, account number'
+    keywords:
     - account
     - checking
     - savings
@@ -40,8 +42,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: transaction_keyword_match_1
+    description: Matches 7 keywords including transaction, payment, transfer, etc.
+    keywords:
     - transaction
     - payment
     - transfer
@@ -63,8 +67,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: loan_keyword_match_1
+    description: Matches 6 keywords including loan, credit, mortgage, etc.
+    keywords:
     - loan
     - credit
     - mortgage
@@ -83,8 +89,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: investment_product_keyword_match_1
+    description: Matches 7 keywords including stock, bond, mutual fund, etc.
+    keywords:
     - stock
     - bond
     - mutual fund
@@ -104,8 +112,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: branch_keyword_match_1
+    description: 'Matches keywords: branch, location, office, ATM, banking center'
+    keywords:
     - branch
     - location
     - office
@@ -124,8 +134,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: interest_rate_keyword_match_1
+    description: Matches 6 keywords including interest rate, APR, rate, etc.
+    keywords:
     - interest rate
     - APR
     - rate
@@ -138,8 +150,10 @@ entity_types:
 relationship_types:
 - relationship_type: holds_account
   description: Customer holds account
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: holds_account_keyword_match_1
+    description: 'Matches keywords: holds, owns, account holder, customer'
+    keywords:
     - holds
     - owns
     - account holder
@@ -148,8 +162,10 @@ relationship_types:
   target_type: account
 - relationship_type: made_transaction
   description: Account made transaction
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: made_transaction_keyword_match_1
+    description: 'Matches keywords: transaction, payment, transfer, from account'
+    keywords:
     - transaction
     - payment
     - transfer
@@ -158,8 +174,10 @@ relationship_types:
   target_type: transaction
 - relationship_type: has_loan
   description: Customer has loan
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: has_loan_keyword_match_1
+    description: 'Matches keywords: loan, borrower, credit, financing'
+    keywords:
     - loan
     - borrower
     - credit
@@ -168,8 +186,10 @@ relationship_types:
   target_type: loan
 - relationship_type: invests_in
   description: Customer invests in product
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: invests_in_keyword_match_1
+    description: 'Matches keywords: invests, holds, owns, portfolio'
+    keywords:
     - invests
     - holds
     - owns
@@ -178,8 +198,10 @@ relationship_types:
   target_type: investment_product
 - relationship_type: located_at_branch
   description: Account serviced at branch
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: located_at_branch_keyword_match_1
+    description: 'Matches keywords: branch, location, serviced at, opened at'
+    keywords:
     - branch
     - location
     - serviced at
@@ -188,8 +210,10 @@ relationship_types:
   target_type: branch
 - relationship_type: earns_rate
   description: Account earns interest rate
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: earns_rate_keyword_match_1
+    description: 'Matches keywords: earns, interest rate, APR, yield'
+    keywords:
     - earns
     - interest rate
     - APR

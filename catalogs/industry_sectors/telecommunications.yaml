@@ -18,8 +18,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: subscriber_keyword_match_1
+    description: 'Matches keywords: subscriber, customer, account, phone number, mobile number'
+    keywords:
     - subscriber
     - customer
     - account
@@ -39,8 +41,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: service_plan_keyword_match_1
+    description: Matches 6 keywords including plan, package, subscription, etc.
+    keywords:
     - plan
     - package
     - subscription
@@ -60,8 +64,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: network_element_keyword_match_1
+    description: Matches 6 keywords including tower, cell site, base station, etc.
+    keywords:
     - tower
     - cell site
     - base station
@@ -80,8 +86,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: service_keyword_match_1
+    description: Matches 7 keywords including voice, data, SMS, etc.
+    keywords:
     - voice
     - data
     - SMS
@@ -95,8 +103,10 @@ entity_types:
 relationship_types:
 - relationship_type: subscribed_to
   description: Subscriber subscribed to plan
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: subscribed_to_keyword_match_1
+    description: 'Matches keywords: subscribed, plan, on plan, has plan'
+    keywords:
     - subscribed
     - plan
     - on plan
@@ -105,8 +115,10 @@ relationship_types:
   target_type: service_plan
 - relationship_type: uses_service
   description: Subscriber uses service
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: uses_service_keyword_match_1
+    description: 'Matches keywords: uses, enabled, activated, has service'
+    keywords:
     - uses
     - enabled
     - activated
@@ -115,8 +127,10 @@ relationship_types:
   target_type: service
 - relationship_type: served_by
   description: Subscriber served by network element
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: served_by_keyword_match_1
+    description: 'Matches keywords: served by, connected to, on network'
+    keywords:
     - served by
     - connected to
     - on network
