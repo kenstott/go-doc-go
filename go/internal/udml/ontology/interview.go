@@ -643,19 +643,8 @@ func (ib *InterviewBuilderV2) phaseDraftGeneration(ctx context.Context) error {
 		return fmt.Errorf("failed to merge global catalog: %w", err)
 	}
 
-	// Merge domain catalogs (for catalog domains only)
-	fmt.Println("\n🔄 Merging domain catalogs...")
-	for _, domain := range ib.schema.Domains {
-		// Skip global domain (already merged above)
-		if domain.Name == "global" {
-			continue
-		}
-
-		// Try to merge domain catalog (skip if not found - means it's a new domain)
-		if err := ib.builder.mergeDomainCatalog(ib.schema, domain.Name); err != nil {
-			fmt.Printf("  ℹ️  No catalog for domain '%s' (new domain, generated from scratch by LLM)\n", domain.Name)
-		}
-	}
+	// NOTE: Domain catalogs are already loaded by defineEntityTypesMultiStep above (line 629)
+	// No need to merge them again here - that would create duplicates!
 
 	fmt.Printf("\n  ✓ Total entity mappings after catalog merge: %d\n", len(ib.schema.ElementEntityMappings))
 
@@ -801,8 +790,11 @@ func (ib *InterviewBuilderV2) phaseReviewAndConfirmation(ctx context.Context) (b
 				fmt.Println("\n  ⚠️  CRITICAL validation errors detected - attempting automatic fixes...")
 				fmt.Printf("     Found %d critical warnings - using LLM validation-fix loop\n", len(criticalWarnings))
 
-				// Attempt to fix with LLM (up to 5 attempts)
-				maxAttempts := 5
+				// Attempt to fix with LLM (use config value, default to 10)
+				maxAttempts := ib.builder.config.MaxValidationAttempts
+				if maxAttempts == 0 {
+					maxAttempts = 10
+				}
 				fixedSchema, err := ib.builder.ValidateWithLLM(ctx, ib.schema, maxAttempts)
 				if err != nil {
 					// Fix failed - report error

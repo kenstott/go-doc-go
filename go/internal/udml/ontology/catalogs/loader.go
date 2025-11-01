@@ -13,6 +13,7 @@ import (
 type DomainCatalogConfig struct {
 	Domain           string                       `yaml:"domain" json:"domain"`
 	Description      string                       `yaml:"description" json:"description"`
+	Dependencies     []string                     `yaml:"dependencies,omitempty" json:"dependencies,omitempty"` // Domain dependencies (imports)
 	Subdomains       []string                     `yaml:"subdomains,omitempty" json:"subdomains,omitempty"`
 	Terms            []TermConfig                 `yaml:"terms,omitempty" json:"terms,omitempty"`
 	EntityTypes      []EntityTemplateConfig       `yaml:"entity_types" json:"entity_types"`
@@ -29,22 +30,37 @@ type TermConfig struct {
 
 // EntityTemplateConfig represents an entity template in the config file
 type EntityTemplateConfig struct {
-	EntityType   string                 `yaml:"entity_type" json:"entity_type"`
-	ParentType   string                 `yaml:"parent_type,omitempty" json:"parent_type,omitempty"`
-	WCategory    string                 `yaml:"w_category,omitempty" json:"w_category,omitempty"`
-	Domain       string                 `yaml:"domain,omitempty" json:"domain,omitempty"`
-	Description  string                 `yaml:"description" json:"description"`
-	Aliases      []string               `yaml:"aliases,omitempty" json:"aliases,omitempty"`
-	Subdomain    string                 `yaml:"subdomain,omitempty" json:"subdomain,omitempty"`
-	ElementTypes []string               `yaml:"element_types,omitempty" json:"element_types,omitempty"`
-	SampleRules  []ExtractionRuleConfig `yaml:"sample_rules,omitempty" json:"sample_rules,omitempty"`
+	EntityType      string                 `yaml:"entity_type" json:"entity_type"`
+	ParentType      string                 `yaml:"parent_type,omitempty" json:"parent_type,omitempty"`
+	WCategory       string                 `yaml:"w_category,omitempty" json:"w_category,omitempty"`
+	Domain          string                 `yaml:"domain,omitempty" json:"domain,omitempty"`
+	Description     string                 `yaml:"description" json:"description"`
+	Aliases         []string               `yaml:"aliases,omitempty" json:"aliases,omitempty"`
+	Subdomain       string                 `yaml:"subdomain,omitempty" json:"subdomain,omitempty"`
+	ElementTypes    []string               `yaml:"element_types,omitempty" json:"element_types,omitempty"`
+	ExtractionRules []ExtractionRuleConfig `yaml:"extraction_rules,omitempty" json:"extraction_rules,omitempty"`
 }
 
 // ExtractionRuleConfig represents an extraction rule in the config file
+// Supports both old domain catalog format and new global catalog format
 type ExtractionRuleConfig struct {
-	Type                string   `yaml:"type" json:"type"`
+	// New format fields (used by global catalogs)
+	Name          string                            `yaml:"name,omitempty" json:"name,omitempty"`
+	Description   string                            `yaml:"description,omitempty" json:"description,omitempty"`
+	InheritanceOp string                            `yaml:"inheritance_op,omitempty" json:"inheritance_op,omitempty"`
+	JSONPath      string                            `yaml:"jsonpath,omitempty" json:"jsonpath,omitempty"`
+	PhraseList    []string                          `yaml:"phrase_list,omitempty" json:"phrase_list,omitempty"`
+	InstanceName  string                            `yaml:"instance_name,omitempty" json:"instance_name,omitempty"`
+	Pattern       string                            `yaml:"pattern,omitempty" json:"pattern,omitempty"`
+	Proximity     *ontology.ProximityFilter         `yaml:"proximity,omitempty" json:"proximity,omitempty"`
+	Dictionary    *ontology.DictionaryFilter        `yaml:"dictionary,omitempty" json:"dictionary,omitempty"`
+	Semantic      *ontology.SemanticFilter          `yaml:"semantic,omitempty" json:"semantic,omitempty"`
+	LLMValidation *ontology.LLMValidationPrompt     `yaml:"llm_validation,omitempty" json:"llm_validation,omitempty"`
+	Attributes    []ontology.AttributeExtractionRule `yaml:"attributes,omitempty" json:"attributes,omitempty"`
+
+	// Old format fields (used by domain catalogs for backward compatibility)
+	Type                string   `yaml:"type,omitempty" json:"type,omitempty"`
 	FieldPath           string   `yaml:"field_path,omitempty" json:"field_path,omitempty"`
-	Pattern             string   `yaml:"pattern,omitempty" json:"pattern,omitempty"`
 	Keywords            []string `yaml:"keywords,omitempty" json:"keywords,omitempty"`
 	ReferenceText       string   `yaml:"reference_text,omitempty" json:"reference_text,omitempty"`
 	SimilarityThreshold float64  `yaml:"similarity_threshold,omitempty" json:"similarity_threshold,omitempty"`
@@ -74,7 +90,7 @@ func LoadFromFile(path string) (*DomainCatalog, error) {
 		return nil, fmt.Errorf("failed to parse YAML/JSON: %w", err)
 	}
 
-	return convertConfigToCatalog(&config), nil
+	return ConvertConfigToCatalog(&config), nil
 }
 
 // LoadFromDirectory loads all domain catalogs from a directory
@@ -117,11 +133,13 @@ func RegisterFromDirectory(dirPath string) error {
 	return nil
 }
 
-// convertConfigToCatalog converts config format to internal catalog format
-func convertConfigToCatalog(config *DomainCatalogConfig) *DomainCatalog {
+// ConvertConfigToCatalog converts config format to internal catalog format
+// Exported for use by other packages (e.g., builder.go)
+func ConvertConfigToCatalog(config *DomainCatalogConfig) *DomainCatalog {
 	catalog := &DomainCatalog{
 		Domain:           config.Domain,
 		Description:      config.Description,
+		Dependencies:     config.Dependencies,
 		Subdomains:       config.Subdomains,
 		CommonEntityRefs: config.CommonEntityRefs,
 	}
@@ -148,7 +166,7 @@ func convertConfigToCatalog(config *DomainCatalogConfig) *DomainCatalog {
 			Aliases:      e.Aliases,
 			Subdomain:    e.Subdomain,
 			ElementTypes: e.ElementTypes,
-			SampleRules:  convertRuleConfigs(e.SampleRules),
+			SampleRules:  convertRuleConfigs(e.ExtractionRules),
 		}
 	}
 
@@ -170,16 +188,43 @@ func convertConfigToCatalog(config *DomainCatalogConfig) *DomainCatalog {
 }
 
 // convertRuleConfigs converts rule configs to extraction rules
+// Supports both new format (global catalogs) and old format (domain catalogs)
 func convertRuleConfigs(configs []ExtractionRuleConfig) []ontology.ExtractionRule {
 	rules := make([]ontology.ExtractionRule, len(configs))
 	for i, c := range configs {
-		rules[i] = ontology.ExtractionRule{
-			JSONPath:     c.JSONPathExpr, // Old JSONPathExpr → new JSONPath
-			Pattern:      c.Pattern,
-			InstanceName: c.FieldPath, // Old FieldPath can map to InstanceName for now
-			// TODO: Map other fields from config to new ExtractionRule structure
-			// Keywords, ReferenceText, SimilarityThreshold moved to filter structures
+		rule := ontology.ExtractionRule{
+			// New format fields (prefer these if present)
+			Name:          c.Name,
+			Description:   c.Description,
+			InheritanceOp: c.InheritanceOp,
+			PhraseList:    c.PhraseList,
+			InstanceName:  c.InstanceName,
+			Pattern:       c.Pattern,
+			Proximity:     c.Proximity,
+			Dictionary:    c.Dictionary,
+			Semantic:      c.Semantic,
+			LLMValidation: c.LLMValidation,
+			Attributes:    c.Attributes,
 		}
+
+		// Map JSONPath field (supports both old and new field names)
+		if c.JSONPath != "" {
+			rule.JSONPath = c.JSONPath
+		} else if c.JSONPathExpr != "" {
+			rule.JSONPath = c.JSONPathExpr // Old format fallback
+		}
+
+		// Old format fallbacks (if new format fields are empty)
+		if rule.InstanceName == "" && c.FieldPath != "" {
+			rule.InstanceName = c.FieldPath
+		}
+
+		// Map old 'keywords' field to new 'phrase_list' field
+		if len(rule.PhraseList) == 0 && len(c.Keywords) > 0 {
+			rule.PhraseList = c.Keywords
+		}
+
+		rules[i] = rule
 	}
 	return rules
 }
@@ -205,6 +250,7 @@ func convertCatalogToConfig(catalog *DomainCatalog) *DomainCatalogConfig {
 	config := &DomainCatalogConfig{
 		Domain:           catalog.Domain,
 		Description:      catalog.Description,
+		Dependencies:     catalog.Dependencies,
 		Subdomains:       catalog.Subdomains,
 		CommonEntityRefs: catalog.CommonEntityRefs,
 	}
@@ -223,12 +269,12 @@ func convertCatalogToConfig(catalog *DomainCatalog) *DomainCatalogConfig {
 	config.EntityTypes = make([]EntityTemplateConfig, len(catalog.EntityTypes))
 	for i, e := range catalog.EntityTypes {
 		config.EntityTypes[i] = EntityTemplateConfig{
-			EntityType:   e.EntityType,
-			Description:  e.Description,
-			Aliases:      e.Aliases,
-			Subdomain:    e.Subdomain,
-			ElementTypes: e.ElementTypes,
-			SampleRules:  convertRulesToConfigs(e.SampleRules),
+			EntityType:      e.EntityType,
+			Description:     e.Description,
+			Aliases:         e.Aliases,
+			Subdomain:       e.Subdomain,
+			ElementTypes:    e.ElementTypes,
+			ExtractionRules: convertRulesToConfigs(e.SampleRules),
 		}
 	}
 

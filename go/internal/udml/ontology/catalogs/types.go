@@ -6,10 +6,11 @@ import "github.com/kennethstott/doculyzer-go-conversion/internal/udml/ontology"
 type DomainCatalog struct {
 	Domain           string
 	Description      string
+	Dependencies     []string                // Domain dependencies (imports)
 	Subdomains       []string
 	Terms            []Term
-	EntityTypes      []EntityTemplate // Domain-specific entities
-	CommonEntityRefs []string         // References to common entity templates
+	EntityTypes      []EntityTemplate        // Domain-specific entities
+	CommonEntityRefs []string                // References to common entity templates
 	Relationships    []RelationshipTemplate
 }
 
