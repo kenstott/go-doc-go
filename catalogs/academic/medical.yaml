@@ -89,8 +89,10 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: patient_keyword_match_1
+    description: 'Matches keywords: patient, subject, individual'
+    keywords:
     - patient
     - subject
     - individual
@@ -109,8 +111,10 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: condition_keyword_match_1
+    description: Matches 9 keywords including diabetes, hypertension, cancer, etc.
+    keywords:
     - diabetes
     - hypertension
     - cancer
@@ -135,9 +139,13 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - pattern: \b[A-Z][a-z]+(?:in|ol|azole|mycin|cillin|oxacin)\b
-  - keywords:
+  extraction_rules:
+  - name: medication_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b[A-Z][a-z]+(?:in|ol|azole|mycin|cillin|oxacin)\b
+  - name: medication_keyword_match_2
+    description: 'Matches keywords: mg, mcg, tablet, capsule, injection'
+    keywords:
     - mg
     - mcg
     - tablet
@@ -155,9 +163,13 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - pattern: \b\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|units)
-  - keywords:
+  extraction_rules:
+  - name: dosage_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b\d+(?:\.\d+)?\s*(?:mg|mcg|g|mL|units)
+  - name: dosage_keyword_match_2
+    description: Matches 6 keywords including daily, twice daily, BID, etc.
+    keywords:
     - daily
     - twice daily
     - BID
@@ -178,8 +190,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: procedure_keyword_match_1
+    description: Matches 7 keywords including surgery, biopsy, catheterization, etc.
+    keywords:
     - surgery
     - biopsy
     - catheterization
@@ -202,8 +216,10 @@ entity_types:
   - paragraph
   - table_cell
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: lab_test_keyword_match_1
+    description: Matches 10 keywords including CBC, blood test, urinalysis, etc.
+    keywords:
     - CBC
     - blood test
     - urinalysis
@@ -227,8 +243,10 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - pattern: \b\d+(?:\.\d+)?\s*(?:mg/dL|mmol/L|%|units/L|mEq/L)
+  extraction_rules:
+  - name: lab_result_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b\d+(?:\.\d+)?\s*(?:mg/dL|mmol/L|%|units/L|mEq/L)
   parent_type: ''
   w_category: what
   domain: medical
@@ -242,8 +260,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: symptom_keyword_match_1
+    description: Matches 9 keywords including pain, fever, cough, etc.
+    keywords:
     - pain
     - fever
     - cough
@@ -266,8 +286,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: body_part_keyword_match_1
+    description: Matches 11 keywords including heart, lung, liver, etc.
+    keywords:
     - heart
     - lung
     - liver
@@ -293,8 +315,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: healthcare_provider_keyword_match_1
+    description: Matches 8 keywords including Dr., MD, physician, etc.
+    keywords:
     - Dr.
     - MD
     - physician
@@ -316,8 +340,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: medical_specialty_keyword_match_1
+    description: Matches 8 keywords including cardiology, oncology, neurology, etc.
+    keywords:
     - cardiology
     - oncology
     - neurology
@@ -339,8 +365,10 @@ entity_types:
   - paragraph
   - list_item
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: allergy_keyword_match_1
+    description: 'Matches keywords: allergy, allergic, adverse reaction, intolerance'
+    keywords:
     - allergy
     - allergic
     - adverse reaction

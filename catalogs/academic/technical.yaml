@@ -1,8 +1,8 @@
 domain: technical
-description: "Technical documentation about software systems, API specifications, architecture documents, and IT infrastructure.\
-  \ NOTE: Mere presence of code files or technical syntax does NOT indicate \"technical\" domain - classify code by its business\
-  \ function (e.g., payment processing code \u2192 \"financial\" domain, not \"technical\"). This domain is for documentation\
-  \ ABOUT technical infrastructure, not code implementing business logic."
+description: 'Technical documentation about software systems, API specifications, architecture documents, and IT infrastructure.
+  NOTE: Mere presence of code files or technical syntax does NOT indicate "technical" domain - classify code by its business
+  function (e.g., payment processing code → "financial" domain, not "technical"). This domain is for documentation ABOUT technical
+  infrastructure, not code implementing business logic.'
 subdomains:
 - software_development
 - api_documentation
@@ -93,8 +93,10 @@ entity_types:
   - paragraph
   - heading
   - code
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: software_component_keyword_match_1
+    description: 'Matches keywords: service, module, component, library, package'
+    keywords:
     - service
     - module
     - component
@@ -115,9 +117,13 @@ entity_types:
   - paragraph
   - code
   - list_item
-  sample_rules:
-  - pattern: \b(?:GET|POST|PUT|DELETE|PATCH)\s+/[a-zA-Z0-9/_\-{}]+
-  - pattern: /api/v\d+/[a-zA-Z0-9/_\-]+
+  extraction_rules:
+  - name: api_endpoint_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b(?:GET|POST|PUT|DELETE|PATCH)\s+/[a-zA-Z0-9/_\-{}]+
+  - name: api_endpoint_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: /api/v\d+/[a-zA-Z0-9/_\-]+
   parent_type: ''
   w_category: what
   domain: technical
@@ -131,8 +137,10 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: http_method_keyword_match_1
+    description: Matches 7 keywords including GET, POST, PUT, etc.
+    keywords:
     - GET
     - POST
     - PUT
@@ -154,8 +162,10 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: parameter_keyword_match_1
+    description: 'Matches keywords: parameter, param, argument, arg, field'
+    keywords:
     - parameter
     - param
     - argument
@@ -174,8 +184,10 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: data_type_keyword_match_1
+    description: Matches 11 keywords including string, int, integer, etc.
+    keywords:
     - string
     - int
     - integer
@@ -199,9 +211,13 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - pattern: \b(?:200|201|204|400|401|403|404|500|502|503)\b
-  - keywords:
+  extraction_rules:
+  - name: status_code_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b(?:200|201|204|400|401|403|404|500|502|503)\b
+  - name: status_code_keyword_match_2
+    description: 'Matches keywords: 200 OK, 404 Not Found, 500 Internal Server Error'
+    keywords:
     - 200 OK
     - 404 Not Found
     - 500 Internal Server Error
@@ -217,8 +233,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: authentication_method_keyword_match_1
+    description: Matches 7 keywords including OAuth, JWT, API key, etc.
+    keywords:
     - OAuth
     - JWT
     - API key
@@ -238,8 +256,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: database_keyword_match_1
+    description: Matches 7 keywords including PostgreSQL, MySQL, MongoDB, etc.
+    keywords:
     - PostgreSQL
     - MySQL
     - MongoDB
@@ -258,8 +278,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: protocol_keyword_match_1
+    description: Matches 10 keywords including HTTP, HTTPS, WebSocket, etc.
+    keywords:
     - HTTP
     - HTTPS
     - WebSocket
@@ -282,8 +304,10 @@ entity_types:
   - paragraph
   - heading
   - code
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: programming_language_keyword_match_1
+    description: Matches 10 keywords including Python, Java, JavaScript, etc.
+    keywords:
     - Python
     - Java
     - JavaScript
@@ -306,8 +330,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: framework_keyword_match_1
+    description: Matches 9 keywords including React, Django, Flask, etc.
+    keywords:
     - React
     - Django
     - Flask
@@ -329,8 +355,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: infrastructure_component_keyword_match_1
+    description: Matches 9 keywords including EC2, S3, Lambda, etc.
+    keywords:
     - EC2
     - S3
     - Lambda
@@ -354,9 +382,13 @@ entity_types:
   - paragraph
   - code
   - table_cell
-  sample_rules:
-  - pattern: \b[A-Z][A-Z0-9_]+\b
-  - keywords:
+  extraction_rules:
+  - name: configuration_setting_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b[A-Z][A-Z0-9_]+\b
+  - name: configuration_setting_keyword_match_2
+    description: 'Matches keywords: config, configuration, environment variable, setting'
+    keywords:
     - config
     - configuration
     - environment variable
@@ -373,9 +405,13 @@ entity_types:
   element_types:
   - paragraph
   - code
-  sample_rules:
-  - pattern: \b[A-Z][a-zA-Z]*(?:Error|Exception)\b
-  - keywords:
+  extraction_rules:
+  - name: error_type_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \b[A-Z][a-zA-Z]*(?:Error|Exception)\b
+  - name: error_type_keyword_match_2
+    description: 'Matches keywords: error, exception, failure, timeout'
+    keywords:
     - error
     - exception
     - failure

@@ -21,8 +21,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: library_item_keyword_match_1
+    description: Matches 7 keywords including book, item, resource, etc.
+    keywords:
     - book
     - item
     - resource
@@ -44,8 +46,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: patron_keyword_match_1
+    description: Matches 6 keywords including patron, user, member, etc.
+    keywords:
     - patron
     - user
     - member
@@ -66,8 +70,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: circulation_transaction_keyword_match_1
+    description: Matches 6 keywords including checkout, loan, borrowed, etc.
+    keywords:
     - checkout
     - loan
     - borrowed
@@ -87,8 +93,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: collection_keyword_match_1
+    description: 'Matches keywords: collection, section, department, special collection, archive'
+    keywords:
     - collection
     - section
     - department
@@ -107,8 +115,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: catalog_record_keyword_match_1
+    description: 'Matches keywords: catalog record, bibliographic record, MARC record, metadata'
+    keywords:
     - catalog record
     - bibliographic record
     - MARC record
@@ -126,8 +136,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: archive_keyword_match_1
+    description: 'Matches keywords: archive, archival, manuscript, special materials, rare books'
+    keywords:
     - archive
     - archival
     - manuscript
@@ -139,8 +151,10 @@ entity_types:
 relationship_types:
 - relationship_type: checked_out_by
   description: Item checked out by patron
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: checked_out_by_keyword_match_1
+    description: 'Matches keywords: checked out by, borrowed by, on loan to'
+    keywords:
     - checked out by
     - borrowed by
     - on loan to
@@ -148,8 +162,10 @@ relationship_types:
   target_type: patron
 - relationship_type: in_transaction
   description: Item in circulation transaction
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: in_transaction_keyword_match_1
+    description: 'Matches keywords: checkout, loan, circulation, transaction'
+    keywords:
     - checkout
     - loan
     - circulation
@@ -158,8 +174,10 @@ relationship_types:
   target_type: circulation_transaction
 - relationship_type: part_of_collection
   description: Item part of collection
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: part_of_collection_keyword_match_1
+    description: 'Matches keywords: part of, in, belongs to, collection'
+    keywords:
     - part of
     - in
     - belongs to
@@ -168,8 +186,10 @@ relationship_types:
   target_type: collection
 - relationship_type: cataloged_as
   description: Item cataloged as record
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: cataloged_as_keyword_match_1
+    description: 'Matches keywords: cataloged as, catalog record, bibliographic record'
+    keywords:
     - cataloged as
     - catalog record
     - bibliographic record
@@ -177,8 +197,10 @@ relationship_types:
   target_type: catalog_record
 - relationship_type: archived_in
   description: Materials archived in archive
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: archived_in_keyword_match_1
+    description: 'Matches keywords: archived in, part of archive, in collection'
+    keywords:
     - archived in
     - part of archive
     - in collection
