@@ -1,199 +1,205 @@
 domain: global
 description: WHAT category - Global entity types for objects, documents, identifiers, and roles
 w_category: what
-
 entity_types:
-  # Top-level: document
-  - entity_type: document
-    parent_type: ""
-    w_category: what
-    domain: global
-    description: Referenced documents, reports, papers, publications
-    aliases:
-      - report
-      - paper
-      - publication
-      - study
-    element_types:
-      - paragraph
-      - heading
-      - list_item
-    sample_rules:
-      - instance_name: '(?P<name>"[^"]+")'
-      - instance_name: '(?P<name>[A-Z][^.!?]+(?:Report|Paper|Study|Document))'
-        proximity:
-          cooccurrence_terms:
-            - published
-            - authored
-            - cited
-          max_distance: 50
-          distance_unit: word
-
-  # Top-level: identifier
-  - entity_type: identifier
-    parent_type: ""
-    w_category: what
-    domain: global
-    description: Generic identifier or reference code
-    aliases:
-      - code
-      - reference
-      - id
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>[A-Z0-9-]+)'
-
-  # Subtype: email
-  - entity_type: email
-    parent_type: global.identifier
-    w_category: what
-    domain: global
-    description: Email address
-    aliases:
-      - email address
-      - e-mail
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})'
-
-  # Subtype: phone
-  - entity_type: phone
-    parent_type: global.identifier
-    w_category: what
-    domain: global
-    description: Phone number
-    aliases:
-      - telephone
-      - phone number
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>\d{3}[-.]?\d{3}[-.]?\d{4})'
-      - instance_name: '(?P<name>\(\d{3}\)\s*\d{3}-\d{4})'
-
-  # Subtype: url
-  - entity_type: url
-    parent_type: global.identifier
-    w_category: what
-    domain: global
-    description: Web URL or hyperlink
-    aliases:
-      - link
-      - web address
-      - website
-    element_types:
-      - paragraph
-      - list_item
-      - hyperlink
-    sample_rules:
-      - instance_name: '(?P<name>https?://[^\s]+)'
-      - instance_name: '(?P<name>www\.[^\s]+)'
-
-  # Subtype: code
-  - entity_type: code
-    parent_type: global.identifier
-    w_category: what
-    domain: global
-    description: Alphanumeric code or classification
-    aliases:
-      - classification code
-      - reference code
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>[A-Z]{2,5}-\d{3,6})'
-
-  # Subtype: id_number
-  - entity_type: id_number
-    parent_type: global.identifier
-    w_category: what
-    domain: global
-    description: Generic ID number
-    aliases:
-      - identification number
-      - reference number
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>ID[:\s]*[A-Z0-9-]+)'
-
-  # Top-level: role
-  - entity_type: role
-    parent_type: ""
-    w_category: what
-    domain: global
-    description: Job title, position, or functional role (the position itself, not the person)
-    aliases:
-      - job title
+- entity_type: document
+  parent_type: ''
+  w_category: what
+  domain: global
+  description: Referenced documents, reports, papers, publications
+  aliases:
+  - report
+  - paper
+  - publication
+  - study
+  element_types:
+  - paragraph
+  - heading
+  - list_item
+  sample_rules:
+  - name: document_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>"[^"]+")
+  - name: document_proximity_filter_2
+    description: Matches text using regex pattern appearing near terms (published, authored, cited) within 50 words
+    instance_name: (?P<name>[A-Z][^.!?]+(?:Report|Paper|Study|Document))
+    proximity:
+      cooccurrence_terms:
+      - published
+      - authored
+      - cited
+      max_distance: 50
+      distance_unit: word
+- entity_type: identifier
+  parent_type: ''
+  w_category: what
+  domain: global
+  description: Generic identifier or reference code
+  aliases:
+  - code
+  - reference
+  - id
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: identifier_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>[A-Z0-9-]+)
+- entity_type: email
+  parent_type: global.identifier
+  w_category: what
+  domain: global
+  description: Email address
+  aliases:
+  - email address
+  - e-mail
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: email_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,})
+- entity_type: phone
+  parent_type: global.identifier
+  w_category: what
+  domain: global
+  description: Phone number
+  aliases:
+  - telephone
+  - phone number
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: phone_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>\d{3}[-.]?\d{3}[-.]?\d{4})
+  - name: phone_regex_pattern_2
+    description: Matches text using regex pattern
+    instance_name: (?P<name>\(\d{3}\)\s*\d{3}-\d{4})
+- entity_type: url
+  parent_type: global.identifier
+  w_category: what
+  domain: global
+  description: Web URL or hyperlink
+  aliases:
+  - link
+  - web address
+  - website
+  element_types:
+  - paragraph
+  - list_item
+  - hyperlink
+  sample_rules:
+  - name: url_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>https?://[^\s]+)
+  - name: url_regex_pattern_2
+    description: Matches text using regex pattern
+    instance_name: (?P<name>www\.[^\s]+)
+- entity_type: code
+  parent_type: global.identifier
+  w_category: what
+  domain: global
+  description: Alphanumeric code or classification
+  aliases:
+  - classification code
+  - reference code
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: code_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>[A-Z]{2,5}-\d{3,6})
+- entity_type: id_number
+  parent_type: global.identifier
+  w_category: what
+  domain: global
+  description: Generic ID number
+  aliases:
+  - identification number
+  - reference number
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: id_number_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>ID[:\s]*[A-Z0-9-]+)
+- entity_type: role
+  parent_type: ''
+  w_category: what
+  domain: global
+  description: Job title, position, or functional role (the position itself, not the person)
+  aliases:
+  - job title
+  - position
+  - title
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: role_phrase_list_1
+    description: Matches 11 specific phrases including CEO, CFO, etc.
+    phrase_list:
+    - CEO
+    - CFO
+    - CTO
+    - COO
+    - President
+    - Vice President
+    - Manager
+    - Director
+    - Professor
+    - Instructor
+    - Engineer
+  - name: role_proximity_filter_2
+    description: Matches text using regex pattern appearing near 4 context terms within 50 words
+    instance_name: (?P<name>Chief\s+[A-Z][a-z]+\s+Officer)
+    proximity:
+      cooccurrence_terms:
+      - appointed
+      - serves as
       - position
-      - title
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - phrase_list:
-          - CEO
-          - CFO
-          - CTO
-          - COO
-          - President
-          - Vice President
-          - Manager
-          - Director
-          - Professor
-          - Instructor
-          - Engineer
-      - instance_name: '(?P<name>Chief\s+[A-Z][a-z]+\s+Officer)'
-        proximity:
-          cooccurrence_terms:
-            - appointed
-            - serves as
-            - position
-            - role
-          max_distance: 50
-          distance_unit: word
-
+      - role
+      max_distance: 50
+      distance_unit: word
 entity_relationship_rules:
-  - name: document_authored_by_person
-    source_entity_type: document
-    target_entity_type: person
-    relationship_type: created_by
-    description: Document created or authored by person
-    confidence: 0.75
-    extraction_patterns:
-      - type: proximity
-        signal_words:
-          - authored by
-          - written by
-          - created by
-          - by
-        max_distance: 30
-        direction: forward
-
-  - name: document_published_by_organization
-    source_entity_type: document
-    target_entity_type: organization
-    relationship_type: created_by
-    description: Document published or released by organization
-    confidence: 0.70
-    extraction_patterns:
-      - type: proximity
-        signal_words:
-          - published by
-          - released by
-          - issued by
-        max_distance: 40
-        direction: forward
+- name: document_authored_by_person
+  source_entity_type: document
+  target_entity_type: person
+  relationship_type: created_by
+  description: Document created or authored by person
+  confidence: 0.75
+  extraction_patterns:
+  - type: proximity
+    signal_words:
+    - authored by
+    - written by
+    - created by
+    - by
+    max_distance: 30
+    direction: forward
+- name: document_published_by_organization
+  source_entity_type: document
+  target_entity_type: organization
+  relationship_type: created_by
+  description: Document published or released by organization
+  confidence: 0.7
+  extraction_patterns:
+  - type: proximity
+    signal_words:
+    - published by
+    - released by
+    - issued by
+    max_distance: 40
+    direction: forward

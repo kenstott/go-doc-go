@@ -1,153 +1,163 @@
 domain: global
 description: WHERE category - Global entity types for locations and geographic references
 w_category: where
-
 entity_types:
-  # Top-level: location
-  - entity_type: location
-    parent_type: ""
-    w_category: where
-    domain: global
-    description: Geographic place or position
-    aliases:
-      - place
-      - geographic location
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:,\s*[A-Z]{2})?)'
-        semantic:
-          reference_concepts:
-            - geographic location with coordinates
-            - spatial reference with boundaries
-            - place with geographic context
-          similarity_threshold: 0.65
-
-  # Subtype: city
-  - entity_type: city
-    parent_type: global.location
-    w_category: where
-    domain: global
-    description: Municipality, town, or urban area
-    aliases:
+- entity_type: location
+  parent_type: ''
+  w_category: where
+  domain: global
+  description: Geographic place or position
+  aliases:
+  - place
+  - geographic location
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: location_semantic_validation_1
+    description: Matches text using regex pattern validated by semantic similarity to 3 concept(s)
+    instance_name: (?P<name>[A-Z][a-z]+(?:,\s*[A-Z]{2})?)
+    semantic:
+      reference_concepts:
+      - geographic location with coordinates
+      - spatial reference with boundaries
+      - place with geographic context
+      similarity_threshold: 0.65
+- entity_type: city
+  parent_type: global.location
+  w_category: where
+  domain: global
+  description: Municipality, town, or urban area
+  aliases:
+  - town
+  - municipality
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: location_semantic_validation_1
+    description: Remove parent's generic location validation - city uses more specific patterns
+    inheritance_op: "remove"
+  - name: city_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})
+  - name: city_proximity_filter_2
+    description: Matches text using regex pattern appearing near terms (city, town, municipality) within 30 words
+    instance_name: (?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)
+    proximity:
+      cooccurrence_terms:
+      - city
       - town
       - municipality
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2})'
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
-        proximity:
-          cooccurrence_terms:
-            - city
-            - town
-            - municipality
-          max_distance: 30
-          distance_unit: word
-
-  # Subtype: country
-  - entity_type: country
-    parent_type: global.location
-    w_category: where
-    domain: global
-    description: Country or nation
-    aliases:
-      - nation
-      - sovereign state
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - phrase_list:
-          - United States
-          - Canada
-          - Mexico
-          - United Kingdom
-          - Germany
-          - France
-          - Italy
-          - Spain
-          - Japan
-          - China
-          - India
-          - Australia
-          - Brazil
-          - Russia
-
-  # Subtype: region
-  - entity_type: region
-    parent_type: global.location
-    w_category: where
-    domain: global
-    description: State, province, or geographic region
-    aliases:
+      max_distance: 30
+      distance_unit: word
+- entity_type: country
+  parent_type: global.location
+  w_category: where
+  domain: global
+  description: Country or nation
+  aliases:
+  - nation
+  - sovereign state
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: location_semantic_validation_1
+    description: Remove parent's generic location validation - country uses specific phrase list
+    inheritance_op: "remove"
+  - name: country_phrase_list_1
+    description: Matches 14 specific phrases including United States, Canada, etc.
+    phrase_list:
+    - United States
+    - Canada
+    - Mexico
+    - United Kingdom
+    - Germany
+    - France
+    - Italy
+    - Spain
+    - Japan
+    - China
+    - India
+    - Australia
+    - Brazil
+    - Russia
+- entity_type: region
+  parent_type: global.location
+  w_category: where
+  domain: global
+  description: State, province, or geographic region
+  aliases:
+  - state
+  - province
+  - territory
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: region_phrase_list_1
+    description: Matches 8 specific phrases including California, Texas, etc.
+    phrase_list:
+    - California
+    - Texas
+    - New York
+    - Florida
+    - Ontario
+    - Quebec
+    - Bavaria
+    - Tuscany
+  - name: region_proximity_filter_2
+    description: Matches text using regex pattern appearing near terms (state, province, region) within 20 words
+    instance_name: (?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)
+    proximity:
+      cooccurrence_terms:
       - state
       - province
-      - territory
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - phrase_list:
-          - California
-          - Texas
-          - New York
-          - Florida
-          - Ontario
-          - Quebec
-          - Bavaria
-          - Tuscany
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)'
-        proximity:
-          cooccurrence_terms:
-            - state
-            - province
-            - region
-          max_distance: 20
-          distance_unit: word
-
-  # Subtype: address
-  - entity_type: address
-    parent_type: global.location
-    w_category: where
-    domain: global
-    description: Full mailing or physical address
-    aliases:
-      - street address
-      - mailing address
-    element_types:
-      - paragraph
-      - list_item
-      - table_cell
-    sample_rules:
-      - instance_name: '(?P<name>\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:St|Ave|Rd|Dr|Blvd|Street|Avenue|Road|Drive|Boulevard))'
-
-  # Subtype: building
-  - entity_type: building
-    parent_type: global.location
-    w_category: where
-    domain: global
-    description: Building, structure, or facility
-    aliases:
-      - structure
+      - region
+      max_distance: 20
+      distance_unit: word
+- entity_type: address
+  parent_type: global.location
+  w_category: where
+  domain: global
+  description: Full mailing or physical address
+  aliases:
+  - street address
+  - mailing address
+  element_types:
+  - paragraph
+  - list_item
+  - table_cell
+  sample_rules:
+  - name: address_regex_pattern_1
+    description: Matches text using regex pattern
+    instance_name: (?P<name>\d+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:St|Ave|Rd|Dr|Blvd|Street|Avenue|Road|Drive|Boulevard))
+- entity_type: building
+  parent_type: global.location
+  w_category: where
+  domain: global
+  description: Building, structure, or facility
+  aliases:
+  - structure
+  - facility
+  - edifice
+  element_types:
+  - paragraph
+  - list_item
+  sample_rules:
+  - name: building_proximity_filter_1
+    description: Matches text using regex pattern appearing near 4 context terms within 50 words
+    instance_name: (?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Building|Tower|Center|Hall|Complex))
+    proximity:
+      cooccurrence_terms:
+      - located
+      - situated
       - facility
-      - edifice
-    element_types:
-      - paragraph
-      - list_item
-    sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Building|Tower|Center|Hall|Complex))'
-        proximity:
-          cooccurrence_terms:
-            - located
-            - situated
-            - facility
-            - building
-          max_distance: 50
-          distance_unit: word
+      - building
+      max_distance: 50
+      distance_unit: word

@@ -20,7 +20,9 @@ entity_types:
       - table_cell
       - heading
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+      - name: "person_name_with_validation"
+        description: "Matches capitalized multi-word names validated as persons using dictionary checks (requires proper nouns not in common dictionary) and semantic similarity to biographical person concepts"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
         dictionary:
           require_unknown_words: true
           max_known_words_ratio: 0.5
@@ -47,7 +49,9 @@ entity_types:
       - heading
       - div
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+      - name: "person_name_with_validation"
+        description: "Inherits parent's name pattern with dictionary and semantic validation, adds fame-related proximity filter"
+        inheritance_op: "merge"
         proximity:
           cooccurrence_terms:
             - famous
@@ -73,7 +77,12 @@ entity_types:
       - list_item
       - table_cell
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+      - name: "person_name_with_validation"
+        description: "Remove parent's generic person validation - executive uses title-based proximity"
+        inheritance_op: "remove"
+      - name: "executive_with_title_proximity"
+        description: "Matches capitalized multi-word names appearing near executive titles (CEO, CTO, CFO, COO, president, VP) within 30 words"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
         proximity:
           cooccurrence_terms:
             - CEO
@@ -100,7 +109,12 @@ entity_types:
       - paragraph
       - list_item
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
+      - name: "person_name_with_validation"
+        description: "Remove parent's generic person validation - employee uses employment-based proximity"
+        inheritance_op: "remove"
+      - name: "employee_with_employment_indicators"
+        description: "Matches capitalized multi-word names appearing near employment-related terms (employee, staff, team member, works, employed) within 50 words"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'
         proximity:
           cooccurrence_terms:
             - employee
@@ -128,9 +142,15 @@ entity_types:
       - list_item
       - table_cell
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Inc|Corp|LLC|Ltd|Limited|Corporation|Company))'
-      - instance_name: '(?P<name>The\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Institute|Center|Association))'
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+      - name: "organization_with_legal_suffix"
+        description: "Matches organization names ending with legal entity suffixes (Inc, Corp, LLC, Ltd, Limited, Corporation, Company)"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Inc|Corp|LLC|Ltd|Limited|Corporation|Company))'
+      - name: "organization_with_institutional_suffix"
+        description: "Matches organization names with institutional suffixes (Foundation, Institute, Center, Association), optionally starting with 'The'"
+        instance_name: '(?P<name>The\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Institute|Center|Association))'
+      - name: "organization_with_semantic_validation"
+        description: "Matches capitalized multi-word phrases validated as organizations using semantic similarity to corporate and institutional concepts"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         semantic:
           reference_concepts:
             - corporate entity with operations
@@ -154,7 +174,9 @@ entity_types:
       - list_item
       - table_cell
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+      - name: "business_with_commercial_indicators"
+        description: "Matches organization names appearing near commercial business terms (revenue, earnings, profit, customers, products, services) within 100 words"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:
           cooccurrence_terms:
             - revenue
@@ -182,8 +204,12 @@ entity_types:
       - paragraph
       - list_item
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Charity|Fund))'
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+      - name: "nonprofit_with_org_suffix"
+        description: "Matches organization names ending with nonprofit-specific suffixes (Foundation, Charity, Fund)"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Foundation|Charity|Fund))'
+      - name: "nonprofit_with_mission_indicators"
+        description: "Matches organization names appearing near nonprofit-related terms (nonprofit, charity, donation, grant, mission, 501c3) within 50 words"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:
           cooccurrence_terms:
             - nonprofit
@@ -210,8 +236,12 @@ entity_types:
       - paragraph
       - list_item
     sample_rules:
-      - instance_name: '(?P<name>(?:Department|Agency|Bureau|Office)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+      - name: "government_with_official_prefix"
+        description: "Matches government entities with official prefixes (Department of, Agency of, Bureau of, Office of)"
+        instance_name: '(?P<name>(?:Department|Agency|Bureau|Office)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+      - name: "government_with_public_sector_indicators"
+        description: "Matches organization names appearing near government-related terms (government, federal, state, agency, department, regulation, policy) within 50 words"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:
           cooccurrence_terms:
             - government
@@ -239,8 +269,12 @@ entity_types:
       - paragraph
       - list_item
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:University|College|School|Institute))'
-      - instance_name: '(?P<name>(?:University|College)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
+      - name: "educational_with_institution_suffix"
+        description: "Matches educational institution names ending with University, College, School, or Institute"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:University|College|School|Institute))'
+      - name: "educational_with_of_pattern"
+        description: "Matches educational institutions using 'University of' or 'College of' naming pattern"
+        instance_name: '(?P<name>(?:University|College)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)'
 
   # Subtype: healthcare
   - entity_type: healthcare
@@ -256,7 +290,9 @@ entity_types:
       - paragraph
       - list_item
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Hospital|Clinic|Medical Center|Health System))'
+      - name: "healthcare_with_medical_suffix"
+        description: "Matches healthcare organization names ending with Hospital, Clinic, Medical Center, or Health System"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Hospital|Clinic|Medical Center|Health System))'
 
   # Subtype: religious
   - entity_type: religious
@@ -273,7 +309,9 @@ entity_types:
       - paragraph
       - list_item
     sample_rules:
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Church|Temple|Mosque|Synagogue|Cathedral))'
+      - name: "religious_with_worship_suffix"
+        description: "Matches religious organization names ending with Church, Temple, Mosque, Synagogue, or Cathedral"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Church|Temple|Mosque|Synagogue|Cathedral))'
 
   # Subtype: media
   - entity_type: media
@@ -290,8 +328,12 @@ entity_types:
       - paragraph
       - list_item
     sample_rules:
-      - instance_name: '(?P<name>(?:The\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Times|Post|News|Journal|Tribune|Herald))'
-      - instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
+      - name: "media_with_publication_suffix"
+        description: "Matches media organization names ending with common publication suffixes (Times, Post, News, Journal, Tribune, Herald), optionally starting with 'The'"
+        instance_name: '(?P<name>(?:The\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Times|Post|News|Journal|Tribune|Herald))'
+      - name: "media_with_journalism_indicators"
+        description: "Matches organization names appearing near journalism-related terms (reported, published, broadcast, journalism, news, media) within 30 words"
+        instance_name: '(?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3})'
         proximity:
           cooccurrence_terms:
             - reported
