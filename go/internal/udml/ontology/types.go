@@ -48,9 +48,10 @@ const (
 
 // Domain represents a domain of ownership in the data mesh
 type Domain struct {
-	Name        string `json:"name" yaml:"name"`                                   // Domain name
-	Description string `json:"description,omitempty" yaml:"description,omitempty"` // Domain description
-	Owner       string `json:"owner,omitempty" yaml:"owner,omitempty"`             // Domain owner (team/person)
+	Name         string   `json:"name" yaml:"name"`                                               // Domain name
+	Description  string   `json:"description,omitempty" yaml:"description,omitempty"`             // Domain description
+	Owner        string   `json:"owner,omitempty" yaml:"owner,omitempty"`                         // Domain owner (team/person)
+	Dependencies []string `json:"dependencies,omitempty" yaml:"dependencies,omitempty"`           // Domains this domain depends on (imports)
 }
 
 // CrossDomainMerging defines configuration for cross-domain entity merging
@@ -227,6 +228,14 @@ type AttributeExtractionRule struct {
 //  4. semantic: Embedding similarity (expensive - applied last)
 //  5. llm_validation: LLM-based validation (most expensive - applied during canonicalization)
 type ExtractionRule struct {
+	// Inheritance support (OPTIONAL)
+	Name          string `json:"name,omitempty" yaml:"name,omitempty"`                       // Rule name for inheritance referencing
+	Description   string `json:"description,omitempty" yaml:"description,omitempty"`         // Human-readable explanation of rule intent
+	InheritanceOp string `json:"inheritance_op,omitempty" yaml:"inheritance_op,omitempty"` // "merge", "remove", "replace", or "" (new rule)
+
+	// Catalog tracking (OPTIONAL) - tracks origin of rule for protection from LLM modification
+	CatalogSource string `json:"catalog_source,omitempty" yaml:"catalog_source,omitempty"` // "global", "domain", "llm_generated", or "" (unknown)
+
 	// Universal addressing (OPTIONAL)
 	JSONPath string `json:"jsonpath,omitempty" yaml:"jsonpath,omitempty"` // JSONPath to narrow scope before extraction
 
@@ -1003,6 +1012,14 @@ func (s *OntologySchema) ComputeHierarchies() error {
 		}
 	}
 
+	// Phase 5: Deduplicate and clean extraction rules after inheritance
+	// Remove empty rules (no extraction method) and duplicate rules (by comprehensive hash)
+	for i := range s.computedMappings {
+		s.computedMappings[i].ExtractionRules = deduplicateAndCleanExtractionRules(
+			s.computedMappings[i].ExtractionRules,
+		)
+	}
+
 	return nil
 }
 
@@ -1071,53 +1088,143 @@ func (s *OntologySchema) hasCycle(entityName string, visited map[string]bool) bo
 	return result
 }
 
-// unionExtractionRules returns unique union of child and parent extraction rules
-// Child rules come first, then non-duplicate parent rules
+// unionExtractionRules implements explicit-only inheritance for extraction rules.
+// Parent rules are ONLY included if explicitly referenced by name in the child.
+// This eliminates automatic inheritance and the need for inheritance_op.
+//
+// Rules:
+// 1. If child references parent rule by name → merge parent extraction with child filters
+// 2. If child rule name has no parent match → new rule
+// 3. If parent rule has no child reference → NOT inherited (explicit-only model)
 func unionExtractionRules(child, parent []ExtractionRule) []ExtractionRule {
 	if len(parent) == 0 {
 		return child
 	}
 	if len(child) == 0 {
-		return append([]ExtractionRule{}, parent...)
+		// EXPLICIT-ONLY: Child with no rules inherits ALL parent rules by default
+		// This prevents invalid entities with zero extraction rules
+		return parent
 	}
 
-	result := append([]ExtractionRule{}, child...)
+	// Build map of parent rules by name for quick lookup
+	parentByName := make(map[string]*ExtractionRule)
+	for i := range parent {
+		if parent[i].Name != "" {
+			parentByName[parent[i].Name] = &parent[i]
+		}
+	}
 
-	// Add parent rules that don't duplicate child rules
-	for _, parentRule := range parent {
-		isDuplicate := false
-		for _, childRule := range child {
-			if extractionRulesEqual(parentRule, childRule) {
-				isDuplicate = true
-				break
+	var result []ExtractionRule
+
+	// Process each child rule
+	for _, childRule := range child {
+		// Clear inheritance_op field (deprecated in explicit-only model)
+		childRule.InheritanceOp = ""
+
+		if childRule.Name != "" {
+			// Check if this references a parent rule by name
+			parentRule, hasParent := parentByName[childRule.Name]
+
+			if hasParent {
+				// Explicit reference to parent rule → merge
+				// If child has only name/description, inherit parent's extraction method
+				// If child has extraction fields, those override parent's
+				merged := *parentRule // Copy parent as base
+				merged.Name = childRule.Name
+
+				// Override description if child provides one
+				if childRule.Description != "" {
+					merged.Description = childRule.Description
+				}
+
+				// Child extraction method fields override parent's
+				if childRule.InstanceName != "" {
+					merged.InstanceName = childRule.InstanceName
+				}
+				if len(childRule.PhraseList) > 0 {
+					merged.PhraseList = childRule.PhraseList
+				}
+				if childRule.JSONPath != "" {
+					merged.JSONPath = childRule.JSONPath
+				}
+
+				// Child filter fields override parent's
+				if childRule.Pattern != "" {
+					merged.Pattern = childRule.Pattern
+				}
+				if childRule.Proximity != nil {
+					merged.Proximity = childRule.Proximity
+				}
+				if childRule.Dictionary != nil {
+					merged.Dictionary = childRule.Dictionary
+				}
+				if childRule.Semantic != nil {
+					merged.Semantic = childRule.Semantic
+				}
+				if childRule.LLMValidation != nil {
+					merged.LLMValidation = childRule.LLMValidation
+				}
+				if len(childRule.Attributes) > 0 {
+					merged.Attributes = childRule.Attributes
+				}
+
+				result = append(result, merged)
+			} else {
+				// No parent with this name → new rule
+				result = append(result, childRule)
 			}
-		}
-		if !isDuplicate {
-			result = append(result, parentRule)
+		} else {
+			// Unnamed rule → add as-is
+			result = append(result, childRule)
 		}
 	}
+
+	// EXPLICIT-ONLY MODEL: Do NOT add unreferenced parent rules
+	// Parent rules are only included if explicitly referenced by name in child
 
 	return result
 }
 
 // extractionRulesEqual checks if two extraction rules are functionally equivalent
+// Uses comprehensive hash comparison including all filters (Proximity, Dictionary, Semantic, etc.)
 func extractionRulesEqual(a, b ExtractionRule) bool {
-	// Simple equality check - compare JSONPath and phrase lists
-	if a.JSONPath != b.JSONPath {
-		return false
+	return hashExtractionRule(a) == hashExtractionRule(b)
+}
+
+// isEmptyExtractionRule returns true if the rule has no extraction method
+// A valid extraction rule must have at least one of: InstanceName, PhraseList, or JSONPath
+func isEmptyExtractionRule(rule ExtractionRule) bool {
+	return rule.InstanceName == "" && len(rule.PhraseList) == 0 && rule.JSONPath == ""
+}
+
+// deduplicateAndCleanExtractionRules removes empty and duplicate extraction rules
+// Empty rules have no extraction method (no instance_name, phrase_list, or json_path)
+// Duplicate detection uses comprehensive hash of ALL rule components
+func deduplicateAndCleanExtractionRules(rules []ExtractionRule) []ExtractionRule {
+	if len(rules) == 0 {
+		return rules
 	}
-	if a.InstanceName != b.InstanceName {
-		return false
+
+	var cleaned []ExtractionRule
+	seen := make(map[string]bool)
+
+	for _, rule := range rules {
+		// Skip empty rules (no extraction method)
+		if isEmptyExtractionRule(rule) {
+			continue
+		}
+
+		// Skip duplicate rules based on comprehensive hash
+		hash := hashExtractionRule(rule)
+		if seen[hash] {
+			continue
+		}
+
+		seen[hash] = true
+		cleaned = append(cleaned, rule)
 	}
-	if !stringSlicesEqual(a.PhraseList, b.PhraseList) {
-		return false
-	}
-	if a.Pattern != b.Pattern {
-		return false
-	}
-	// Consider rules equal if these key fields match
-	// (filters like Proximity, Dictionary, Semantic are not compared for simplicity)
-	return true
+
+	return cleaned
 }
 
 // stringSlicesEqual checks if two string slices are equal
