@@ -3575,6 +3575,41 @@ Return a RFC 6902 JSON Patch (array of operations) to fix ALL validation errors.
     {"op": "remove", "path": "/element_entity_mappings/12"}
   - IMPORTANT: Remove in descending index order to avoid index shifting issues
 
+**Duplicate Patterns (CRITICAL) - MANDATORY FIX:**
+- When DIFFERENT entity types use THE SAME regex pattern without disambiguation:
+  - Example error: "Pattern '(?P<name>\b[A-Z][a-z]+...' used by 4 entity types: [location city country region]"
+  - These are DISTINCT CONCEPTS that need DISAMBIGUATION, not removal
+  - YOU MUST add semantic_filter or proximity_filter to EACH conflicting entity type
+  - CRITICAL: This is a BLOCKING error - the schema cannot be used until ALL conflicts are resolved
+
+**Strategy 1 - Add Semantic Filters (PREFERRED for distinct concepts like city/country/region):**
+  - Add semantic_filter with relevant keywords to each entity type
+  - Example fix for [location, city, country, region] pattern conflict:
+    {"op": "add", "path": "/element_entity_mappings/5/extraction_rules/0/semantic_filter", "value": {"keywords": ["place", "area", "site", "spot", "locale"], "similarity_threshold": 0.3}}
+    {"op": "add", "path": "/element_entity_mappings/12/extraction_rules/0/semantic_filter", "value": {"keywords": ["city", "town", "municipality", "urban", "metro"], "similarity_threshold": 0.3}}
+    {"op": "add", "path": "/element_entity_mappings/18/extraction_rules/0/semantic_filter", "value": {"keywords": ["country", "nation", "state", "republic", "kingdom"], "similarity_threshold": 0.3}}
+    {"op": "add", "path": "/element_entity_mappings/24/extraction_rules/0/semantic_filter", "value": {"keywords": ["region", "province", "territory", "district", "zone"], "similarity_threshold": 0.3}}
+  - Keywords should be semantically related to the entity type concept
+  - similarity_threshold: 0.3 is recommended (lower = stricter matching)
+
+**Strategy 2 - Add Proximity Filters (for context-dependent disambiguation):**
+  - Add proximity_filter with nearby keywords that indicate the entity type
+  - Example for distinguishing "physician" from "surgeon":
+    {"op": "add", "path": "/element_entity_mappings/15/extraction_rules/0/proximity_filter", "value": {"keywords": ["doctor", "physician", "MD", "medical"], "proximity_distance": 30}}
+    {"op": "add", "path": "/element_entity_mappings/22/extraction_rules/0/proximity_filter", "value": {"keywords": ["surgery", "surgical", "operation", "OR"], "proximity_distance": 30}}
+  - proximity_distance: 30 tokens is recommended (adjust based on context)
+
+**IMPORTANT RULES:**
+  - First, determine if entities are DISTINCT concepts or DUPLICATES:
+    * DISTINCT concepts (e.g., city/country/region are different granularities of location) → ADD FILTERS
+    * DUPLICATE concepts (e.g., "physician" and "doctor" are the same thing) → REMOVE the less universal one
+  - For DISTINCT concepts: ALL conflicting entities MUST get semantic_filter OR proximity_filter (or both)
+  - For DUPLICATE concepts: Keep the more general/universal version, remove the specific duplicate
+  - If one entity already has a filter, ensure ALL others in the conflict also get filters
+  - Use semantic_filter for concept-based disambiguation (city vs country vs region)
+  - Use proximity_filter for context-based disambiguation (nearby words indicate type)
+  - You can combine both filters on the same entity if needed
+
 **Graph Errors:**
 - Broken references: Use "replace" operation to fix parent_type references
 - Circular hierarchies: Use "remove" or "replace" to break cycles
@@ -3676,10 +3711,11 @@ func (b *OntologyBuilder) applyPatchWithRetry(
 
 	currentPatch := initialPatch
 	currentPatchJSON := initialPatchJSON
+	currentSchemaJSON := schemaJSON // Track current state through retry loop
 
 	for patchRetry := 0; patchRetry < maxPatchRetries; patchRetry++ {
 		// Attempt to apply the patch
-		modifiedJSON, err := currentPatch.Apply(schemaJSON)
+		modifiedJSON, err := currentPatch.Apply(currentSchemaJSON)
 		if err == nil {
 			// Success!
 			return modifiedJSON, nil
@@ -3691,11 +3727,24 @@ func (b *OntologyBuilder) applyPatchWithRetry(
 			return nil, fmt.Errorf("failed to apply RFC 6902 patch after %d retries: %w", maxPatchRetries, err)
 		}
 
-		// Ask LLM to correct the patch
+		// Update current schema state - use modifiedJSON if valid (may be partially applied)
+		// This ensures the LLM sees the actual current state when generating corrections
+		if len(modifiedJSON) > 0 {
+			// Try to parse to validate it's at least valid JSON
+			var tempSchema OntologySchema
+			if parseErr := json.Unmarshal(modifiedJSON, &tempSchema); parseErr == nil {
+				// Valid schema - update current state
+				currentSchemaJSON = modifiedJSON
+				*schema = tempSchema // Update schema pointer for accurate array lengths in correction prompt
+			}
+			// If parsing fails, keep previous state (don't update currentSchemaJSON)
+		}
+
+		// Ask LLM to correct the patch based on CURRENT schema state
 		fmt.Printf("⚠️  Patch application failed (retry %d/%d): %v\n", patchRetry+1, maxPatchRetries, err)
 		fmt.Printf("🔄 Requesting LLM to correct the patch...\n")
 
-		correctedPatchJSON, corrErr := b.requestPatchCorrection(ctx, schema, schemaJSON, currentPatchJSON, err, validationAttempt, patchRetry+1)
+		correctedPatchJSON, corrErr := b.requestPatchCorrection(ctx, schema, currentSchemaJSON, currentPatchJSON, err, validationAttempt, patchRetry+1)
 		if corrErr != nil {
 			return nil, fmt.Errorf("LLM patch correction failed: %w", corrErr)
 		}
