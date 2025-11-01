@@ -1,6 +1,5 @@
 domain: religion
-description: Religious organizations, faith communities, worship, religious texts,
-  spiritual practices, and faith-based services
+description: Religious organizations, faith communities, worship, religious texts, spiritual practices, and faith-based services
 subdomains:
 - worship
 - religious_education
@@ -63,9 +62,13 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Church|Temple|Synagogue|Mosque|Cathedral|Chapel)\b'
-  - phrase_list:
+  extraction_rules:
+  - name: religious_organization_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* (?:Church|Temple|Synagogue|Mosque|Cathedral|Chapel)\b'
+  - name: religious_organization_phrase_list_2
+    description: Matches 6 specific phrases including church, temple, etc.
+    phrase_list:
     - church
     - temple
     - synagogue
@@ -80,8 +83,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: clergy_phrase_list_1
+    description: Matches 8 specific phrases including reverend, pastor, etc.
+    phrase_list:
     - reverend
     - pastor
     - priest
@@ -90,8 +95,9 @@ entity_types:
     - minister
     - deacon
     - bishop
-  - pattern: '\b(?:Rev\.|Reverend|Pastor|Fr\.|Father|Rabbi|Imam)\s+[A-Z][a-z]+(?:
-      [A-Z][a-z]+)+\b'
+  - name: clergy_pattern_match_2
+    description: Matches text using regex pattern
+    pattern: '\b(?:Rev\.|Reverend|Pastor|Fr\.|Father|Rabbi|Imam)\s+[A-Z][a-z]+(?: [A-Z][a-z]+)+\b'
 - entity_type: worship_service
   parent_type: ''
   w_category: what
@@ -100,8 +106,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: worship_service_phrase_list_1
+    description: Matches 6 specific phrases including worship service, mass, etc.
+    phrase_list:
     - worship service
     - mass
     - prayer service
@@ -116,8 +124,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: religious_text_phrase_list_1
+    description: Matches 6 specific phrases including Bible, Torah, etc.
+    phrase_list:
     - Bible
     - Torah
     - Quran
@@ -131,8 +141,10 @@ entity_types:
   description: Religious rite or ceremony
   element_types:
   - paragraph
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: sacrament_phrase_list_1
+    description: Matches 6 specific phrases including baptism, communion, etc.
+    phrase_list:
     - baptism
     - communion
     - eucharist
@@ -147,8 +159,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: congregation_member_phrase_list_1
+    description: Matches 5 specific phrases including member, parishioner, etc.
+    phrase_list:
     - member
     - parishioner
     - congregant
@@ -162,8 +176,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: ministry_program_phrase_list_1
+    description: Matches 5 specific phrases including ministry, mission, etc.
+    phrase_list:
     - ministry
     - mission
     - outreach
@@ -176,8 +192,10 @@ entity_types:
   description: Branch or sect of a religion
   element_types:
   - paragraph
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: denomination_phrase_list_1
+    description: Matches 8 specific phrases including Catholic, Protestant, etc.
+    phrase_list:
     - Catholic
     - Protestant
     - Baptist
@@ -194,8 +212,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: religious_holiday_phrase_list_1
+    description: Matches 7 specific phrases including Christmas, Easter, etc.
+    phrase_list:
     - Christmas
     - Easter
     - Passover

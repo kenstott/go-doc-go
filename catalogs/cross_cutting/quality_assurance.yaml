@@ -17,8 +17,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: test_case_keyword_match_1
+    description: 'Matches keywords: test case, test, test scenario, test script, test step'
+    keywords:
     - test case
     - test
     - test scenario
@@ -37,8 +39,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: test_suite_keyword_match_1
+    description: 'Matches keywords: test suite, test collection, test set, regression suite'
+    keywords:
     - test suite
     - test collection
     - test set
@@ -57,8 +61,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: defect_keyword_match_1
+    description: Matches 6 keywords including defect, bug, issue, etc.
+    keywords:
     - defect
     - bug
     - issue
@@ -78,8 +84,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: test_execution_keyword_match_1
+    description: Matches 6 keywords including test execution, test run, test session, etc.
+    keywords:
     - test execution
     - test run
     - test session
@@ -100,8 +108,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: requirement_keyword_match_1
+    description: 'Matches keywords: requirement, specification, user story, acceptance criteria'
+    keywords:
     - requirement
     - specification
     - user story
@@ -120,8 +130,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: quality_metric_keyword_match_1
+    description: 'Matches keywords: metric, KPI, quality metric, coverage, defect density'
+    keywords:
     - metric
     - KPI
     - quality metric
@@ -133,8 +145,10 @@ entity_types:
 relationship_types:
 - relationship_type: part_of_suite
   description: Test case part of suite
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: part_of_suite_keyword_match_1
+    description: 'Matches keywords: part of, in, belongs to, suite'
+    keywords:
     - part of
     - in
     - belongs to
@@ -143,8 +157,10 @@ relationship_types:
   target_type: test_suite
 - relationship_type: tests_requirement
   description: Test case tests requirement
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: tests_requirement_keyword_match_1
+    description: 'Matches keywords: tests, verifies, validates, covers'
+    keywords:
     - tests
     - verifies
     - validates
@@ -153,8 +169,10 @@ relationship_types:
   target_type: requirement
 - relationship_type: found_defect
   description: Test execution found defect
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: found_defect_keyword_match_1
+    description: 'Matches keywords: found, detected, discovered, identified'
+    keywords:
     - found
     - detected
     - discovered
@@ -163,8 +181,10 @@ relationship_types:
   target_type: defect
 - relationship_type: executed_test
   description: Execution ran test case
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: executed_test_keyword_match_1
+    description: 'Matches keywords: executed, ran, performed, test'
+    keywords:
     - executed
     - ran
     - performed
@@ -173,8 +193,10 @@ relationship_types:
   target_type: test_case
 - relationship_type: measures
   description: Metric measures quality aspect
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: measures_keyword_match_1
+    description: 'Matches keywords: measures, tracks, monitors, assesses'
+    keywords:
     - measures
     - tracks
     - monitors

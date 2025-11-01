@@ -17,8 +17,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: user_keyword_match_1
+    description: 'Matches keywords: user, identity, account, principal, username'
+    keywords:
     - user
     - identity
     - account
@@ -37,8 +39,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: role_keyword_match_1
+    description: 'Matches keywords: role, group, security group, permission group'
+    keywords:
     - role
     - group
     - security group
@@ -56,8 +60,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: permission_keyword_match_1
+    description: 'Matches keywords: permission, privilege, access right, entitlement, grant'
+    keywords:
     - permission
     - privilege
     - access right
@@ -76,8 +82,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: resource_keyword_match_1
+    description: 'Matches keywords: resource, object, asset, protected resource, system'
+    keywords:
     - resource
     - object
     - asset
@@ -95,8 +103,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: authentication_method_keyword_match_1
+    description: Matches 7 keywords including authentication, auth method, password, etc.
+    keywords:
     - authentication
     - auth method
     - password
@@ -117,8 +127,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: audit_event_keyword_match_1
+    description: 'Matches keywords: audit, access event, security event, log entry, access attempt'
+    keywords:
     - audit
     - access event
     - security event
@@ -130,8 +142,10 @@ entity_types:
 relationship_types:
 - relationship_type: has_role
   description: User has role
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: has_role_keyword_match_1
+    description: 'Matches keywords: has role, member of, assigned to, in group'
+    keywords:
     - has role
     - member of
     - assigned to
@@ -140,8 +154,10 @@ relationship_types:
   target_type: role
 - relationship_type: has_permission
   description: Role has permission
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: has_permission_keyword_match_1
+    description: 'Matches keywords: has permission, grants, includes, allows'
+    keywords:
     - has permission
     - grants
     - includes
@@ -150,8 +166,10 @@ relationship_types:
   target_type: permission
 - relationship_type: protects
   description: Permission protects resource
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: protects_keyword_match_1
+    description: 'Matches keywords: protects, controls access to, guards, secures'
+    keywords:
     - protects
     - controls access to
     - guards
@@ -160,8 +178,10 @@ relationship_types:
   target_type: resource
 - relationship_type: authenticated_via
   description: User authenticated via method
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: authenticated_via_keyword_match_1
+    description: 'Matches keywords: authenticated via, logged in with, uses, auth method'
+    keywords:
     - authenticated via
     - logged in with
     - uses
@@ -170,8 +190,10 @@ relationship_types:
   target_type: authentication_method
 - relationship_type: logged_as
   description: Access logged as audit event
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: logged_as_keyword_match_1
+    description: 'Matches keywords: logged, audit, access event, recorded'
+    keywords:
     - logged
     - audit
     - access event

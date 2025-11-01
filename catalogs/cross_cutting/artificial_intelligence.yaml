@@ -18,8 +18,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: ml_model_keyword_match_1
+    description: Matches 6 keywords including model, ML model, neural network, etc.
+    keywords:
     - model
     - ML model
     - neural network
@@ -39,8 +41,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: training_dataset_keyword_match_1
+    description: 'Matches keywords: training data, dataset, data collection, training set, labeled data'
+    keywords:
     - training data
     - dataset
     - data collection
@@ -59,8 +63,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: model_version_keyword_match_1
+    description: 'Matches keywords: version, iteration, checkpoint, model version, release'
+    keywords:
     - version
     - iteration
     - checkpoint
@@ -80,8 +86,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: inference_request_keyword_match_1
+    description: 'Matches keywords: inference, prediction, scoring, model call, endpoint'
+    keywords:
     - inference
     - prediction
     - scoring
@@ -101,8 +109,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: feature_keyword_match_1
+    description: 'Matches keywords: feature, input, variable, attribute, feature engineering'
+    keywords:
     - feature
     - input
     - variable
@@ -123,8 +133,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: model_metric_keyword_match_1
+    description: Matches 6 keywords including accuracy, precision, recall, etc.
+    keywords:
     - accuracy
     - precision
     - recall
@@ -144,8 +156,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: ai_policy_keyword_match_1
+    description: 'Matches keywords: AI policy, governance, ethical AI, responsible AI, fairness'
+    keywords:
     - AI policy
     - governance
     - ethical AI
@@ -157,8 +171,10 @@ entity_types:
 relationship_types:
 - relationship_type: trained_on
   description: Model trained on dataset
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: trained_on_keyword_match_1
+    description: 'Matches keywords: trained on, trained with, using data, dataset'
+    keywords:
     - trained on
     - trained with
     - using data
@@ -167,8 +183,10 @@ relationship_types:
   target_type: training_dataset
 - relationship_type: version_of
   description: Version of model
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: version_of_keyword_match_1
+    description: 'Matches keywords: version of, iteration of, checkpoint of'
+    keywords:
     - version of
     - iteration of
     - checkpoint of
@@ -176,8 +194,10 @@ relationship_types:
   target_type: ml_model
 - relationship_type: uses_feature
   description: Model uses feature
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: uses_feature_keyword_match_1
+    description: 'Matches keywords: uses, inputs, feature, variable'
+    keywords:
     - uses
     - inputs
     - feature
@@ -186,8 +206,10 @@ relationship_types:
   target_type: feature
 - relationship_type: evaluated_with
   description: Model evaluated with metric
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: evaluated_with_keyword_match_1
+    description: 'Matches keywords: evaluated, measured, metric, performance'
+    keywords:
     - evaluated
     - measured
     - metric
@@ -196,8 +218,10 @@ relationship_types:
   target_type: model_metric
 - relationship_type: governed_by
   description: Model governed by policy
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: governed_by_keyword_match_1
+    description: 'Matches keywords: governed by, complies with, follows, adheres to'
+    keywords:
     - governed by
     - complies with
     - follows
@@ -206,8 +230,10 @@ relationship_types:
   target_type: ai_policy
 - relationship_type: inference_from
   description: Inference from model
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: inference_from_keyword_match_1
+    description: 'Matches keywords: from, using, model, prediction from'
+    keywords:
     - from
     - using
     - model

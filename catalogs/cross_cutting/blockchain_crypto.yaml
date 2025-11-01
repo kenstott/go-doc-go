@@ -18,8 +18,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: blockchain_transaction_keyword_match_1
+    description: Matches 6 keywords including transaction, transfer, payment, etc.
+    keywords:
     - transaction
     - transfer
     - payment
@@ -39,8 +41,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: wallet_keyword_match_1
+    description: 'Matches keywords: wallet, address, account, wallet address, public key'
+    keywords:
     - wallet
     - address
     - account
@@ -60,8 +64,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: smart_contract_keyword_match_1
+    description: 'Matches keywords: smart contract, contract, DApp, protocol, deployed contract'
+    keywords:
     - smart contract
     - contract
     - DApp
@@ -81,8 +87,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: token_keyword_match_1
+    description: Matches 6 keywords including token, coin, cryptocurrency, etc.
+    keywords:
     - token
     - coin
     - cryptocurrency
@@ -102,8 +110,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: block_keyword_match_1
+    description: 'Matches keywords: block, blockchain block, block height, block number'
+    keywords:
     - block
     - blockchain block
     - block height
@@ -121,8 +131,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: defi_protocol_keyword_match_1
+    description: Matches 6 keywords including DeFi, protocol, decentralized finance, etc.
+    keywords:
     - DeFi
     - protocol
     - decentralized finance
@@ -135,8 +147,10 @@ entity_types:
 relationship_types:
 - relationship_type: sent_from
   description: Transaction sent from wallet
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sent_from_keyword_match_1
+    description: 'Matches keywords: from, sent from, sender, source address'
+    keywords:
     - from
     - sent from
     - sender
@@ -145,8 +159,10 @@ relationship_types:
   target_type: wallet
 - relationship_type: sent_to
   description: Transaction sent to wallet
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: sent_to_keyword_match_1
+    description: 'Matches keywords: to, sent to, recipient, destination address'
+    keywords:
     - to
     - sent to
     - recipient
@@ -155,8 +171,10 @@ relationship_types:
   target_type: wallet
 - relationship_type: transfers_token
   description: Transaction transfers token
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: transfers_token_keyword_match_1
+    description: 'Matches keywords: transfers, sends, token, coin, amount'
+    keywords:
     - transfers
     - sends
     - token
@@ -166,8 +184,10 @@ relationship_types:
   target_type: token
 - relationship_type: included_in
   description: Transaction included in block
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: included_in_keyword_match_1
+    description: 'Matches keywords: included in, in block, block, confirmed in'
+    keywords:
     - included in
     - in block
     - block
@@ -176,8 +196,10 @@ relationship_types:
   target_type: block
 - relationship_type: executed_by
   description: Transaction executed by smart contract
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: executed_by_keyword_match_1
+    description: 'Matches keywords: executed by, called, contract, smart contract'
+    keywords:
     - executed by
     - called
     - contract
@@ -186,8 +208,10 @@ relationship_types:
   target_type: smart_contract
 - relationship_type: uses_protocol
   description: Smart contract uses DeFi protocol
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: uses_protocol_keyword_match_1
+    description: 'Matches keywords: uses, integrates with, protocol, DeFi'
+    keywords:
     - uses
     - integrates with
     - protocol

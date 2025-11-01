@@ -18,8 +18,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: api_keyword_match_1
+    description: Matches 6 keywords including API, web service, REST, etc.
+    keywords:
     - API
     - web service
     - REST
@@ -40,8 +42,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: api_endpoint_keyword_match_1
+    description: Matches 8 keywords including endpoint, route, path, etc.
+    keywords:
     - endpoint
     - route
     - path
@@ -62,8 +66,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: integration_keyword_match_1
+    description: 'Matches keywords: integration, connector, connection, integration point, interface'
+    keywords:
     - integration
     - connector
     - connection
@@ -82,8 +88,10 @@ entity_types:
   element_types:
   - paragraph
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: data_format_keyword_match_1
+    description: Matches 6 keywords including format, schema, JSON, etc.
+    keywords:
     - format
     - schema
     - JSON
@@ -104,8 +112,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: api_consumer_keyword_match_1
+    description: 'Matches keywords: consumer, client, application, subscriber, API key'
+    keywords:
     - consumer
     - client
     - application
@@ -124,8 +134,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: api_key_keyword_match_1
+    description: 'Matches keywords: API key, credential, access token, API token, secret'
+    keywords:
     - API key
     - credential
     - access token
@@ -137,8 +149,10 @@ entity_types:
 relationship_types:
 - relationship_type: exposes_endpoint
   description: API exposes endpoint
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: exposes_endpoint_keyword_match_1
+    description: 'Matches keywords: exposes, provides, offers, endpoint, route'
+    keywords:
     - exposes
     - provides
     - offers
@@ -148,8 +162,10 @@ relationship_types:
   target_type: api_endpoint
 - relationship_type: uses_format
   description: Endpoint uses data format
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: uses_format_keyword_match_1
+    description: 'Matches keywords: uses, accepts, returns, format, schema'
+    keywords:
     - uses
     - accepts
     - returns
@@ -159,8 +175,10 @@ relationship_types:
   target_type: data_format
 - relationship_type: integrates_with
   description: Integration connects APIs
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: integrates_with_keyword_match_1
+    description: 'Matches keywords: integrates with, connects to, calls, consumes'
+    keywords:
     - integrates with
     - connects to
     - calls
@@ -169,8 +187,10 @@ relationship_types:
   target_type: api
 - relationship_type: consumed_by
   description: API consumed by consumer
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: consumed_by_keyword_match_1
+    description: 'Matches keywords: consumed by, used by, client, consumer'
+    keywords:
     - consumed by
     - used by
     - client
@@ -179,8 +199,10 @@ relationship_types:
   target_type: api_consumer
 - relationship_type: authenticated_with
   description: Consumer authenticated with API key
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: authenticated_with_keyword_match_1
+    description: 'Matches keywords: authenticated with, uses key, API key, credential'
+    keywords:
     - authenticated with
     - uses key
     - API key

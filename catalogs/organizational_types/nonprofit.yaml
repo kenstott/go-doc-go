@@ -1,6 +1,6 @@
 domain: nonprofit
-description: Nonprofit organization management including fundraising, donor management,
-  grants, programs, volunteers, and impact measurement
+description: Nonprofit organization management including fundraising, donor management, grants, programs, volunteers, and
+  impact measurement
 subdomains:
 - fundraising
 - donor_management
@@ -63,8 +63,10 @@ entity_types:
   - paragraph
   - table_cell
   - heading
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: donor_phrase_list_1
+    description: Matches 4 specific phrases including donor, contributor, etc.
+    phrase_list:
     - donor
     - contributor
     - sponsor
@@ -77,8 +79,10 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - pattern: \$\d{1,3}(?:,\d{3})*(?:\.\d{2})?
+  extraction_rules:
+  - name: donation_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: \$\d{1,3}(?:,\d{3})*(?:\.\d{2})?
 - entity_type: grant
   parent_type: ''
   w_category: what
@@ -88,8 +92,10 @@ entity_types:
   - paragraph
   - heading
   - table_cell
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: grant_phrase_list_1
+    description: Matches 4 specific phrases including grant, award, etc.
+    phrase_list:
     - grant
     - award
     - funding
@@ -102,8 +108,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: program_phrase_list_1
+    description: Matches 4 specific phrases including program, initiative, etc.
+    phrase_list:
     - program
     - initiative
     - project
@@ -116,8 +124,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: volunteer_phrase_list_1
+    description: 'Matches exact phrases: volunteer, helper, supporter'
+    phrase_list:
     - volunteer
     - helper
     - supporter
@@ -129,8 +139,10 @@ entity_types:
   element_types:
   - paragraph
   - table_cell
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: beneficiary_phrase_list_1
+    description: Matches 4 specific phrases including beneficiary, participant, etc.
+    phrase_list:
     - beneficiary
     - participant
     - client
@@ -143,8 +155,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Foundation\b'
+  extraction_rules:
+  - name: foundation_pattern_match_1
+    description: Matches text using regex pattern
+    pattern: '\b[A-Z][a-z]+(?: [A-Z][a-z]+)* Foundation\b'
 - entity_type: nonprofit_organization
   parent_type: ''
   w_category: what
@@ -153,8 +167,10 @@ entity_types:
   element_types:
   - paragraph
   - heading
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: nonprofit_organization_phrase_list_1
+    description: Matches 5 specific phrases including nonprofit, NGO, etc.
+    phrase_list:
     - nonprofit
     - NGO
     - charity
@@ -168,8 +184,10 @@ entity_types:
   element_types:
   - table_cell
   - paragraph
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: impact_metric_phrase_list_1
+    description: Matches 4 specific phrases including lives impacted, people served, etc.
+    phrase_list:
     - lives impacted
     - people served
     - outcomes achieved

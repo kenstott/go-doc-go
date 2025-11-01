@@ -17,8 +17,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: esg_initiative_keyword_match_1
+    description: 'Matches keywords: initiative, program, sustainability, ESG initiative, green initiative'
+    keywords:
     - initiative
     - program
     - sustainability
@@ -38,8 +40,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: emission_keyword_match_1
+    description: Matches 6 keywords including emission, carbon, CO2, etc.
+    keywords:
     - emission
     - carbon
     - CO2
@@ -59,8 +63,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: environmental_metric_keyword_match_1
+    description: 'Matches keywords: environmental metric, sustainability metric, carbon footprint, energy consumption'
+    keywords:
     - environmental metric
     - sustainability metric
     - carbon footprint
@@ -78,8 +84,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: social_metric_keyword_match_1
+    description: 'Matches keywords: social metric, diversity, inclusion, community impact, employee wellbeing'
+    keywords:
     - social metric
     - diversity
     - inclusion
@@ -99,8 +107,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: governance_policy_keyword_match_1
+    description: 'Matches keywords: governance, policy, framework, compliance, board oversight'
+    keywords:
     - governance
     - policy
     - framework
@@ -119,8 +129,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: esg_report_keyword_match_1
+    description: 'Matches keywords: ESG report, sustainability report, disclosure, CSR report'
+    keywords:
     - ESG report
     - sustainability report
     - disclosure
@@ -131,8 +143,10 @@ entity_types:
 relationship_types:
 - relationship_type: reduces_emission
   description: Initiative reduces emission
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: reduces_emission_keyword_match_1
+    description: 'Matches keywords: reduces, cuts, lowers, decreases, mitigates'
+    keywords:
     - reduces
     - cuts
     - lowers
@@ -142,8 +156,10 @@ relationship_types:
   target_type: emission
 - relationship_type: tracks_metric
   description: Initiative tracks environmental metric
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: tracks_metric_keyword_match_1
+    description: 'Matches keywords: tracks, measures, monitors, reports'
+    keywords:
     - tracks
     - measures
     - monitors
@@ -152,8 +168,10 @@ relationship_types:
   target_type: environmental_metric
 - relationship_type: governed_by
   description: Initiative governed by policy
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: governed_by_keyword_match_1
+    description: 'Matches keywords: governed by, complies with, follows, adheres to'
+    keywords:
     - governed by
     - complies with
     - follows
@@ -162,8 +180,10 @@ relationship_types:
   target_type: governance_policy
 - relationship_type: reported_in
   description: Metric reported in ESG report
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: reported_in_keyword_match_1
+    description: 'Matches keywords: reported in, disclosed in, published in'
+    keywords:
     - reported in
     - disclosed in
     - published in
@@ -171,8 +191,10 @@ relationship_types:
   target_type: esg_report
 - relationship_type: measures_social
   description: Social metric measures impact
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: measures_social_keyword_match_1
+    description: 'Matches keywords: measures, tracks, assesses, evaluates'
+    keywords:
     - measures
     - tracks
     - assesses

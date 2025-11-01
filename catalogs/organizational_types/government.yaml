@@ -1,6 +1,5 @@
 domain: government
-description: Government operations, regulations, permits, licenses, public records,
-  and citizen services
+description: Government operations, regulations, permits, licenses, public records, and citizen services
 subdomains:
 - licensing
 - permits
@@ -17,8 +16,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: regulation_phrase_list_1
+    description: Matches 8 specific phrases including regulation, law, etc.
+    phrase_list:
     - regulation
     - law
     - statute
@@ -37,8 +38,10 @@ entity_types:
   - heading
   - list_item
   - table_row
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: permit_phrase_list_1
+    description: Matches 5 specific phrases including permit, authorization, etc.
+    phrase_list:
     - permit
     - authorization
     - approval
@@ -53,8 +56,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: license_phrase_list_1
+    description: Matches 5 specific phrases including license, certification, etc.
+    phrase_list:
     - license
     - certification
     - credential
@@ -69,8 +74,10 @@ entity_types:
   - paragraph
   - list_item
   - table_row
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: citizen_phrase_list_1
+    description: Matches 4 specific phrases including citizen, resident, etc.
+    phrase_list:
     - citizen
     - resident
     - constituent
@@ -84,8 +91,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: government_agency_phrase_list_1
+    description: Matches 8 specific phrases including agency, department, etc.
+    phrase_list:
     - agency
     - department
     - bureau
@@ -103,8 +112,10 @@ entity_types:
   - paragraph
   - heading
   - list_item
-  sample_rules:
-  - phrase_list:
+  extraction_rules:
+  - name: public_record_phrase_list_1
+    description: Matches 4 specific phrases including public record, government document, etc.
+    phrase_list:
     - public record
     - government document
     - official record
@@ -112,8 +123,10 @@ entity_types:
 relationship_types:
 - relationship_type: issued_by
   description: Permit issued by agency
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: issued_by_keyword_match_1
+    description: 'Matches keywords: issued by, granted by, approved by'
+    keywords:
     - issued by
     - granted by
     - approved by
@@ -121,8 +134,10 @@ relationship_types:
   target_type: government_agency
 - relationship_type: issued_to
   description: Permit issued to citizen
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: issued_to_keyword_match_1
+    description: 'Matches keywords: issued to, granted to, holder'
+    keywords:
     - issued to
     - granted to
     - holder
@@ -130,8 +145,10 @@ relationship_types:
   target_type: citizen
 - relationship_type: governed_by
   description: Permit governed by regulation
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: governed_by_keyword_match_1
+    description: 'Matches keywords: governed by, under, pursuant to, according to'
+    keywords:
     - governed by
     - under
     - pursuant to
@@ -140,8 +157,10 @@ relationship_types:
   target_type: regulation
 - relationship_type: maintained_by
   description: Record maintained by agency
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: maintained_by_keyword_match_1
+    description: 'Matches keywords: maintained by, held by, managed by'
+    keywords:
     - maintained by
     - held by
     - managed by
@@ -149,8 +168,10 @@ relationship_types:
   target_type: government_agency
 - relationship_type: applies_to
   description: Regulation applies to entity
-  sample_rules:
-  - keywords:
+  extraction_rules:
+  - name: applies_to_keyword_match_1
+    description: 'Matches keywords: applies to, governs, regulates, covers'
+    keywords:
     - applies to
     - governs
     - regulates
