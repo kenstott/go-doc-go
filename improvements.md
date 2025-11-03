@@ -444,7 +444,7 @@ Add comprehensive disambiguation guidance:
 **Note**: Do not use "person" as entity name in code or LLM prompts - it's only an example here.
 
 ### Phase 3: Feature Enhancements (Medium-term)
-1. Add `exclusion_patterns` field to schema
+1. Add LLM prompt instructions for using negative lookaheads `(?!...)` for pattern exclusions (avoids schema complexity, uses native regex features)
 2. Add `priority` field for pattern precedence
 3. Implement `ValidationRules` for post-extraction filtering
 4. Add gazetteer import functionality
@@ -508,6 +508,6 @@ grep "confidence:" validation_prefill_test.yaml | \
 
 ---
 
-**Last Updated**: 2025-10-30
-**Status**: Phase 1, Phase 2, and Phase 2.5 Complete ✅
-**Next Action**: Phase 3 Feature Enhancements (exclusion_patterns, priority, ValidationRules, gazetteer import)
+**Last Updated**: 2025-11-02
+**Status**: Phase 1, Phase 2, and Phase 2.5 Complete ✅ (Verified 2025-11-02)
+**Next Action**: Phase 3 Feature Enhancements (negative lookahead instructions, priority, ValidationRules, gazetteer import, attribute extraction)
