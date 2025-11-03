@@ -17,10 +17,10 @@ entity_types:
   - ordered_list
   sample_rules:
   - name: process_regex_pattern_1
-    description: Matches text using regex pattern
+    description: Matches 1 title Case word followed by 1 or more space-separated title case words followed by 1 keyword
     instance_name: (?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Process|Procedure|Protocol))
   - name: process_multi_filter_rule_2
-    description: Matches text using regex pattern appearing near 7 context terms within 100 words validated by semantic similarity
+    description: Matches 1 or more title case words separated by spaces near 7 context terms within 50 words validated by semantic similarity
       to 3 concept(s)
     instance_name: (?P<name>[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)
     proximity:
@@ -32,14 +32,14 @@ entity_types:
       - conduct
       - execute
       - carry out
-      max_distance: 100
+      max_distance: 50
       distance_unit: word
     semantic:
       reference_concepts:
       - multi-step procedure with ordering
       - process with sequential actions
       - workflow with defined steps
-      similarity_threshold: 0.7
+      similarity_threshold: 0.8
 - entity_type: method
   parent_type: ''
   w_category: how
