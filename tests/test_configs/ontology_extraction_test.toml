@@ -1,0 +1,26 @@
+# Ontology Extraction Test Configuration
+# Purpose: Extract ontology entities and relationships from Wikipedia medical mining corpus
+
+[embedding]
+enabled = true
+provider = "onnx"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+dimensions = 384
+
+# Analytics storage (where Wikipedia medical mining corpus is stored)
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./tests/test_output/test"
+store_full_content = false
+
+# Ontology configuration
+[ontology]
+enabled = true
+schema_path = "./tests/test_output/ontology_results"
+
+[logging]
+level = "INFO"
+file = "./tests/test_output/ontology_extraction_test.log"

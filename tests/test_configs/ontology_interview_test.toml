@@ -1,0 +1,27 @@
+# Ontology Interview Test Configuration
+# Purpose: Test ontology generation against existing UDML corpus
+
+[embedding]
+enabled = true
+provider = "onnx"
+model = "sentence-transformers/all-MiniLM-L6-v2"
+dimensions = 384
+
+# Analytics storage (where UDML corpus is stored)
+[analytics]
+enabled = true
+
+[[analytics.outputs]]
+type = "parquet"
+path = "./tests/test_output/test"
+store_full_content = false
+
+# Ontology configuration
+[ontology]
+enabled = true
+schema_path = "./tests/test_output/ontology_results"
+diversity_threshold = 0.70  # Lower threshold for better coverage
+
+[logging]
+level = "INFO"
+file = "./tests/test_output/ontology_interview_test.log"
