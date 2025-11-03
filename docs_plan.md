@@ -22,6 +22,57 @@
 
 ---
 
+## Unique Differentiators (Documentation Focus Areas)
+
+Go-Doc-Go has **five core unique capabilities** that must be thoroughly documented:
+
+### 1. **UDML (Universal Document Markup Language)**
+- **What**: Format-agnostic document representation (UDML-S/UDML-H/UDML-G)
+- **Why Unique**: Single unified schema for 28+ document formats (PDF, DOCX, code, web, data)
+- **Documentation Priority**: HIGH - Users need to understand UDML to query/transform documents
+- **Coverage**: Phase 4.2 (data models), schemas/README.md
+
+### 2. **Ontology Compiler**
+- **What**: LLM-powered entity/relationship extraction with domain ontologies
+- **Why Unique**: Multi-domain, inheritance-based, parsimonious schemas with attribute extraction
+- **Documentation Priority**: CRITICAL - Core differentiator, complex configuration
+- **Coverage**: Phase 2.5 (8 new docs), schemas/ontology-compiler-schema.json
+
+### 3. **Horizontally Scalable Infrastructure**
+- **What**: Distributed UDML pipeline + ontology extraction with work queue coordination
+- **Why Unique**: Scale to millions of documents with identical workers, atomic job claiming
+- **Documentation Priority**: HIGH - Operators need deployment/tuning guidance
+- **Coverage**: Phase 3 (worker coordination), Phase 6 (operations)
+
+### 4. **6 W's Framework**
+- **What**: Universal entity categorization (Who, What, Where, When, Why, How)
+- **Why Unique**: Built-in global catalogs covering all entity types across domains
+- **Documentation Priority**: HIGH - Foundation for ontology system
+- **Coverage**: Phase 2.5 (catalog-system.md), 42 catalog files documented
+
+### 5. **HIL Ontology Interview**
+- **What**: Human-in-the-Loop interactive ontology creation via LLM-guided questions
+- **Why Unique**: Non-experts can create production ontologies through conversation
+- **Documentation Priority**: MEDIUM-HIGH - Lowers barrier to entry
+- **Coverage**: Phase 2.5 (interview-cli.md)
+
+### Documentation Strategy
+
+**Emphasis These Differentiators:**
+- Phase 2.5 focuses entirely on ontology system (#2, #4, #5)
+- Phase 3 covers scalable infrastructure (#3)
+- Phase 4.2 covers UDML formats (#1)
+- Phase 6 covers production deployment of scaled infrastructure (#3)
+
+**Marketing Message:**
+"Go-Doc-Go is the only document processing system that combines:
+- Universal document representation (UDML)
+- Domain-aware knowledge extraction (Ontology Compiler + 6 W's)
+- Production-scale processing (horizontally scalable infrastructure)
+- Accessible ontology creation (HIL interview)"
+
+---
+
 ## Phase 1: Foundation & Quick Wins ✅ COMPLETED
 
 **Duration**: 2 weeks (Completed)
@@ -202,19 +253,71 @@
 
 ---
 
+#### 2.4 UDML System Documentation
+
+**Files** (3 files):
+- `docs/features/udml/udml-overview.md`
+- `docs/features/udml/querying-udml.md`
+- `docs/features/udml/udml-transformations.md`
+
+**Content**:
+
+**udml-overview.md**:
+- What is UDML and why it exists (universal document representation)
+- UDML formats: UDML-S (storage/flat), UDML-H (hierarchical), UDML-G (graph)
+- Element types taxonomy (28+ types)
+- Relationship types
+- When to use which format
+- UDML as the differentiator (format-agnostic processing)
+
+**querying-udml.md**:
+- Querying UDML with DuckDB (Parquet)
+- Querying UDML with PostgreSQL
+- Common query patterns (find all headings, extract tables, etc.)
+- Filtering by element type, document type, metadata
+- Joining elements with relationships
+- Performance optimization tips
+
+**udml-transformations.md**:
+- Converting between UDML formats (S→H→G)
+- Exporting to Neo4j (graph format)
+- Custom transformations (filtering, enrichment)
+- Integration with downstream systems
+- Examples: UDML → Knowledge Graph, UDML → Search Index
+
+**Steps**:
+1. Review UDML implementation (`go/internal/udml/`)
+2. Review existing UDML docs (`docs/features/udml/`)
+3. Document all element types from taxonomy
+4. Create query examples for common use cases
+5. Document transformation patterns
+6. Test all examples
+
+**Acceptance Criteria**:
+- [ ] UDML concept clearly explained
+- [ ] All 3 formats (S/H/G) documented with use cases
+- [ ] 10+ query examples tested
+- [ ] Transformation patterns documented
+- [ ] Links to schemas and API docs
+- [ ] Emphasizes UDML as unique differentiator
+
+---
+
 ### Phase 2 Summary
 
-**Deliverables**: 10 feature documentation files
+**Deliverables**: 13 feature documentation files (10 original + 3 UDML)
 
-**Time Estimate**: 2 weeks
+**Time Estimate**: 2.5 weeks
 - Week 1: Parser overview + 3 individual parser docs
 - Week 2: Remaining 3 parser docs + 3 discovery docs
+- Week 2.5: 3 UDML system docs
 
 **Success Metrics**:
 - All 28+ parsers documented
 - Discovery system fully documented
-- 15+ working examples
-- Users can find parser capabilities quickly
+- **UDML system fully documented (unique differentiator #1)**
+- 20+ working examples
+- Users understand UDML as core abstraction
 
 ---
 
@@ -223,6 +326,8 @@
 **Duration**: 1.5 weeks
 
 **Goal**: Document the complete ontology system including advanced features (named rules, attribute extraction, validation, catalogs).
+
+**Covers Unique Differentiators**: #2 (Ontology Compiler), #4 (6 W's Framework), #5 (HIL Interview)
 
 ### Tasks
 
@@ -432,6 +537,8 @@
 **Duration**: 1 week
 
 **Goal**: Explain how the system works end-to-end for developers and operators.
+
+**Covers Unique Differentiator**: #3 (Horizontally Scalable Infrastructure)
 
 ### Tasks
 
@@ -1155,53 +1262,64 @@ func FunctionName(param1 Type1, param2 Type2) (ReturnType, error) {
 
 ### Summary
 
-| Phase | Duration | Deliverables | Status |
-|-------|----------|--------------|--------|
-| 1. Foundation | 2 weeks | 11 items | ✅ Complete |
-| 2. Features | 2 weeks | 10 docs | ⏳ Next |
-| **2.5. Advanced Ontology** | **1.5 weeks** | **13 docs** | **📋 Planned** |
-| 3. Processes | 1 week | 6 docs | 📋 Planned |
-| 4. API/Godoc | 2.5 weeks | 11 docs + 205 files | 📋 Planned |
-| 5. Troubleshooting | 1 week | 7 docs | 📋 Planned |
-| 6. Operations | 2 weeks | 7 docs | 📋 Planned |
-| 7. Development | 1 week | 7 docs | 📋 Planned |
+| Phase | Duration | Deliverables | Status | Unique Differentiators |
+|-------|----------|--------------|--------|------------------------|
+| 1. Foundation | 2 weeks | 11 items | ✅ Complete | - |
+| 2. Features | 2.5 weeks | 13 docs | ⏳ Next | #1 (UDML) |
+| **2.5. Advanced Ontology** | **1.5 weeks** | **13 docs** | **📋 Planned** | **#2, #4, #5** |
+| 3. Processes | 1 week | 6 docs | 📋 Planned | #3 (Scalability) |
+| 4. API/Godoc | 2.5 weeks | 11 docs + 205 files | 📋 Planned | - |
+| 5. Troubleshooting | 1 week | 7 docs | 📋 Planned | - |
+| 6. Operations | 2 weeks | 7 docs | 📋 Planned | #3 (Deployment) |
+| 7. Development | 1 week | 7 docs | 📋 Planned | - |
 
-**Total**: 12.5 weeks for comprehensive coverage
+**Total**: 13 weeks for comprehensive coverage
+
+**Unique Differentiator Coverage**:
+- #1: UDML (Phase 2.4 + Phase 4.2)
+- #2: Ontology Compiler (Phase 2.5)
+- #3: Horizontally Scalable Infrastructure (Phase 3 + Phase 6)
+- #4: 6 W's Framework (Phase 2.5)
+- #5: HIL Interview (Phase 2.5)
 
 ### Milestones
 
-**Week 3-4 (Phase 2 Complete)**: Core feature documentation
+**Week 3-4.5 (Phase 2 Complete)**: Core feature documentation + UDML
 - Parser overview complete
 - All parser docs complete (6 docs)
 - Discovery system documented (3 docs)
+- **UDML system documented (3 docs) - Unique Differentiator #1**
 
-**Week 5-6 (Phase 2.5 Complete)**: Advanced ontology documentation
+**Week 5-6.5 (Phase 2.5 Complete)**: Advanced ontology documentation
 - 8 new ontology feature docs complete
 - 5 existing ontology docs updated
-- Ontology system fully documented
+- **Ontology Compiler, 6 W's, HIL Interview documented - Unique Differentiators #2, #4, #5**
 
-**Week 7 (Phase 3 Complete)**: Processes documented
+**Week 7.5 (Phase 3 Complete)**: Scalable infrastructure documented
 - 5 workflow docs complete
 - Updated process diagrams
+- **Horizontally scalable architecture explained - Unique Differentiator #3**
 
-**Week 8-10 (Phase 4 Complete)**: API reference complete
+**Week 8-10.5 (Phase 4 Complete)**: API reference complete
 - All API docs complete
-- Data models documented
+- Data models documented (including UDML schemas)
 - Schema reference docs complete
 - Priority 1 & 2 godoc complete
 
-**Week 11 (Phase 5 Complete)**: Extended troubleshooting
+**Week 11.5 (Phase 5 Complete)**: Extended troubleshooting
 - 51 total issues documented (16 from Phase 1 + 35 new)
 - Diagnostic flowchart complete
 - Ontology troubleshooting comprehensive (10+ issues)
 
-**Week 12-13 (Phase 6 Complete)**: Operations ready
+**Week 12.5-13.5 (Phase 6 Complete)**: Operations ready
 - Production deployment guides complete
 - Operational procedures documented
+- **Horizontal scaling deployment documented**
 
-**Week 14 (Phase 7 Complete)**: Contribution ready
+**Week 14.5 (Phase 7 Complete)**: Contribution ready
 - All documentation complete
 - Project ready for contributors
+- **All 5 unique differentiators fully documented**
 
 ---
 
@@ -1499,5 +1617,5 @@ godoc -http=:6060
 ---
 
 **Last Updated**: 2025-11-02
-**Status**: Phase 1 Complete, Phase 2 Ready to Start, Plan Updated with Phase 2.5 (Advanced Ontology)
-**Next Review**: After Phase 2.5 completion
+**Status**: Phase 1 Complete, Phase 2 Ready to Start. Plan includes 5 unique differentiators: UDML, Ontology Compiler, Scalable Infrastructure, 6 W's, HIL Interview
+**Next Review**: After Phase 2 completion (UDML docs milestone)
