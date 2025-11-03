@@ -51,11 +51,12 @@ type Config struct {
 	Processing struct {
 		MaxWorkers int `toml:"workers"`
 		JobControl struct {
-			Backend           string `toml:"backend"` // "sqlite" or "postgres"
-			Path              string `toml:"path"`    // SQLite: file path; PostgreSQL: DSN
-			ClaimTimeout      int    `toml:"claim_timeout"`
-			HeartbeatInterval int    `toml:"heartbeat_interval"`
-			MaxRetries        int    `toml:"max_retries"`
+			Backend            string `toml:"backend"` // "sqlite" or "postgres"
+			Path               string `toml:"path"`    // SQLite: file path; PostgreSQL: DSN
+			ClaimTimeout       int    `toml:"claim_timeout"`
+			HeartbeatInterval  int    `toml:"heartbeat_interval"`
+			MaxRetries         int    `toml:"max_retries"`
+			IdleCheckInterval  int    `toml:"idle_check_interval"`  // Seconds between idle queue checks (default: 300)
 		} `toml:"job_control"`
 		Neo4jExport struct {
 			Enabled            bool   `toml:"enabled"`
@@ -270,6 +271,9 @@ func main() {
 		Neo4jExportConfig: neo4jExportConfig,
 		SemanticConfig:    semanticConfig,
 		OntologyConfig:    ontologyConfig,
+		ShutdownWhenIdle:  *shutdownWhenIdle,
+		IdleTimeout:       *idleTimeout,
+		IdleCheckInterval: 0, // 0 triggers default of 5 minutes in NewWorker
 	}
 
 	// Create worker

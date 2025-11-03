@@ -78,6 +78,16 @@ type Worker struct {
 	ontologyExtractor         *OntologyExtractor
 	ontologyExtractionRunning atomic.Bool
 	lastOntologyExtractionTime *time.Time
+
+	// Shutdown control
+	shutdownWhenIdle  bool
+	idleTimeout       time.Duration
+	idleCheckInterval time.Duration
+
+	// Post-processing completion tracking
+	neo4jExportCompleted        bool
+	semanticAnalysisCompleted   bool
+	ontologyExtractionCompleted bool
 }
 
 // Neo4jExportConfig holds Neo4j export configuration
@@ -203,6 +213,9 @@ type Config struct {
 	Neo4jExportConfig *Neo4jExportConfig // Optional Neo4j export configuration
 	SemanticConfig    *SemanticConfig    // Optional semantic relationship detection configuration
 	OntologyConfig    *OntologyConfig    // Optional ontology extraction configuration
+	ShutdownWhenIdle  bool               // Shutdown worker when idle (no work available)
+	IdleTimeout       time.Duration      // Shutdown after being idle for this duration (default: 2 minutes)
+	IdleCheckInterval time.Duration      // Interval for checking queue idle status (default: 5 minutes)
 }
 
 // NewWorker creates a new document processing worker
@@ -325,6 +338,17 @@ func NewWorker(config Config) (*Worker, error) {
 		}
 	}
 
+	// Set default values for idle monitoring
+	idleTimeout := config.IdleTimeout
+	if idleTimeout == 0 {
+		idleTimeout = 2 * time.Minute // Default: 2 minutes
+	}
+
+	idleCheckInterval := config.IdleCheckInterval
+	if idleCheckInterval == 0 {
+		idleCheckInterval = 5 * time.Minute // Default: 5 minutes
+	}
+
 	worker := &Worker{
 		workerID:             config.WorkerID,
 		numWorkers:           numWorkers,
@@ -344,6 +368,9 @@ func NewWorker(config Config) (*Worker, error) {
 		semanticAnalyzer:     semanticAnalyzer,
 		ontologyConfig:       config.OntologyConfig,
 		ontologyExtractor:    ontologyExtractor,
+		shutdownWhenIdle:     config.ShutdownWhenIdle,
+		idleTimeout:          idleTimeout,
+		idleCheckInterval:    idleCheckInterval,
 	}
 
 	log.Printf("Initialized worker: %s", worker.workerID)
@@ -404,6 +431,16 @@ func (w *Worker) Run() error {
 	for sourceName := range w.contentSources {
 		w.wg.Add(1)
 		go w.perSourceDiscoveryLoop(sourceName)
+	}
+
+	// Start idle monitoring if shutdown-when-idle is enabled
+	if w.shutdownWhenIdle {
+		w.wg.Add(1)
+		go func() {
+			defer w.wg.Done()
+			w.idleMonitoringLoop()
+		}()
+		log.Printf("Idle monitoring enabled (check interval: %v, idle timeout: %v)", w.idleCheckInterval, w.idleTimeout)
 	}
 
 	// Use goroutine pool if numWorkers > 1, otherwise single-threaded
@@ -1157,35 +1194,6 @@ func (w *Worker) perSourceDiscoveryLoop(sourceName string) {
 
 		if queued > 0 {
 			log.Printf("Source leader for %s queued %d new documents", sourceName, queued)
-		}
-
-		// Check queue status for Neo4j export and finalization tasks (only if leader)
-		if isSourceLeader {
-			w.checkQueueForNeo4jExport()
-
-			// Also check finalization independently (for when Neo4j export is disabled)
-			status, err := w.jobControl.GetProcessingStatus()
-			if err == nil {
-				pendingDocs := status.Documents["pending"]
-				processingDocs := status.Documents["processing"]
-				isQueueEmpty := (pendingDocs == 0 && processingDocs == 0)
-				currentTime := time.Now()
-
-				// Track queue empty time
-				if isQueueEmpty {
-					if w.lastQueueEmptyTime == nil {
-						w.lastQueueEmptyTime = &currentTime
-						log.Println("Queue became empty, starting idle timer for finalization tasks")
-					}
-				} else {
-					// Reset timer if queue is not empty
-					if w.lastQueueEmptyTime != nil {
-						w.lastQueueEmptyTime = nil
-					}
-				}
-
-				w.checkQueueForFinalization(isQueueEmpty, currentTime)
-			}
 		}
 
 		// Sleep for configured interval (with context-aware sleep)
@@ -2029,6 +2037,9 @@ func (w *Worker) runSemanticAnalysis() {
 	if err := w.semanticAnalyzer.AnalyzeAndStore(); err != nil {
 		log.Printf("SEMANTIC ANALYSIS: Failed: %v", err)
 	}
+
+	// Mark semantic analysis as completed
+	w.semanticAnalysisCompleted = true
 }
 
 // checkQueueForOntologyExtraction checks if queue is idle and triggers ontology extraction
@@ -2097,6 +2108,9 @@ func (w *Worker) runOntologyExtraction() {
 	if err := w.ontologyExtractor.ExtractAndStore(); err != nil {
 		log.Printf("ONTOLOGY EXTRACTION: Failed: %v", err)
 	}
+
+	// Mark ontology extraction as completed
+	w.ontologyExtractionCompleted = true
 }
 
 // triggerNeo4jExport triggers Neo4j graph export
@@ -2150,4 +2164,100 @@ func (w *Worker) triggerNeo4jExport() {
 	// }
 
 	log.Println("========================================")
+
+	// Mark Neo4j export as completed
+	w.neo4jExportCompleted = true
+}
+
+// arePostProcessingTasksComplete checks if all enabled post-processing tasks have completed
+func (w *Worker) arePostProcessingTasksComplete() bool {
+	// If no post-processing is configured, consider it complete
+	noPostProcessing := (w.neo4jExportConfig == nil || !w.neo4jExportConfig.Enabled) &&
+		(w.semanticConfig == nil || !w.semanticConfig.Enabled) &&
+		(w.ontologyConfig == nil || !w.ontologyConfig.Enabled)
+
+	if noPostProcessing {
+		return true
+	}
+
+	// Check each enabled post-processing task
+	neo4jComplete := w.neo4jExportConfig == nil || !w.neo4jExportConfig.Enabled || w.neo4jExportCompleted
+	semanticComplete := w.semanticConfig == nil || !w.semanticConfig.Enabled || w.semanticAnalysisCompleted
+	ontologyComplete := w.ontologyConfig == nil || !w.ontologyConfig.Enabled || w.ontologyExtractionCompleted
+
+	return neo4jComplete && semanticComplete && ontologyComplete
+}
+
+// initiateShutdown cancels the worker context to trigger graceful shutdown
+func (w *Worker) initiateShutdown() {
+	log.Println("Initiating worker shutdown...")
+	w.cancel()
+}
+
+// idleMonitoringLoop monitors queue status and triggers shutdown when conditions are met
+func (w *Worker) idleMonitoringLoop() {
+	ticker := time.NewTicker(w.idleCheckInterval)
+	defer ticker.Stop()
+
+	var idleStart *time.Time
+
+	log.Printf("Starting idle monitoring loop (check interval: %v, idle timeout: %v)", w.idleCheckInterval, w.idleTimeout)
+
+	for {
+		select {
+		case <-w.ctx.Done():
+			log.Println("Idle monitoring loop stopped")
+			return
+
+		case <-ticker.C:
+			// Check queue status
+			status, err := w.jobControl.GetProcessingStatus()
+			if err != nil {
+				log.Printf("Warning: failed to get processing status in idle monitor: %v", err)
+				continue
+			}
+
+			pendingDocs := status.Documents["pending"]
+			processingDocs := status.Documents["processing"]
+			isQueueEmpty := (pendingDocs == 0 && processingDocs == 0)
+
+			if isQueueEmpty {
+				if idleStart == nil {
+					// Queue just became idle
+					now := time.Now()
+					idleStart = &now
+					log.Printf("Queue is now idle (pending=%d, processing=%d)", pendingDocs, processingDocs)
+
+					// Trigger post-processing when queue becomes idle
+					w.checkQueueForNeo4jExport()
+					w.checkQueueForSemanticAnalysis(isQueueEmpty, now)
+					w.checkQueueForOntologyExtraction(isQueueEmpty, now)
+				} else {
+					// Queue has been idle for some time
+					idleDuration := time.Since(*idleStart)
+					log.Printf("Queue still idle (duration: %v, timeout: %v)", idleDuration, w.idleTimeout)
+
+					// Check if all post-processing is complete
+					if w.arePostProcessingTasksComplete() {
+						log.Println("All post-processing tasks completed")
+
+						// Check if idle timeout exceeded
+						if idleDuration >= w.idleTimeout {
+							log.Printf("Idle timeout exceeded (%v >= %v), shutting down", idleDuration, w.idleTimeout)
+							w.initiateShutdown()
+							return
+						}
+					} else {
+						log.Println("Post-processing tasks still running...")
+					}
+				}
+			} else {
+				// Queue is not empty, reset idle start
+				if idleStart != nil {
+					log.Printf("Queue is no longer idle (pending=%d, processing=%d)", pendingDocs, processingDocs)
+					idleStart = nil
+				}
+			}
+		}
+	}
 }
