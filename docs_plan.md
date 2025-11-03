@@ -24,7 +24,7 @@
 
 ## Unique Differentiators (Documentation Focus Areas)
 
-Go-Doc-Go has **five core unique capabilities** that must be thoroughly documented:
+Go-Doc-Go has **eight core unique capabilities** that must be thoroughly documented:
 
 ### 1. **UDML (Universal Document Markup Language)**
 - **What**: Format-agnostic document representation (UDML-S/UDML-H/UDML-G)
@@ -56,20 +56,58 @@ Go-Doc-Go has **five core unique capabilities** that must be thoroughly document
 - **Documentation Priority**: MEDIUM-HIGH - Lowers barrier to entry
 - **Coverage**: Phase 2.5 (interview-cli.md)
 
+### 6. **Intelligent Discovery System**
+- **What**: Structure-aware content discovery using document structure to identify corpus boundaries
+- **Why Unique**: Crawlers understand document relationships (hyperlinks, code dependencies) to automatically define processing scope
+- **Documentation Priority**: HIGH - Critical for automated corpus identification
+- **Coverage**: Phase 2.3 (discovery docs: hyperlink-crawling.md, code-dependencies.md)
+
+### 7. **Broad Content Source Support**
+- **What**: Unified interface for diverse content sources (HTTP, S3, SharePoint, FTP, SFTP, file systems, etc.)
+- **Why Unique**: Single configuration handles cloud storage, network shares, web crawling, and local files
+- **Documentation Priority**: MEDIUM-HIGH - Enables enterprise integration
+- **Coverage**: Phase 2.3 (discovery/overview.md), Phase 7 (development/custom-content-source.md)
+
+### 8. **Universal Content Type Support**
+- **What**: 28+ parsers covering Office (DOCX, XLSX, PPTX), code (Go, Python, JS, Java), web (HTML, MD), data (JSON, CSV, Parquet, XML), PDFs, and more
+- **Why Unique**: Comprehensive format support with consistent UDML output across all types
+- **Documentation Priority**: HIGH - Core value proposition for users
+- **Coverage**: Phase 2.1 (parsing/overview.md), Phase 2.2 (individual parser docs)
+
 ### Documentation Strategy
 
 **Emphasis These Differentiators:**
-- Phase 2.5 focuses entirely on ontology system (#2, #4, #5)
-- Phase 3 covers scalable infrastructure (#3)
-- Phase 4.2 covers UDML formats (#1)
-- Phase 6 covers production deployment of scaled infrastructure (#3)
+- Phase 2.1: Universal content type support (#8)
+- Phase 2.2: Individual parser breadth (#8)
+- Phase 2.3: Discovery system + content sources (#6, #7)
+- Phase 2.4: UDML system (#1)
+- Phase 2.5: Ontology system (#2, #4, #5)
+- Phase 3: Scalable infrastructure (#3)
+- Phase 4.2: UDML data models (#1)
+- Phase 6: Production deployment (#3)
+- Phase 7: Extensibility (custom parsers, sources) (#7, #8)
 
-**Marketing Message:**
-"Go-Doc-Go is the only document processing system that combines:
-- Universal document representation (UDML)
-- Domain-aware knowledge extraction (Ontology Compiler + 6 W's)
-- Production-scale processing (horizontally scalable infrastructure)
-- Accessible ontology creation (HIL interview)"
+**Competitive Positioning:**
+Go-Doc-Go is the **only document processing system** that combines:
+
+1. **Comprehensive Input** (#6, #7, #8)
+   - 28+ content types (Office, code, web, data, PDFs)
+   - Any source (HTTP, S3, SharePoint, FTP, SFTP, file systems)
+   - Intelligent discovery (structure-aware corpus identification)
+
+2. **Universal Representation** (#1)
+   - UDML: Single schema for all document types
+   - Query any document format with SQL/DuckDB
+
+3. **Domain Intelligence** (#2, #4, #5)
+   - Ontology Compiler with 6 W's framework
+   - 42 built-in domain catalogs
+   - HIL interview for easy ontology creation
+
+4. **Production Scale** (#3)
+   - Horizontally scalable infrastructure
+   - Distributed work queue coordination
+   - Million+ document processing
 
 ---
 
@@ -1265,13 +1303,13 @@ func FunctionName(param1 Type1, param2 Type2) (ReturnType, error) {
 | Phase | Duration | Deliverables | Status | Unique Differentiators |
 |-------|----------|--------------|--------|------------------------|
 | 1. Foundation | 2 weeks | 11 items | ✅ Complete | - |
-| 2. Features | 2.5 weeks | 13 docs | ⏳ Next | #1 (UDML) |
+| 2. Features | 2.5 weeks | 13 docs | ⏳ Next | #1, #6, #7, #8 |
 | **2.5. Advanced Ontology** | **1.5 weeks** | **13 docs** | **📋 Planned** | **#2, #4, #5** |
-| 3. Processes | 1 week | 6 docs | 📋 Planned | #3 (Scalability) |
-| 4. API/Godoc | 2.5 weeks | 11 docs + 205 files | 📋 Planned | - |
+| 3. Processes | 1 week | 6 docs | 📋 Planned | #3 |
+| 4. API/Godoc | 2.5 weeks | 11 docs + 205 files | 📋 Planned | #1 |
 | 5. Troubleshooting | 1 week | 7 docs | 📋 Planned | - |
-| 6. Operations | 2 weeks | 7 docs | 📋 Planned | #3 (Deployment) |
-| 7. Development | 1 week | 7 docs | 📋 Planned | - |
+| 6. Operations | 2 weeks | 7 docs | 📋 Planned | #3 |
+| 7. Development | 1 week | 7 docs | 📋 Planned | #7, #8 |
 
 **Total**: 13 weeks for comprehensive coverage
 
@@ -1281,14 +1319,17 @@ func FunctionName(param1 Type1, param2 Type2) (ReturnType, error) {
 - #3: Horizontally Scalable Infrastructure (Phase 3 + Phase 6)
 - #4: 6 W's Framework (Phase 2.5)
 - #5: HIL Interview (Phase 2.5)
+- #6: Intelligent Discovery (Phase 2.3)
+- #7: Broad Content Sources (Phase 2.3 + Phase 7)
+- #8: Universal Content Types (Phase 2.1 + Phase 2.2 + Phase 7)
 
 ### Milestones
 
 **Week 3-4.5 (Phase 2 Complete)**: Core feature documentation + UDML
-- Parser overview complete
-- All parser docs complete (6 docs)
-- Discovery system documented (3 docs)
-- **UDML system documented (3 docs) - Unique Differentiator #1**
+- Parser overview complete - **Differentiator #8 (Content Types)**
+- All parser docs complete (6 docs) - **Differentiator #8**
+- Discovery system documented (3 docs) - **Differentiators #6, #7 (Discovery + Sources)**
+- **UDML system documented (3 docs) - Differentiator #1**
 
 **Week 5-6.5 (Phase 2.5 Complete)**: Advanced ontology documentation
 - 8 new ontology feature docs complete
@@ -1319,7 +1360,8 @@ func FunctionName(param1 Type1, param2 Type2) (ReturnType, error) {
 **Week 14.5 (Phase 7 Complete)**: Contribution ready
 - All documentation complete
 - Project ready for contributors
-- **All 5 unique differentiators fully documented**
+- **All 8 unique differentiators fully documented**
+- Custom parser/source development guide - **Differentiators #7, #8**
 
 ---
 
@@ -1617,5 +1659,7 @@ godoc -http=:6060
 ---
 
 **Last Updated**: 2025-11-02
-**Status**: Phase 1 Complete, Phase 2 Ready to Start. Plan includes 5 unique differentiators: UDML, Ontology Compiler, Scalable Infrastructure, 6 W's, HIL Interview
-**Next Review**: After Phase 2 completion (UDML docs milestone)
+**Status**: Phase 1 Complete, Phase 2 Ready to Start. Plan documents 8 unique differentiators:
+1. UDML, 2. Ontology Compiler, 3. Scalable Infrastructure, 4. 6 W's, 5. HIL Interview,
+6. Intelligent Discovery, 7. Broad Content Sources, 8. Universal Content Types
+**Next Review**: After Phase 2 completion (all input differentiators + UDML milestone)
