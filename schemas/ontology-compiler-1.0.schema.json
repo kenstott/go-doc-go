@@ -1,0 +1,669 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/kennethstott/doculyzer-go-conversion/schemas/ontology-compiler-1.0.schema.json",
+  "title": "Ontology Compiler Schema v1.0",
+  "description": "Schema for Ontology Compiler configuration files that define entity and relationship extraction rules. This is the configuration format produced by the ontology interview process and consumed by the ontology extractor.",
+  "type": "object",
+  "required": ["name", "version", "description", "domains", "element_entity_mappings"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Schema name",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "description": "Schema version (semantic versioning)",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "description": {
+      "type": "string",
+      "description": "Schema description",
+      "minLength": 1
+    },
+    "llm_model": {
+      "type": "string",
+      "description": "Default LLM model for all LLM operations (required for LLM features like validation and canonicalization)",
+      "examples": ["claude-sonnet-4", "gpt-4", "claude-opus-4"]
+    },
+    "llm_validation_model": {
+      "type": "string",
+      "description": "LLM model for validation operations (optional, falls back to llm_model)"
+    },
+    "domain": {
+      "type": "string",
+      "description": "Primary domain name (deprecated, use domains array instead)"
+    },
+    "domains": {
+      "type": "array",
+      "description": "Domain registry for multi-domain support",
+      "items": {
+        "$ref": "#/definitions/Domain"
+      },
+      "minItems": 1
+    },
+    "document_types": {
+      "type": "array",
+      "description": "Applicable document types (e.g., pdf, docx, html)",
+      "items": {
+        "type": "string"
+      }
+    },
+    "key_concepts": {
+      "type": "array",
+      "description": "Key concepts in the domain",
+      "items": {
+        "type": "string"
+      }
+    },
+    "terms": {
+      "type": "array",
+      "description": "Domain terms and their synonyms",
+      "items": {
+        "$ref": "#/definitions/Term"
+      }
+    },
+    "element_entity_mappings": {
+      "type": "array",
+      "description": "Entity extraction rules mapping UDML elements to domain entities",
+      "items": {
+        "$ref": "#/definitions/ElementEntityMapping"
+      },
+      "minItems": 1
+    },
+    "entity_relationship_rules": {
+      "type": "array",
+      "description": "Relationship extraction rules between entity types",
+      "items": {
+        "$ref": "#/definitions/EntityRelationshipRule"
+      }
+    },
+    "derived_entities": {
+      "type": "array",
+      "description": "Derived entity definitions",
+      "items": {
+        "$ref": "#/definitions/DerivedEntity"
+      }
+    },
+    "cross_domain_merging": {
+      "$ref": "#/definitions/CrossDomainMerging",
+      "description": "Configuration for cross-domain entity merging"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional schema metadata"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Schema creation timestamp (ISO8601)"
+    }
+  },
+  "definitions": {
+    "Domain": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Domain name",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "Domain description"
+        },
+        "owner": {
+          "type": "string",
+          "description": "Domain owner (team or person)"
+        },
+        "dependencies": {
+          "type": "array",
+          "description": "Other domains this domain depends on (imports)",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Term": {
+      "type": "object",
+      "required": ["term", "synonyms"],
+      "properties": {
+        "term": {
+          "type": "string",
+          "description": "Term name"
+        },
+        "synonyms": {
+          "type": "array",
+          "description": "Synonyms for this term",
+          "items": {
+            "type": "string"
+          }
+        },
+        "description": {
+          "type": "string",
+          "description": "Term description"
+        }
+      }
+    },
+    "ElementEntityMapping": {
+      "type": "object",
+      "required": ["entity_type", "domain", "description", "confidence", "extraction_rules"],
+      "properties": {
+        "entity_type": {
+          "type": "string",
+          "description": "Entity type name",
+          "minLength": 1
+        },
+        "parent_type": {
+          "type": "string",
+          "description": "Parent entity type for inheritance (e.g., 'global.person')"
+        },
+        "children": {
+          "type": "array",
+          "description": "Child entity types (usually computed at runtime)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "domain": {
+          "type": "string",
+          "description": "Domain this entity belongs to",
+          "minLength": 1
+        },
+        "w_category": {
+          "type": "string",
+          "description": "6 W's category (who, what, where, when, why, how)",
+          "enum": ["who", "what", "where", "when", "why", "how"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of this entity type",
+          "minLength": 1
+        },
+        "element_types": {
+          "type": "array",
+          "description": "UDML element types to search (e.g., paragraph, heading, list_item)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "element_filter": {
+          "type": "string",
+          "description": "JSONPath filter for advanced element selection"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Extraction confidence score",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "extraction_rules": {
+          "type": "array",
+          "description": "Extraction rules (OR logic - any rule can match)",
+          "items": {
+            "$ref": "#/definitions/ExtractionRule"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "ExtractionRule": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Rule name for inheritance referencing"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of rule intent"
+        },
+        "inheritance_op": {
+          "type": "string",
+          "description": "Inheritance operation",
+          "enum": ["merge", "remove", "replace", ""]
+        },
+        "catalog_source": {
+          "type": "string",
+          "description": "Rule origin for protection from modification",
+          "enum": ["global", "domain", "llm_generated", ""]
+        },
+        "jsonpath": {
+          "type": "string",
+          "description": "JSONPath expression to narrow scope before extraction"
+        },
+        "phrase_list": {
+          "type": "array",
+          "description": "List of exact phrases to match (keyword extraction)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "instance_name": {
+          "type": "string",
+          "description": "Regex pattern with (?P<name>...) capture group to extract entity name"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern pre-filter (must match before extraction)"
+        },
+        "proximity": {
+          "$ref": "#/definitions/ProximityFilter",
+          "description": "Co-occurrence filter - entity must appear near certain terms"
+        },
+        "dictionary": {
+          "$ref": "#/definitions/DictionaryFilter",
+          "description": "Dictionary-based linguistic validation"
+        },
+        "semantic": {
+          "$ref": "#/definitions/SemanticFilter",
+          "description": "Semantic similarity filter using embeddings"
+        },
+        "llm_validation": {
+          "$ref": "#/definitions/LLMValidationPrompt",
+          "description": "LLM-based validation for complex cases"
+        },
+        "attributes": {
+          "type": "array",
+          "description": "Attribute extraction rules for matched entities",
+          "items": {
+            "$ref": "#/definitions/AttributeExtractionRule"
+          }
+        }
+      },
+      "oneOf": [
+        {"required": ["phrase_list"]},
+        {"required": ["instance_name"]}
+      ]
+    },
+    "ProximityFilter": {
+      "type": "object",
+      "required": ["cooccurrence_terms"],
+      "properties": {
+        "cooccurrence_terms": {
+          "type": "array",
+          "description": "Terms that must appear near the entity",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "max_distance": {
+          "type": "integer",
+          "description": "Maximum distance in words/characters (0 = same element)",
+          "minimum": 0
+        },
+        "distance_unit": {
+          "type": "string",
+          "description": "Distance measurement unit",
+          "enum": ["element", "word", "character"],
+          "default": "element"
+        }
+      }
+    },
+    "DictionaryFilter": {
+      "type": "object",
+      "properties": {
+        "require_unknown_words": {
+          "type": "boolean",
+          "description": "Require at least one word NOT in dictionary (for proper names)"
+        },
+        "max_known_words_ratio": {
+          "type": "number",
+          "description": "Maximum ratio of words found in dictionary",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "reject_if_all_pos": {
+          "type": "array",
+          "description": "Reject if ALL words match these parts of speech",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reject_if_all_categories": {
+          "type": "array",
+          "description": "Reject if ALL words match these semantic categories",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reject_pos_combinations": {
+          "type": "array",
+          "description": "Reject specific POS tag sequences",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "reject_category_combinations": {
+          "type": "array",
+          "description": "Reject specific semantic category sequences",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "SemanticFilter": {
+      "type": "object",
+      "required": ["similarity_threshold"],
+      "properties": {
+        "reference_text": {
+          "type": "string",
+          "description": "Single reference text for similarity comparison"
+        },
+        "reference_concepts": {
+          "type": "array",
+          "description": "Concepts to compare against (alternative to reference_text)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "similarity_threshold": {
+          "type": "number",
+          "description": "Minimum cosine similarity score",
+          "minimum": 0.0,
+          "maximum": 1.0
+        }
+      },
+      "oneOf": [
+        {"required": ["reference_text"]},
+        {"required": ["reference_concepts"]}
+      ]
+    },
+    "LLMValidationPrompt": {
+      "type": "object",
+      "required": ["prompt"],
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "Validation question for the LLM",
+          "minLength": 1
+        },
+        "batch_size": {
+          "type": "integer",
+          "description": "Batch size for LLM API calls",
+          "minimum": 1,
+          "default": 50
+        }
+      }
+    },
+    "AttributeExtractionRule": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Attribute name (e.g., 'specialty', 'role', 'department')",
+          "minLength": 1
+        },
+        "type": {
+          "type": "string",
+          "description": "Extraction type",
+          "enum": ["constant", "regex"]
+        },
+        "constant_value": {
+          "description": "Fixed value for type=constant"
+        },
+        "regex_pattern": {
+          "type": "string",
+          "description": "Regex pattern with (?P<value>...) capture group for type=regex"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Where to extract from",
+          "enum": ["entity_match", "element", "proximity"],
+          "default": "entity_match"
+        },
+        "proximity_distance": {
+          "type": "integer",
+          "description": "Word distance for scope=proximity",
+          "minimum": 1
+        },
+        "default_value": {
+          "description": "Default value if extraction fails"
+        },
+        "transform": {
+          "type": "string",
+          "description": "Post-processing transformation",
+          "enum": ["lowercase", "uppercase", "trim"]
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {"type": {"const": "constant"}},
+              "required": ["constant_value"]
+            },
+            {
+              "properties": {"type": {"const": "regex"}},
+              "required": ["regex_pattern"]
+            }
+          ]
+        },
+        {
+          "if": {
+            "properties": {"scope": {"const": "proximity"}},
+            "required": ["scope"]
+          },
+          "then": {
+            "required": ["proximity_distance"]
+          }
+        }
+      ]
+    },
+    "EntityRelationshipRule": {
+      "type": "object",
+      "required": ["name", "source_entity_type", "target_entity_type", "relationship_type", "confidence", "extraction_patterns"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Relationship rule name",
+          "minLength": 1
+        },
+        "parent_relationship": {
+          "type": "string",
+          "description": "Parent rule to inherit from (e.g., 'global.person_works_at_organization')"
+        },
+        "source_entity_type": {
+          "type": "string",
+          "description": "Source entity type (entity being enriched)",
+          "minLength": 1
+        },
+        "target_entity_type": {
+          "type": "string",
+          "description": "Target entity type (entity providing enrichment)",
+          "minLength": 1
+        },
+        "relationship_type": {
+          "type": "string",
+          "description": "Relationship type",
+          "enum": [
+            "is_a",
+            "part_of",
+            "related_to",
+            "located_in",
+            "occurred_at",
+            "created_by",
+            "mentions",
+            "depends_on",
+            "implements",
+            "extends",
+            "contains",
+            "referenced_by",
+            "has_instance",
+            "employed_at",
+            "treated_at",
+            "custom"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Rule description"
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Pattern reliability confidence",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "extraction_patterns": {
+          "type": "array",
+          "description": "Patterns for extracting this relationship (OR logic)",
+          "items": {
+            "$ref": "#/definitions/RelationshipExtractionPattern"
+          },
+          "minItems": 1
+        },
+        "source_constraints": {
+          "$ref": "#/definitions/EntityConstraints",
+          "description": "Optional filters for source entity"
+        },
+        "target_constraints": {
+          "$ref": "#/definitions/EntityConstraints",
+          "description": "Optional filters for target entity"
+        },
+        "attributes": {
+          "type": "array",
+          "description": "Attribute extraction rules for matched relationships",
+          "items": {
+            "$ref": "#/definitions/AttributeExtractionRule"
+          }
+        }
+      }
+    },
+    "RelationshipExtractionPattern": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Pattern type",
+          "enum": ["text_template", "proximity", "regex", "dependency", "cooccurrence"]
+        },
+        "template": {
+          "type": "string",
+          "description": "Text template with entity placeholders (e.g., '{person} works at {organization}')"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern with named groups for entity types"
+        },
+        "signal_words": {
+          "type": "array",
+          "description": "Signal words indicating this relationship",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_distance": {
+          "type": "integer",
+          "description": "Maximum tokens between entities",
+          "minimum": 0
+        },
+        "direction": {
+          "type": "string",
+          "description": "Relationship directionality",
+          "enum": ["forward", "backward", "bidirectional"]
+        },
+        "examples": {
+          "type": "array",
+          "description": "Example texts matching this pattern",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "EntityConstraints": {
+      "type": "object",
+      "description": "Optional filters that entities must satisfy to participate in relationships",
+      "properties": {
+        "instance_name": {
+          "type": "string",
+          "description": "Regex pattern - entity name must match"
+        },
+        "pattern": {
+          "type": "string",
+          "description": "Pre-filter regex for entity name"
+        },
+        "proximity_filter": {
+          "$ref": "#/definitions/ProximityFilter",
+          "description": "Co-occurrence filter on entity context"
+        },
+        "semantic_filter": {
+          "$ref": "#/definitions/SemanticFilter",
+          "description": "Semantic similarity on entity context"
+        }
+      }
+    },
+    "DerivedEntity": {
+      "type": "object",
+      "required": ["name", "description", "source_entities", "aggregation_type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Derived entity name",
+          "minLength": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "Derived entity description",
+          "minLength": 1
+        },
+        "source_entities": {
+          "type": "array",
+          "description": "Source entity types to combine",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "aggregation_type": {
+          "type": "string",
+          "description": "How to combine source entities",
+          "enum": ["COMBINATION", "UNION", "INTERSECTION"]
+        }
+      }
+    },
+    "CrossDomainMerging": {
+      "type": "object",
+      "required": ["enabled", "similarity_threshold"],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable cross-domain entity merging"
+        },
+        "similarity_threshold": {
+          "type": "number",
+          "description": "Minimum similarity score to merge entities across domains",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "evidence_types": {
+          "type": "array",
+          "description": "Types of evidence for merging",
+          "items": {
+            "type": "string",
+            "enum": ["fuzzy_match", "semantic_similarity"]
+          }
+        },
+        "min_domains": {
+          "type": "integer",
+          "description": "Minimum number of domains entity must appear in",
+          "minimum": 1,
+          "default": 2
+        }
+      }
+    }
+  }
+}
