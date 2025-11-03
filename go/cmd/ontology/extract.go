@@ -97,6 +97,14 @@ func runExtract(args []string) {
 	log.Printf("    - Entity mappings: %d", len(schema.ElementEntityMappings))
 	log.Printf("    - Relationship rules: %d\n", len(schema.EntityRelationshipRules))
 
+	// Validate and compute schema mappings
+	log.Println("📋 Validating schema and computing mappings...")
+	if err := schema.Validate(); err != nil {
+		log.Fatalf("Failed to validate schema: %v", err)
+	}
+	computedMappings := schema.GetComputedMappings()
+	log.Printf("  ✓ Schema validated - %d computed mappings ready for extraction\n", len(computedMappings))
+
 	// Initialize storage
 	log.Println("📊 Initializing storage...")
 	storage, err := analytics.NewHiveParquetStorage(map[string]interface{}{
