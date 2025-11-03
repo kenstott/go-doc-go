@@ -64,14 +64,19 @@ func (b *ExtractionQueryBuilder) BuildEntityExtractionQuery(
 
 	for i, rule := range extractionRules {
 		ruleMap := rule.(map[string]interface{})
-		ruleType := ruleMap["type"].(string)
 
+		// Determine rule type by checking which fields are present
+		// Rules no longer have an explicit "type" field - the type is inferred from the presence of specific fields
 		var filterConditions []string  // AND-ed filter conditions
 		var extractExpr string
 
-		switch ruleType {
-		case "content_extraction":
-			// UNIFIED CONTENT EXTRACTION with optimized filter ordering
+		// Check for instance_name extraction (regex with capture group)
+		instanceName, hasInstanceName := ruleMap["instance_name"].(string)
+		phraseList, hasPhraseList := ruleMap["phrase_list"].([]interface{})
+		jsonPath, hasJSONPath := ruleMap["jsonpath"].(string)
+
+		if hasInstanceName && instanceName != "" {
+			// INSTANCE NAME EXTRACTION with optional filters
 			// Apply filters in order of cost: cheapest first, semantic last
 
 			// 1. Pattern filter (cheapest - regex on content)
@@ -80,7 +85,7 @@ func (b *ExtractionQueryBuilder) BuildEntityExtractionQuery(
 			}
 
 			// 2. Proximity filter (moderate cost - co-occurrence checking)
-			if proximityFilter, ok := ruleMap["proximity_filter"].(map[string]interface{}); ok && proximityFilter != nil {
+			if proximityFilter, ok := ruleMap["proximity"].(map[string]interface{}); ok && proximityFilter != nil {
 				proximityClause := b.buildProximityFilterClause(proximityFilter, i, params)
 				if proximityClause != "" {
 					filterConditions = append(filterConditions, proximityClause)
@@ -88,17 +93,12 @@ func (b *ExtractionQueryBuilder) BuildEntityExtractionQuery(
 			}
 
 			// 3. Instance name extraction (REQUIRED - must succeed for entity to be included)
-			instanceName, ok := ruleMap["instance_name"].(string)
-			if !ok || instanceName == "" {
-				// Skip rule if instance_name missing
-				continue
-			}
 			// Check that instance_name regex can extract successfully (not NULL)
 			filterConditions = append(filterConditions, fmt.Sprintf("regexp_extract(content, '%s', 1) IS NOT NULL", escapeSQL(instanceName)))
 			extractExpr = fmt.Sprintf("regexp_extract(content, '%s', 1)", escapeSQL(instanceName))
 
 			// 4. Semantic filter (most expensive - embedding similarity, applied LAST)
-			if semanticFilter, ok := ruleMap["semantic_filter"].(map[string]interface{}); ok && semanticFilter != nil {
+			if semanticFilter, ok := ruleMap["semantic"].(map[string]interface{}); ok && semanticFilter != nil {
 				semanticClause := b.buildSemanticFilterClauseInline(semanticFilter, i, params, conceptEmbeddings)
 				if semanticClause != "" {
 					filterConditions = append(filterConditions, semanticClause)
@@ -113,14 +113,34 @@ func (b *ExtractionQueryBuilder) BuildEntityExtractionQuery(
 				}
 			}
 
-		case "metadata_field":
-			baseClause := b.buildMetadataClause(ruleMap, i, params)
-			ruleClauses = append(ruleClauses, baseClause)
+		} else if hasPhraseList && len(phraseList) > 0 {
+			// PHRASE LIST EXTRACTION - exact phrase matching
+			// Convert phrase_list to SQL IN clause
+			var phrases []string
+			for _, p := range phraseList {
+				if phrase, ok := p.(string); ok && phrase != "" {
+					phrases = append(phrases, "'"+escapeSQL(phrase)+"'")
+				}
+			}
+			if len(phrases) > 0 {
+				filterConditions = append(filterConditions, fmt.Sprintf("content IN (%s)", strings.Join(phrases, ", ")))
+				extractExpr = "content"
 
-		case "jsonpath_query":
+				// Combine filters
+				if len(filterConditions) > 0 {
+					ruleClauses = append(ruleClauses, "("+strings.Join(filterConditions, " AND ")+")")
+					extractionExprs = append(extractionExprs, extractExpr)
+				}
+			}
+
+		} else if hasJSONPath && jsonPath != "" {
+			// JSONPATH-BASED EXTRACTION
 			baseClause := b.buildJSONPathClause(ruleMap, i, params)
-			ruleClauses = append(ruleClauses, baseClause)
+			if baseClause != "" {
+				ruleClauses = append(ruleClauses, baseClause)
+			}
 		}
+		// If none of the extraction methods are present, skip this rule
 	}
 
 	// Combine extraction rules with OR

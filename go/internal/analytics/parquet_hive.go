@@ -793,15 +793,23 @@ func (s *HiveParquetStorage) ExtractAndStoreEntities(
 ) (int, error) {
 	log.Printf("Extracting entity type '%s' for %d documents", entityType, len(docIDs))
 
-	// Parse mapping to check for LLM validation prompts
+	// Parse mapping to check for LLM validation prompts and proximity filters
 	// We need to import the ontology package types, but to avoid circular dependency
-	// we'll define a minimal struct here just for parsing the validation prompt
+	// we'll define a minimal struct here just for parsing the validation prompt and proximity filters
 	type llmPrompt struct {
 		Prompt    string `json:"prompt"`
 		BatchSize int    `json:"batch_size,omitempty"`
 	}
+	type proximityFilter struct {
+		CooccurrenceTerms []string `json:"cooccurrence_terms"`
+		MaxDistance       int      `json:"max_distance"`
+		DistanceUnit      string   `json:"distance_unit"`
+	}
 	type extractionRule struct {
-		LLMFalsePositiveTest *llmPrompt `json:"llm_false_positive_test,omitempty"`
+		Type                 string           `json:"type"`
+		Pattern              string           `json:"pattern,omitempty"`
+		LLMFalsePositiveTest *llmPrompt       `json:"llm_false_positive_test,omitempty"`
+		ProximityFilter      *proximityFilter `json:"proximity_filter,omitempty"`
 	}
 	type elementMapping struct {
 		ExtractionRules []extractionRule `json:"extraction_rules"`
@@ -809,15 +817,23 @@ func (s *HiveParquetStorage) ExtractAndStoreEntities(
 
 	var mapping elementMapping
 	var llmValidationPrompt *llmPrompt
+	var proximityValidation *proximityFilter
+	var regexPattern string
+
 	if err := json.Unmarshal(mappingJSON, &mapping); err != nil {
-		log.Printf("WARNING: Failed to parse mapping JSON for LLM validation check: %v", err)
+		log.Printf("WARNING: Failed to parse mapping JSON for validation checks: %v", err)
 	} else {
-		// Check if any extraction rule has LLM validation
+		// Check extraction rules for LLM validation and proximity filters
 		for _, rule := range mapping.ExtractionRules {
 			if rule.LLMFalsePositiveTest != nil {
 				llmValidationPrompt = rule.LLMFalsePositiveTest
 				log.Printf("  LLM validation ENABLED for entity type '%s': %s", entityType, llmValidationPrompt.Prompt)
-				break
+			}
+			if rule.ProximityFilter != nil && rule.Type == "regex_pattern" {
+				proximityValidation = rule.ProximityFilter
+				regexPattern = rule.Pattern
+				log.Printf("  Proximity validation ENABLED for entity type '%s': %d %s distance with %d cooccurrence terms",
+					entityType, proximityValidation.MaxDistance, proximityValidation.DistanceUnit, len(proximityValidation.CooccurrenceTerms))
 			}
 		}
 	}
@@ -893,6 +909,114 @@ func (s *HiveParquetStorage) ExtractAndStoreEntities(
 	// Check for row iteration errors
 	if err := rows.Err(); err != nil {
 		return 0, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	// Phase 2: Apply proximity validation if configured
+	if proximityValidation != nil && len(entities) > 0 {
+		log.Printf("  Phase 2: Applying proximity validation (max_distance=%d %s, cooccurrence_terms=%d)",
+			proximityValidation.MaxDistance, proximityValidation.DistanceUnit, len(proximityValidation.CooccurrenceTerms))
+
+		// Build set of unique element_ids that need content lookup
+		elementIDSet := make(map[string]bool)
+		for _, entity := range entities {
+			elementIDSet[entity.ElementID] = true
+		}
+
+		// Query content for all element_ids
+		elementIDs := make([]string, 0, len(elementIDSet))
+		for eid := range elementIDSet {
+			elementIDs = append(elementIDs, eid)
+		}
+
+		// Build query to fetch content for these element_ids
+		placeholders := make([]string, len(elementIDs))
+		queryArgs := make([]interface{}, len(elementIDs))
+		for i, eid := range elementIDs {
+			placeholders[i] = fmt.Sprintf("$%d", i+1)
+			queryArgs[i] = eid
+		}
+
+		contentQuery := fmt.Sprintf(`
+			SELECT element_id, content
+			FROM read_parquet('%s/**/*.parquet', hive_partitioning=true)
+			WHERE element_id IN (%s)
+		`, s.basePath, strings.Join(placeholders, ","))
+
+		contentRows, err := db.Query(contentQuery, queryArgs...)
+		if err != nil {
+			log.Printf("  WARNING: Failed to query element content for proximity validation: %v", err)
+			log.Printf("  Skipping proximity validation for this batch")
+		} else {
+			defer contentRows.Close()
+
+			// Build map of element_id -> content
+			contentMap := make(map[string]string)
+			for contentRows.Next() {
+				var elementID, content string
+				if err := contentRows.Scan(&elementID, &content); err != nil {
+					log.Printf("  WARNING: Failed to scan content row: %v", err)
+					continue
+				}
+				contentMap[elementID] = content
+			}
+
+			if err := contentRows.Err(); err != nil {
+				log.Printf("  WARNING: Error iterating content rows: %v", err)
+			}
+
+			log.Printf("  Loaded content for %d elements", len(contentMap))
+
+			// Filter entities based on proximity validation
+			validEntities := make([]OntologyEntity, 0, len(entities))
+			passedCount := 0
+			failedCount := 0
+
+			for _, entity := range entities {
+				content, hasContent := contentMap[entity.ElementID]
+				if !hasContent {
+					log.Printf("  WARNING: No content found for element_id=%s, entity=%s - skipping",
+						entity.ElementID, entity.EntityName)
+					failedCount++
+					continue
+				}
+
+				// Apply proximity matching
+				matches, err := FindProximityMatches(
+					content,
+					regexPattern,
+					proximityValidation.CooccurrenceTerms,
+					proximityValidation.MaxDistance,
+				)
+
+				if err != nil {
+					log.Printf("  WARNING: Proximity matching failed for entity=%s: %v - skipping",
+						entity.EntityName, err)
+					failedCount++
+					continue
+				}
+
+				// Check if this entity has at least one match
+				entityPassed := false
+				for _, match := range matches {
+					// Check if the match corresponds to this entity
+					// (the regex might match multiple entities in the content)
+					if match.PhraseText == entity.EntityName || strings.Contains(content[match.PhraseStart:match.PhraseEnd], entity.EntityName) {
+						entityPassed = true
+						break
+					}
+				}
+
+				if entityPassed {
+					validEntities = append(validEntities, entity)
+					passedCount++
+				} else {
+					failedCount++
+				}
+			}
+
+			entities = validEntities
+			log.Printf("  ✓ Proximity validation complete: %d passed, %d failed", passedCount, failedCount)
+		}
 	}
 
 	// Write raw entities to Parquet with Hive partitioning
